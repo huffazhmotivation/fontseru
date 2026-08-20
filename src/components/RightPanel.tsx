@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, PenLine, Minus, Highlighter, Feather, Pencil, Zap, Scissors, Copy, Trash2, Flame, Grid3x3, Lock, Unlock, ImagePlus } from "lucide-react";
+import { ChevronDown, PenLine, Minus, Highlighter, Feather, Pencil, Zap, Scissors, Copy, Trash2, Flame, Grid3x3, Lock, Unlock, ImagePlus, FlipHorizontal, FlipVertical } from "lucide-react";
 import { useAppStore, type NodeRef, type GlyphMetricKey } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
 import { hasOutline } from "@/types/glyph";
 import type { Glyph } from "@/types/glyph";
 import { unicodeHex } from "@/utils/unicode";
 import { findNode, retypeNode, retypeNodes, deleteNodes } from "@/editor/nodeOps";
-import { objectsBounds, skewObject } from "@/editor/objectOps";
+import { objectsBounds, skewObject, scaleObject } from "@/editor/objectOps";
 import { isBooleanEligible, type BooleanOp } from "@/editor/booleanOps";
 import type { NodeType, PathNode, StrokeCap, VectorObject } from "@/types/geometry";
 import { BRUSH_ORDER, BRUSH_PRESETS } from "@/brushes/presets";
@@ -254,8 +254,46 @@ function TransformPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedOb
     setSelectionSkewState(angle, handle);
   };
 
+  const flipSelection = (axis: "horizontal" | "vertical") => {
+    if (selectedObjectIds.length === 0) return;
+    const bounds = objectsBounds(glyph.outline, selectedObjectIds);
+    if (!bounds) return;
+    // Mirror around the selection's own center, so a multi-object selection
+    // flips together as one group rather than each object flipping in place.
+    const anchor = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+    const sx = axis === "horizontal" ? -1 : 1;
+    const sy = axis === "vertical" ? -1 : 1;
+    const objects = glyph.outline.objects.map((obj) =>
+      selectedObjectIds.includes(obj.id) ? scaleObject(obj, anchor, sx, sy, true) : obj
+    );
+    commitOutline(activeChar, { objects });
+  };
+
   return (
     <Section title="Transform">
+      <div className="fm-field">
+        <label>Flip</label>
+        <div className="fm-btn-row">
+          <button
+            className="fm-action-btn"
+            onClick={() => flipSelection("horizontal")}
+            disabled={selectedObjectIds.length === 0}
+            title="Flip Horizontal"
+            data-testid="flip-horizontal-btn"
+          >
+            <FlipHorizontal size={14} /> Horizontal
+          </button>
+          <button
+            className="fm-action-btn"
+            onClick={() => flipSelection("vertical")}
+            disabled={selectedObjectIds.length === 0}
+            title="Flip Vertical"
+            data-testid="flip-vertical-btn"
+          >
+            <FlipVertical size={14} /> Vertical
+          </button>
+        </div>
+      </div>
       <div className="fm-field">
         <label htmlFor="transform-skew">Skew</label>
         <div className="fm-angle-control">
