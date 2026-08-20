@@ -46,7 +46,6 @@ function BooleanOpIcon({ op, size = 14 }: { op: BooleanOp; size?: number }) {
     </svg>
   );
 }
-const KIND_LABEL: Record<VectorObject["kind"], string> = { shape: "Filled shape", line: "Open line", brush: "Brush stroke", expanded: "Expanded outline" };
 const BRUSH_ICON: Record<BrushType, typeof PenLine> = {
   round: PenLine, monoline: Minus, marker: Highlighter, calligraphic: Feather, pencil: Pencil, pressureTaper: Zap,
   grunge: Flame, pixel: Grid3x3,
@@ -119,9 +118,6 @@ function Section({ title, defaultOpen = true, children }: { title: string; defau
 
 function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjectIds: string[] }) {
   const expandSelectedStrokes = useAppStore((s) => s.expandSelectedStrokes);
-  const deleteSelectedObjects = useAppStore((s) => s.deleteSelectedObjects);
-  const copySelection = useAppStore((s) => s.copySelection);
-  const pasteClipboard = useAppStore((s) => s.pasteClipboard);
   const updateSelectedObject = useAppStore((s) => s.updateSelectedObject);
   const groupSelectedObjects = useAppStore((s) => s.groupSelectedObjects);
   const ungroupSelectedObjects = useAppStore((s) => s.ungroupSelectedObjects);
@@ -140,16 +136,6 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
   return (
     <>
       <Section title="Selection">
-      <span className="fm-status-pill done" data-testid="selection-count">
-        <span className="fm-status-dot" />
-        {objs.length} object{objs.length === 1 ? "" : "s"} selected
-      </span>
-      <div className="fm-kind-list">
-        {objs.map((o) => (
-          <div key={o.id} className="fm-kind-row"><span className={`fm-kind-dot ${o.kind}`} />{KIND_LABEL[o.kind]}</div>
-        ))}
-      </div>
-
       {strokeObjs.length > 0 && (
         <Slider label="Stroke Width" value={strokeObjs[0].strokeWidth ?? 20} min={1} max={200} directInput
           onChange={(v) => updateSelectedObject({ strokeWidth: v })}
@@ -201,14 +187,6 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
           <Scissors size={14} /> Expand Stroke{strokeObjs.length > 1 ? "s" : ""}
         </button>
       )}
-      <div className="fm-btn-row">
-        <button className="fm-action-btn" onClick={() => { copySelection(); pasteClipboard(); }} data-testid="duplicate-btn">
-          <Copy size={14} /> Duplicate
-        </button>
-        <button className="fm-action-btn danger" onClick={deleteSelectedObjects} data-testid="delete-object-btn">
-          <Trash2 size={14} /> Delete
-        </button>
-      </div>
       <div className="fm-hint" style={{ marginTop: 8 }}>
         Drag to move · corner/edge handles resize (Shift = proportional) · top handle rotates (Shift = 15°). Cmd/Ctrl+G groups · Cmd/Ctrl+U ungroups.
       </div>
@@ -224,6 +202,9 @@ function TransformPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedOb
   const setSelectionSkewState = useAppStore((s) => s.setSelectionSkewState);
   const commitOutline = useAppStore((s) => s.commitOutline);
   const activeChar = useAppStore((s) => s.activeChar);
+  const copySelection = useAppStore((s) => s.copySelection);
+  const pasteClipboard = useAppStore((s) => s.pasteClipboard);
+  const deleteSelectedObjects = useAppStore((s) => s.deleteSelectedObjects);
 
   const applySkewAngle = (rawAngle: number) => {
     if (!Number.isFinite(rawAngle) || selectedObjectIds.length === 0) return;
@@ -271,6 +252,14 @@ function TransformPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedOb
 
   return (
     <Section title="Transform">
+      <div className="fm-btn-row">
+        <button className="fm-action-btn" onClick={() => { copySelection(); pasteClipboard(); }} data-testid="duplicate-btn">
+          <Copy size={14} /> Duplicate
+        </button>
+        <button className="fm-action-btn danger" onClick={deleteSelectedObjects} data-testid="delete-object-btn">
+          <Trash2 size={14} /> Delete
+        </button>
+      </div>
       <div className="fm-field">
         <label>Flip</label>
         <div className="fm-btn-row">
