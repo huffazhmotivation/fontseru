@@ -13,7 +13,7 @@ import { cloneObject } from "@/editor/nodeOps";
 import { cloneObjectWithNewIds, translateObject, objectsBounds, scaleObject } from "@/editor/objectOps";
 import { shortId } from "@/utils/id";
 import { expandStrokeObject } from "@/brushes/strokeToOutline";
-import { booleanCombine, type BooleanOp } from "@/editor/booleanOps";
+import { applyBooleanOp, type BooleanOp } from "@/editor/booleanOps";
 import { composeMultilingualGlyphs, type MultilingualResult } from "@/glyph/multilingual";
 import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext } from "@/types/kerning";
 import { kerningKey } from "@/types/kerning";
@@ -306,6 +306,7 @@ interface AppState {
   expandSelectedStrokes: () => void;
   flipSelectedObjects: (axis: "horizontal" | "vertical") => void;
   booleanSelectedObjects: (op: BooleanOp) => void;
+  togglePenAutoClose: () => void;
   /** Composes accented-Latin + a few symbol glyphs from existing Regular
    * glyphs (see src/glyph/multilingual.ts). Never touches Bold/Italic
    * directly — those pick the new Regular glyphs up the same way any other
@@ -610,6 +611,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
     setPenMode: (mode) => set({ penMode: mode }),
     setPenAutoClose: (on) => set({ penAutoClose: on }),
+    togglePenAutoClose: () => set((s) => ({ penAutoClose: !s.penAutoClose })),
     setLineWidth: (w) => set({ lineWidth: Math.max(1, Math.round(w)) }),
     setLineCap: (cap) => set({ lineCap: cap }),
     setBrushCap: (cap) => set({ brushCap: cap }),
@@ -920,7 +922,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const { glyphs, activeChar, selectedObjectIds } = get();
       if (!glyph) return;
       const inZOrder = glyph.outline.objects.filter((o) => selectedObjectIds.includes(o.id));
-      const result = booleanCombine(inZOrder, op);
+      const result = applyBooleanOp(inZOrder, op);
       if (!result) return;
       const eligibleIds = new Set(inZOrder.filter((o) => o.kind === "shape" || o.kind === "expanded").map((o) => o.id));
       const firstEligibleIndex = glyph.outline.objects.findIndex((o) => eligibleIds.has(o.id));
