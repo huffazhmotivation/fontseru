@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Lock, Search, Zap } from "lucide-react";
+import { Lock, Search, Zap, Globe } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useAuth } from "@/auth/AuthProvider";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -16,7 +16,19 @@ export function GlyphNav() {
   const setFontStyle = useAppStore((s) => s.setFontStyle);
   const generateFromRegular = useAppStore((s) => s.generateFromRegular);
   const openProModal = useAppStore((s) => s.openProModal);
+  const addMultilingualGlyphs = useAppStore((s) => s.addMultilingualGlyphs);
   const { isPro } = useAuth();
+  const [multilingualStatus, setMultilingualStatus] = useState<string | null>(null);
+
+  const runAddMultilingual = () => {
+    const result = addMultilingualGlyphs();
+    const parts: string[] = [];
+    if (result.created > 0) parts.push(`${result.created} glyph${result.created === 1 ? "" : "s"} added`);
+    const slotsAdded = result.markSlotsAdded + result.symbolSlotsAdded;
+    if (slotsAdded > 0) parts.push(`${slotsAdded} accent mark${slotsAdded === 1 ? "" : "s"} ready to draw`);
+    setMultilingualStatus(parts.length > 0 ? parts.join(" · ") : "Nothing new — draw more accent marks first");
+    window.setTimeout(() => setMultilingualStatus(null), 4000);
+  };
 
   const filteredGroups = useMemo(() => {
     const baseChars = new Set(GLYPH_GROUPS.flatMap((g) => g.chars));
@@ -128,6 +140,22 @@ export function GlyphNav() {
         ))}
         {filteredGroups.length === 0 && (
           <div className="fm-hint" style={{ padding: "10px 4px" }}>No glyph matches “{query}”.</div>
+        )}
+      </div>
+      <div className="fm-glyphnav-foot">
+        <button
+          type="button"
+          className="fm-action-btn"
+          onClick={runAddMultilingual}
+          title="Compose accented letters (É, ü, ñ…) from glyphs you've already drawn"
+          data-testid="add-multilingual-btn"
+        >
+          <Globe size={14} /> + Multilingual Glyphs
+        </button>
+        {multilingualStatus && (
+          <div className="fm-hint" style={{ padding: "6px 4px 0" }} data-testid="add-multilingual-status">
+            {multilingualStatus}
+          </div>
         )}
       </div>
     </div>
