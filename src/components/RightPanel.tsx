@@ -121,7 +121,7 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
   const updateSelectedObject = useAppStore((s) => s.updateSelectedObject);
   const groupSelectedObjects = useAppStore((s) => s.groupSelectedObjects);
   const ungroupSelectedObjects = useAppStore((s) => s.ungroupSelectedObjects);
-  const booleanOpSelectedObjects = useAppStore((s) => s.booleanOpSelectedObjects);
+  const booleanSelectedObjects = useAppStore((s) => s.booleanSelectedObjects);
   const strokeWidthLocked = useAppStore((s) => s.strokeWidthLocked);
   const toggleStrokeWidthLock = useAppStore((s) => s.toggleStrokeWidthLock);
 
@@ -170,13 +170,13 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
 
       {booleanEligibleCount > 1 && (
         <div className="fm-btn-row" style={{ marginTop: 10 }}>
-          <button className="fm-action-btn fm-icon-btn" onClick={() => booleanOpSelectedObjects("union")} title="Add / Union" data-testid="boolean-union-btn">
+          <button className="fm-action-btn fm-icon-btn" onClick={() => booleanSelectedObjects("union")} title="Add / Union" data-testid="boolean-union-btn">
             <BooleanOpIcon op="union" />
           </button>
-          <button className="fm-action-btn fm-icon-btn" onClick={() => booleanOpSelectedObjects("subtract")} title="Subtract" data-testid="boolean-subtract-btn">
+          <button className="fm-action-btn fm-icon-btn" onClick={() => booleanSelectedObjects("subtract")} title="Subtract" data-testid="boolean-subtract-btn">
             <BooleanOpIcon op="subtract" />
           </button>
-          <button className="fm-action-btn fm-icon-btn" onClick={() => booleanOpSelectedObjects("intersect")} title="Intersect" data-testid="boolean-intersect-btn">
+          <button className="fm-action-btn fm-icon-btn" onClick={() => booleanSelectedObjects("intersect")} title="Intersect" data-testid="boolean-intersect-btn">
             <BooleanOpIcon op="intersect" />
           </button>
         </div>
@@ -526,8 +526,8 @@ function PenPanel() {
   const setLineWidth = useAppStore((s) => s.setLineWidth);
   const lineCap = useAppStore((s) => s.lineCap);
   const setLineCap = useAppStore((s) => s.setLineCap);
-  const penAutoCloseShape = useAppStore((s) => s.penAutoCloseShape);
-  const togglePenAutoCloseShape = useAppStore((s) => s.togglePenAutoCloseShape);
+  const penAutoClose = useAppStore((s) => s.penAutoClose);
+  const togglePenAutoClose = useAppStore((s) => s.togglePenAutoClose);
   return (
     <Section title="Pen">
       <div className="fm-field">
@@ -546,11 +546,11 @@ function PenPanel() {
       ) : (
         <>
           <label className="fm-checkbox-row" style={{ marginTop: 6 }} data-testid="pen-auto-close-toggle">
-            <input type="checkbox" checked={penAutoCloseShape} onChange={togglePenAutoCloseShape} />
+            <input type="checkbox" checked={penAutoClose} onChange={togglePenAutoClose} />
             Auto Close Shape
           </label>
           <div className="fm-hint">
-            {penAutoCloseShape
+            {penAutoClose
               ? "On: previews as closed + filled while you draw. Click near the first node to finish it."
               : "Off: previews as an outline only until you click back onto the first node — then it closes and fills."}
           </div>
