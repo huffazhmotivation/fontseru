@@ -21,6 +21,7 @@ const FAMILY_CATEGORY_ORDER: Record<GlyphCategory, number> = {
   digits: 2,
   punct: 3,
   symbols: 4,
+  multilingual: 5,
 };
 
 function resultMessage(label: "Bold" | "Italic", result: FamilyGenerationResult): string {
