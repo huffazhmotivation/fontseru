@@ -9,7 +9,7 @@ import { cloneGlyphMap, familyFromRegular } from "./family";
 import { generateBoldFromRegular, generateItalicFromRegular, type FamilyGenerationResult } from "./autoGenerate";
 import { DEFAULT_METRICS, defaultFontInfo, type FontInfo, type FontMetrics } from "@/types/font";
 import { BRUSH_PRESETS } from "@/brushes/presets";
-import { cloneObject } from "@/editor/nodeOps";
+import { cloneObject, deleteNodes } from "@/editor/nodeOps";
 import { cloneObjectWithNewIds, translateObject, objectsBounds, scaleObject } from "@/editor/objectOps";
 import { shortId } from "@/utils/id";
 import { expandStrokeObject } from "@/brushes/strokeToOutline";
@@ -303,6 +303,14 @@ interface AppState {
   setSelectionSkewState: (angle: number, handle?: SelectionSkewHandle) => void;
   nudgeSelectedObjects: (dx: number, dy: number) => void;
   deleteSelectedObjects: () => void;
+  /**
+   * Deletes whichever nodes are currently selected (Node tool selection
+   * state). Mirrors deleteSelectedObjects but for selectedNodes — used by
+   * Sketch Mode's floating toolbar Delete button so it follows whichever
+   * selection (nodes or objects) is currently active. Never touches
+   * selectedObjectIds.
+   */
+  deleteSelectedNodes: () => void;
   expandSelectedStrokes: () => void;
   flipSelectedObjects: (axis: "horizontal" | "vertical") => void;
   booleanSelectedObjects: (op: BooleanOp) => void;
@@ -876,6 +884,14 @@ export const useAppStore = create<AppState>()((set, get) => {
       const objects = glyph.outline.objects.filter((o) => !selectedObjectIds.includes(o.id));
       commit({ ...glyphs, [activeChar]: { ...glyph, outline: { objects } } });
       set({ selectedObjectIds: [] });
+    },
+
+    deleteSelectedNodes: () => {
+      const glyph = activeGlyph();
+      const { activeChar, selectedNodes } = get();
+      if (!glyph || selectedNodes.length === 0) return;
+      get().commitOutline(activeChar, deleteNodes(glyph.outline, selectedNodes));
+      set({ selectedNodes: [], selectedHandle: null });
     },
 
     expandSelectedStrokes: () => {
