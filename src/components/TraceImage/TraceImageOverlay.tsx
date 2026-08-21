@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent } from "react";
+import type { DragEvent, MouseEvent } from "react";
 import { FileCode2, ImagePlus, Layers, Loader2, RefreshCw, Wand2, X } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -118,6 +118,30 @@ export function TraceImageOverlay() {
   const [appliedFlash, setAppliedFlash] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
+  // Hover-to-zoom magnifier lens over the "Preview Hasil Trace" box — lets
+  // the user inspect fine detail of the auto-generated preview shape before
+  // committing to the full trace. Content is vector (SVG via GlyphThumbnail),
+  // so the lens works by rendering a second, transform-scaled copy clipped
+  // to a small circular window that follows the cursor, rather than panning
+  // a raster background image.
+  const livePreviewBoxRef = useRef<HTMLDivElement>(null);
+  const [tracePreviewMagnifier, setTracePreviewMagnifier] = useState<{ mx: number; my: number; w: number; h: number } | null>(null);
+  const TRACE_PREVIEW_ZOOM = 6;
+  const TRACE_PREVIEW_LENS_SIZE = 190;
+
+  function handleTracePreviewMouseMove(e: MouseEvent<HTMLDivElement>) {
+    const box = livePreviewBoxRef.current;
+    if (!box) return;
+    const rect = box.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    if (mx < 0 || my < 0 || mx > rect.width || my > rect.height) {
+      setTracePreviewMagnifier(null);
+      return;
+    }
+    setTracePreviewMagnifier({ mx, my, w: rect.width, h: rect.height });
+  }
+
   // Quick, automatic preview of the whole traced image — updates on a short
   // debounce whenever the source image or trace settings change, so the
   // user can compare against the upload before ever pressing "Trace Image".
@@ -225,6 +249,7 @@ export function TraceImageOverlay() {
   function resetForNewImage() {
     setFile(null);
     resetTraceResult();
+    setTracePreviewMagnifier(null);
     setPreviewUrl((old) => {
       if (old) URL.revokeObjectURL(old);
       return null;
@@ -384,7 +409,12 @@ export function TraceImageOverlay() {
 
               <div className="fm-trace-live-preview" data-testid="trace-live-preview">
                 <div className="fm-trace-result-head">Preview Hasil Trace</div>
-                <div className="fm-trace-live-preview-box">
+                <div
+                  className="fm-trace-live-preview-box"
+                  ref={livePreviewBoxRef}
+                  onMouseMove={livePreviewGlyph ? handleTracePreviewMouseMove : undefined}
+                  onMouseLeave={() => setTracePreviewMagnifier(null)}
+                >
                   {!file ? (
                     <span className="fm-hint">Unggah gambar untuk melihat preview otomatis di sini.</span>
                   ) : livePreviewLoading && !livePreviewGlyph ? (
@@ -395,6 +425,25 @@ export function TraceImageOverlay() {
                     <span className="fm-hint">Tidak ada bentuk terdeteksi. Coba sesuaikan Threshold.</span>
                   )}
                   {livePreviewLoading && livePreviewGlyph && <Loader2 size={14} className="fm-spin fm-trace-live-preview-spinner" />}
+                  {tracePreviewMagnifier && livePreviewGlyph && (
+                    <div
+                      className="fm-trace-preview-lens"
+                      style={{ left: tracePreviewMagnifier.mx, top: tracePreviewMagnifier.my }}
+                    >
+                      <div
+                        className="fm-trace-preview-lens-inner"
+                        style={{
+                          width: tracePreviewMagnifier.w,
+                          height: tracePreviewMagnifier.h,
+                          left: TRACE_PREVIEW_LENS_SIZE / 2 - tracePreviewMagnifier.mx * TRACE_PREVIEW_ZOOM,
+                          top: TRACE_PREVIEW_LENS_SIZE / 2 - tracePreviewMagnifier.my * TRACE_PREVIEW_ZOOM,
+                          transform: `scale(${TRACE_PREVIEW_ZOOM})`,
+                        }}
+                      >
+                        <GlyphThumbnail glyph={livePreviewGlyph} />
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="fm-hint">Preview otomatis ini mengikuti Detail, Threshold, dan Balik warna — bandingkan dulu sebelum menekan Trace Image.</div>
               </div>
