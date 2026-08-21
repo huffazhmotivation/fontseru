@@ -24,11 +24,13 @@ export function SketchToolbar() {
   const future = useAppStore((s) => s.future);
   const clipboard = useAppStore((s) => s.clipboard);
   const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
+  const selectedNodes = useAppStore((s) => s.selectedNodes);
   const undo = useAppStore((s) => s.undo);
   const redo = useAppStore((s) => s.redo);
   const copySelection = useAppStore((s) => s.copySelection);
   const pasteClipboard = useAppStore((s) => s.pasteClipboard);
   const deleteSelectedObjects = useAppStore((s) => s.deleteSelectedObjects);
+  const deleteSelectedNodes = useAppStore((s) => s.deleteSelectedNodes);
 
   // Duplicate = copy immediately followed by paste, same as the Duplicate
   // button in RightPanel — keeps the two entry points in sync.
@@ -36,6 +38,19 @@ export function SketchToolbar() {
     copySelection();
     pasteClipboard();
   }, [copySelection, pasteClipboard]);
+
+  // Sketch Mode's single Delete button has to cover both the Select tool
+  // (selectedObjectIds) and the Node tool (selectedNodes) — the two are
+  // mutually exclusive by construction (see setTool in the store), so
+  // checking node selection first and falling back to object selection
+  // always follows whichever selection is actually active.
+  const hasNodeSelection = selectedNodes.length > 0;
+  const hasObjectSelection = selectedObjectIds.length > 0;
+  const canDelete = hasNodeSelection || hasObjectSelection;
+  const deleteSelection = useCallback(() => {
+    if (hasNodeSelection) { deleteSelectedNodes(); return; }
+    if (hasObjectSelection) deleteSelectedObjects();
+  }, [hasNodeSelection, hasObjectSelection, deleteSelectedNodes, deleteSelectedObjects]);
 
   const elRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originLeft: number; originTop: number } | null>(null);
@@ -165,8 +180,8 @@ export function SketchToolbar() {
       <button
         type="button"
         className="fm-tool fm-tool-danger"
-        disabled={selectedObjectIds.length === 0}
-        onClick={deleteSelectedObjects}
+        disabled={!canDelete}
+        onClick={deleteSelection}
         title="Delete"
         data-testid="sketch-delete-btn"
       >
