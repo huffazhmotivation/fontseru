@@ -648,6 +648,38 @@ button, input { font-family: inherit; }
   .fm-glyph-stepper-char { font-size: 16px; min-width: 18px; }
 }
 
+/* Glyph Prev/Next side arrows: Normal Mode only (Sketch Mode keeps its own
+   GlyphStepper). Minimalist — icon-only, green, no label/panel — docked to
+   the left/right edges of the canvas, vertically centered. */
+.fm-glyph-sidenav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.fm-glyph-sidenav-btn:hover:not(:disabled) { opacity: 1; background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.fm-glyph-sidenav-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fm-glyph-sidenav-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+.fm-glyph-sidenav-btn-left { left: 10px; }
+.fm-glyph-sidenav-btn-right { right: 10px; }
+@media (pointer: coarse) {
+  .fm-glyph-sidenav-btn { width: 40px; height: 40px; }
+  .fm-glyph-sidenav-btn svg { width: 24px; height: 24px; }
+}
+
+
 /* ------------------------------------------------------------------ GLYPH NAV */
 .fm-glyphnav {
   width: 244px; flex: 0 0 auto;
