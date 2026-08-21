@@ -238,7 +238,7 @@ export function GlyphCanvas() {
         return;
       }
       if (tool === "brush") return brushTool.pointerMove(p, e);
-      if (tool === "select") return selectTool.pointerMove(p, e.shiftKey);
+      if (tool === "select") return selectTool.pointerMove(p, e.shiftKey, e.pointerType);
       editor.pointerMove(p, e.shiftKey, e.altKey);
     },
     [getFontPoint, tool, editor, brushTool, selectTool, sc, setPan, sketchGestures]
