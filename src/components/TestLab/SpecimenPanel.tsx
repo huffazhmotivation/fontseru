@@ -7,7 +7,7 @@ import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
 import { GlyphRun } from "@/editor/GlyphRun";
 import { caretX, fallbackAdvance, layoutLine, nearestCaretColumn, type LineLayout } from "@/editor/textLayout";
 import { useTypingCaret } from "@/editor/useTypingCaret";
-import { FONT_STYLES, fontStyleLabel, type FontStyle, type GlyphMap } from "@/types/glyph";
+import { FONT_STYLES, fontStyleLabel, hasOutline, type FontStyle, type GlyphMap } from "@/types/glyph";
 import {
   effectiveKerningPairs,
   kerningKey,
@@ -15,7 +15,7 @@ import {
   type KerningPairs,
 } from "@/types/kerning";
 
-type TestId = "type" | "upper" | "lower" | "numbers" | "punctuation" | "symbol" | "kerning" | "pangram" | "paragraph" | "all";
+type TestId = "type" | "upper" | "lower" | "numbers" | "punctuation" | "symbol" | "multilingual" | "kerning" | "pangram" | "paragraph" | "all";
 type ActiveGlyph = {
   line: number;
   index: number;
@@ -32,6 +32,7 @@ const TESTS: { id: TestId; label: string }[] = [
   { id: "numbers", label: "Numbers" },
   { id: "punctuation", label: "Punctuation" },
   { id: "symbol", label: "Symbol" },
+  { id: "multilingual", label: "Multilingual" },
   { id: "kerning", label: "Kerning Pairs" },
   { id: "pangram", label: "Pangrams" },
   { id: "paragraph", label: "Paragraph" },
@@ -1029,6 +1030,7 @@ function FamilyPreview({
 }
 
 export function SpecimenPanel() {
+  const glyphs = useAppStore((s) => s.glyphs);
   const kerningPairs = useAppStore((s) => s.kerningPairs);
   const kerningOverridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
   const autoKernLastRun = useAppStore((s) => s.autoKernLastRun);
@@ -1061,6 +1063,20 @@ export function SpecimenPanel() {
   const [kerningMode, setKerningMode] = useState<"single" | "family">("single");
   const [familyContext, setFamilyContext] = useState<KerningContext>("shared");
 
+  // Unlike the other presets (fixed strings), Multilingual reflects
+  // whatever the font actually has right now: every "multilingual"
+  // category glyph that's been drawn or composed via "+ Multilingual
+  // Glyphs", sorted by Unicode code point.
+  const multilingualText = useMemo(
+    () =>
+      Object.values(glyphs)
+        .filter((g) => g.category === "multilingual" && hasOutline(g))
+        .sort((a, b) => a.unicode - b.unicode)
+        .map((g) => g.char)
+        .join(" "),
+    [glyphs]
+  );
+
   const presetText = (id: TestId): string | null => {
     switch (id) {
       case "type": return "";
@@ -1069,6 +1085,7 @@ export function SpecimenPanel() {
       case "numbers": return "0123456789";
       case "punctuation": return PUNCTUATION_TEST;
       case "symbol": return SYMBOL_TEST;
+      case "multilingual": return multilingualText || "Draw or compose multilingual glyphs first.";
       case "kerning": return KERNING_TEST_LINES.join("\n");
       case "pangram": return PANGRAM_LINES.join("\n");
       case "paragraph": return PARAGRAPH_LINES.join("\n");
