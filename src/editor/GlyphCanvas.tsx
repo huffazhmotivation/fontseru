@@ -134,18 +134,20 @@ export function GlyphCanvas() {
     [vbX, vbY, vbW, vbH, baseFit, setZoom, setPan]
   );
 
-  // Native, non-passive wheel: Ctrl/Cmd (or trackpad pinch) zooms toward the
-  // cursor; a plain wheel pans. Always preventDefault so the page never scrolls.
+  // Native, non-passive wheel: plain wheel (any direction, incl. Ctrl/Cmd or
+  // trackpad pinch) zooms toward the cursor; hold Shift to pan instead.
+  // Always preventDefault so the page never scrolls.
   useEffect(() => {
     const el = frameRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      if (e.ctrlKey || e.metaKey) {
-        applyZoomAt(zoom * Math.exp(-e.deltaY * 0.0018), e.clientX, e.clientY);
-      } else {
-        setPan({ x: pan.x + e.deltaX / sc, y: pan.y + e.deltaY / sc });
+      if (e.shiftKey) {
+        const dx = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+        setPan({ x: pan.x + dx / sc, y: pan.y });
+        return;
       }
+      applyZoomAt(zoom * Math.exp(-e.deltaY * 0.0018), e.clientX, e.clientY);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -216,7 +218,7 @@ export function GlyphCanvas() {
       }
       if (tool === "zoom") return applyZoomAt(zoom * (e.shiftKey ? 0.8 : 1.25), e.clientX, e.clientY);
       if (tool === "brush") return brushTool.pointerDown(p, e);
-      if (tool === "select") return selectTool.pointerDown(p, e.shiftKey);
+      if (tool === "select") return selectTool.pointerDown(p, e.shiftKey, e.metaKey || e.ctrlKey);
       editor.pointerDown(p, e.shiftKey, e.altKey, e.metaKey || e.ctrlKey);
     },
     [getFontPoint, tool, editor, brushTool, selectTool, pan, zoom, applyZoomAt, usingHandPan, sketchGestures]
