@@ -11,9 +11,11 @@ import {
   skewObject,
   boundsIntersectRect,
   objectBounds,
+  cloneObjectWithNewIds,
   type Bounds,
 } from "./objectOps";
 import { subtract } from "@/utils/geometry";
+import { shortId } from "@/utils/id";
 
 export type ResizeHandleId = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 export type SkewHandleId = "skew-x-top" | "skew-x-bottom" | "skew-y-left" | "skew-y-right";
@@ -139,7 +141,7 @@ export function useSelectTool(hitScale: number) {
   );
 
   const pointerDown = useCallback(
-    (p: Point, shiftKey: boolean) => {
+    (p: Point, shiftKey: boolean, metaKey = false) => {
       // 1. handle on the current selection?
       const handle = findHandle(p);
       if (handle && bounds) {
@@ -174,6 +176,37 @@ export function useSelectTool(hitScale: number) {
       }
       if (hitId) {
         const unitIds = selectionUnitIds(outline, hitId);
+
+        // Cmd/Ctrl + click-drag on an object: stamp a copy in place and drag
+        // that copy, leaving the original untouched — mirrors the classic
+        // "modifier + drag to duplicate" gesture from vector editors.
+        if (metaKey) {
+          const groupMap = new Map<string, string>();
+          const duplicates = outline.objects
+            .filter((o) => unitIds.includes(o.id))
+            .map((o) => {
+              const clone = cloneObjectWithNewIds(o);
+              if (o.groupId) {
+                let nextGroup = groupMap.get(o.groupId);
+                if (!nextGroup) {
+                  nextGroup = shortId("group");
+                  groupMap.set(o.groupId, nextGroup);
+                }
+                clone.groupId = nextGroup;
+              } else {
+                delete clone.groupId;
+              }
+              return clone;
+            });
+          const withDuplicates: GlyphOutline = { objects: [...outline.objects, ...duplicates] };
+          baseRef.current = cloneOutline(withDuplicates);
+          setLiveOutline(withDuplicates);
+          const dupIds = duplicates.map((d) => d.id);
+          selectObjects(dupIds);
+          dragRef.current = { mode: "move", origin: p, ids: dupIds };
+          return;
+        }
+
         let dragIds = unitIds;
         if (shiftKey) {
           const allSelected = unitIds.every((id) => selectedObjectIds.includes(id));
