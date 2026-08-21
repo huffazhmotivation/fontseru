@@ -8,6 +8,7 @@ import { SketchModeToggle } from "@/components/SketchModeToggle";
 import { SketchToolbar } from "@/components/SketchToolbar";
 import { SketchRightPanelToggle } from "@/components/SketchRightPanelToggle";
 import { GlyphStepper } from "@/components/GlyphStepper";
+import { GlyphSideNav } from "@/components/GlyphSideNav";
 import { GlyphNav } from "@/components/GlyphNav";
 import { RightPanel } from "@/components/RightPanel";
 import { BottomBar } from "@/components/BottomBar";
@@ -106,6 +107,7 @@ export default function App() {
             {sketchMode && <SketchToolbar />}
             {sketchMode && <GlyphStepper />}
             {sketchMode && <SketchRightPanelToggle />}
+            {!sketchMode && <GlyphSideNav />
           </div>
           <BottomBar />
         </div>
