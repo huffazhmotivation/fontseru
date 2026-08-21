@@ -145,7 +145,7 @@ export function GlyphNav() {
       <div className="fm-glyphnav-foot">
         <button
           type="button"
-          className="fm-action-btn"
+          className="fm-action-btn accent"
           onClick={runAddMultilingual}
           title="Compose accented letters (É, ü, ñ…) from glyphs you've already drawn"
           data-testid="add-multilingual-btn"
