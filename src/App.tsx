@@ -107,7 +107,7 @@ export default function App() {
             {sketchMode && <SketchToolbar />}
             {sketchMode && <GlyphStepper />}
             {sketchMode && <SketchRightPanelToggle />}
-            {!sketchMode && <GlyphSideNav />
+            {!sketchMode && <GlyphSideNav />}
           </div>
           <BottomBar />
         </div>
