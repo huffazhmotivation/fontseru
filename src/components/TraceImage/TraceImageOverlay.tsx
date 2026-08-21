@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent } from "react";
+import type { DragEvent, MouseEvent } from "react";
 import { FileCode2, ImagePlus, Layers, Loader2, RefreshCw, Wand2, X } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -118,6 +118,25 @@ export function TraceImageOverlay() {
   const [appliedFlash, setAppliedFlash] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
+  // Hover-to-zoom magnifier lens over the uploaded source image preview,
+  // shown before (and independent of) running the actual trace — purely a
+  // visual aid so the user can inspect fine detail without leaving the panel.
+  const previewImgRef = useRef<HTMLImageElement>(null);
+  const [magnifier, setMagnifier] = useState<{ x: number; y: number; bgX: number; bgY: number } | null>(null);
+
+  function handlePreviewMouseMove(e: MouseEvent<HTMLDivElement>) {
+    const img = previewImgRef.current;
+    if (!img) return;
+    const rect = img.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) {
+      setMagnifier(null);
+      return;
+    }
+    setMagnifier({ x, y, bgX: (x / rect.width) * 100, bgY: (y / rect.height) * 100 });
+  }
+
   // Quick, automatic preview of the whole traced image — updates on a short
   // debounce whenever the source image or trace settings change, so the
   // user can compare against the upload before ever pressing "Trace Image".
@@ -225,6 +244,7 @@ export function TraceImageOverlay() {
   function resetForNewImage() {
     setFile(null);
     resetTraceResult();
+    setMagnifier(null);
     setPreviewUrl((old) => {
       if (old) URL.revokeObjectURL(old);
       return null;
@@ -354,7 +374,29 @@ export function TraceImageOverlay() {
                 data-testid="trace-dropzone"
               >
                 {previewUrl ? (
-                  <img src={previewUrl} alt="Pratinjau gambar yang diunggah" className="fm-trace-preview-img" />
+                  <div
+                    className="fm-trace-preview-wrap"
+                    onMouseMove={handlePreviewMouseMove}
+                    onMouseLeave={() => setMagnifier(null)}
+                  >
+                    <img
+                      ref={previewImgRef}
+                      src={previewUrl}
+                      alt="Pratinjau gambar yang diunggah"
+                      className="fm-trace-preview-img"
+                    />
+                    {magnifier && (
+                      <div
+                        className="fm-trace-preview-loupe"
+                        style={{
+                          left: magnifier.x,
+                          top: magnifier.y,
+                          backgroundImage: `url(${previewUrl})`,
+                          backgroundPosition: `${magnifier.bgX}% ${magnifier.bgY}%`,
+                        }}
+                      />
+                    )}
+                  </div>
                 ) : (
                   <>
                     <ImagePlus size={26} strokeWidth={1.5} />
