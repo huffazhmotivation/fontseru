@@ -53,7 +53,7 @@ body { font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rende
   --accent: #4caf1f;
   --accent-2: #3c8f18;
   --accent-ink: #ffffff;
-  --accent-soft: #eaedf0;
+  --accent-soft: #d6ecd0;
   --node-corner: #6d747b;
   --node-smooth: #1f8fce;
   --node-symmetric: #7b45d6;
