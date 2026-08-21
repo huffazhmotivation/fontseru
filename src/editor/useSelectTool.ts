@@ -113,6 +113,7 @@ export function useSelectTool(hitScale: number) {
   const selectionSkewAngle = useAppStore((s) => s.selectionSkewAngle);
   const selectionSkewHandle = useAppStore((s) => s.selectionSkewHandle);
   const strokeWidthLocked = useAppStore((s) => s.strokeWidthLocked);
+  const sketchMode = useAppStore((s) => s.sketchMode);
 
   const dragRef = useRef<DragState>(null);
   const baseRef = useRef<GlyphOutline | null>(null);
@@ -233,7 +234,7 @@ export function useSelectTool(hitScale: number) {
   );
 
   const pointerMove = useCallback(
-    (p: Point, shiftKey: boolean) => {
+    (p: Point, shiftKey: boolean, pointerType?: string) => {
       const drag = dragRef.current;
       if (!drag) {
         setHoverHandle(findHandle(p));
@@ -267,7 +268,12 @@ export function useSelectTool(hitScale: number) {
         let sy = vert ? (p.y - anchor.y) / (handleSign(drag.handle, "y") * h0 || 1) : 1;
         if (!horiz) sx = 1;
         if (!vert) sy = 1;
-        if (shiftKey && horiz && vert) { const s = Math.max(Math.abs(sx), Math.abs(sy)); sx = Math.sign(sx) * s; sy = Math.sign(sy) * s; }
+        // Desktop: Shift locks proportions. Sketch Mode + touch (1-finger
+        // drag) has no Shift key available, so it locks automatically —
+        // scoped to this resize branch only, so pan/move/skew gestures are
+        // completely unaffected.
+        const lockAspect = shiftKey || (sketchMode && pointerType === "touch");
+        if (lockAspect && horiz && vert) { const s = Math.max(Math.abs(sx), Math.abs(sy)); sx = Math.sign(sx) * s; sy = Math.sign(sy) * s; }
         sx = clampScale(sx);
         sy = clampScale(sy);
         const objects = base.objects.map((o) =>
@@ -307,7 +313,7 @@ export function useSelectTool(hitScale: number) {
         setLiveOutline({ objects });
       }
     },
-    [findHandle, selectedObjectIds, setLiveOutline, setSelectionSkewState, strokeWidthLocked]
+    [findHandle, selectedObjectIds, setLiveOutline, setSelectionSkewState, strokeWidthLocked, sketchMode]
   );
 
   const pointerUp = useCallback(() => {
