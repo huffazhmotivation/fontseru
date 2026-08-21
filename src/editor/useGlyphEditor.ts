@@ -43,7 +43,7 @@ function pointInRect(p: Point, r: Rect): boolean {
 export function useGlyphEditor(hitScale: number) {
   const tool = useAppStore((s) => s.tool);
   const penMode = useAppStore((s) => s.penMode);
-  const penAutoClose = useAppStore((s) => s.penAutoCloseShape);
+  const penAutoClose = useAppStore((s) => s.penAutoClose);
   const lineWidth = useAppStore((s) => s.lineWidth);
   const lineCap = useAppStore((s) => s.lineCap);
   const activeChar = useAppStore((s) => s.activeChar);
