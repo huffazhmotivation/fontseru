@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Undo2, Redo2, Copy, Clipboard, Trash2, GripHorizontal } from "lucide-react";
+import { Undo2, Redo2, Copy, Clipboard, CopyPlus, Trash2, GripHorizontal } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 
 type DragPos = { left: number; top: number };
@@ -29,6 +29,13 @@ export function SketchToolbar() {
   const copySelection = useAppStore((s) => s.copySelection);
   const pasteClipboard = useAppStore((s) => s.pasteClipboard);
   const deleteSelectedObjects = useAppStore((s) => s.deleteSelectedObjects);
+
+  // Duplicate = copy immediately followed by paste, same as the Duplicate
+  // button in RightPanel — keeps the two entry points in sync.
+  const duplicateSelection = useCallback(() => {
+    copySelection();
+    pasteClipboard();
+  }, [copySelection, pasteClipboard]);
 
   const elRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originLeft: number; originTop: number } | null>(null);
@@ -142,6 +149,17 @@ export function SketchToolbar() {
       >
         <Clipboard size={17} strokeWidth={1.7} />
         <span className={tipClass}>Paste</span>
+      </button>
+      <button
+        type="button"
+        className="fm-tool"
+        disabled={selectedObjectIds.length === 0}
+        onClick={duplicateSelection}
+        title="Duplicate"
+        data-testid="sketch-duplicate-btn"
+      >
+        <CopyPlus size={17} strokeWidth={1.7} />
+        <span className={tipClass}>Duplicate</span>
       </button>
       <div className={dividerClass} />
       <button
