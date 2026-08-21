@@ -35,7 +35,7 @@ export function GlyphSideNav() {
         title="Previous glyph"
         data-testid="glyph-sidenav-prev"
       >
-        <ChevronLeft size={20} strokeWidth={2.2} />
+        <ChevronLeft size={22} strokeWidth={2.4} />
       </button>
       <button
         type="button"
@@ -45,7 +45,7 @@ export function GlyphSideNav() {
         title="Next glyph"
         data-testid="glyph-sidenav-next"
       >
-        <ChevronRight size={20} strokeWidth={2.2} />
+        <ChevronRight size={22} strokeWidth={2.4} />
       </button>
     </>
   );
