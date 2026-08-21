@@ -13,6 +13,11 @@ export const GLYPH_GROUPS: GlyphGroup[] = [
   { id: "digits", label: "Numbers", chars: DIGITS },
   { id: "punct", label: "Punctuation", chars: PUNCT },
   { id: "symbols", label: "Symbols", chars: SYMBOLS },
+  // Populated on demand by "+ Multilingual Glyphs" (src/glyph/multilingual.ts).
+  // Starts empty like every other group's base list — glyphs show up here
+  // via the same "extras by category" mechanism already used for imported
+  // chars, so no other file needs to know this group exists.
+  { id: "multilingual", label: "Multilingual", chars: [] },
 ];
 
 /**
