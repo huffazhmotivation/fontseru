@@ -10,10 +10,11 @@ import { generateBoldFromRegular, generateItalicFromRegular, type FamilyGenerati
 import { DEFAULT_METRICS, defaultFontInfo, type FontInfo, type FontMetrics } from "@/types/font";
 import { BRUSH_PRESETS } from "@/brushes/presets";
 import { cloneObject } from "@/editor/nodeOps";
-import { cloneObjectWithNewIds, translateObject } from "@/editor/objectOps";
-import { applyBooleanOp, type BooleanOp } from "@/editor/booleanOps";
+import { cloneObjectWithNewIds, translateObject, objectsBounds, scaleObject } from "@/editor/objectOps";
 import { shortId } from "@/utils/id";
 import { expandStrokeObject } from "@/brushes/strokeToOutline";
+import { booleanCombine, type BooleanOp } from "@/editor/booleanOps";
+import { composeMultilingualGlyphs, type MultilingualResult } from "@/glyph/multilingual";
 import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext } from "@/types/kerning";
 import { kerningKey } from "@/types/kerning";
 import { suggestKerningPair, autoKernAllAvailablePairs } from "@/kerning/autoKern";
@@ -175,13 +176,10 @@ interface AppState {
   sketchRightPanelOpen: boolean;
   tool: ToolId;
   penMode: PenMode;
-  /** Pen (Shape mode) only. ON (default, unchanged behavior): the shape
-   * previews as closed + filled while drawing, same as before this option
-   * existed. OFF: it previews as an outline only until the last node is
-   * clicked back onto the first node, at which point it becomes closed +
-   * filled exactly as it always has. Purely a preview/render flag — does
-   * not change how or when a contour actually closes. */
-  penAutoCloseShape: boolean;
+  /** Pen tool (Shape mode) only: when true, finishing an open path (Escape /
+   * double-click the last point) auto-closes it into a filled shape instead
+   * of leaving it open. Default false preserves the pre-existing behavior. */
+  penAutoClose: boolean;
   lineWidth: number;
   lineCap: StrokeCap;
   brushCap: StrokeCap;
@@ -261,7 +259,7 @@ interface AppState {
   newProject: () => void;
   setTool: (tool: ToolId) => void;
   setPenMode: (mode: PenMode) => void;
-  togglePenAutoCloseShape: () => void;
+  setPenAutoClose: (on: boolean) => void;
   setLineWidth: (w: number) => void;
   setLineCap: (cap: StrokeCap) => void;
   setBrushCap: (cap: StrokeCap) => void;
@@ -306,12 +304,18 @@ interface AppState {
   nudgeSelectedObjects: (dx: number, dy: number) => void;
   deleteSelectedObjects: () => void;
   expandSelectedStrokes: () => void;
+  flipSelectedObjects: (axis: "horizontal" | "vertical") => void;
+  booleanSelectedObjects: (op: BooleanOp) => void;
+  /** Composes accented-Latin + a few symbol glyphs from existing Regular
+   * glyphs (see src/glyph/multilingual.ts). Never touches Bold/Italic
+   * directly — those pick the new Regular glyphs up the same way any other
+   * Regular glyph does, via the existing Generate From Regular pipeline. */
+  addMultilingualGlyphs: () => MultilingualResult;
   copySelection: () => void;
   cutSelection: () => void;
   pasteClipboard: () => void;
   groupSelectedObjects: () => void;
   ungroupSelectedObjects: () => void;
-  booleanOpSelectedObjects: (op: BooleanOp) => void;
 
   // node selection
   selectNodes: (refs: NodeRef[], additive?: boolean) => void;
@@ -494,7 +498,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     sketchRightPanelOpen: false,
     tool: "select",
     penMode: "shape",
-    penAutoCloseShape: true,
+    penAutoClose: false,
     lineWidth: 24,
     lineCap: "round",
     brushCap: "round",
@@ -605,7 +609,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       }));
     },
     setPenMode: (mode) => set({ penMode: mode }),
-    togglePenAutoCloseShape: () => set((s) => ({ penAutoCloseShape: !s.penAutoCloseShape })),
+    setPenAutoClose: (on) => set({ penAutoClose: on }),
     setLineWidth: (w) => set({ lineWidth: Math.max(1, Math.round(w)) }),
     setLineCap: (cap) => set({ lineCap: cap }),
     setBrushCap: (cap) => set({ brushCap: cap }),
@@ -889,6 +893,66 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ selectedObjectIds: newIds });
     },
 
+    // Mirrors the current selection in place around its combined bounding
+    // box center. Position, transform state, per-object selection and all
+    // glyph data (node types, groupId, stroke settings, samples) survive
+    // untouched — only point/handle coordinates are reflected.
+    flipSelectedObjects: (axis) => {
+      const glyph = activeGlyph();
+      const { glyphs, activeChar, selectedObjectIds } = get();
+      if (!glyph || selectedObjectIds.length === 0) return;
+      const bounds = objectsBounds(glyph.outline, selectedObjectIds);
+      if (!bounds) return;
+      const anchor = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+      const sx = axis === "horizontal" ? -1 : 1;
+      const sy = axis === "vertical" ? -1 : 1;
+      const objects = glyph.outline.objects.map((o) =>
+        selectedObjectIds.includes(o.id) ? scaleObject(o, anchor, sx, sy, true) : o
+      );
+      commit({ ...glyphs, [activeChar]: { ...glyph, outline: { objects } } });
+    },
+
+    // Combines 2+ selected filled objects (shape/expanded) into one new
+    // shape via a real polygon boolean op, and replaces them in place —
+    // other objects, their order, and the rest of the glyph are untouched.
+    booleanSelectedObjects: (op) => {
+      const glyph = activeGlyph();
+      const { glyphs, activeChar, selectedObjectIds } = get();
+      if (!glyph) return;
+      const inZOrder = glyph.outline.objects.filter((o) => selectedObjectIds.includes(o.id));
+      const result = booleanCombine(inZOrder, op);
+      if (!result) return;
+      const eligibleIds = new Set(inZOrder.filter((o) => o.kind === "shape" || o.kind === "expanded").map((o) => o.id));
+      const firstEligibleIndex = glyph.outline.objects.findIndex((o) => eligibleIds.has(o.id));
+      const remaining = glyph.outline.objects.filter((o) => !eligibleIds.has(o.id));
+      const insertAt = glyph.outline.objects.slice(0, firstEligibleIndex).filter((o) => !eligibleIds.has(o.id)).length;
+      const objects = [...remaining.slice(0, insertAt), result, ...remaining.slice(insertAt)];
+      commit({ ...glyphs, [activeChar]: { ...glyph, outline: { objects } } });
+      set({ selectedObjectIds: [result.id] });
+    },
+
+    addMultilingualGlyphs: () => {
+      finalizeLive();
+      const state = get();
+      const regularGlyphs = state.glyphsByStyle.regular;
+      const result = composeMultilingualGlyphs(regularGlyphs, state.metrics);
+      if (result.created === 0 && result.markSlotsAdded === 0 && result.symbolSlotsAdded === 0) {
+        return result;
+      }
+      const nextGlyphsByStyle = { ...state.glyphsByStyle, regular: result.glyphs };
+      const nextGlyphs = state.fontStyle === "regular" ? result.glyphs : state.glyphs;
+      set({
+        glyphs: nextGlyphs,
+        glyphsByStyle: nextGlyphsByStyle,
+        past: [
+          ...state.past,
+          { glyphs: state.glyphs, metrics: state.metrics, kerningPairs: state.kerningPairs, kerningManual: state.kerningManual },
+        ].slice(-HISTORY_LIMIT),
+        future: [],
+      });
+      return result;
+    },
+
     copySelection: () => {
       const glyph = activeGlyph();
       if (!glyph) return;
@@ -952,27 +1016,6 @@ export const useAppStore = create<AppState>()((set, get) => {
         return next;
       });
       commit({ ...glyphs, [activeChar]: { ...glyph, outline: { objects } } });
-    },
-
-    booleanOpSelectedObjects: (op) => {
-      const { glyphs, activeChar, selectedObjectIds } = get();
-      const glyph = glyphs[activeChar];
-      if (!glyph || selectedObjectIds.length < 2) return;
-      // Keep the selection's original document z-order (back-to-front) —
-      // "subtract" cuts the front-most selected shape out of the rest.
-      const selected = glyph.outline.objects.filter((o) => selectedObjectIds.includes(o.id));
-      const result = applyBooleanOp(selected, op);
-      if (!result) return;
-      // Replace the first selected object in place (keeps the result at a
-      // sensible z-position) and drop the rest of the selected objects.
-      let inserted = false;
-      const objects: VectorObject[] = [];
-      for (const o of glyph.outline.objects) {
-        if (!selectedObjectIds.includes(o.id)) { objects.push(o); continue; }
-        if (!inserted) { objects.push(result); inserted = true; }
-      }
-      commit({ ...glyphs, [activeChar]: { ...glyph, outline: { objects } } });
-      set({ selectedObjectIds: [result.id] });
     },
 
     selectNodes: (refs, additive) =>
