@@ -50,10 +50,10 @@ body { font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rende
   --text-dim: #62686f;
   --text-faint: #9aa1a8;
   --ink: #171b1f;
-  --accent: #0fae72;
-  --accent-2: #0c9463;
-  --accent-ink: #ffffff;
-  --accent-soft: #e3f7ee;
+  --accent: #c6f24e;
+  --accent-2: #a6e034;
+  --accent-ink: #0c0f08;
+  --accent-soft: #1f2a10;
   --node-corner: #6d747b;
   --node-smooth: #1f8fce;
   --node-symmetric: #7b45d6;
