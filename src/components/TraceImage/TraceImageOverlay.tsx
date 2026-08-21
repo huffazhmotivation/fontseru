@@ -118,23 +118,28 @@ export function TraceImageOverlay() {
   const [appliedFlash, setAppliedFlash] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
-  // Hover-to-zoom magnifier lens over the uploaded source image preview,
-  // shown before (and independent of) running the actual trace — purely a
-  // visual aid so the user can inspect fine detail without leaving the panel.
-  const previewImgRef = useRef<HTMLImageElement>(null);
-  const [magnifier, setMagnifier] = useState<{ x: number; y: number; bgX: number; bgY: number } | null>(null);
+  // Hover-to-zoom magnifier lens over the "Preview Hasil Trace" box — lets
+  // the user inspect fine detail of the auto-generated preview shape before
+  // committing to the full trace. Content is vector (SVG via GlyphThumbnail),
+  // so the lens works by rendering a second, transform-scaled copy clipped
+  // to a small circular window that follows the cursor, rather than panning
+  // a raster background image.
+  const livePreviewBoxRef = useRef<HTMLDivElement>(null);
+  const [tracePreviewMagnifier, setTracePreviewMagnifier] = useState<{ mx: number; my: number; w: number; h: number } | null>(null);
+  const TRACE_PREVIEW_ZOOM = 2.6;
+  const TRACE_PREVIEW_LENS_SIZE = 150;
 
-  function handlePreviewMouseMove(e: MouseEvent<HTMLDivElement>) {
-    const img = previewImgRef.current;
-    if (!img) return;
-    const rect = img.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    if (x < 0 || y < 0 || x > rect.width || y > rect.height) {
-      setMagnifier(null);
+  function handleTracePreviewMouseMove(e: MouseEvent<HTMLDivElement>) {
+    const box = livePreviewBoxRef.current;
+    if (!box) return;
+    const rect = box.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    if (mx < 0 || my < 0 || mx > rect.width || my > rect.height) {
+      setTracePreviewMagnifier(null);
       return;
     }
-    setMagnifier({ x, y, bgX: (x / rect.width) * 100, bgY: (y / rect.height) * 100 });
+    setTracePreviewMagnifier({ mx, my, w: rect.width, h: rect.height });
   }
 
   // Quick, automatic preview of the whole traced image — updates on a short
@@ -244,7 +249,7 @@ export function TraceImageOverlay() {
   function resetForNewImage() {
     setFile(null);
     resetTraceResult();
-    setMagnifier(null);
+    setTracePreviewMagnifier(null);
     setPreviewUrl((old) => {
       if (old) URL.revokeObjectURL(old);
       return null;
@@ -374,29 +379,7 @@ export function TraceImageOverlay() {
                 data-testid="trace-dropzone"
               >
                 {previewUrl ? (
-                  <div
-                    className="fm-trace-preview-wrap"
-                    onMouseMove={handlePreviewMouseMove}
-                    onMouseLeave={() => setMagnifier(null)}
-                  >
-                    <img
-                      ref={previewImgRef}
-                      src={previewUrl}
-                      alt="Pratinjau gambar yang diunggah"
-                      className="fm-trace-preview-img"
-                    />
-                    {magnifier && (
-                      <div
-                        className="fm-trace-preview-loupe"
-                        style={{
-                          left: magnifier.x,
-                          top: magnifier.y,
-                          backgroundImage: `url(${previewUrl})`,
-                          backgroundPosition: `${magnifier.bgX}% ${magnifier.bgY}%`,
-                        }}
-                      />
-                    )}
-                  </div>
+                  <img src={previewUrl} alt="Pratinjau gambar yang diunggah" className="fm-trace-preview-img" />
                 ) : (
                   <>
                     <ImagePlus size={26} strokeWidth={1.5} />
@@ -426,7 +409,12 @@ export function TraceImageOverlay() {
 
               <div className="fm-trace-live-preview" data-testid="trace-live-preview">
                 <div className="fm-trace-result-head">Preview Hasil Trace</div>
-                <div className="fm-trace-live-preview-box">
+                <div
+                  className="fm-trace-live-preview-box"
+                  ref={livePreviewBoxRef}
+                  onMouseMove={livePreviewGlyph ? handleTracePreviewMouseMove : undefined}
+                  onMouseLeave={() => setTracePreviewMagnifier(null)}
+                >
                   {!file ? (
                     <span className="fm-hint">Unggah gambar untuk melihat preview otomatis di sini.</span>
                   ) : livePreviewLoading && !livePreviewGlyph ? (
@@ -437,6 +425,25 @@ export function TraceImageOverlay() {
                     <span className="fm-hint">Tidak ada bentuk terdeteksi. Coba sesuaikan Threshold.</span>
                   )}
                   {livePreviewLoading && livePreviewGlyph && <Loader2 size={14} className="fm-spin fm-trace-live-preview-spinner" />}
+                  {tracePreviewMagnifier && livePreviewGlyph && (
+                    <div
+                      className="fm-trace-preview-lens"
+                      style={{ left: tracePreviewMagnifier.mx, top: tracePreviewMagnifier.my }}
+                    >
+                      <div
+                        className="fm-trace-preview-lens-inner"
+                        style={{
+                          width: tracePreviewMagnifier.w,
+                          height: tracePreviewMagnifier.h,
+                          left: TRACE_PREVIEW_LENS_SIZE / 2 - tracePreviewMagnifier.mx * TRACE_PREVIEW_ZOOM,
+                          top: TRACE_PREVIEW_LENS_SIZE / 2 - tracePreviewMagnifier.my * TRACE_PREVIEW_ZOOM,
+                          transform: `scale(${TRACE_PREVIEW_ZOOM})`,
+                        }}
+                      >
+                        <GlyphThumbnail glyph={livePreviewGlyph} />
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="fm-hint">Preview otomatis ini mengikuti Detail, Threshold, dan Balik warna — bandingkan dulu sebelum menekan Trace Image.</div>
               </div>
