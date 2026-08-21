@@ -64,7 +64,7 @@ export function GlyphCanvas() {
   const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
   const setTool = useAppStore((s) => s.setTool);
   const selectNodes = useAppStore((s) => s.selectNodes);
-  const penAutoCloseShape = useAppStore((s) => s.penAutoCloseShape);
+  const penAutoCloseShape = useAppStore((s) => s.penAutoClose);
 
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
   const [hover, setHover] = useState<Point | null>(null);
