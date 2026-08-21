@@ -126,8 +126,8 @@ export function TraceImageOverlay() {
   // a raster background image.
   const livePreviewBoxRef = useRef<HTMLDivElement>(null);
   const [tracePreviewMagnifier, setTracePreviewMagnifier] = useState<{ mx: number; my: number; w: number; h: number } | null>(null);
-  const TRACE_PREVIEW_ZOOM = 2.6;
-  const TRACE_PREVIEW_LENS_SIZE = 150;
+  const TRACE_PREVIEW_ZOOM = 6;
+  const TRACE_PREVIEW_LENS_SIZE = 190;
 
   function handleTracePreviewMouseMove(e: MouseEvent<HTMLDivElement>) {
     const box = livePreviewBoxRef.current;
