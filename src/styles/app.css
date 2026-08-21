@@ -649,10 +649,10 @@ button, input { font-family: inherit; }
 }
 
 /* Glyph Prev/Next side arrows: Normal Mode only (Sketch Mode keeps its own
-   GlyphStepper). Minimalist rounded-square outline buttons — transparent
-   fill by default, filled green only while pressed/active, with a hover
-   effect — docked near the left/right edges of the canvas, vertically
-   centered on it. */
+   GlyphStepper). Minimalist outlined circular buttons that float over the
+   canvas (translucent panel background + soft shadow) — filled green only
+   while pressed/active, with a scale-up hover effect — docked a bit in
+   from the left/right edges, vertically centered on the canvas. */
 .fm-glyph-sidenav-btn {
   position: absolute;
   top: 50%;
@@ -660,29 +660,50 @@ button, input { font-family: inherit; }
   z-index: 20;
   width: 38px;
   height: 38px;
-  border-radius: 10px;
+  border-radius: 50%;
   border: 1.5px solid var(--accent);
-  background: transparent;
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  backdrop-filter: blur(6px);
   color: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 8px var(--shadow);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
-.fm-glyph-sidenav-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: 0 4px 14px -4px color-mix(in srgb, var(--accent) 55%, transparent); }
+.fm-glyph-sidenav-btn:hover:not(:disabled) {
+  transform: translateY(-50%) scale(1.08);
+  box-shadow: 0 8px 22px -6px color-mix(in srgb, var(--accent) 60%, transparent), 0 3px 10px var(--shadow);
+}
 .fm-glyph-sidenav-btn:active:not(:disabled) { background: var(--accent); color: var(--accent-ink); transform: translateY(-50%) scale(0.96); }
 .fm-glyph-sidenav-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .fm-glyph-sidenav-btn:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; }
-.fm-glyph-sidenav-btn-left { left: 28px; }
-.fm-glyph-sidenav-btn-right { right: 28px; }
+.fm-glyph-sidenav-btn-left { left: 40px; }
+.fm-glyph-sidenav-btn-right { right: 40px; }
 @media (max-width: 720px) {
-  .fm-glyph-sidenav-btn-left { left: 14px; }
-  .fm-glyph-sidenav-btn-right { right: 14px; }
+  .fm-glyph-sidenav-btn-left { left: 18px; }
+  .fm-glyph-sidenav-btn-right { right: 18px; }
 }
 @media (pointer: coarse) {
   .fm-glyph-sidenav-btn { width: 44px; height: 44px; }
   .fm-glyph-sidenav-btn svg { width: 24px; height: 24px; }
+}
+
+/* Global button hover feedback: a subtle scale-up on hover across the
+   app's buttons, so every actionable button reads as interactive. Applied
+   broadly at the element level so it never overrides any button's own
+   hover colors/background (those are separate properties, set by more
+   specific selectors, and keep working exactly as before). Excluded:
+   buttons that already manage their own hover transform, so this doesn't
+   clobber their existing motion — .fm-tile and .fm-brush-card (lift on
+   hover) and .fm-glyph-sidenav-btn (handles its own scale + centering
+   transform together, above). */
+button:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-sidenav-btn) {
+  transition: transform 0.15s ease;
+}
+button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-sidenav-btn) {
+  transform: scale(1.04);
 }
 
 
