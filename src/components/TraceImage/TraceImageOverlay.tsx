@@ -543,6 +543,13 @@ export function TraceImageOverlay() {
                     <Loader2 size={18} className="fm-spin" />
                   ) : livePreviewGlyph ? (
                     <GlyphThumbnail glyph={livePreviewGlyph} />
+                  ) : !hasTraced ? (
+                    // Not a "no shapes found" failure — tracing/identification
+                    // simply hasn't run yet for this image. Distinct message
+                    // (and no "adjust Threshold" advice, which only makes
+                    // sense after a real attempt) so it reads like the
+                    // worksheet flow: an explicit next action, not an error.
+                    <span className="fm-hint">Klik &ldquo;Trace Image&rdquo; untuk melacak &amp; mengidentifikasi glyph.</span>
                   ) : (
                     <span className="fm-hint">Tidak ada bentuk terdeteksi. Coba sesuaikan Threshold.</span>
                   )}
