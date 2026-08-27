@@ -33,11 +33,11 @@ export const DEFAULT_TRACE_SETTINGS: TraceSettings = {
 const MAX_DIMENSION_BY_DETAIL: Record<TraceDetail, number> = {
   low: 800,
   medium: 1000,
-  // Raised from 1400: keeps more of the source image's own resolution
-  // going into binarization/tracing so fine strokes and tight curves in
-  // the original artwork don't get lost to downscaling before imagetracer
-  // ever sees them.
-  high: 1800,
+  // Raised from 1400, then from 1800: keeps more of the source image's own
+  // resolution going into binarization/tracing so fine strokes and tight
+  // curves in the original artwork don't get lost to downscaling before
+  // imagetracer ever sees them.
+  high: 2200,
 };
 
 // Tightened vs. the original presets: lower ltres/qtres means imagetracer
@@ -80,18 +80,45 @@ export function loadImageFile(file: File): Promise<HTMLImageElement> {
   });
 }
 
-/** Draws the loaded image onto a right-sized canvas (downscaled if needed) for consistent, fast tracing. */
+/**
+ * Small source images (a modest-resolution photo/scan of a single letter,
+ * a small logo export, etc.) used to be traced at their native pixel grid
+ * whenever that was already under the detail tier's max dimension — which
+ * meant the tracer was fitting curves against a coarse, blocky staircase
+ * with very few pixels per stroke, producing rougher/blockier outlines than
+ * the source art actually has. Upscaling modest sources up to this floor
+ * (with smoothing) before binarizing gives the curve fitter enough sample
+ * density to follow the source's real edges instead of the pixel grid.
+ * Kept well under MAX_DIMENSION_BY_DETAIL so it never conflicts with the
+ * downscale path below, and the upscale factor is capped so genuinely tiny
+ * images (icons, thumbnails) don't get blown up into mush.
+ */
+const MIN_WORKING_DIMENSION = 1200;
+const MAX_UPSCALE_FACTOR = 3;
+
+/** Draws the loaded image onto a right-sized canvas — upscaled (smoothed) if the source is small, downscaled if it's larger than the detail tier's working resolution — for consistent, accurate tracing. */
 export function imageToCanvas(img: HTMLImageElement, detail: TraceDetail = "medium"): HTMLCanvasElement {
   const w = img.naturalWidth || img.width;
   const h = img.naturalHeight || img.height;
   if (!w || !h) throw new TraceError("Gambar tidak valid atau kosong.");
-  const scale = Math.min(1, MAX_DIMENSION_BY_DETAIL[detail] / Math.max(w, h));
+  const maxDim = Math.max(w, h);
+  const ceiling = MAX_DIMENSION_BY_DETAIL[detail];
+  const floor = Math.min(MIN_WORKING_DIMENSION, ceiling);
+  let scale: number;
+  if (maxDim > ceiling) {
+    scale = ceiling / maxDim;
+  } else if (maxDim < floor) {
+    scale = Math.min(floor / maxDim, MAX_UPSCALE_FACTOR);
+  } else {
+    scale = 1;
+  }
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(w * scale));
   canvas.height = Math.max(1, Math.round(h * scale));
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new TraceError("Canvas 2D tidak didukung di browser ini.");
   ctx.imageSmoothingEnabled = true;
+  if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   return canvas;
 }

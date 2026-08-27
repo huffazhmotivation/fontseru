@@ -122,6 +122,12 @@ export function TraceImageOverlay() {
   const [isDetectingWorksheet, setIsDetectingWorksheet] = useState(false);
   const [letterGroups, setLetterGroups] = useState<TraceLetterGroup[] | null>(null);
   const [traceCanvasSize, setTraceCanvasSize] = useState<{ width: number; height: number } | null>(null);
+  // Gate for the live preview below: identification (tracing) must not
+  // start the instant a file is dropped/selected — only once the user has
+  // explicitly pressed "Trace Image" at least once for this image. After
+  // that first press, the live preview is free to keep re-tracing on a
+  // debounce as the user tweaks Threshold/Detail/Invert, same as before.
+  const [hasTraced, setHasTraced] = useState(false);
   const [selectedLetterId, setSelectedLetterId] = useState<string | null>(null);
   const [draggingLetterId, setDraggingLetterId] = useState<string | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
@@ -202,7 +208,11 @@ export function TraceImageOverlay() {
   // change, so the left panel always shows an up-to-date "before you press
   // Trace" comparison right under the uploaded image.
   useEffect(() => {
-    if (!open || !file) {
+    // Identification only starts once the user has pressed "Trace Image"
+    // for this image at least once — not automatically the moment a file
+    // is uploaded. Before that first press, `hasTraced` is false and this
+    // effect stays a no-op no matter what settings change.
+    if (!open || !file || !hasTraced) {
       setLivePreviewObjects(null);
       setLivePreviewLoading(false);
       return;
@@ -226,7 +236,7 @@ export function TraceImageOverlay() {
       window.clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, file, settings.detail, settings.threshold, settings.invert]);
+  }, [open, file, hasTraced, settings.detail, settings.threshold, settings.invert]);
 
   const livePreviewGlyph = useMemo(
     () => (livePreviewObjects && livePreviewObjects.length > 0 ? objectsPreviewGlyph(livePreviewObjects, metrics) : null),
@@ -241,6 +251,7 @@ export function TraceImageOverlay() {
     setSelectedLetterId(null);
     setDraggingLetterId(null);
     setSelectedTarget(null);
+    setHasTraced(false);
   }
 
   function handleFileSelected(next: File) {
@@ -298,6 +309,7 @@ export function TraceImageOverlay() {
       setLetterGroups(letters);
       setTraceCanvasSize({ width: canvas.width, height: canvas.height });
       setSelectedLetterId(letters[0]?.id ?? null);
+      setHasTraced(true);
     } catch (err) {
       resetTraceResult();
       showToast(err instanceof TraceError ? err.message : "Gagal melakukan tracing. Coba lagi.", "error");
