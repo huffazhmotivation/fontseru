@@ -40,46 +40,36 @@ const MAX_DIMENSION_BY_DETAIL: Record<TraceDetail, number> = {
   high: 2200,
 };
 
-// ltres/qtres control how tightly imagetracer's fitted curve must hug the
-// *binarized bitmap edge*. Pushing that all the way down (the old "high"
-// used 0.15) doesn't make the result more faithful to the original
-// artwork — it makes the curve faithfully trace every single-pixel
-// staircase step and scan/JPEG speckle in the binarized mask, which is
-// exactly what reads as "kasar"/not halus. Real smoothness-without-losing-
-// accuracy comes from two things working together: (1) denoising the
-// bitmap before it's even binarized (see SMOOTH_RADIUS_BY_DETAIL / the
-// luminance blur in binarize()), and (2) a curve tolerance loose enough to
-// average across leftover single-pixel jitter while still tight enough to
-// keep every real corner and curve of the letterform. pathomit stays as
-// the "ignore paths shorter than N px" noise floor — kept modest since
-// real despeckling happens on the bitmap itself (see despeckleBinary)
-// rather than by discarding whole paths.
-const DETAIL_PRESETS: Record<TraceDetail, { ltres: number; qtres: number; pathomit: number }> = {
-  // Fewer, smoother nodes — best for clean logo-like shapes.
-  low: { ltres: 1.4, qtres: 1.4, pathomit: 12 },
-  // Balanced default: tight fit, minimal-but-faithful node count.
-  medium: { ltres: 0.6, qtres: 0.6, pathomit: 6 },
-  // High fidelity, but no longer pixel-hugging: loosened from 0.15 to 0.35
-  // now that the bitmap is denoised first (see binarize()) — the tracer
-  // fits the letterform's true edge instead of every leftover speckle/
-  // staircase step, so results come out smoother *and* closer to the
-  // original artwork at the same time.
-  high: { ltres: 0.35, qtres: 0.35, pathomit: 2 },
-};
-
-/**
- * Blur radius (in working-resolution px) applied to the luminance field
- * right before thresholding — see binarize(). Kept tiny and detail-scaled:
- * "low" already works at a coarser downscale where a real stroke may only
- * be a few px wide, so blurring further risks thinning/breaking it; higher
- * detail tiers trace at higher resolution (see MAX_DIMENSION_BY_DETAIL),
- * where the same radius is a much smaller fraction of stroke width and
- * mainly just kills single-pixel scan/JPEG noise.
- */
-const SMOOTH_RADIUS_BY_DETAIL: Record<TraceDetail, number> = {
-  low: 0,
-  medium: 1,
-  high: 1,
+// Calibrated against imagetracerjs's own defaults (ltres:1, qtres:1,
+// blurradius:0) rather than fighting them. Going far below ~0.5 (the old
+// "high" preset used 0.15) makes the curve fitter chase every single-pixel
+// staircase step left over from hard binarization — that staircase, not
+// the source art, is what reads as "zigzag". Two changes fix that without
+// losing fidelity:
+//  1. ltres/qtres stay close to the library's own well-tested default
+//     instead of an extreme override, so the fitter is allowed to draw one
+//     straight/curved segment across a run of pixels instead of a node per
+//     pixel-step.
+//  2. `blurradius`/`blurdelta` (see traceBinaryImage) pre-smooth the binary
+//     edge — a small Gaussian pass that softens staircase corners back
+//     toward the true edge — before the curve fitter ever sees it, which
+//     is the same trick potrace-style tracers use for clean letterforms.
+// pathomit is the "ignore paths shorter than N px" noise floor; real
+// despeckling happens on the bitmap itself (see despeckleBinary).
+const DETAIL_PRESETS: Record<
+  TraceDetail,
+  { ltres: number; qtres: number; pathomit: number; blurradius: number; blurdelta: number }
+> = {
+  // Fewest, smoothest nodes — best for clean logo-like shapes and rough scans.
+  low: { ltres: 1.6, qtres: 1.6, pathomit: 14, blurradius: 4, blurdelta: 32 },
+  // Balanced default: close to imagetracer's own tuned defaults, plus a
+  // light smoothing pass — clean curves without inflating node count.
+  medium: { ltres: 1.0, qtres: 1.0, pathomit: 8, blurradius: 3, blurdelta: 24 },
+  // High fidelity, but still curve-fit rather than pixel-chased: tight
+  // enough to follow real corners and fine detail in the source art, loose
+  // enough (and blurred enough) to never re-trace the binarization
+  // staircase as if it were part of the letterform.
+  high: { ltres: 0.6, qtres: 0.6, pathomit: 4, blurradius: 2, blurdelta: 16 },
 };
 
 /** Minimum connected-component area (in source px, post-downscale) kept as ink. Smaller specks — JPEG ringing, dust, stray pixels — are scrubbed before tracing so they never become tiny noise shapes. */
@@ -149,97 +139,35 @@ export function imageToCanvas(img: HTMLImageElement, detail: TraceDetail = "medi
 }
 
 /**
- * Separable box blur over a single-channel float buffer (used on the
- * luminance field before thresholding). Two 1D passes approximate a small
- * Gaussian cheaply. `radius` in pixels; `radius <= 0` is a no-op so callers
- * can skip the allocation entirely for the "low" detail tier.
- */
-function blurChannel(src: Float32Array, width: number, height: number, radius: number): Float32Array {
-  if (radius <= 0) return src;
-  const r = Math.max(1, Math.round(radius));
-  const tmp = new Float32Array(src.length);
-  const out = new Float32Array(src.length);
-  for (let y = 0; y < height; y++) {
-    const rowOff = y * width;
-    for (let x = 0; x < width; x++) {
-      let sum = 0;
-      let count = 0;
-      for (let dx = -r; dx <= r; dx++) {
-        const sx = x + dx;
-        if (sx < 0 || sx >= width) continue;
-        sum += src[rowOff + sx];
-        count++;
-      }
-      tmp[rowOff + x] = sum / count;
-    }
-  }
-  for (let x = 0; x < width; x++) {
-    for (let y = 0; y < height; y++) {
-      let sum = 0;
-      let count = 0;
-      for (let dy = -r; dy <= r; dy++) {
-        const sy = y + dy;
-        if (sy < 0 || sy >= height) continue;
-        sum += tmp[sy * width + x];
-        count++;
-      }
-      out[y * width + x] = sum / count;
-    }
-  }
-  return out;
-}
-
-/**
  * Reduces the canvas to pure black/white ImageData based on a luminance
  * threshold (transparent pixels always count as background). Binarizing
  * ourselves — instead of letting imagetracer's own color quantization pick
  * a palette — keeps the result deterministic and gives the user a single,
  * predictable "Threshold" control.
- *
- * Before thresholding, the luminance field gets a tiny denoising blur (see
- * SMOOTH_RADIUS_BY_DETAIL). Real photos/scans of a drawn or printed
- * letterform carry per-pixel sensor/JPEG noise; cut with a hard threshold
- * as-is, that noise becomes jagged single-pixel staircase steps that the
- * tracer then has to faithfully reproduce as extra nodes. A sub-pixel-
- * radius blur smooths that noise out (and any leftover pixel-grid
- * hardness from resizing in imageToCanvas) without meaningfully moving
- * where a real edge sits, so the traced curve follows the letterform's
- * true boundary — smoother AND closer to the original artwork — instead
- * of amplifying scan artifacts into extra bumps.
  */
 export function binarize(canvas: HTMLCanvasElement, settings: TraceSettings): ImageData {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new TraceError("Canvas 2D tidak didukung di browser ini.");
-  const { width, height } = canvas;
-  const imgd = ctx.getImageData(0, 0, width, height);
+  const imgd = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imgd.data;
-  const total = width * height;
-
-  const luminance = new Float32Array(total);
-  const alpha = new Uint8Array(total);
-  for (let p = 0; p < total; p++) {
-    const i = p * 4;
-    luminance[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    alpha[p] = data[i + 3];
-  }
-
-  const smoothRadius = SMOOTH_RADIUS_BY_DETAIL[settings.detail];
-  const smoothed = blurChannel(luminance, width, height, smoothRadius);
-
-  for (let p = 0; p < total; p++) {
-    const o = p * 4;
-    let isInk = alpha[p] > 32 && smoothed[p] < settings.threshold;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const a = data[i + 3];
+    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+    let isInk = a > 32 && luminance < settings.threshold;
     if (settings.invert) isInk = !isInk;
     if (isInk) {
-      data[o] = 0;
-      data[o + 1] = 0;
-      data[o + 2] = 0;
-      data[o + 3] = 255;
+      data[i] = 0;
+      data[i + 1] = 0;
+      data[i + 2] = 0;
+      data[i + 3] = 255;
     } else {
-      data[o] = 255;
-      data[o + 1] = 255;
-      data[o + 2] = 255;
-      data[o + 3] = 255;
+      data[i] = 255;
+      data[i + 1] = 255;
+      data[i + 2] = 255;
+      data[i + 3] = 255;
     }
   }
   return imgd;
@@ -533,6 +461,17 @@ export function traceBinaryImage(imgd: ImageData, detail: TraceDetail): VectorOb
     pathomit: preset.pathomit,
     rightangleenhance: true,
     roundcoords: 2,
+    // Gaussian pre-blur applied by imagetracer itself, before it quantizes
+    // back down to the 2-color palette below. This is the key fix for
+    // zigzag/staircase edges: blurring softens the hard binarized boundary
+    // so the corner introduced by each individual pixel step gets averaged
+    // away before the curve fitter walks it, instead of being traced as a
+    // real corner. radius/delta are tuned per detail tier — heavier for
+    // low (max smoothness), lighter for high (max fidelity) — so accuracy
+    // against the actual source shape is preserved while pixel-grid noise
+    // is not.
+    blurradius: preset.blurradius,
+    blurdelta: preset.blurdelta,
     // imagetracer's own single-pixel edge-noise filter — a second,
     // complementary pass to despeckleBinary (which removes whole isolated
     // islands; this smooths jagged single-pixel steps along real edges so
