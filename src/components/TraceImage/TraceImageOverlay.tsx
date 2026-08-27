@@ -120,6 +120,10 @@ export function TraceImageOverlay() {
   // below runs completely unchanged.
   const [worksheetResult, setWorksheetResult] = useState<WorksheetDetectionResult | null>(null);
   const [isDetectingWorksheet, setIsDetectingWorksheet] = useState(false);
+  // Whether we've already run the (background) worksheet check for the
+  // current `file`. Detection only ever runs once per image, and only when
+  // the user explicitly presses "Trace Image" — see handleTrace below.
+  const [worksheetChecked, setWorksheetChecked] = useState(false);
   const [letterGroups, setLetterGroups] = useState<TraceLetterGroup[] | null>(null);
   const [traceCanvasSize, setTraceCanvasSize] = useState<{ width: number; height: number } | null>(null);
   // Gate for the live preview below: identification (tracing) must not
@@ -262,28 +266,16 @@ export function TraceImageOverlay() {
     setFile(next);
     resetTraceResult();
     setWorksheetResult(null);
+    setWorksheetChecked(false);
     setPreviewUrl((old) => {
       if (old) URL.revokeObjectURL(old);
       return URL.createObjectURL(next);
     });
 
-    // Auto-detect: is this a photographed/scanned FontSeru worksheet? Runs
-    // in the background — the ordinary dropzone preview + manual controls
-    // are already visible, and simply get swapped for the worksheet review
-    // panel if/when detection succeeds. A non-worksheet image (or a photo
-    // detection isn't confident about) leaves the manual flow exactly as
-    // it always worked: drag/select an area, apply to the active glyph.
-    setIsDetectingWorksheet(true);
-    detectWorksheet(next)
-      .then((result) => {
-        setWorksheetResult(result);
-        if (result) {
-          const found = result.cells.filter((c) => c.status === "detected").length;
-          showToast(`Worksheet terdeteksi: ${found} sel siap diimpor.`);
-        }
-      })
-      .catch(() => setWorksheetResult(null))
-      .finally(() => setIsDetectingWorksheet(false));
+    // Nothing else happens here on purpose: worksheet detection and
+    // tracing/identification both only start once the user explicitly
+    // presses "Trace Image" (see handleTrace below). Just uploading/
+    // dropping an image only shows the preview + manual controls.
   }
 
   function resetForNewImage() {
@@ -291,6 +283,7 @@ export function TraceImageOverlay() {
     resetTraceResult();
     setTracePreviewMagnifier(null);
     setWorksheetResult(null);
+    setWorksheetChecked(false);
     setPreviewUrl((old) => {
       if (old) URL.revokeObjectURL(old);
       return null;
@@ -305,6 +298,28 @@ export function TraceImageOverlay() {
     // the synchronous, CPU-heavy tracing work runs on the main thread.
     await new Promise((resolve) => setTimeout(resolve, 30));
     try {
+      // Is this a photographed/scanned FontSeru worksheet? Checked once per
+      // uploaded image, and only now — the very first time the user presses
+      // "Trace Image" — rather than the instant a file is picked. If it's
+      // confidently recognized, hand off to the worksheet review panel
+      // instead of running the normal single-shape trace below. A
+      // non-worksheet image (or one detection isn't confident about) just
+      // falls through to the ordinary manual trace, unchanged.
+      if (!worksheetChecked) {
+        setIsDetectingWorksheet(true);
+        try {
+          const worksheet = await detectWorksheet(file);
+          setWorksheetChecked(true);
+          if (worksheet) {
+            setWorksheetResult(worksheet);
+            const found = worksheet.cells.filter((c) => c.status === "detected").length;
+            showToast(`Worksheet terdeteksi: ${found} sel siap diimpor.`);
+            return;
+          }
+        } finally {
+          setIsDetectingWorksheet(false);
+        }
+      }
       const { letters, canvas } = await traceImageFile(file, settings);
       setLetterGroups(letters);
       setTraceCanvasSize({ width: canvas.width, height: canvas.height });

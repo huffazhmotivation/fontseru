@@ -61,22 +61,27 @@ const DETAIL_PRESETS: Record<
   { ltres: number; qtres: number; pathomit: number; blurradius: number; blurdelta: number }
 > = {
   // Fewest, smoothest nodes — best for clean logo-like shapes and rough scans.
-  low: { ltres: 1.6, qtres: 1.6, pathomit: 14, blurradius: 4, blurdelta: 32 },
+  low: { ltres: 2.2, qtres: 2.2, pathomit: 18, blurradius: 5, blurdelta: 44 },
   // Balanced default: close to imagetracer's own tuned defaults, plus a
   // light smoothing pass — clean curves without inflating node count.
-  medium: { ltres: 1.0, qtres: 1.0, pathomit: 8, blurradius: 3, blurdelta: 24 },
+  medium: { ltres: 1.4, qtres: 1.4, pathomit: 11, blurradius: 4, blurdelta: 32 },
   // High fidelity, but still curve-fit rather than pixel-chased: tight
   // enough to follow real corners and fine detail in the source art, loose
   // enough (and blurred enough) to never re-trace the binarization
-  // staircase as if it were part of the letterform.
-  high: { ltres: 0.6, qtres: 0.6, pathomit: 4, blurradius: 2, blurdelta: 16 },
+  // staircase as if it were part of the letterform. Raised from an earlier,
+  // much tighter tuning (ltres/qtres 0.6, blur 2/16) that was still letting
+  // the curve fitter chase individual pixel-staircase steps on real-world
+  // photos/scans — the classic "zigzag" complaint. This tier now trades a
+  // little of that pixel-perfect tightness for meaningfully fewer nodes and
+  // visibly smoother curves, while staying well below `medium`.
+  high: { ltres: 1.0, qtres: 1.0, pathomit: 7, blurradius: 3, blurdelta: 26 },
 };
 
 /** Minimum connected-component area (in source px, post-downscale) kept as ink. Smaller specks — JPEG ringing, dust, stray pixels — are scrubbed before tracing so they never become tiny noise shapes. */
 const DESPECKLE_MIN_AREA: Record<TraceDetail, number> = {
-  low: 10,
-  medium: 6,
-  high: 2,
+  low: 14,
+  medium: 9,
+  high: 5,
 };
 
 export class TraceError extends Error {}
