@@ -23,6 +23,10 @@ const FEATURE_COPY: Record<string, { title: string; body: string }> = {
     title: "Cloud Save adalah fitur PRO",
     body: "Upgrade ke PRO untuk menyimpan project ke Cloud dan membukanya kembali dari perangkat mana pun.",
   },
+  featureBuilder: {
+    title: "OpenType Feature Builder adalah fitur PRO",
+    body: "Upgrade ke PRO untuk membuat ligature, alternate, dan swash otomatis pada font kamu.",
+  },
 };
 
 const DEFAULT_COPY = {

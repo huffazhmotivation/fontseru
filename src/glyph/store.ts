@@ -256,7 +256,7 @@ interface AppState {
   // state only; plan itself always comes from AuthProvider/profiles, never
   // written here.
   proModalOpen: boolean;
-  proModalFeature: "tracing" | "family" | "brush" | "export" | "cloud" | null;
+  proModalFeature: "tracing" | "family" | "brush" | "export" | "cloud" | "featureBuilder" | null;
 
   selectedObjectIds: string[];
   /** Transient transform UI state; geometry remains the source of truth and project format stays unchanged. */
@@ -443,7 +443,7 @@ interface AppState {
   removeSwashRule: (id: string) => void;
 
   // PRO feature-locking modal ("Join PRO")
-  openProModal: (feature: "tracing" | "family" | "brush" | "export" | "cloud") => void;
+  openProModal: (feature: "tracing" | "family" | "brush" | "export" | "cloud" | "featureBuilder") => void;
   closeProModal: () => void;
 
   // Login modal (auth UI trigger only — see loginModalOpen above)
@@ -562,7 +562,7 @@ export const useAppStore = create<AppState>()((set, get) => {
    * directly (console/devtools, a different UI path, etc.) instead of
    * through the gated buttons. Opens the existing ProUpsellModal instead of
    * performing the action. */
-  function requirePro(feature: "tracing" | "family" | "brush" | "export"): boolean {
+  function requirePro(feature: "tracing" | "family" | "brush" | "export" | "featureBuilder"): boolean {
     if (get().plan === "pro") return true;
     set({ proModalOpen: true, proModalFeature: feature });
     return false;
@@ -1585,8 +1585,13 @@ export const useAppStore = create<AppState>()((set, get) => {
     openTestLab: (tab) => set((s) => ({ testLabOpen: true, familyOpen: false, traceOpen: false, featureBuilderOpen: false, testLabTab: tab ?? s.testLabTab })),
     closeTestLab: () => set({ testLabOpen: false }),
     setTestLabTab: (tab) => set({ testLabTab: tab }),
+    // FREE users can open the Family panel to preview Bold/Italic/custom
+    // family tabs and browse existing glyphs — only the actual generation
+    // actions (switching to a non-Regular style, Auto Bold/Italic, Generate
+    // Custom, adding a custom family) stay gated by requirePro("family")
+    // below, exactly where they're invoked, so the panel itself is never
+    // the thing that's locked.
     openFamily: () => {
-      if (!requirePro("family")) return;
       set({ familyOpen: true, testLabOpen: false, traceOpen: false, featureBuilderOpen: false });
     },
     closeFamily: () => set({ familyOpen: false }),
@@ -1727,7 +1732,14 @@ export const useAppStore = create<AppState>()((set, get) => {
       });
     },
 
+    // OpenType Feature Builder: opening the overlay (openFeatureBuilder,
+    // above) stays free for everyone so FREE users can look around — only
+    // actually creating/editing a rule is PRO-gated, right at the point of
+    // use, same pattern as the Family actions above. Removing an existing
+    // rule is left ungated so a downgraded account can still clean up
+    // rules it made while on PRO.
     addLigatureRule: (components, target) => {
+      if (!requirePro("featureBuilder")) return;
       const cleanComponents = components.map((c) => c.trim()).filter(Boolean);
       const cleanTarget = target.trim();
       if (cleanComponents.length < 2 || !cleanTarget) return;
@@ -1746,6 +1758,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
 
     addAlternateOption: (base, alternate) => {
+      if (!requirePro("featureBuilder")) return;
       const cleanBase = base.trim();
       const cleanAlt = alternate.trim();
       if (!cleanBase || !cleanAlt) return;
@@ -1785,6 +1798,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
 
     setSwashRule: (base, swash) => {
+      if (!requirePro("featureBuilder")) return;
       const cleanBase = base.trim();
       const cleanSwash = swash.trim();
       if (!cleanBase || !cleanSwash) return;

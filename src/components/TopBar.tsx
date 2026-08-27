@@ -1,7 +1,6 @@
 import React from "react";
-import { Download, FlaskConical, Layers, Lock, Maximize, Minimize, Moon, Redo2, Sun, Undo2, Wand2 } from "lucide-react";
+import { Download, FlaskConical, Layers, Maximize, Minimize, Moon, Redo2, Sun, Undo2, Wand2 } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
-import { useAuth } from "@/auth/AuthProvider";
 import { FileMenu } from "@/components/FileMenu";
 import { FontSeruLogo } from "@/components/FontSeruLogo";
 import { AuthWidget } from "@/components/AuthWidget";
@@ -23,8 +22,6 @@ export function TopBar() {
   const openTestLab = useAppStore((s) => s.openTestLab);
   const openFamily = useAppStore((s) => s.openFamily);
   const openFeatureBuilder = useAppStore((s) => s.openFeatureBuilder);
-  const openProModal = useAppStore((s) => s.openProModal);
-  const { isPro } = useAuth();
 
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   React.useEffect(() => {
@@ -63,13 +60,17 @@ export function TopBar() {
 
       <div className="fm-spacer" />
 
+      {/* Opening the Family panel is free for everyone — only the actual
+          Bold/Italic/custom generation actions inside it are PRO-gated
+          (enforced in the store, right where each action happens), so this
+          button no longer shows a locked state. */}
       <button
-        className={`fm-topbtn fm-testlab-nav ${!isPro ? "fm-topbtn-locked" : ""}`}
-        onClick={() => (isPro ? openFamily() : openProModal("family"))}
-        title={isPro ? "Open Family Auto Generate" : "Family (PRO)"}
+        className="fm-topbtn fm-testlab-nav"
+        onClick={openFamily}
+        title="Open Family Auto Generate"
         data-testid="family-btn"
       >
-        <Layers size={15} /> Family {!isPro && <Lock size={11} className="fm-lock-badge-inline" />}
+        <Layers size={15} /> Family
       </button>
       <button
         className="fm-topbtn fm-testlab-nav"
