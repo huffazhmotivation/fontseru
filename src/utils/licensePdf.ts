@@ -70,7 +70,7 @@ function drawFooter(doc: jsPDF, pageNum: number): void {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...DIM);
-  doc.text("Generated with FontSeru \u2014 fontseru.app", MARGIN_X, y + 6);
+  doc.text("Generated with FontSeru \u2014 fontseru.my.id", MARGIN_X, y + 6);
   doc.text(String(pageNum), PAGE_WIDTH - MARGIN_X, y + 6, { align: "right" });
 }
 
