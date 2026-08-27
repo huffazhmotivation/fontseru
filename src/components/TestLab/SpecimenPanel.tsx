@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { Layers3, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
+import { Grid3x3, Layers3, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
+import { KerningHeatmap, type KerningPairRef } from "@/components/TestLab/KerningHeatmap";
 import { NumericInput } from "@/components/NumericInput";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -1374,8 +1375,9 @@ export function SpecimenPanel() {
   const [activeGlyph, setActiveGlyph] = useState<ActiveGlyph>(null);
   const [familyActiveGlyph, setFamilyActiveGlyph] = useState<FamilyActiveGlyph>(null);
   const [focusNonce, setFocusNonce] = useState(0);
-  const [kerningMode, setKerningMode] = useState<"single" | "family">("single");
+  const [kerningMode, setKerningMode] = useState<"single" | "family" | "heatmap">("single");
   const [familyContext, setFamilyContext] = useState<KerningContext>("shared");
+  const [heatmapActivePair, setHeatmapActivePair] = useState<KerningPairRef | null>(null);
 
   // Unlike the other presets (fixed strings), Multilingual reflects
   // whatever the font actually has right now: every "multilingual"
@@ -1461,9 +1463,17 @@ export function SpecimenPanel() {
       : familyContextOverride?.[familyPairKey] ?? kerningPairs[familyPairKey] ?? 0
     : 0;
 
-  const panelHasPair = kerningMode === "single" ? hasPrecisionPair : hasFamilyPrecisionPair;
-  const panelLeft = kerningMode === "single" ? precisionLeft : familyPrecisionLeft;
-  const panelRight = kerningMode === "single" ? precisionRight : familyPrecisionRight;
+  const heatmapHasPair = Boolean(heatmapActivePair);
+  const heatmapValue = heatmapActivePair
+    ? kerningPairs[kerningKey(heatmapActivePair.left, heatmapActivePair.right)] ?? 0
+    : 0;
+
+  const panelHasPair =
+    kerningMode === "single" ? hasPrecisionPair : kerningMode === "family" ? hasFamilyPrecisionPair : heatmapHasPair;
+  const panelLeft =
+    kerningMode === "single" ? precisionLeft : kerningMode === "family" ? familyPrecisionLeft : heatmapActivePair?.left ?? null;
+  const panelRight =
+    kerningMode === "single" ? precisionRight : kerningMode === "family" ? familyPrecisionRight : heatmapActivePair?.right ?? null;
 
   const resetFamilyActivePair = () => {
     if (!familyPrecisionLeft || !familyPrecisionRight) return;
@@ -1530,6 +1540,16 @@ export function SpecimenPanel() {
               focusNonce={focusNonce}
             />
           </div>
+        ) : kerningMode === "heatmap" ? (
+          <div className={`fm-lab-stage fm-lab-heatmap-stage ${bg}`} data-testid="lab-heatmap-stage">
+            <KerningHeatmap
+              glyphs={glyphs}
+              kerningPairs={kerningPairs}
+              activePair={heatmapActivePair}
+              onSelectPair={setHeatmapActivePair}
+              bg={bg}
+            />
+          </div>
         ) : (
           <div
             className={`fm-lab-stage fm-family-stage ${bg}`}
@@ -1564,6 +1584,10 @@ export function SpecimenPanel() {
               activeChar
                 ? `${leftChar ?? "·"} ${activeChar} ${rightChar ?? "·"}`
                 : "Click and drag one glyph"
+            ) : kerningMode === "heatmap" ? (
+              heatmapActivePair
+                ? `${heatmapActivePair.left} ${heatmapActivePair.right}`
+                : "Click a cell in the heatmap"
             ) : familyActiveGlyph ? (
               <>
                 <span className="fm-kern-context-style">
@@ -1599,15 +1623,21 @@ export function SpecimenPanel() {
                     ? hasPrecisionPair
                       ? precisionValue
                       : 0
-                    : hasFamilyPrecisionPair
-                      ? familyPrecisionValue
-                      : 0
+                    : kerningMode === "heatmap"
+                      ? heatmapValue
+                      : hasFamilyPrecisionPair
+                        ? familyPrecisionValue
+                        : 0
                 }
                 disabled={!panelHasPair}
                 onChange={(value) => {
                   if (kerningMode === "single") {
                     if (precisionLeft && precisionRight) {
                       setKerningPair(precisionLeft, precisionRight, value);
+                    }
+                  } else if (kerningMode === "heatmap") {
+                    if (heatmapActivePair) {
+                      setKerningPair(heatmapActivePair.left, heatmapActivePair.right, value);
                     }
                   } else if (familyPrecisionLeft && familyPrecisionRight) {
                     setFamilyKerningPair(
@@ -1658,6 +1688,13 @@ export function SpecimenPanel() {
             >
               <Layers3 size={14} /> Family Test
             </button>
+            <button
+              className={kerningMode === "heatmap" ? "active" : ""}
+              onClick={() => setKerningMode("heatmap")}
+              data-testid="kern-heatmap-test"
+            >
+              <Grid3x3 size={14} /> Heatmap
+            </button>
           </div>
 
           {kerningMode === "family" && (
@@ -1688,9 +1725,7 @@ export function SpecimenPanel() {
             <button
               className="fm-action-btn accent"
               onClick={
-                kerningMode === "single"
-                  ? autoKernAllPairs
-                  : () => autoKernAllPairsForContext(familyContext)
+                kerningMode === "family" ? () => autoKernAllPairsForContext(familyContext) : autoKernAllPairs
               }
               data-testid="kern-auto-common"
             >
@@ -1701,20 +1736,26 @@ export function SpecimenPanel() {
               disabled={
                 kerningMode === "single"
                   ? !activeChar
-                  : !hasFamilyPrecisionPair ||
-                    (familyContext === "shared"
-                      ? !familyPairKey || !(familyPairKey in kerningPairs)
-                      : !familyHasOverride)
+                  : kerningMode === "heatmap"
+                    ? !heatmapActivePair
+                    : !hasFamilyPrecisionPair ||
+                      (familyContext === "shared"
+                        ? !familyPairKey || !(familyPairKey in kerningPairs)
+                        : !familyHasOverride)
               }
-              onClick={kerningMode === "single" ? resetActiveContext : resetFamilyActivePair}
-              data-testid={kerningMode === "single" ? "kern-reset-pair" : "kern-reset-family"}
+              onClick={
+                kerningMode === "single"
+                  ? resetActiveContext
+                  : kerningMode === "heatmap"
+                    ? () => heatmapActivePair && resetKerningPair(heatmapActivePair.left, heatmapActivePair.right)
+                    : resetFamilyActivePair
+              }
+              data-testid={
+                kerningMode === "single" ? "kern-reset-pair" : kerningMode === "heatmap" ? "kern-reset-heatmap" : "kern-reset-family"
+              }
             >
               <RotateCcw size={14} />{" "}
-              {kerningMode === "single"
-                ? "Reset"
-                : familyContext === "shared"
-                  ? "Reset Shared"
-                  : "Reset Override"}
+              {kerningMode === "single" ? "Reset" : kerningMode === "heatmap" ? "Reset Pair" : familyContext === "shared" ? "Reset Shared" : "Reset Override"}
             </button>
           </div>
 
