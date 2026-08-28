@@ -109,13 +109,17 @@ export function useGlyphEditor(hitScale: number) {
 
           // Affinity-style endpoint click: clicking the current endpoint converts
           // it to a corner in place instead of creating a coincident duplicate.
+          // Only the outgoing handle is cleared, so the *next* segment drawn
+          // from here starts straight — the incoming handle (which shapes the
+          // segment already drawn into this point) is left untouched, so that
+          // segment's curve never changes. Committed immediately so it's its
+          // own undo step, matching every other single click of the pen tool.
           if (length(subtract(last.point, p)) <= hitRadius) {
             last.type = "corner";
-            last.handleIn = null;
             last.handleOut = null;
             baseOutlineRef.current = null;
             dragRef.current = null;
-            setLiveOutline(working);
+            commitOutline(activeChar, working);
             return;
           }
 
@@ -133,12 +137,17 @@ export function useGlyphEditor(hitScale: number) {
       for (const obj of working.objects) {
         for (const contour of obj.contours) {
           if (contour.closed || contour.nodes.length === 0) continue;
-          const endpoints = contour.nodes.length === 1 ? [contour.nodes[0]] : [contour.nodes[0], contour.nodes[contour.nodes.length - 1]];
+          const contourFirst = contour.nodes[0];
+          const contourLast = contour.nodes[contour.nodes.length - 1];
+          const endpoints = contour.nodes.length === 1 ? [contourFirst] : [contourFirst, contourLast];
           const endpoint = endpoints.find((node) => length(subtract(node.point, p)) <= hitRadius);
           if (endpoint) {
             endpoint.type = "corner";
-            endpoint.handleIn = null;
-            endpoint.handleOut = null;
+            // Only clear the handle that would steer the next segment drawn
+            // onward from this point. The handle belonging to a segment
+            // that's already drawn is left alone so its curve is unchanged.
+            if (endpoint === contourLast) endpoint.handleOut = null;
+            if (endpoint === contourFirst) endpoint.handleIn = null;
             commitOutline(activeChar, working);
             return;
           }
@@ -431,7 +440,16 @@ export function useGlyphEditor(hitScale: number) {
       return;
     }
     dragRef.current = null;
-    if (drag.mode === "pen-place") return;
+    if (drag.mode === "pen-place") {
+      // Each node the pen tool places (click, or click-drag to pull out
+      // handles) is committed here as its own undo step, so Undo removes
+      // exactly the node just created instead of leaving it uncommitted
+      // until the whole contour is finished (which used to make Undo
+      // either do nothing or remove the entire path in one go).
+      if (liveOutline) commitOutline(activeChar, liveOutline);
+      baseOutlineRef.current = null;
+      return;
+    }
     if (drag.mode === "shape-draw") {
       // A drag too small to register never added an object to liveOutline,
       // so nothing is committed and the canvas just falls back to the
@@ -458,21 +476,36 @@ export function useGlyphEditor(hitScale: number) {
 
   const finishOpenContour = useCallback(() => {
     if (!drawingContourId) return;
+    const hadLiveEdit = useAppStore.getState().liveOutline !== null;
     const latest = useAppStore.getState().liveOutline ?? outline;
     const working = cloneOutline(latest);
     // Auto Close Shape (Pen tool, Shape mode only — a "line" object is an
     // intentional open centerline per architecture and must never be
     // force-closed). Only points/handles already drawn are used; nothing is
     // added or moved, so the outline's actual node data is unchanged.
+    let didClose = false;
     if (penAutoClose && penMode === "shape") {
       const contour = findContour(working, drawingContourId);
-      if (contour && contour.nodes.length > 2) contour.closed = true;
+      if (contour && contour.nodes.length > 2 && !contour.closed) {
+        contour.closed = true;
+        didClose = true;
+      }
     }
     setDrawingContourId(null);
     dragRef.current = null;
     baseOutlineRef.current = null;
-    commitOutline(activeChar, working);
-  }, [drawingContourId, outline, activeChar, commitOutline, setDrawingContourId, penAutoClose, penMode]);
+    // Every node placed by the pen tool is already committed to history
+    // the moment it's placed (see pointerUp), so finishing the contour
+    // only needs its own undo step when it actually changes something —
+    // auto-closing the shape, or finalizing an edit still in progress
+    // (e.g. Escape pressed mid handle-drag) — otherwise skip the commit
+    // so Finish/Escape doesn't add a redundant no-op undo step.
+    if (didClose || hadLiveEdit) {
+      commitOutline(activeChar, working);
+    } else {
+      setLiveOutline(null);
+    }
+  }, [drawingContourId, outline, activeChar, commitOutline, setDrawingContourId, penAutoClose, penMode, setLiveOutline]);
 
   const isCurrentEndpoint = useCallback((p: Point) => {
     if (!drawingContourId) return false;
