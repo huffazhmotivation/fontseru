@@ -43,6 +43,7 @@ export function TopBar() {
       <FontSeruLogo />
       <div className="fm-divider" />
       <FileMenu onExportButtonReady={handleExportReady} />
+      <AboutModal />
       <input
         className="fm-fontname"
         value={fontName}
@@ -103,7 +104,6 @@ export function TopBar() {
       <button className="fm-theme-toggle" onClick={toggleTheme} title="Toggle theme" data-testid="theme-toggle">
         {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
       </button>
-      <AboutModal />
       <AuthWidget />
     </div>
   );

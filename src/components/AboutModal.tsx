@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Info, Mail, MessageCircle, X } from "lucide-react";
+import { Mail, MessageCircle, X } from "lucide-react";
 import { FontSeruLogo } from "@/components/FontSeruLogo";
 
 // WhatsApp deep link for the "About" contact, built the same way
@@ -25,12 +25,12 @@ export function AboutModal() {
     <>
       <button
         type="button"
-        className="fm-theme-toggle"
+        className="fm-topbtn"
         onClick={() => setOpen(true)}
         title="Tentang FontSeru"
         data-testid="about-btn"
       >
-        <Info size={16} />
+        About Us
       </button>
 
       {open ? (
@@ -63,7 +63,7 @@ export function AboutModal() {
               <p className="fm-auth-note">
                 FontSeru is a simple web-based font creation tool for designing glyphs, refining
                 spacing, testing type, and exporting fonts—independently developed with inspiration
-                from Fontma and XsisLab.
+                from Fontma and XsisLab.com.
               </p>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
