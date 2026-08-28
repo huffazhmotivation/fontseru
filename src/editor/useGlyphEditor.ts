@@ -74,6 +74,11 @@ export function useGlyphEditor(hitScale: number) {
   const baseOutlineRef = useRef<GlyphOutline | null>(null);
   const [marqueeRect, setMarqueeRect] = useState<Rect | null>(null);
   const marqueeRectRef = useRef<Rect | null>(null);
+  // Live readout for a Cmd/Ctrl-drag corner-round: shows the fillet radius
+  // (font units) next to the cursor while dragging, so the exact number can
+  // be read off and reused (e.g. typed into another corner-round elsewhere)
+  // instead of eyeballing the drag distance. Cleared on release.
+  const [roundCornerLabel, setRoundCornerLabel] = useState<{ point: Point; radius: number } | null>(null);
 
   const outline: GlyphOutline = liveOutline ?? glyph?.outline ?? { objects: [] };
   const hitRadius = 12 * hitScale;
@@ -340,6 +345,7 @@ export function useGlyphEditor(hitScale: number) {
       }
       if (drag.mode === "round-corner") {
         const radius = length(subtract(p, drag.cornerPoint));
+        setRoundCornerLabel({ point: p, radius });
         setLiveOutline(roundCorner(base, { contourId: drag.contourId, nodeId: drag.nodeId }, radius));
         return;
       }
@@ -433,6 +439,7 @@ export function useGlyphEditor(hitScale: number) {
   const pointerUp = useCallback(() => {
     const drag = dragRef.current;
     if (!drag) return;
+    setRoundCornerLabel(null);
     if (drag.mode === "marquee") {
       finishMarquee(drag);
       dragRef.current = null;
@@ -516,7 +523,7 @@ export function useGlyphEditor(hitScale: number) {
   }, [drawingContourId, outline, hitRadius]);
 
   return {
-    outline, selectedNodes, selectedHandle, drawingContourId, marqueeRect,
+    outline, selectedNodes, selectedHandle, drawingContourId, marqueeRect, roundCornerLabel,
     pointerDown, pointerMove, pointerUp, cycleNodeType, insertNodeAt,
     deleteSelectedNodes, nudgeNodes, finishOpenContour, isCurrentEndpoint,
     findObjectOfContour: (cid: string) => findObjectOfContour(outline, cid),

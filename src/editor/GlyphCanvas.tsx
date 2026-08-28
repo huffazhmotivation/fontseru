@@ -869,6 +869,24 @@ export function GlyphCanvas() {
             width={selectTool.marqueeRect.w} height={selectTool.marqueeRect.h} className="marquee-rect" />
         )}
 
+        {/* Corner-round live readout: radius (font units) next to the cursor
+            while Cmd/Ctrl-dragging a corner, so the value can be read off
+            and reused for a matching round elsewhere. */}
+        {editor.roundCornerLabel && (() => {
+          const { point, radius } = editor.roundCornerLabel;
+          const svgP = toSvgPoint(point, ascender);
+          const lx = svgP.x + 14 / sc;
+          const ly = svgP.y - 14 / sc;
+          const text = `${Math.round(radius)}u`;
+          const w = (16 + text.length * 7.5) / sc;
+          return (
+            <g pointerEvents="none" data-testid="round-corner-value">
+              <rect x={lx} y={ly - 16 / sc} width={w} height={20 / sc} rx={4 / sc} className="metric-guide-value-bg" />
+              <text x={lx + 7 / sc} y={ly - 2 / sc} className="metric-guide-value">{text}</text>
+            </g>
+          );
+        })()}
+
         {/* Selection box + transform handles */}
         {tool === "select" && selBounds && handlePts && (
           <g>
