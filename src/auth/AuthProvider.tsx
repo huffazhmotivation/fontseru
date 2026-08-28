@@ -33,6 +33,15 @@ interface AuthContextValue {
    * without ever making them set a new password.
    */
   passwordRecovery: boolean;
+  /**
+   * True for one render right after the user's session was established by
+   * clicking the "Confirm your signup" link in their email (detected via
+   * the `type=signup` marker Supabase appends to the redirect URL) rather
+   * than by signing in through the form. Drives a one-time welcome popup;
+   * call `dismissEmailConfirmedWelcome` once it's been shown.
+   */
+  justConfirmedEmail: boolean;
+  dismissEmailConfirmedWelcome: () => void;
   /** Creates a new account with email + password. */
   signUpWithPassword: (
     email: string,
@@ -88,6 +97,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [justConfirmedEmail, setJustConfirmedEmail] = useState(false);
+
+  const dismissEmailConfirmedWelcome = useCallback(() => setJustConfirmedEmail(false), []);
 
   // Restore existing session on mount and subscribe to auth state changes
   // (password-recovery callback, token refresh, sign-out, etc).
@@ -120,6 +132,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (event === "SIGNED_OUT") {
         setPasswordRecovery(false);
+      }
+
+      // Supabase's "Confirm your signup" email link redirects back here
+      // with a `type=signup` marker (in the URL hash for the implicit
+      // flow, or the query string for PKCE) right as it fires SIGNED_IN.
+      // That combination — not a plain sign-in through the form — is what
+      // triggers the one-time welcome popup. The marker is stripped from
+      // the URL immediately after so a page refresh can't re-trigger it
+      // and the tokens don't linger in the address bar.
+      if (event === "SIGNED_IN") {
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const searchParams = new URLSearchParams(window.location.search);
+        const confirmType = hashParams.get("type") ?? searchParams.get("type");
+        if (confirmType === "signup") {
+          setJustConfirmedEmail(true);
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
       }
     });
 
@@ -416,6 +445,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       plan,
       isPro: plan === "pro",
       passwordRecovery,
+      justConfirmedEmail,
+      dismissEmailConfirmedWelcome,
       signUpWithPassword,
       signInWithPassword,
       sendPasswordReset,
@@ -429,6 +460,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     profile,
     profileLoading,
     passwordRecovery,
+    justConfirmedEmail,
+    dismissEmailConfirmedWelcome,
     signUpWithPassword,
     signInWithPassword,
     sendPasswordReset,

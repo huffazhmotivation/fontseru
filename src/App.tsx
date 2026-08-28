@@ -14,6 +14,7 @@ import { RightPanel } from "@/components/RightPanel";
 import { BottomBar } from "@/components/BottomBar";
 import { GlyphCanvas } from "@/editor/GlyphCanvas";
 import { LoginModal } from "@/components/LoginModal";
+import { EmailConfirmedWelcome } from "@/components/EmailConfirmedWelcome";
 import { ProUpsellModal } from "@/components/ProUpsellModal";
 
 // These three overlays are heavy (Test Lab pulls in the whole specimen
@@ -158,6 +159,7 @@ export default function App() {
         {featureBuilderEverOpened.current && <FeatureBuilderOverlay />}
       </Suspense>
       <LoginModal />
+      <EmailConfirmedWelcome />
       <ProUpsellModal />
     </div>
   );
