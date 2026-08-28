@@ -484,6 +484,23 @@ export const useAppStore = create<AppState>()((set, get) => {
   } | null = null;
   let metricDragSnapshot: FontMetrics | null = null;
   let glyphMetricDragSnapshot: GlyphMap | null = null;
+  /** True if `contourId` still exists (with at least one node) in `char`'s
+   * outline within `glyphs`. Used by undo/redo so that stepping through
+   * history while the pen tool is mid-contour only removes/restores the
+   * node in question — it doesn't force-exit the contour the person is
+   * still actively drawing, unless that undo/redo made the contour itself
+   * disappear entirely (e.g. undoing its very first node). */
+  function contourStillExists(glyphs: GlyphMap, char: string, contourId: string | null): boolean {
+    if (!contourId) return false;
+    const glyph = glyphs[char];
+    if (!glyph) return false;
+    for (const obj of glyph.outline.objects) {
+      for (const contour of obj.contours) {
+        if (contour.id === contourId && contour.nodes.length > 0) return true;
+      }
+    }
+    return false;
+  }
   function commit(nextGlyphs: GlyphMap) {
     const { glyphs, glyphsByStyle, fontStyle, metrics, past, kerningPairs, kerningManual } = get();
     set({
@@ -1267,14 +1284,16 @@ export const useAppStore = create<AppState>()((set, get) => {
     undo: () => {
       const {
         past, future, glyphs, glyphsByStyle, fontStyle, metrics, kerningPairs, kerningManual,
-        kerningOverridesByStyle, kerningOverrideManualByStyle,
+        kerningOverridesByStyle, kerningOverrideManualByStyle, activeChar, drawingContourId,
       } = get();
       if (past.length === 0) return;
       const prev = past[past.length - 1];
       const familyTransaction = Boolean(prev.glyphsByStyle);
       const restoredFamily = prev.glyphsByStyle ?? { ...glyphsByStyle, [fontStyle]: prev.glyphs };
+      const restoredGlyphs = familyTransaction ? restoredFamily[fontStyle] : prev.glyphs;
+      const stillDrawing = contourStillExists(restoredGlyphs, activeChar, drawingContourId);
       set({
-        glyphs: familyTransaction ? restoredFamily[fontStyle] : prev.glyphs,
+        glyphs: restoredGlyphs,
         glyphsByStyle: restoredFamily,
         metrics: prev.metrics,
         kerningPairs: prev.kerningPairs,
@@ -1291,20 +1310,24 @@ export const useAppStore = create<AppState>()((set, get) => {
           kerningOverridesByStyle,
           kerningOverrideManualByStyle,
         }, ...future].slice(0, HISTORY_LIMIT),
-        selectedNodes: [], selectedHandle: null, selectedObjectIds: [], drawingContourId: null, liveOutline: null,
+        selectedNodes: [], selectedHandle: null, selectedObjectIds: [],
+        drawingContourId: stillDrawing ? drawingContourId : null,
+        liveOutline: null,
       });
     },
     redo: () => {
       const {
         past, future, glyphs, glyphsByStyle, fontStyle, metrics, kerningPairs, kerningManual,
-        kerningOverridesByStyle, kerningOverrideManualByStyle,
+        kerningOverridesByStyle, kerningOverrideManualByStyle, activeChar, drawingContourId,
       } = get();
       if (future.length === 0) return;
       const next = future[0];
       const familyTransaction = Boolean(next.glyphsByStyle);
       const restoredFamily = next.glyphsByStyle ?? { ...glyphsByStyle, [fontStyle]: next.glyphs };
+      const restoredGlyphs = familyTransaction ? restoredFamily[fontStyle] : next.glyphs;
+      const stillDrawing = contourStillExists(restoredGlyphs, activeChar, drawingContourId);
       set({
-        glyphs: familyTransaction ? restoredFamily[fontStyle] : next.glyphs,
+        glyphs: restoredGlyphs,
         glyphsByStyle: restoredFamily,
         metrics: next.metrics,
         kerningPairs: next.kerningPairs,
@@ -1321,7 +1344,9 @@ export const useAppStore = create<AppState>()((set, get) => {
           kerningOverridesByStyle,
           kerningOverrideManualByStyle,
         }].slice(-HISTORY_LIMIT),
-        selectedNodes: [], selectedHandle: null, selectedObjectIds: [], drawingContourId: null, liveOutline: null,
+        selectedNodes: [], selectedHandle: null, selectedObjectIds: [],
+        drawingContourId: stillDrawing ? drawingContourId : null,
+        liveOutline: null,
       });
     },
 
