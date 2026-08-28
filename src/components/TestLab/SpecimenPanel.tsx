@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
-import { Grid3x3, Layers3, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import { Grid3x3, Layers3, Loader2, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
 import { KerningHeatmap, type KerningPairRef } from "@/components/TestLab/KerningHeatmap";
 import { NumericInput } from "@/components/NumericInput";
 import { useAppStore } from "@/glyph/store";
@@ -1350,6 +1350,12 @@ export function SpecimenPanel() {
   const setFamilyKerningPair = useAppStore((s) => s.setFamilyKerningPair);
   const resetFamilyKerningPair = useAppStore((s) => s.resetFamilyKerningPair);
   const autoKernAllPairsForContext = useAppStore((s) => s.autoKernAllPairsForContext);
+  // "idle" | 0..1 while running | "done" briefly once the last chunk lands,
+  // so the button can fill up like a progress bar and flash solid at 100%
+  // before returning to its normal state.
+  const [autoKernProgress, setAutoKernProgress] = useState<"idle" | "done" | number>("idle");
+  const autoKernRunning = typeof autoKernProgress === "number";
+
   // Same global history stack the top bar's Undo/Redo use — kerning edits
   // (drag or precision input, single or family) already push onto it, so
   // this is a real undo/redo of "kerning yang habis diatur", just surfaced
@@ -1378,6 +1384,23 @@ export function SpecimenPanel() {
   const [kerningMode, setKerningMode] = useState<"single" | "family" | "heatmap">("single");
   const [familyContext, setFamilyContext] = useState<KerningContext>("shared");
   const [heatmapActivePair, setHeatmapActivePair] = useState<KerningPairRef | null>(null);
+
+  const handleAutoKern = useCallback(async () => {
+    if (autoKernRunning) return;
+    setAutoKernProgress(0);
+    try {
+      if (kerningMode === "family") {
+        await autoKernAllPairsForContext(familyContext, setAutoKernProgress);
+      } else {
+        await autoKernAllPairs(setAutoKernProgress);
+      }
+      setAutoKernProgress("done");
+      window.setTimeout(() => setAutoKernProgress("idle"), 550);
+    } catch (error) {
+      console.error("[FontSeru] Auto Kerning failed.", error);
+      setAutoKernProgress("idle");
+    }
+  }, [autoKernRunning, autoKernAllPairs, autoKernAllPairsForContext, kerningMode, familyContext]);
 
   // Unlike the other presets (fixed strings), Multilingual reflects
   // whatever the font actually has right now: every "multilingual"
@@ -1723,13 +1746,18 @@ export function SpecimenPanel() {
 
           <div className="fm-kern-side-actions">
             <button
-              className="fm-action-btn accent"
-              onClick={
-                kerningMode === "family" ? () => autoKernAllPairsForContext(familyContext) : autoKernAllPairs
-              }
+              className={`fm-action-btn accent fm-auto-kern-btn${autoKernRunning ? " running" : ""}${autoKernProgress === "done" ? " done" : ""}`}
+              style={autoKernRunning ? { "--fm-auto-kern-fill": `${Math.round(autoKernProgress * 100)}%` } as CSSProperties : undefined}
+              onClick={handleAutoKern}
+              disabled={autoKernRunning}
               data-testid="kern-auto-common"
             >
-              <Zap className="fm-auto-kern-icon" size={14} strokeWidth={2} aria-hidden="true" /> Auto Kerning
+              {autoKernRunning ? (
+                <Loader2 className="fm-auto-kern-icon fm-auto-kern-spin" size={14} strokeWidth={2} aria-hidden="true" />
+              ) : (
+                <Zap className="fm-auto-kern-icon" size={14} strokeWidth={2} aria-hidden="true" />
+              )}
+              {autoKernRunning ? `Kerning… ${Math.round(autoKernProgress * 100)}%` : "Auto Kerning"}
             </button>
             <button
               className="fm-action-btn fm-kern-reset-btn"

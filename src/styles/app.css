@@ -1258,6 +1258,27 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-action-btn:hover { border-color: var(--text-faint); }
 .fm-action-btn.accent { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .fm-action-btn.accent:hover { background: var(--accent-2); }
+
+/* Auto Kerning button: fills left-to-right with real progress while the
+   (now chunked/async) auto-kern pass runs, then flashes fully solid once
+   the last chunk lands. */
+.fm-auto-kern-btn.running {
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fm-auto-kern-fill, 0%),
+    color-mix(in srgb, var(--accent) 22%, var(--panel-2)) var(--fm-auto-kern-fill, 0%)
+  );
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  cursor: progress;
+  transition: background 0.12s linear;
+}
+.fm-auto-kern-btn.done { background: var(--accent-2); border-color: var(--accent-2); animation: fm-auto-kern-flash 0.55s ease; }
+@keyframes fm-auto-kern-flash {
+  0% { filter: brightness(1.5); }
+  100% { filter: brightness(1); }
+}
+.fm-auto-kern-spin { animation: fm-spin-rotate 0.9s linear infinite; }
 .fm-action-btn.danger { color: var(--danger); }
 .fm-action-btn.danger:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 /* PRO-locked action (e.g. "Generate From Regular" for FREE accounts) â€”

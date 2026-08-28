@@ -382,7 +382,7 @@ interface AppState {
   setKerningPair: (left: string, right: string, value: number) => void;
   applyKerningSuggestion: (left: string, right: string) => void;
   resetKerningPair: (left: string, right: string) => void;
-  autoKernAllPairs: () => void;
+  autoKernAllPairs: (onProgress?: (fraction: number) => void) => Promise<void>;
   beginKerningDrag: () => void;
   setKerningPairLive: (left: string, right: string, value: number) => void;
   endKerningDrag: () => void;
@@ -390,7 +390,7 @@ interface AppState {
   // Family kerning — additive layer over the existing Single Test API.
   setFamilyKerningPair: (context: KerningContext, left: string, right: string, value: number) => void;
   resetFamilyKerningPair: (context: KerningContext, left: string, right: string) => void;
-  autoKernAllPairsForContext: (context: KerningContext) => void;
+  autoKernAllPairsForContext: (context: KerningContext, onProgress?: (fraction: number) => void) => Promise<void>;
   beginFamilyKerningDrag: (context: KerningContext) => void;
   setFamilyKerningPairLive: (context: KerningContext, left: string, right: string, value: number) => void;
   endFamilyKerningDrag: () => void;
@@ -1418,9 +1418,9 @@ export const useAppStore = create<AppState>()((set, get) => {
       commitKerning(nextPairs, nextManual);
     },
 
-    autoKernAllPairs: () => {
+    autoKernAllPairs: async (onProgress) => {
       const { glyphs, metrics, kerningPairs, kerningManual } = get();
-      const result = autoKernAllAvailablePairs(glyphs, metrics, kerningPairs, kerningManual);
+      const result = await autoKernAllAvailablePairs(glyphs, metrics, kerningPairs, kerningManual, undefined, onProgress);
       commitKerning(result.pairs, result.manual);
       set({ autoKernLastRun: { processed: result.processed, updated: result.updated, preservedManual: result.preservedManual } });
     },
@@ -1485,16 +1485,18 @@ export const useAppStore = create<AppState>()((set, get) => {
       commitFamilyStyleKerning(context, nextPairs, nextManual);
     },
 
-    autoKernAllPairsForContext: (context) => {
+    autoKernAllPairsForContext: async (context, onProgress) => {
       if (context === "shared") {
         // Shared family auto-kern uses Regular as the family baseline while
         // keeping the exact existing auto-kern algorithm and manual rules.
         const state = get();
-        const result = autoKernAllAvailablePairs(
+        const result = await autoKernAllAvailablePairs(
           state.glyphsByStyle.regular,
           state.metrics,
           state.kerningPairs,
-          state.kerningManual
+          state.kerningManual,
+          undefined,
+          onProgress
         );
         commitKerning(result.pairs, result.manual);
         set({ autoKernLastRun: {
@@ -1508,12 +1510,13 @@ export const useAppStore = create<AppState>()((set, get) => {
       const state = get();
       const currentPairs = state.kerningOverridesByStyle[context] ?? {};
       const currentManual = state.kerningOverrideManualByStyle[context] ?? {};
-      const result = autoKernAllAvailablePairs(
+      const result = await autoKernAllAvailablePairs(
         state.glyphsByStyle[context],
         state.metrics,
         currentPairs,
         currentManual,
-        state.kerningPairs
+        state.kerningPairs,
+        onProgress
       );
       commitFamilyStyleKerning(context, result.pairs, result.manual);
       set({ autoKernLastRun: {

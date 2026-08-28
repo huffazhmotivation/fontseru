@@ -155,6 +155,13 @@ export interface GlobalAutoKernResult {
   preservedManual: number;
 }
 
+/** Yields to the browser so a long chunked loop doesn't freeze the UI thread. */
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+const CHUNK_SIZE = 400; // pairs processed per tick before yielding + reporting progress
+
 /**
  * Process every ordered pair in the currently available glyph set.
  * Manual overrides are treated as user-owned and survive subsequent passes.
@@ -162,14 +169,20 @@ export interface GlobalAutoKernResult {
  * When `fallbackPairs` is supplied for a layered style, an explicit zero is
  * retained only when it is needed to override a non-zero inherited value.
  * Existing callers omit this argument and keep the exact original behavior.
+ *
+ * Runs in chunks (yielding back to the browser between them) rather than as
+ * one blocking loop, so a large glyph set (n^2 pairs, each now sampling the
+ * optical scanline profile) doesn't freeze the tab — and so a caller can
+ * pass `onProgress` to drive a real, non-fake loading indicator.
  */
-export function autoKernAllAvailablePairs(
+export async function autoKernAllAvailablePairs(
   glyphs: GlyphMap,
   metrics: FontMetrics,
   currentPairs: Record<string, number>,
   manualFlags: Record<string, boolean>,
-  fallbackPairs?: Record<string, number>
-): GlobalAutoKernResult {
+  fallbackPairs?: Record<string, number>,
+  onProgress?: (fraction: number) => void
+): Promise<GlobalAutoKernResult> {
   const chars = Object.keys(glyphs);
   const pairs = { ...currentPairs };
   const manual = { ...manualFlags };
@@ -177,35 +190,46 @@ export function autoKernAllAvailablePairs(
   let updated = 0;
   let preservedManual = 0;
 
+  const total = chars.length * chars.length;
+  let sinceYield = 0;
+
   for (const left of chars) {
     for (const right of chars) {
       processed++;
       const key = kerningKey(left, right);
       if (manual[key]) {
         preservedManual++;
-        continue;
-      }
-      const suggestion = suggestKerningPair(glyphs, metrics, left, right);
-      if (suggestion === 0) {
-        const needsExplicitZero = (fallbackPairs?.[key] ?? 0) !== 0;
-        if (needsExplicitZero) {
-          if (pairs[key] !== 0) updated++;
-          pairs[key] = 0;
-          manual[key] = false;
-        } else {
-          if (key in pairs) {
-            delete pairs[key];
-            updated++;
-          }
-          delete manual[key];
-        }
       } else {
-        if (pairs[key] !== suggestion) updated++;
-        pairs[key] = suggestion;
-        manual[key] = false;
+        const suggestion = suggestKerningPair(glyphs, metrics, left, right);
+        if (suggestion === 0) {
+          const needsExplicitZero = (fallbackPairs?.[key] ?? 0) !== 0;
+          if (needsExplicitZero) {
+            if (pairs[key] !== 0) updated++;
+            pairs[key] = 0;
+            manual[key] = false;
+          } else {
+            if (key in pairs) {
+              delete pairs[key];
+              updated++;
+            }
+            delete manual[key];
+          }
+        } else {
+          if (pairs[key] !== suggestion) updated++;
+          pairs[key] = suggestion;
+          manual[key] = false;
+        }
+      }
+
+      sinceYield++;
+      if (sinceYield >= CHUNK_SIZE) {
+        sinceYield = 0;
+        onProgress?.(total > 0 ? processed / total : 1);
+        await yieldToBrowser();
       }
     }
   }
 
+  onProgress?.(1);
   return { pairs, manual, processed, updated, preservedManual };
 }
