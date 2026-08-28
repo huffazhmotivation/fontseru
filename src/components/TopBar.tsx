@@ -4,6 +4,7 @@ import { useAppStore } from "@/glyph/store";
 import { FileMenu } from "@/components/FileMenu";
 import { FontSeruLogo } from "@/components/FontSeruLogo";
 import { AuthWidget } from "@/components/AuthWidget";
+import { AboutModal } from "@/components/AboutModal";
 
 export function TopBar() {
   const exportRef = React.useRef<(() => void) | null>(null);
@@ -102,6 +103,7 @@ export function TopBar() {
       <button className="fm-theme-toggle" onClick={toggleTheme} title="Toggle theme" data-testid="theme-toggle">
         {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
       </button>
+      <AboutModal />
       <AuthWidget />
     </div>
   );
