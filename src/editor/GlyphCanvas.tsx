@@ -566,6 +566,7 @@ export function GlyphCanvas() {
           .obj-fill-overlap { fill: var(--overlap); opacity: 0.88; }
           .obj-fill-preview-outline { fill: none; stroke: var(--ink); stroke-width: ${1.25 / sc}; opacity: 0.85; }
           .obj-stroke { fill: none; stroke: var(--ink); }
+          .obj-stroke-overlap { stroke: var(--overlap); opacity: 0.88; }
           .obj-sel-outline { fill: none; stroke: var(--accent); stroke-width: ${1.5 / sc}; opacity: 0.9; }
           .brush-preview { fill: none; stroke: var(--accent); opacity: 0.85; }
           .rubber-line { stroke: var(--accent); stroke-width: ${1.2 / sc}; stroke-dasharray: ${4 / sc} ${3 / sc}; }
@@ -1058,7 +1059,7 @@ const ObjectShape = memo(function ObjectShape({
       const d = fillOrStrokeD;
       return (
         <>
-          <path d={d} className="obj-stroke" strokeWidth={obj.strokeWidth ?? 20} strokeLinecap={obj.cap ?? "round"} strokeLinejoin={obj.join ?? "round"} />
+          <path d={d} className={overlapping ? "obj-stroke obj-stroke-overlap" : "obj-stroke"} strokeWidth={obj.strokeWidth ?? 20} strokeLinecap={obj.cap ?? "round"} strokeLinejoin={obj.join ?? "round"} />
           {selected && <path d={d} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
         </>
       );
@@ -1068,7 +1069,7 @@ const ObjectShape = memo(function ObjectShape({
     const d = variableBrushD;
     return (
       <>
-        <path d={d} className="obj-fill" />
+        <path d={d} className={overlapping ? "obj-fill obj-fill-overlap" : "obj-fill"} />
         {selected && <path d={d} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
       </>
     );
@@ -1076,7 +1077,7 @@ const ObjectShape = memo(function ObjectShape({
   const d = fillOrStrokeD;
   return (
     <>
-      <path d={d} className="obj-stroke" strokeWidth={obj.strokeWidth ?? 20} strokeLinecap={obj.cap ?? "round"} strokeLinejoin={obj.join ?? "round"} />
+      <path d={d} className={overlapping ? "obj-stroke obj-stroke-overlap" : "obj-stroke"} strokeWidth={obj.strokeWidth ?? 20} strokeLinecap={obj.cap ?? "round"} strokeLinejoin={obj.join ?? "round"} />
       {selected && <path d={d} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
     </>
   );
