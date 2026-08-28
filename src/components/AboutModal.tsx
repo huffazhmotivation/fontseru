@@ -50,7 +50,7 @@ export function AboutModal() {
               </div>
               <button
                 type="button"
-                className="fm-iconbtn"
+                className="fm-overlay-close"
                 onClick={() => setOpen(false)}
                 aria-label="Tutup"
                 data-testid="about-modal-close"
