@@ -1,23 +1,18 @@
-import { useEffect } from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, X } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { FontSeruLogo } from "@/components/FontSeruLogo";
 
 /**
  * One-time popup shown right after a user clicks the "Confirm your signup"
  * link in their email and lands back in the app already logged in (see
- * `justConfirmedEmail` in AuthProvider). Auto-dismisses after a few
- * seconds, or immediately on click — it never blocks the editor the way
- * `LoginModal` does.
+ * `justConfirmedEmail` in AuthProvider). Stays on screen until the user
+ * explicitly closes it (the "×" button) — no auto-dismiss timer, and the
+ * backdrop is not clickable, so it can't be missed. It still never blocks
+ * the editor the way `LoginModal` does — there's no keyboard lock behind
+ * it.
  */
 export function EmailConfirmedWelcome() {
   const { justConfirmedEmail, dismissEmailConfirmedWelcome } = useAuth();
-
-  useEffect(() => {
-    if (!justConfirmedEmail) return;
-    const timer = window.setTimeout(dismissEmailConfirmedWelcome, 4000);
-    return () => window.clearTimeout(timer);
-  }, [justConfirmedEmail, dismissEmailConfirmedWelcome]);
 
   if (!justConfirmedEmail) return null;
 
@@ -27,9 +22,17 @@ export function EmailConfirmedWelcome() {
       role="status"
       aria-live="polite"
       data-testid="email-confirmed-welcome"
-      onClick={dismissEmailConfirmedWelcome}
     >
-      <div className="fm-auth-dialog fm-welcome-dialog" onClick={(event) => event.stopPropagation()}>
+      <div className="fm-auth-dialog fm-welcome-dialog">
+        <button
+          type="button"
+          className="fm-welcome-close"
+          onClick={dismissEmailConfirmedWelcome}
+          aria-label="Tutup"
+          data-testid="email-confirmed-welcome-close"
+        >
+          <X size={16} />
+        </button>
         <FontSeruLogo />
         <Sparkles className="fm-welcome-icon" size={22} strokeWidth={1.75} aria-hidden="true" />
         <p className="fm-welcome-greeting">Assalamualaikum, selamat datang di FontSeru!</p>

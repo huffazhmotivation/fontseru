@@ -255,12 +255,21 @@ button, input { font-family: inherit; }
 /* One-time "email confirmed & logged in" popup — a lighter-weight sibling
    of .fm-auth-dialog (not a blocking gate, so it gets its own z-index-safe
    backdrop that closes on click). */
-.fm-welcome-backdrop { cursor: pointer; animation: fm-welcome-fade-in 0.2s ease; }
+.fm-welcome-backdrop { animation: fm-welcome-fade-in 0.2s ease; }
 .fm-welcome-dialog {
+  position: relative;
   display: flex; flex-direction: column; align-items: center; gap: 10px;
-  padding: 30px 26px 26px; text-align: center; cursor: default;
+  padding: 30px 26px 26px; text-align: center;
   animation: fm-welcome-pop-in 0.28s cubic-bezier(0.2, 0.8, 0.3, 1.1);
 }
+.fm-welcome-close {
+  position: absolute; top: 10px; right: 10px;
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 8px; border: none;
+  background: transparent; color: var(--text-dim); cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.fm-welcome-close:hover { background: var(--panel-2); color: var(--text); }
 .fm-welcome-icon { color: var(--accent); margin-top: 2px; }
 .fm-welcome-greeting { margin: 4px 0 0; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
 .fm-welcome-sub { margin: 0 0 6px; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
