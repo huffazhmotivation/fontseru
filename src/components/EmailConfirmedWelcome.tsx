@@ -15,7 +15,7 @@ export function EmailConfirmedWelcome() {
 
   useEffect(() => {
     if (!justConfirmedEmail) return;
-    const timer = window.setTimeout(dismissEmailConfirmedWelcome, 4200);
+    const timer = window.setTimeout(dismissEmailConfirmedWelcome, 4000);
     return () => window.clearTimeout(timer);
   }, [justConfirmedEmail, dismissEmailConfirmedWelcome]);
 

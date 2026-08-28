@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import { isSupabaseConfigured, supabase, authRedirectSnapshot } from "@/lib/supabaseClient";
 import { useAppStore } from "@/glyph/store";
 
 export type UserPlan = "free" | "pro";
@@ -98,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profileLoading, setProfileLoading] = useState(false);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [justConfirmedEmail, setJustConfirmedEmail] = useState(false);
+  const confirmMarkerConsumed = useRef(false);
 
   const dismissEmailConfirmedWelcome = useCallback(() => setJustConfirmedEmail(false), []);
 
@@ -134,20 +135,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPasswordRecovery(false);
       }
 
-      // Supabase's "Confirm your signup" email link redirects back here
-      // with a `type=signup` marker (in the URL hash for the implicit
-      // flow, or the query string for PKCE) right as it fires SIGNED_IN.
-      // That combination — not a plain sign-in through the form — is what
-      // triggers the one-time welcome popup. The marker is stripped from
-      // the URL immediately after so a page refresh can't re-trigger it
-      // and the tokens don't linger in the address bar.
-      if (event === "SIGNED_IN") {
-        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-        const searchParams = new URLSearchParams(window.location.search);
+      // Supabase's own `detectSessionInUrl` handling has already read and
+      // scrubbed the `type=signup` marker from the visible URL by the time
+      // this fires (see `authRedirectSnapshot`), so we read the snapshot
+      // taken at module load instead of `window.location`. Guarded with
+      // `confirmMarkerConsumed` so it only ever triggers once per page
+      // load — a later SIGNED_IN in the same session (e.g. signing out and
+      // back in manually) shouldn't re-show the "just confirmed" popup.
+      if (event === "SIGNED_IN" && !confirmMarkerConsumed.current) {
+        const hashParams = new URLSearchParams(authRedirectSnapshot.hash.replace(/^#/, ""));
+        const searchParams = new URLSearchParams(authRedirectSnapshot.search);
         const confirmType = hashParams.get("type") ?? searchParams.get("type");
         if (confirmType === "signup") {
+          confirmMarkerConsumed.current = true;
           setJustConfirmedEmail(true);
-          window.history.replaceState({}, document.title, window.location.pathname);
         }
       }
     });

@@ -8,6 +8,23 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
  * in frontend code — it must only ever live on a trusted server.
  */
 
+/**
+ * Snapshot of the page's URL hash/search taken synchronously at module
+ * load — i.e. before `createClient` below runs its `detectSessionInUrl`
+ * handling. That handling reads any auth tokens out of the URL (e.g. the
+ * `type=signup` marker Supabase appends to an email-confirmation redirect)
+ * and then scrubs them via `history.replaceState` as part of establishing
+ * the session, all before React even mounts. Consumers that need to tell
+ * "arrived via an email-confirmation link" apart from "arrived via a
+ * normal page load" (AuthProvider's `justConfirmedEmail`) must read this
+ * snapshot instead of the live `window.location`, which will already be
+ * clean by the time any of our own effects run.
+ */
+export const authRedirectSnapshot =
+  typeof window !== "undefined"
+    ? { hash: window.location.hash, search: window.location.search }
+    : { hash: "", search: "" };
+
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
 
