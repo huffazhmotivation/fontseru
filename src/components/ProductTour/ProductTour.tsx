@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sparkles, X } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { useTourStore } from "@/store/tourStore";
@@ -32,15 +32,29 @@ export function ProductTour() {
   const tourOpen = useTourStore((s) => s.tourOpen);
   const autoOpenChecked = useTourStore((s) => s.autoOpenChecked);
   const markAutoOpenChecked = useTourStore((s) => s.markAutoOpenChecked);
+  const resetAutoOpenChecked = useTourStore((s) => s.resetAutoOpenChecked);
   const markSeen = useTourStore((s) => s.markSeen);
   const openTour = useTourStore((s) => s.openTour);
   const closeTour = useTourStore((s) => s.closeTour);
 
-  // Auto-open once per page load: as soon as we know for certain this is a
-  // logged-out visitor, play the tour automatically instead of going
-  // straight to the Login modal. `autoOpenChecked` only guards against
-  // re-triggering on every re-render within this same load — a fresh page
-  // load (or logout) resets it, so the tour plays every time.
+  // Logging out inside the SPA doesn't reload the page, so without this the
+  // one-time-per-load `autoOpenChecked` guard below would stay tripped and
+  // the tour would never auto-play again until a hard refresh. Watching for
+  // a logged-in → logged-out transition and re-arming the guard makes the
+  // tour auto-play on every logout too, not just the very first page load.
+  const prevUserRef = useRef(user);
+  useEffect(() => {
+    if (prevUserRef.current && !user) {
+      resetAutoOpenChecked();
+    }
+    prevUserRef.current = user;
+  }, [user, resetAutoOpenChecked]);
+
+  // Auto-open once per "logged-out session": as soon as we know for certain
+  // this is a logged-out visitor, play the tour automatically instead of
+  // going straight to the Login modal. `autoOpenChecked` only guards
+  // against re-triggering on every re-render — a fresh page load or a
+  // logout (see above) both reset it, so the tour plays every time.
   useEffect(() => {
     if (autoOpenChecked || initializing) return;
     markAutoOpenChecked();
@@ -59,6 +73,7 @@ export function ProductTour() {
   const [sceneIdx, setSceneIdx] = useState(0); // 0..TOUR_SCENES.length-1, or length = CTA
   const [elapsed, setElapsed] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [caption, setCaption] = useState<string | null>(null);
 
   // Reset playback state fresh every time the overlay opens (including
   // repeat "Watch Demo" plays), so it always starts from Brush → CTA.
@@ -67,10 +82,18 @@ export function ProductTour() {
       setSceneIdx(0);
       setElapsed(0);
       setPaused(false);
+      setCaption(null);
     }
   }, [tourOpen]);
 
   const finished = sceneIdx >= TOUR_SCENES.length;
+
+  // Clear the caption immediately on every scene change so stale text from
+  // the previous scene never lingers into the next one's first frame; the
+  // new scene's own effect reports its first waypoint's caption right away.
+  useEffect(() => {
+    setCaption(null);
+  }, [sceneIdx]);
 
   useEffect(() => {
     if (!tourOpen || finished || paused) return;
@@ -150,7 +173,7 @@ export function ProductTour() {
             <div key={sceneIdx} className="pt-scene-fade">
               {(() => {
                 const Scene = TOUR_SCENES[sceneIdx].Component;
-                return <Scene progress={progress} />;
+                return <Scene progress={progress} onCaption={setCaption} />;
               })()}
             </div>
           ) : (
@@ -166,6 +189,16 @@ export function ProductTour() {
             </div>
           )}
         </div>
+
+        {!finished && (
+          <div className="pt-caption-bar">
+            {caption && (
+              <span key={caption} className="pt-caption-text">
+                {caption}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

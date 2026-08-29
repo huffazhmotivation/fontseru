@@ -21,15 +21,19 @@ function readSeenFromStorage(): boolean {
 }
 
 interface TourStoreState {
-  /** Persisted "seen" flag, mirrored from localStorage. Drives the
-   * show-once behaviour: the tour only auto-opens while this is false. */
+  /** Persisted "seen" flag, mirrored from localStorage. Kept for potential
+   * future analytics — it no longer gates auto-play (see ProductTour.tsx,
+   * which now auto-opens every time a visitor is logged out). */
   hasSeenTour: boolean;
   /** Whether the tour overlay is currently mounted/visible. */
   tourOpen: boolean;
-  /** Guards the one-time auto-open check so it only ever runs once per app
-   * load rather than on every render of ProductTour. */
+  /** Guards the one-time-per-load auto-open check so it only ever runs
+   * once per render cycle rather than on every render of ProductTour.
+   * Reset back to false on logout so the tour plays again without needing
+   * a full page reload. */
   autoOpenChecked: boolean;
   markAutoOpenChecked: () => void;
+  resetAutoOpenChecked: () => void;
   /** Marks the tour as seen (persisted to localStorage). Does not by
    * itself close the overlay — callers close it separately. */
   markSeen: () => void;
@@ -42,6 +46,7 @@ export const useTourStore = create<TourStoreState>((set) => ({
   tourOpen: false,
   autoOpenChecked: false,
   markAutoOpenChecked: () => set({ autoOpenChecked: true }),
+  resetAutoOpenChecked: () => set({ autoOpenChecked: false }),
   markSeen: () => {
     try {
       window.localStorage.setItem(STORAGE_KEY, "1");

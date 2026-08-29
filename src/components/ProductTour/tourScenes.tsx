@@ -42,12 +42,14 @@ import { FontSeruLogo } from "@/components/FontSeruLogo";
 
 export interface TourWaypoint {
   /** 0..1 progress (within the current scene) at which the cursor arrives
-   * at this waypoint and its content (tooltip/highlight) becomes active. */
+   * at this waypoint and its content (caption/highlight) becomes active. */
   t: number;
   cx: number;
   cy: number;
-  tooltip?: string;
-  tooltipPos?: "top" | "bottom" | "left" | "right";
+  /** Shown in the tour's fixed caption bar (not floated near the cursor —
+   * a floating tooltip can end up covering the very thing it's pointing
+   * at). */
+  caption?: string;
   highlight?: { x: number; y: number; w: number; h: number };
   click?: boolean;
 }
@@ -63,7 +65,7 @@ export interface TourMotionState {
 const MOVE_WINDOW = 0.07;
 
 /** Turns a scene's [0..1] progress into a live cursor position + the
- * "currently active" waypoint (for tooltip/highlight), gliding smoothly
+ * "currently active" waypoint (for caption/highlight), gliding smoothly
  * between stops rather than snapping. Pure function of `progress`, so
  * replaying a scene (progress reset to 0) replays identically. */
 export function useTourMotion(waypoints: TourWaypoint[], progress: number): TourMotionState {
@@ -101,9 +103,20 @@ export function useTourMotion(waypoints: TourWaypoint[], progress: number): Tour
   return { cx, cy, content, arrivedIdx, rippleAt };
 }
 
-/** Fake cursor + tooltip + spotlight highlight, absolutely positioned
+/** Reports the active waypoint's caption up to the tour's fixed caption
+ * bar (see ProductTour.tsx) whenever it changes, so every scene's captions
+ * render in one consistent place instead of floating over the UI. */
+function useCaptionReporter(content: TourWaypoint, onCaption?: (text: string | null) => void) {
+  useEffect(() => {
+    onCaption?.(content.caption ?? null);
+  }, [content, onCaption]);
+}
+
+/** Fake cursor + click ripple + spotlight highlight, absolutely positioned
  * inside a `position:relative` `.pt-stage` container. Shared by every
- * scene so movement/tooltip/highlight all look and feel identical. */
+ * scene so movement/highlight all look and feel identical. The caption
+ * text itself is NOT rendered here — it goes to the tour's fixed caption
+ * bar instead, so it never overlaps the UI it's describing. */
 export function TourCursorLayer({ motion }: { motion: TourMotionState }) {
   const { cx, cy, content, rippleAt } = motion;
   return (
@@ -124,9 +137,6 @@ export function TourCursorLayer({ motion }: { motion: TourMotionState }) {
       )}
       <div className="pt-cursor-wrap" style={{ left: `${cx}%`, top: `${cy}%` }}>
         <MousePointer2 className="pt-cursor-icon" size={22} strokeWidth={2.25} />
-        {content.tooltip && (
-          <div className={`pt-tooltip pt-tooltip-${content.tooltipPos ?? "bottom"}`}>{content.tooltip}</div>
-        )}
       </div>
     </>
   );
@@ -208,14 +218,14 @@ export interface BaseWaypoint {
    * point at a specific spot inside a larger area (e.g. a point on the
    * canvas rather than its center). */
   offset?: { x: number; y: number };
-  tooltip?: string;
-  tooltipPos?: "top" | "bottom" | "left" | "right";
+  /** Shown in the tour's fixed caption bar while this waypoint is active. */
+  caption?: string;
   click?: boolean;
   /** Extra spotlight padding around the anchor's rect, in percent of the
    * stage. Defaults to 2.5. */
   padding?: number;
   /** Set to false to suppress the spotlight ring for this waypoint (still
-   * moves the cursor + shows the tooltip). Defaults to true. */
+   * moves the cursor + shows the caption). Defaults to true. */
   highlight?: boolean;
 }
 
@@ -235,8 +245,7 @@ function useResolvedWaypoints(base: BaseWaypoint[], rects: Record<string, Anchor
           t: b.t,
           cx: r.x + r.w * ox,
           cy: r.y + r.h * oy,
-          tooltip: b.tooltip,
-          tooltipPos: b.tooltipPos,
+          caption: b.caption,
           click: b.click,
         };
         if (b.highlight !== false) {
@@ -429,29 +438,31 @@ function InlineLabModal({
   );
 }
 
-// ------------------------------------------------------------ 1. BRUSH ---
+export interface SceneProps {
+  progress: number;
+  onCaption?: (text: string | null) => void;
+}
+
 
 const BRUSH_BASE: BaseWaypoint[] = [
-  { t: 0, anchor: "tool-brush", tooltip: "Brush tool — draw with pressure & taper", tooltipPos: "top" },
-  { t: 0.1, anchor: "tool-brush", click: true, tooltip: "Brush tool — draw with pressure & taper", tooltipPos: "top" },
+  { t: 0, anchor: "tool-brush", caption: "Brush tool — draw with pressure & taper" },
+  { t: 0.1, anchor: "tool-brush", click: true, caption: "Brush tool — draw with pressure & taper" },
   {
     t: 0.24,
     anchor: "canvas",
     offset: { x: 0.68, y: 0.28 },
     highlight: false,
-    tooltip: "Draw straight onto the glyph canvas",
-    tooltipPos: "bottom",
+    caption: "Draw straight onto the glyph canvas",
   },
   {
     t: 0.44,
     anchor: "canvas",
     offset: { x: 0.34, y: 0.8 },
     highlight: false,
-    tooltip: "FontSeru builds a clean vector outline as you draw",
-    tooltipPos: "top",
+    caption: "FontSeru builds a clean vector outline as you draw",
   },
-  { t: 0.64, anchor: "width-profile", click: true, tooltip: "Width Profile — shape the taper", tooltipPos: "left" },
-  { t: 0.86, anchor: "width-profile", tooltip: "Natural, hand-lettered taper — instantly", tooltipPos: "left" },
+  { t: 0.64, anchor: "width-profile", click: true, caption: "Width Profile — shape the taper" },
+  { t: 0.86, anchor: "width-profile", caption: "Natural, hand-lettered taper — instantly" },
   { t: 1, anchor: "canvas" },
 ];
 
@@ -534,11 +545,12 @@ function BrushRightPanel({ taperP, sizeP }: { taperP: number; sizeP: number }) {
   );
 }
 
-export function BrushScene({ progress }: { progress: number }) {
+export function BrushScene({ progress, onCaption }: SceneProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const rects = useStageAnchors(stageRef);
   const waypoints = useResolvedWaypoints(BRUSH_BASE, rects);
   const motion = useTourMotion(waypoints, progress);
+  useCaptionReporter(motion.content, onCaption);
 
   const drawP = clamp01((progress - 0.16) / (0.44 - 0.16));
   const convertP = clamp01((progress - 0.46) / (0.54 - 0.46));
@@ -589,102 +601,112 @@ export function BrushScene({ progress }: { progress: number }) {
 // ----------------------------------------------------------- 2. FAMILY ---
 
 const FAMILY_BASE: BaseWaypoint[] = [
-  { t: 0, anchor: "family-tabs", tooltip: "One Regular master — the whole family", tooltipPos: "bottom" },
+  { t: 0, anchor: "family-row-regular", caption: "One Regular master — the whole family" },
   {
     t: 0.22,
     anchor: "family-generate-btn",
     click: true,
-    tooltip: "Generate Bold, Italic & custom styles",
-    tooltipPos: "top",
+    caption: "Generate Bold, Italic & custom styles",
   },
-  { t: 0.5, anchor: "family-card-bold", tooltip: "Bold — weight synthesized automatically", tooltipPos: "bottom" },
-  { t: 0.76, anchor: "family-card-italic", tooltip: "Italic — slant adjusted to match", tooltipPos: "bottom" },
+  { t: 0.5, anchor: "family-row-bold", caption: "Bold — weight synthesized automatically" },
+  { t: 0.76, anchor: "family-row-italic", caption: "Italic — slant adjusted to match" },
   { t: 1, anchor: "family-generate-btn", highlight: false },
 ];
 
-interface FamilyCardDef {
+interface FamilyRowDef {
   key: string;
   label: string;
   weight: number;
   italic: boolean;
   revealFrom: number;
-  anchor?: string;
+  anchor: string;
 }
-const FAMILY_CARDS: FamilyCardDef[] = [
-  { key: "regular", label: "Regular", weight: 400, italic: false, revealFrom: 0 },
-  { key: "bold", label: "Bold", weight: 800, italic: false, revealFrom: 0.3, anchor: "family-card-bold" },
-  { key: "italic", label: "Italic", weight: 400, italic: true, revealFrom: 0.54, anchor: "family-card-italic" },
-  { key: "custom", label: "Family", weight: 300, italic: false, revealFrom: 0.8 },
+const FAMILY_ROWS: FamilyRowDef[] = [
+  { key: "regular", label: "Regular", weight: 400, italic: false, revealFrom: 0, anchor: "family-row-regular" },
+  { key: "bold", label: "Bold", weight: 800, italic: false, revealFrom: 0.3, anchor: "family-row-bold" },
+  { key: "italic", label: "Italic", weight: 400, italic: true, revealFrom: 0.54, anchor: "family-row-italic" },
 ];
+const FAMILY_ROW_GLYPHS = "ABCDEFGH".split("");
 
 function FamilyModalBody({ progress }: { progress: number }) {
   return (
-    <div className="fm-lab-body pt-family-body">
-      <div className="fm-family-generate-head">
-        <Wand2 size={15} />
-        <div>
-          <strong>Auto-Generate Styles</strong>
-          <span>One click from your Regular master</span>
-        </div>
-      </div>
-      <div className="fm-family-generate-tabs" role="tablist" aria-hidden="true" data-tour-anchor="family-tabs">
-        {["Bold", "Italic", "Family"].map((t, i) => (
-          <button key={t} type="button" className={i === 0 ? "active" : ""} tabIndex={-1}>
-            {t}
-          </button>
-        ))}
-      </div>
-      <button
-        type="button"
-        className="fm-action-btn accent pt-family-generate-btn"
-        data-tour-anchor="family-generate-btn"
-        tabIndex={-1}
-      >
-        <Sparkles size={13} /> Generate Selected Styles
-      </button>
-      <div className="pt-family-grid">
-        {FAMILY_CARDS.map((card) => {
-          const localP = clamp01((progress - card.revealFrom) / 0.18);
-          const done = localP >= 1;
-          const generating = localP > 0 && localP < 1;
+    <div className="fm-lab-body fm-family-auto-body">
+      <div className="fm-family-auto-previews" data-testid="pt-family-previews">
+        {FAMILY_ROWS.map((row) => {
+          const localP = clamp01((progress - row.revealFrom) / 0.18);
+          const done = row.key !== "regular" && localP >= 1;
           return (
-            <div key={card.key} className="pt-family-card" data-tour-anchor={card.anchor}>
-              <div className="pt-family-card-head">
-                <span>{card.label}</span>
-                {card.key !== "regular" && done && (
-                  <span className="pt-generated-badge">
-                    <Check size={10} /> Generated
+            <div className="fm-family-auto-row" key={row.key} data-tour-anchor={row.anchor}>
+              <div className="fm-family-auto-row-head">
+                <div>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <strong>{row.label}</strong>
+                    {done && (
+                      <span className="pt-generated-badge">
+                        <Check size={10} /> Generated
+                      </span>
+                    )}
                   </span>
-                )}
-              </div>
-              <div
-                className="pt-family-glyph"
-                style={{
-                  fontWeight: card.key === "regular" ? 400 : 400 + localP * (card.weight - 400),
-                  fontStyle: card.italic ? (localP > 0.15 ? "italic" : "normal") : "normal",
-                  opacity: card.key === "regular" ? 1 : 0.35 + localP * 0.65,
-                }}
-              >
-                Ag
-              </div>
-              {card.key !== "regular" && generating && (
-                <div className="pt-mini-slider pt-mini-slider-thin">
-                  <div className="pt-mini-slider-fill" style={{ width: `${localP * 100}%` }} />
                 </div>
-              )}
+              </div>
+              <div className="fm-family-auto-strip">
+                {FAMILY_ROW_GLYPHS.map((g) => (
+                  <div key={g} className="fm-family-auto-glyph has-vector">
+                    <span className="fm-family-auto-char">{g}</span>
+                    <div
+                      className="fm-family-auto-thumb"
+                      style={{
+                        fontWeight: row.key === "regular" ? 400 : 400 + localP * (row.weight - 400),
+                        fontStyle: row.italic ? (localP > 0.15 ? "italic" : "normal") : "normal",
+                        opacity: row.key === "regular" ? 1 : 0.4 + localP * 0.6,
+                        fontSize: 26,
+                        fontFamily: "var(--sans)",
+                      }}
+                    >
+                      {g}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           );
         })}
+      </div>
+
+      <div className="fm-family-generate">
+        <div className="fm-family-generate-head">
+          <Wand2 size={15} />
+          <div>
+            <strong>Auto-Generate Styles</strong>
+            <span>One click from your Regular master</span>
+          </div>
+        </div>
+        <div className="fm-family-generate-tabs" role="tablist" aria-hidden="true">
+          {["Bold", "Italic", "Family"].map((t, i) => (
+            <button key={t} type="button" className={i === 0 ? "active" : ""} tabIndex={-1}>
+              {t}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="fm-action-btn accent"
+          data-tour-anchor="family-generate-btn"
+          tabIndex={-1}
+        >
+          <Sparkles size={13} /> Generate Selected Styles
+        </button>
       </div>
     </div>
   );
 }
 
-export function FamilyScene({ progress }: { progress: number }) {
+export function FamilyScene({ progress, onCaption }: SceneProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const rects = useStageAnchors(stageRef);
   const waypoints = useResolvedWaypoints(FAMILY_BASE, rects);
   const motion = useTourMotion(waypoints, progress);
+  useCaptionReporter(motion.content, onCaption);
 
   return (
     <div className="pt-stage" ref={stageRef}>
@@ -700,10 +722,10 @@ export function FamilyScene({ progress }: { progress: number }) {
 // ---------------------------------------------------------- 3. TEST LAB --
 
 const TESTLAB_BASE: BaseWaypoint[] = [
-  { t: 0, anchor: "lab-specimen", tooltip: "Test Lab — preview real typography", tooltipPos: "bottom" },
-  { t: 0.3, anchor: "lab-kern-pair", click: true, tooltip: "Kerning pairs, previewed live", tooltipPos: "top" },
-  { t: 0.58, anchor: "lab-kern-pair", tooltip: "Fine-tune spacing between any pair", tooltipPos: "top" },
-  { t: 0.82, anchor: "lab-side", tooltip: "Tune size, tracking & sample text", tooltipPos: "left" },
+  { t: 0, anchor: "lab-specimen", caption: "Test Lab — preview real typography" },
+  { t: 0.3, anchor: "lab-kern-pair", click: true, caption: "Kerning pairs, previewed live" },
+  { t: 0.58, anchor: "lab-kern-pair", caption: "Fine-tune spacing between any pair" },
+  { t: 0.82, anchor: "lab-side", caption: "Tune size, tracking & sample text" },
   { t: 1, anchor: "lab-specimen", highlight: false },
 ];
 
@@ -784,11 +806,12 @@ function TestLabModalBody({ progress }: { progress: number }) {
   );
 }
 
-export function TestLabScene({ progress }: { progress: number }) {
+export function TestLabScene({ progress, onCaption }: SceneProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const rects = useStageAnchors(stageRef);
   const waypoints = useResolvedWaypoints(TESTLAB_BASE, rects);
   const motion = useTourMotion(waypoints, progress);
+  useCaptionReporter(motion.content, onCaption);
 
   return (
     <div className="pt-stage" ref={stageRef}>
@@ -804,10 +827,10 @@ export function TestLabScene({ progress }: { progress: number }) {
 // ------------------------------------------------------ 4. FEATURE BUILDER
 
 const FEATURE_BASE: BaseWaypoint[] = [
-  { t: 0, anchor: "feature-section", tooltip: "Ligature, Alternate or Swash rules", tooltipPos: "bottom" },
-  { t: 0.3, anchor: "feature-form", click: true, tooltip: "Choose the glyphs the rule combines", tooltipPos: "top" },
-  { t: 0.56, anchor: "feature-form", tooltip: "Preview updates as you build the rule", tooltipPos: "top" },
-  { t: 0.8, anchor: "feature-btn-primary", click: true, tooltip: "Save — the rule is ready to export", tooltipPos: "left" },
+  { t: 0, anchor: "feature-section", caption: "Ligature, Alternate or Swash rules" },
+  { t: 0.3, anchor: "feature-form", click: true, caption: "Choose the glyphs the rule combines" },
+  { t: 0.56, anchor: "feature-form", caption: "Preview updates as you build the rule" },
+  { t: 0.8, anchor: "feature-btn-primary", click: true, caption: "Save — the rule is ready to export" },
   { t: 1, anchor: "feature-rule-row" },
 ];
 
@@ -875,11 +898,12 @@ function FeatureModalBody({ progress }: { progress: number }) {
   );
 }
 
-export function FeatureBuilderScene({ progress }: { progress: number }) {
+export function FeatureBuilderScene({ progress, onCaption }: SceneProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const rects = useStageAnchors(stageRef);
   const waypoints = useResolvedWaypoints(FEATURE_BASE, rects);
   const motion = useTourMotion(waypoints, progress);
+  useCaptionReporter(motion.content, onCaption);
 
   return (
     <div className="pt-stage" ref={stageRef}>

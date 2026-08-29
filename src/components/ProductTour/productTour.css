@@ -138,6 +138,34 @@
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* ---------------------------------------------------------- CAPTION BAR - */
+/* Fixed-position "video subtitle" describing the current step. Living in
+   its own bar (instead of a tooltip that floats near the cursor) means it
+   can never end up covering the very control it's describing. */
+
+.pt-caption-bar {
+  flex: 0 0 auto;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 24px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  text-align: center;
+}
+.pt-caption-text {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+  animation: pt-caption-in 0.25s ease;
+  max-width: 640px;
+}
+@keyframes pt-caption-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* --------------------------------------------------------------- CTA ---- */
 
 .pt-cta {
@@ -179,14 +207,13 @@
 .pt-cta-btn:hover { transform: translateY(-1px); opacity: 0.92; }
 .pt-cta-btn:active { transform: translateY(0); }
 
-
 /* ========================================================================
    SHARED "APP SHELL" — every scene renders this, reusing FontSeru's real
    CSS classes (fm-topbar, fm-body, fm-canvas-*, fm-floating-toolbar,
-   fm-rightpanel, fm-tool, ...) with static content, so the tour looks like
-   an actual recording of the real app rather than a generic mockup.
-   Only layout/sizing concerns that don't exist in the real (100vh) app are
-   handled here, under the "pt-" prefix.
+   fm-rightpanel, fm-tool, fm-lab-*, fm-feature-*, fm-family-*, ...) with
+   static content, so the tour looks like an actual recording of the real
+   app rather than a generic mockup. Only layout/sizing concerns that don't
+   exist in the real (100vh) app are handled here, under the "pt-" prefix.
 ======================================================================== */
 
 .pt-stage {
@@ -277,9 +304,9 @@
   .pt-glyphnav-mini { display: none; }
 }
 
-/* Small circular glyph swatch reused for the right-panel header preview
-   (in place of the real <GlyphThumbnail>, which renders live vector data
-   this isolated demo intentionally never touches). */
+/* Small glyph swatch reused for the right-panel header preview (in place
+   of the real <GlyphThumbnail>, which renders live vector data this
+   isolated demo intentionally never touches). */
 .pt-mock-glyph {
   display: grid;
   place-items: center;
@@ -351,69 +378,17 @@
 .pt-inline-modal { animation: pt-scene-in 0.3s ease; }
 
 /* ---------------------------------------------------------------- FAMILY */
+/* Structural rows/strips reuse the real .fm-family-auto-* classes as-is;
+   only the small "Generated" badge here is tour-specific. */
 
-.pt-family-body { display: flex; flex-direction: column; gap: 14px; }
-.pt-family-generate-btn { align-self: flex-start; }
-.pt-family-grid {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-}
-.pt-family-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel-2);
-}
-.pt-family-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11.5px;
-  font-weight: 700;
-  color: var(--text-dim);
-}
 .pt-generated-badge {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 3px;
   color: var(--accent);
   font-size: 10px;
   font-weight: 750;
   white-space: nowrap;
-}
-.pt-family-glyph {
-  flex: 1;
-  display: grid;
-  place-items: center;
-  font-size: 38px;
-  color: var(--text);
-  font-family: var(--sans);
-  transition: font-weight 0.2s ease, opacity 0.2s ease;
-}
-.pt-mini-slider {
-  position: relative;
-  width: 100%;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--panel-3);
-  overflow: hidden;
-}
-.pt-mini-slider-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  background: var(--accent);
-  border-radius: 999px;
-  transition: width 0.2s ease;
-}
-
-@media (max-width: 760px) {
-  .pt-family-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* -------------------------------------------------------------- TEST LAB */
@@ -463,9 +438,10 @@
 .pt-feature-merge-result { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 
 /* ===========================================================================
-   SHARED CURSOR / TOOLTIP / HIGHLIGHT / RIPPLE — used by every scene.
-   z-index sits above the inline lab modal (60) so the fake cursor is always
-   the topmost, single source of pointer feedback.
+   SHARED CURSOR / HIGHLIGHT / RIPPLE — used by every scene. z-index sits
+   above the inline lab modal (60) so the fake cursor is always the
+   topmost, single source of pointer feedback. Captions are NOT rendered
+   here — see .pt-caption-bar above.
 =========================================================================== */
 
 .pt-cursor-wrap {
@@ -483,29 +459,6 @@
   stroke: var(--panel);
   filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.35));
 }
-.pt-tooltip {
-  position: absolute;
-  max-width: 190px;
-  padding: 7px 10px;
-  border-radius: 9px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  color: var(--text);
-  font-size: 11.5px;
-  font-weight: 600;
-  line-height: 1.4;
-  box-shadow: 0 10px 26px var(--shadow);
-  animation: pt-tooltip-in 0.2s ease;
-  white-space: normal;
-}
-@keyframes pt-tooltip-in {
-  from { opacity: 0; transform: translateY(3px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.pt-tooltip-bottom { top: 24px; left: 50%; transform: translateX(-50%); }
-.pt-tooltip-top { bottom: 24px; left: 50%; transform: translateX(-50%); }
-.pt-tooltip-left { right: 24px; top: 50%; transform: translateY(-50%); }
-.pt-tooltip-right { left: 24px; top: 50%; transform: translateY(-50%); }
 
 .pt-highlight {
   position: absolute;
@@ -546,12 +499,12 @@
   .pt-progress-dot span { display: none; }
   .pt-glyphnav-mini { display: none; }
   .fm-rightpanel { width: 220px !important; }
-  .pt-family-glyph { font-size: 28px; }
   .fm-feature-modal .fm-feature-thumb { width: 40px; height: 40px; }
+  .pt-caption-text { font-size: 12px; }
   .pt-cta h2 { font-size: 20px; }
 }
 
 @media (max-width: 520px) {
   .fm-rightpanel { display: none !important; }
-  .pt-family-grid { grid-template-columns: repeat(2, 1fr); }
+  .fm-family-auto-row { grid-template-columns: 84px minmax(0, 1fr) !important; }
 }
