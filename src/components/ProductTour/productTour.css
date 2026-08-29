@@ -377,6 +377,34 @@
 }
 .pt-inline-modal { animation: pt-scene-in 0.3s ease; }
 
+/* BUGFIX: the real app sizes .fm-lab-modal / .fm-family-auto-modal against
+   the real viewport (e.g. `height: min(900px, calc(100vh - 40px))`) for
+   their full-screen case. Reused verbatim inside this much smaller tour
+   stage, that made the modal balloon far taller than the visible area —
+   it got vertically centered by the backdrop's flex layout and had its
+   top+bottom silently clipped by `.pt-stage`'s `overflow: hidden`. That
+   hid whatever content (kerning row, family rows, etc.) landed in the
+   cropped zone, AND pushed the fake cursor's calculated position outside
+   the visible area for any waypoint targeting that content (which is why
+   the cursor only ever appeared correctly in the Brush scene — the only
+   scene that doesn't use this modal chrome at all). Forcing the modal to
+   fill the stage exactly fixes both the cropping and the missing cursor. */
+.pt-inline-modal {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* BUGFIX: a later "Test Lab refinement" rule turned `.fm-lab-body` from
+   `overflow-y: auto` into `overflow: hidden` app-wide. Test Lab and
+   Feature Builder both use this class for their body, so any content
+   taller than the available space was clipped with no way to reveal it.
+   Family was unaffected only because its own `.fm-family-auto-body` class
+   happens to redeclare `overflow-y: auto` afterward. Restore scrolling
+   inside the tour so nothing is ever silently cut off. */
+.pt-inline-modal .fm-lab-body {
+  overflow-y: auto !important;
+}
+
 /* ---------------------------------------------------------------- FAMILY */
 /* Structural rows/strips reuse the real .fm-family-auto-* classes as-is;
    only the small "Generated" badge here is tour-specific. */
