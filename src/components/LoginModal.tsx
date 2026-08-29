@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Eye, EyeOff, KeyRound, Lock, Mail, Sparkles } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Lock, Mail, Play, Sparkles } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { FontSeruLogo } from "@/components/FontSeruLogo";
 import { getProWhatsAppUrl } from "@/lib/whatsapp";
+import { useTourStore } from "@/store/tourStore";
 
 type Mode = "signin" | "signup" | "forgot";
 type Status = "idle" | "busy" | "error" | "success";
@@ -33,6 +34,8 @@ export function LoginModal() {
     sendPasswordReset,
     updatePassword,
   } = useAuth();
+  const tourOpen = useTourStore((s) => s.tourOpen);
+  const openTour = useTourStore((s) => s.openTour);
 
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
@@ -79,6 +82,10 @@ export function LoginModal() {
   // non-recovery session already.
   if (initializing || !isConfigured) return null;
   if (!passwordRecovery && user) return null;
+  // The pre-login product tour (see src/components/ProductTour) takes over
+  // the gate slot while it's playing; this modal reappears the moment it
+  // closes (whether by "Start Creating" or "Skip Demo").
+  if (tourOpen) return null;
 
   const busy = status === "busy";
 
@@ -171,6 +178,16 @@ export function LoginModal() {
       <div className="fm-auth-dialog fm-auth-gate-dialog" role="dialog" aria-modal="true" aria-label="Masuk ke FontSeru">
         <header className="fm-auth-gate-header">
           <FontSeruLogo />
+          {!passwordRecovery && (
+            <button
+              type="button"
+              className="fm-auth-gate-watch-demo"
+              onClick={openTour}
+              data-testid="auth-watch-demo-btn"
+            >
+              <Play size={14} /> Watch Demo
+            </button>
+          )}
         </header>
 
         <div className="fm-auth-form fm-auth-gate-form">

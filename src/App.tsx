@@ -16,6 +16,7 @@ import { GlyphCanvas } from "@/editor/GlyphCanvas";
 import { LoginModal } from "@/components/LoginModal";
 import { EmailConfirmedWelcome } from "@/components/EmailConfirmedWelcome";
 import { ProUpsellModal } from "@/components/ProUpsellModal";
+import { ProductTour } from "@/components/ProductTour/ProductTour";
 
 // These three overlays are heavy (Test Lab pulls in the whole specimen
 // renderer, Trace Image pulls in imagetracerjs, Family Auto-Generate pulls
@@ -159,6 +160,7 @@ export default function App() {
         {featureBuilderEverOpened.current && <FeatureBuilderOverlay />}
       </Suspense>
       <LoginModal />
+      <ProductTour />
       <EmailConfirmedWelcome />
       <ProUpsellModal />
     </div>
