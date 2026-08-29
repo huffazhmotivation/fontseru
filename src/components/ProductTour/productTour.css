@@ -179,94 +179,130 @@
 .pt-cta-btn:hover { transform: translateY(-1px); opacity: 0.92; }
 .pt-cta-btn:active { transform: translateY(0); }
 
+
 /* ========================================================================
-   SHARED "FEATURE SHELL" — the mini app-chrome each scene renders inside,
-   so it reads as the real FontSeru window rather than a generic slideshow.
+   SHARED "APP SHELL" — every scene renders this, reusing FontSeru's real
+   CSS classes (fm-topbar, fm-body, fm-canvas-*, fm-floating-toolbar,
+   fm-rightpanel, fm-tool, ...) with static content, so the tour looks like
+   an actual recording of the real app rather than a generic mockup.
+   Only layout/sizing concerns that don't exist in the real (100vh) app are
+   handled here, under the "pt-" prefix.
 ======================================================================== */
 
-.pt-feature-shell {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  overflow: hidden;
-  box-shadow: 0 12px 40px var(--shadow);
-}
-
-.pt-minitopbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel-2);
-  flex: 0 0 auto;
-}
-.pt-minitopbar-dots { display: flex; gap: 5px; }
-.pt-minitopbar-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); opacity: 0.5; }
-.pt-minitopbar-label { font-size: 12px; font-weight: 650; color: var(--text-dim); }
-.pt-minitopbar-spacer { flex: 1; }
-
-.pt-lab-topbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 16px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 700;
-  flex: 0 0 auto;
-}
-
-.pt-feature-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-.pt-feature-body-family { padding: 0; }
-
-/* Left tool rail, echoing FloatingToolbar. */
-.pt-toolrail {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px 8px;
-  border-right: 1px solid var(--line);
-  background: var(--panel-2);
-}
-.pt-toolrail-btn {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  color: var(--text-dim);
-}
-.pt-toolrail-btn-active {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-
-/* Canvas stage. */
 .pt-stage {
   position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px var(--shadow);
 }
-.pt-stage-canvas { background: var(--canvas); }
-.pt-canvas-guides { position: absolute; inset: 0; }
-.pt-guide-line { position: absolute; left: 0; right: 0; height: 1px; background: var(--guide, var(--line)); opacity: 0.6; }
-.pt-guide-baseline { background: var(--guide-2, var(--line)); opacity: 0.8; }
 
-.pt-brush-svg { position: absolute; inset: 8%; width: 84%; height: 84%; overflow: visible; }
+/* Mirrors .fm-root's flex layout, but sized to the tour's own window
+   instead of 100vh — .fm-topbar / .fm-body underneath are used verbatim. */
+.pt-app-shell {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+.pt-app-shell .fm-body { overflow: hidden; }
+.pt-app-shell.pt-dimmed { filter: brightness(0.94) saturate(0.9); }
+
+/* Every button/input inside the mock shell is purely decorative — the fake
+   cursor + our own "active" classes carry all the visual state, so real
+   pointer/keyboard interaction with them is disabled outright. This also
+   stops the browser's own hover/focus states firing under our fake cursor,
+   which would otherwise look like a second, conflicting cursor. */
+.pt-app-shell button,
+.pt-app-shell input,
+.pt-inline-modal-backdrop button,
+.pt-inline-modal-backdrop input {
+  pointer-events: none;
+}
+
+/* Compact stand-in for the real GlyphNav sidebar — not a target of any
+   tour step, purely ambient so the 3-column app layout reads correctly. */
+.pt-glyphnav-mini {
+  width: 152px;
+  flex: 0 0 auto;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px;
+  gap: 10px;
+}
+.pt-glyphnav-mini-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.pt-glyphnav-mini-count {
+  font-family: var(--mono);
+  color: var(--text-dim);
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 20px;
+  padding: 1px 6px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.pt-glyphnav-mini-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.pt-glyphnav-mini-tile {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 1px solid var(--line-soft);
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+.pt-glyphnav-mini-tile.is-active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+@media (max-width: 860px) {
+  .pt-glyphnav-mini { display: none; }
+}
+
+/* Small circular glyph swatch reused for the right-panel header preview
+   (in place of the real <GlyphThumbnail>, which renders live vector data
+   this isolated demo intentionally never touches). */
+.pt-mock-glyph {
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--text);
+}
+
+/* Width-Profile numeric readout under the brush width-profile presets. */
+.pt-taper-readout {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.pt-taper-readout b { font-family: var(--mono); color: var(--text); font-weight: 700; }
+
+/* Brush canvas contents — sit inside the real .fm-canvas-frame. */
+.pt-canvas-guides { position: absolute; inset: 0; pointer-events: none; }
+.pt-guide-line { position: absolute; left: 0; right: 0; height: 1px; background: var(--line); opacity: 0.5; }
+.pt-guide-baseline { opacity: 0.75; }
+.pt-brush-svg { position: absolute; inset: 10%; width: 80%; height: 80%; overflow: visible; }
 .pt-brush-stroke {
   fill: none;
   stroke: var(--accent);
@@ -283,11 +319,10 @@
   stroke-linejoin: round;
   transition: opacity 0.25s ease, stroke-width 0.4s ease, transform 0.4s ease;
 }
-
 .pt-outline-badge {
   position: absolute;
   left: 50%;
-  bottom: 8%;
+  bottom: 6%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -299,118 +334,26 @@
   font-size: 11.5px;
   font-weight: 700;
   transition: opacity 0.25s ease;
+  white-space: nowrap;
 }
 
-/* Right settings panel, echoing RightPanel. */
-.pt-side-panel {
-  flex: 0 0 auto;
-  width: 190px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  border-left: 1px solid var(--line);
-  background: var(--panel);
-  overflow: hidden;
-}
-.pt-panel-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  font-weight: 750;
-  color: var(--text);
-  margin-bottom: 2px;
-}
-.pt-panel-subtitle { font-size: 11px; font-weight: 700; color: var(--text-dim); margin-bottom: 6px; }
-.pt-panel-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11.5px;
-  color: var(--text-dim);
-}
-.pt-panel-row-tight { font-size: 11px; }
-.pt-panel-block {
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel-2);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
-}
-.pt-panel-block-highlight[data-active="true"] {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
+/* --------------------------------------------------- INLINE LAB MODAL --- */
+/* Reuses the real .fm-lab-backdrop / .fm-lab-modal chrome (shared by Test
+   Lab / Family / Feature Builder in the real app), just repositioned to
+   sit inside the tour's own stage instead of covering the full viewport. */
 
-.pt-chip {
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--panel-3);
-  color: var(--text-dim);
-  font-size: 11px;
-  font-weight: 650;
+.pt-inline-modal-backdrop {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 60;
+  padding: 18px !important;
 }
-.pt-chip-active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.pt-inline-modal { animation: pt-scene-in 0.3s ease; }
 
-.pt-mini-slider {
-  position: relative;
-  width: 76px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--panel-3);
-  overflow: hidden;
-}
-.pt-mini-slider-thin { width: 100%; height: 4px; margin-top: 4px; }
-.pt-mini-slider-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  background: var(--accent);
-  border-radius: 999px;
-  transition: width 0.2s ease;
-}
+/* ---------------------------------------------------------------- FAMILY */
 
-.pt-taper-graph { width: 100%; height: 32px; }
-.pt-taper-curve { fill: none; stroke: var(--accent); stroke-width: 2; }
-.pt-taper-handle { fill: var(--accent); }
-.pt-mono-value { font-family: var(--mono); color: var(--text); }
-
-/* ------------------------------------------------------------- FAMILY --- */
-
-.pt-stage-family { display: flex; flex-direction: column; padding: 16px 18px; gap: 14px; }
-.pt-family-tabs { display: flex; gap: 6px; }
-.pt-family-tab {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text-dim);
-  font-size: 12px;
-  font-weight: 650;
-}
-.pt-family-tab-active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
-.pt-family-generate-row { display: flex; }
-.pt-generate-btn {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 14px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 12.5px;
-  font-weight: 700;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
-}
-.pt-generate-btn[data-armed="true"] {
-  transform: scale(0.96);
-  box-shadow: 0 0 0 4px var(--accent-soft);
-}
+.pt-family-body { display: flex; flex-direction: column; gap: 14px; }
+.pt-family-generate-btn { align-self: flex-start; }
 .pt-family-grid {
   flex: 1;
   min-height: 0;
@@ -442,37 +385,46 @@
   color: var(--accent);
   font-size: 10px;
   font-weight: 750;
+  white-space: nowrap;
 }
 .pt-family-glyph {
   flex: 1;
   display: grid;
   place-items: center;
-  font-size: 42px;
+  font-size: 38px;
   color: var(--text);
   font-family: var(--sans);
   transition: font-weight 0.2s ease, opacity 0.2s ease;
+}
+.pt-mini-slider {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--panel-3);
+  overflow: hidden;
+}
+.pt-mini-slider-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.2s ease;
 }
 
 @media (max-width: 760px) {
   .pt-family-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* ------------------------------------------------------------ TEST LAB -- */
+/* -------------------------------------------------------------- TEST LAB */
 
-.pt-stage-lab {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 22px;
-  padding: 24px 32px;
-  background: var(--canvas);
-}
 .pt-lab-specimen {
   color: var(--text);
   font-family: var(--sans);
   font-weight: 600;
   letter-spacing: -0.01em;
   text-align: center;
+  padding: 18px 0;
 }
 .pt-lab-specimen-sub { font-size: 15px; font-weight: 500; color: var(--text-dim); }
 .pt-lab-kern-pair { position: relative; display: inline-flex; }
@@ -490,46 +442,39 @@
   font-size: 10.5px;
   font-weight: 700;
 }
-.pt-lab-controls { display: flex; justify-content: center; gap: 26px; }
-.pt-lab-control { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-dim); font-weight: 650; }
+
+/* --------------------------------------------------------------- CHIPS -- */
+
+.pt-chip {
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-3);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.pt-chip-active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 
 /* -------------------------------------------------------- FEATURE BUILDER */
 
-.pt-stage-feature {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 26px;
-  padding: 24px;
-  background: var(--canvas);
-}
-.pt-feature-rule-types { display: flex; gap: 8px; }
-.pt-feature-rule-chip { font-size: 12px; padding: 6px 14px; }
-.pt-feature-merge {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-family: var(--sans);
-  font-weight: 700;
-  font-size: 40px;
-  color: var(--text);
-}
-.pt-feature-glyph { transition: transform 0.35s ease, opacity 0.25s ease; }
-.pt-feature-glyph-result { color: var(--accent); }
-.pt-feature-plus, .pt-feature-arrow { font-size: 22px; color: var(--text-faint); transition: opacity 0.25s ease; }
+.fm-feature-rule-tabs { display: flex; gap: 8px; margin-bottom: 2px; }
+.pt-feature-merge-thumb { transition: transform 0.35s ease, opacity 0.25s ease; }
+.pt-feature-merge-result { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 
 /* ===========================================================================
-   SHARED CURSOR / TOOLTIP / HIGHLIGHT / RIPPLE — used by every scene
+   SHARED CURSOR / TOOLTIP / HIGHLIGHT / RIPPLE — used by every scene.
+   z-index sits above the inline lab modal (60) so the fake cursor is always
+   the topmost, single source of pointer feedback.
 =========================================================================== */
 
 .pt-cursor-wrap {
   position: absolute;
   left: 0;
   top: 0;
-  transform: translate(-3px, -3px);
+  transform: translate(-4px, -3px);
   transition: left 0.5s cubic-bezier(0.22, 0.61, 0.36, 1), top 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
-  z-index: 9;
+  z-index: 90;
   pointer-events: none;
 }
 .pt-cursor-icon {
@@ -570,7 +515,7 @@
   transition: left 0.55s cubic-bezier(0.22, 0.61, 0.36, 1), top 0.55s cubic-bezier(0.22, 0.61, 0.36, 1),
     width 0.55s cubic-bezier(0.22, 0.61, 0.36, 1), height 0.55s cubic-bezier(0.22, 0.61, 0.36, 1);
   pointer-events: none;
-  z-index: 3;
+  z-index: 80;
 }
 
 .pt-click-ripple {
@@ -582,7 +527,7 @@
   background: radial-gradient(circle, color-mix(in srgb, var(--accent) 70%, transparent) 0%, transparent 70%);
   animation: pt-ripple-pop 0.55s ease-out forwards;
   pointer-events: none;
-  z-index: 8;
+  z-index: 85;
 }
 @keyframes pt-ripple-pop {
   from { opacity: 0.75; transform: scale(0.4); }
@@ -593,16 +538,20 @@
 
 @media (max-width: 900px) {
   .pt-window { height: min(640px, 94vh); }
-  .pt-side-panel { width: 150px; }
   .pt-body { padding: 14px; }
 }
 
 @media (max-width: 680px) {
   .pt-header { gap: 10px; padding: 12px 14px; }
   .pt-progress-dot span { display: none; }
-  .pt-side-panel { display: none; }
-  .pt-toolrail { padding: 8px 6px; }
-  .pt-family-glyph { font-size: 30px; }
-  .pt-feature-merge { font-size: 30px; }
+  .pt-glyphnav-mini { display: none; }
+  .fm-rightpanel { width: 220px !important; }
+  .pt-family-glyph { font-size: 28px; }
+  .fm-feature-modal .fm-feature-thumb { width: 40px; height: 40px; }
   .pt-cta h2 { font-size: 20px; }
+}
+
+@media (max-width: 520px) {
+  .fm-rightpanel { display: none !important; }
+  .pt-family-grid { grid-template-columns: repeat(2, 1fr); }
 }

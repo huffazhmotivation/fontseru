@@ -21,14 +21,14 @@ const TICK_MS = 50;
  *   editor is already hard-blocked by `AuthProvider` for the entire
  *   logged-out ("locked") state that the tour only ever appears within
  *   (see the capture-phase listener in src/auth/AuthProvider.tsx).
- * - It only ever auto-opens once per browser (localStorage flag in
- *   `tourStore.ts`); after that, returning logged-out visitors land
- *   directly on the Login/Register modal, with a "Watch Demo" button that
- *   reopens this component on demand (see LoginModal.tsx).
+ * - It auto-opens every time a visitor is logged out and about to hit the
+ *   Login/Register gate (once per page load, not once per browser) — see
+ *   the auto-open effect below. "Skip Demo" or finishing it hands off to
+ *   the Login modal immediately; a "Watch Demo" button on that modal (see
+ *   LoginModal.tsx) also replays it on demand within the same visit.
  */
 export function ProductTour() {
   const { isConfigured, initializing, user } = useAuth();
-  const hasSeenTour = useTourStore((s) => s.hasSeenTour);
   const tourOpen = useTourStore((s) => s.tourOpen);
   const autoOpenChecked = useTourStore((s) => s.autoOpenChecked);
   const markAutoOpenChecked = useTourStore((s) => s.markAutoOpenChecked);
@@ -36,16 +36,18 @@ export function ProductTour() {
   const openTour = useTourStore((s) => s.openTour);
   const closeTour = useTourStore((s) => s.closeTour);
 
-  // One-time auto-open: as soon as we know for certain this is a
-  // logged-out visitor who has never seen the tour, play it automatically
-  // instead of going straight to the Login modal.
+  // Auto-open once per page load: as soon as we know for certain this is a
+  // logged-out visitor, play the tour automatically instead of going
+  // straight to the Login modal. `autoOpenChecked` only guards against
+  // re-triggering on every re-render within this same load — a fresh page
+  // load (or logout) resets it, so the tour plays every time.
   useEffect(() => {
     if (autoOpenChecked || initializing) return;
     markAutoOpenChecked();
-    if (isConfigured && !user && !hasSeenTour) {
+    if (isConfigured && !user) {
       openTour();
     }
-  }, [autoOpenChecked, initializing, isConfigured, user, hasSeenTour, markAutoOpenChecked, openTour]);
+  }, [autoOpenChecked, initializing, isConfigured, user, markAutoOpenChecked, openTour]);
 
   // Safety: if a session appears while the tour is open (shouldn't happen —
   // the editor is locked out while it plays — but guards against e.g. an
