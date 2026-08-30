@@ -2160,6 +2160,38 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-auto-space-row .fm-action-btn.accent:hover {
   filter: brightness(1.05);
 }
+
+/* Hover-only tooltip: replaces an always-visible hint paragraph with a
+   floating bubble, so the panel stays compact and the explanation only
+   appears when the user actually needs it (hovering/focusing the button). */
+.fm-tooltip-anchor {
+  position: relative;
+}
+.fm-tooltip-bubble {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 60;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 97%, #000 3%);
+  color: var(--text-dim);
+  font-size: 10.5px;
+  line-height: 1.5;
+  letter-spacing: .002em;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.fm-tooltip-anchor:hover .fm-tooltip-bubble,
+.fm-tooltip-anchor:focus-within .fm-tooltip-bubble {
+  opacity: 1;
+  transform: translateY(0);
+}
 .fm-testlab-nav {
   color: var(--text);
 }

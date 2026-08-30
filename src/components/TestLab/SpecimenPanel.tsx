@@ -1789,17 +1789,22 @@ export function SpecimenPanel() {
             </div>
           )}
 
-          <div className="fm-auto-space-row">
+          <div className="fm-auto-space-row fm-tooltip-anchor">
             <button
               className="fm-action-btn accent"
               onClick={handleAutoSpace}
               disabled={autoSpaceRunning}
               data-testid="auto-space-btn"
-              title="Normalize every glyph's left/right sidebearing to one consistent optical margin, on the currently active style"
             >
               <AlignHorizontalSpaceAround size={14} />
               {autoSpaceRunning ? "Spacing…" : "Auto Spacing"}
             </button>
+            <div className="fm-tooltip-bubble" role="tooltip">
+              Normalize every glyph's left/right sidebearing to one consistent optical margin, on the currently
+              active style. Fixes inconsistent left/right margins across glyphs (e.g. from freehand drawing) before
+              Auto Kerning fine-tunes specific pairs on top. Applies to the active style only — switch tabs to run it
+              on Bold, Italic, or a custom family too.
+            </div>
           </div>
           <label className="fm-checkbox-row" data-testid="auto-space-exclude-manual">
             <input
@@ -1817,11 +1822,6 @@ export function SpecimenPanel() {
             />
             Kerning ulang otomatis (pair non-manual) setelah spacing
           </label>
-          <div className="fm-hint">
-            Fixes inconsistent left/right margins across glyphs (e.g. from freehand drawing) before Auto Kerning
-            fine-tunes specific pairs on top. Applies to the active style only — switch tabs to run it on Bold,
-            Italic, or a custom family too.
-          </div>
 
           {autoSpaceLastRun && (
             <div className="fm-kern-complete" role="status" data-testid="auto-space-complete">
@@ -1832,21 +1832,20 @@ export function SpecimenPanel() {
             </div>
           )}
 
-          <div className="fm-auto-space-row">
+          <div className="fm-auto-space-row fm-tooltip-anchor">
             <button
               className="fm-action-btn accent"
               onClick={handleAutoWordSpacing}
               data-testid="auto-word-spacing-btn"
-              title="Suggest a word-spacing width from this font's own letter widths, so word gaps read as consistent and correctly sized for this typeface"
             >
               <Wand2 size={14} />
               Auto Word Spacing
             </button>
-          </div>
-          <div className="fm-hint">
-            Sets the gap typed between words (the keyboard space bar) from the average width of the letters you've
-            already drawn — a bold/wide font gets a wider space, a condensed one gets a tighter space, instead of one
-            flat default. Separate from Auto Spacing above, which only touches per-letter margins.
+            <div className="fm-tooltip-bubble" role="tooltip">
+              Sets the gap typed between words (the keyboard space bar) from the average width of the letters you've
+              already drawn — a bold/wide font gets a wider space, a condensed one gets a tighter space, instead of
+              one flat default. Separate from Auto Spacing above, which only touches per-letter margins.
+            </div>
           </div>
 
           {wordSpacingFlash !== null && (
