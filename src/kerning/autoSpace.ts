@@ -26,7 +26,7 @@ import { inkExtentAtY } from "./autoKern";
  */
 const SIDE_MARGIN_RATIO = 0.07; // comfortable single-side optical margin, as a fraction of UPM
 const MIN_MARGIN_RATIO = 0.015; // never squeeze a margin away entirely
-const OPTICAL_SAMPLES = 16;
+const OPTICAL_SAMPLES: number = 16;
 const OPTICAL_COMPENSATION = 0.6; // how much of the recession to trade back
 
 export interface GlyphSpacingSuggestion {
