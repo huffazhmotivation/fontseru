@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { UserPlan } from "@/auth/AuthProvider";
 import type { GlyphMap, Glyph, GlyphFamily, FontStyle, CustomFamily } from "@/types/glyph";
-import { MAX_CUSTOM_FAMILIES } from "@/types/glyph";
+import { MAX_CUSTOM_FAMILIES, hasOutline } from "@/types/glyph";
 import type { GlyphOutline, StrokeCap, VectorObject } from "@/types/geometry";
 import type { ToolId } from "@/types/tool";
 import type { BrushSettings, BrushType } from "@/types/brush";
@@ -20,6 +20,7 @@ import { composeMultilingualGlyphs, type MultilingualResult } from "@/glyph/mult
 import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext } from "@/types/kerning";
 import { kerningKey } from "@/types/kerning";
 import { suggestKerningPair, autoKernAllAvailablePairs } from "@/kerning/autoKern";
+import { autoSpaceAllGlyphs as computeAutoSpaceAllGlyphs, type AutoSpaceResult } from "@/kerning/autoSpace";
 import type { FeatureBuilderConfig, LigatureRule, AlternateRule, SwashRule, FeatureGlyphRef } from "@/types/opentypeFeatures";
 import { emptyFeatureConfig, nextFeatureRuleId } from "@/types/opentypeFeatures";
 import { nextFeatureGlyphUnicode, buildFeatureGlyph, isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
@@ -229,6 +230,10 @@ interface AppState {
   kerningOverridesByStyle: KerningOverridesByStyle;
   kerningOverrideManualByStyle: KerningOverrideManualByStyle;
   autoKernLastRun: { processed: number; updated: number; preservedManual: number } | null;
+  /** Last "Auto Spacing" run against the active style's glyphs, for a brief status readout. */
+  autoSpaceLastRun: { updated: number; skipped: number } | null;
+  /** Last "Apply Tracking" bake against the active style's glyphs. */
+  trackingApplyLastRun: { units: number; updated: number } | null;
 
   // Font Test Lab / Kerning editor overlay
   testLabOpen: boolean;
@@ -383,6 +388,15 @@ interface AppState {
   applyKerningSuggestion: (left: string, right: string) => void;
   resetKerningPair: (left: string, right: string) => void;
   autoKernAllPairs: (onProgress?: (fraction: number) => void) => Promise<void>;
+  /** Normalizes every glyph's LSB/RSB in the active style to a shared,
+   * optically-balanced baseline margin. Fixes inconsistent hand-drawn
+   * sidebearings; runs before Auto Kern refines specific pairs on top. */
+  autoSpaceAllGlyphs: () => AutoSpaceResult;
+  /** Bakes `trackingUnits` permanently into every glyph's LSB/RSB (split
+   * evenly, so ink stays centered in its now-wider/narrower advance) in the
+   * active style. Unlike Test Lab's live Tracking preview, this is real
+   * glyph data and is included in font export. */
+  applyTrackingToAllGlyphs: (trackingUnits: number) => { updated: number };
   beginKerningDrag: () => void;
   setKerningPairLive: (left: string, right: string, value: number) => void;
   endKerningDrag: () => void;
@@ -644,6 +658,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     kerningOverridesByStyle: {},
     kerningOverrideManualByStyle: {},
     autoKernLastRun: null,
+    autoSpaceLastRun: null,
+    trackingApplyLastRun: null,
     testLabOpen: false,
     testLabTab: "specimen",
     familyOpen: false,
@@ -708,6 +724,8 @@ export const useAppStore = create<AppState>()((set, get) => {
         kerningOverridesByStyle: {},
         kerningOverrideManualByStyle: {},
         autoKernLastRun: null,
+        autoSpaceLastRun: null,
+        trackingApplyLastRun: null,
         featureConfig: emptyFeatureConfig(),
         selectedObjectIds: [],
         selectedNodes: [],
@@ -1448,6 +1466,35 @@ export const useAppStore = create<AppState>()((set, get) => {
       const result = await autoKernAllAvailablePairs(glyphs, metrics, kerningPairs, kerningManual, undefined, onProgress);
       commitKerning(result.pairs, result.manual);
       set({ autoKernLastRun: { processed: result.processed, updated: result.updated, preservedManual: result.preservedManual } });
+    },
+
+    autoSpaceAllGlyphs: () => {
+      const { glyphs, metrics } = get();
+      const result = computeAutoSpaceAllGlyphs(glyphs, metrics, applyGlyphMetricPatch);
+      if (result.updated > 0) commit(result.glyphs);
+      set({ autoSpaceLastRun: { updated: result.updated, skipped: result.skipped } });
+      return result;
+    },
+
+    applyTrackingToAllGlyphs: (trackingUnits) => {
+      const rounded = Math.round(Number.isFinite(trackingUnits) ? trackingUnits : 0);
+      if (rounded === 0) {
+        set({ trackingApplyLastRun: { units: 0, updated: 0 } });
+        return { updated: 0 };
+      }
+      const { glyphs } = get();
+      const half = rounded / 2;
+      let next = glyphs;
+      let updated = 0;
+      for (const [char, glyph] of Object.entries(glyphs)) {
+        if (!hasOutline(glyph)) continue;
+        if (next === glyphs) next = { ...glyphs };
+        next[char] = applyGlyphMetricPatch(glyph, { lsb: glyph.lsb + half, rsb: glyph.rsb + half });
+        updated++;
+      }
+      if (updated > 0) commit(next);
+      set({ trackingApplyLastRun: { units: rounded, updated } });
+      return { updated };
     },
 
     beginKerningDrag: () => {

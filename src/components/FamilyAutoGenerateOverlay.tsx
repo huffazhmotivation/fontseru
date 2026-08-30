@@ -374,7 +374,7 @@ export function FamilyAutoGenerateOverlay() {
                 <Slider
                   label="Weight (Bold Amount)"
                   value={customBoldAmount}
-                  min={0}
+                  min={-60}
                   max={120}
                   step={2}
                   onChange={setCustomBoldAmount}
@@ -397,7 +397,10 @@ export function FamilyAutoGenerateOverlay() {
                   />
                   <span>Replace existing {activeTab.label} glyphs</span>
                 </label>
-                <div className="fm-hint">Set either slider to 0 to skip that part of the transform.</div>
+                <div className="fm-hint">
+                  Weight: 0 keeps Regular's thickness, negative values thin it (Light/Thin), positive values bold
+                  it. Set either slider to 0 to skip that part of the transform.
+                </div>
                 <button
                   className="fm-action-btn accent"
                   onClick={() => runCustom(activeTab.id, activeTab.label)}

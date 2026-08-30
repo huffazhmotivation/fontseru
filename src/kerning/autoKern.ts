@@ -65,7 +65,7 @@ function polylineCrossings(points: Point[], y: number): number[] {
  * the stem — a sample taken off to the side contributes nothing rather
  * than inventing a false edge).
  */
-function inkExtentAtY(outline: GlyphOutline, y: number): { min: number; max: number } | null {
+export function inkExtentAtY(outline: GlyphOutline, y: number): { min: number; max: number } | null {
   let min = Infinity;
   let max = -Infinity;
   let found = false;

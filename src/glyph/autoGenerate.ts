@@ -87,16 +87,22 @@ function contourOffsetLimit(contour: Contour): number {
  * so curve tangents stay intact. Hole contours move inward instead of outward.
  */
 function offsetClosedContour(contour: Contour, amount: number, isHole: boolean): Contour {
-  if (!contour.closed || contour.nodes.length < 2 || amount <= 0) return contour;
+  if (!contour.closed || contour.nodes.length < 2 || amount === 0) return contour;
 
   const flattened = flattenContour(contour, 10);
   const area = signedArea(flattened);
   if (Math.abs(area) < 1e-6) return contour;
 
   const orientation = area >= 0 ? 1 : -1;
-  // Never let a counter collapse completely. This keeps O/B/P/R/a/e-style
-  // holes editable even when the requested bold amount is aggressive.
-  const distance = isHole ? -Math.min(amount, contourOffsetLimit(contour)) : amount;
+  // Positive amount bolds: holes shrink inward (thicker counters), outer
+  // contours expand outward. Negative amount thins (a "Light" family):
+  // outer contours shrink inward, holes grow outward instead. Either
+  // shrinking direction is capped by the contour's own offset limit so a
+  // contour (or a counter like O/B/P/R/a/e) never collapses past itself.
+  const limit = contourOffsetLimit(contour);
+  const distance = isHole
+    ? (amount >= 0 ? -Math.min(amount, limit) : Math.min(-amount, limit))
+    : (amount >= 0 ? amount : -Math.min(-amount, limit));
 
   return {
     ...contour,
@@ -160,7 +166,9 @@ function offsetFilledObject(source: VectorObject, amount: number): VectorObject 
 }
 
 export function autoBoldOutline(source: GlyphOutline, rawAmount: number): GlyphOutline {
-  const amount = Math.max(0, Number.isFinite(rawAmount) ? rawAmount : 0);
+  // Negative amounts thin the glyph (for a Light/Thin family) instead of
+  // bolding it, so this is intentionally not clamped to zero.
+  const amount = Number.isFinite(rawAmount) ? rawAmount : 0;
   return {
     objects: source.objects.map((object) => {
       if (object.kind === "line" || object.kind === "brush") {
@@ -168,7 +176,8 @@ export function autoBoldOutline(source: GlyphOutline, rawAmount: number): GlyphO
         return {
           ...cloned,
           // Increasing by 2× amount expands the rendered stroke by `amount`
-          // on each side of its editable centerline.
+          // on each side of its editable centerline; a negative amount
+          // narrows it the same way, floored at a 1u hairline.
           strokeWidth: Math.max(1, (object.strokeWidth ?? 20) + amount * 2),
         };
       }

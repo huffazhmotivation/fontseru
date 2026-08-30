@@ -1323,10 +1323,13 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-action-btn:hover { border-color: var(--text-faint); }
 .fm-action-btn.accent { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .fm-action-btn.accent:hover { background: var(--accent-2); }
+.fm-action-btn.done { background: var(--accent-2); border-color: var(--accent-2); color: var(--accent-ink); animation: fm-auto-kern-flash 0.55s ease; }
 
 /* Auto Kerning button: fills left-to-right with real progress while the
    (now chunked/async) auto-kern pass runs, then flashes fully solid once
    the last chunk lands. */
+.fm-action-btn:disabled { opacity: .42; cursor: default; }
+.fm-action-btn:disabled:hover { filter: none; }
 .fm-auto-kern-btn.running {
   background: linear-gradient(
     to right,
@@ -2133,6 +2136,29 @@ input[type="number"]::-webkit-outer-spin-button {
   display: block;
   flex: 0 0 auto;
   stroke: currentColor;
+}
+.fm-auto-space-row {
+  margin-bottom: 8px;
+}
+.fm-auto-space-row .fm-action-btn {
+  width: 100%;
+  height: 34px;
+  min-height: 34px;
+  padding: 8px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.fm-auto-space-row .fm-action-btn.accent {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 750;
+}
+.fm-auto-space-row .fm-action-btn.accent:hover {
+  filter: brightness(1.05);
 }
 .fm-testlab-nav {
   color: var(--text);

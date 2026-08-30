@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { Layers3, Loader2, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
+import { AlignHorizontalSpaceAround, Layers3, Loader2, MoveHorizontal, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
 import { NumericInput } from "@/components/NumericInput";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -1349,11 +1349,16 @@ export function SpecimenPanel() {
   const setFamilyKerningPair = useAppStore((s) => s.setFamilyKerningPair);
   const resetFamilyKerningPair = useAppStore((s) => s.resetFamilyKerningPair);
   const autoKernAllPairsForContext = useAppStore((s) => s.autoKernAllPairsForContext);
+  const autoSpaceAllGlyphs = useAppStore((s) => s.autoSpaceAllGlyphs);
+  const autoSpaceLastRun = useAppStore((s) => s.autoSpaceLastRun);
+  const applyTrackingToAllGlyphs = useAppStore((s) => s.applyTrackingToAllGlyphs);
+  const trackingApplyLastRun = useAppStore((s) => s.trackingApplyLastRun);
   // "idle" | 0..1 while running | "done" briefly once the last chunk lands,
   // so the button can fill up like a progress bar and flash solid at 100%
   // before returning to its normal state.
   const [autoKernProgress, setAutoKernProgress] = useState<"idle" | "done" | number>("idle");
   const autoKernRunning = typeof autoKernProgress === "number";
+  const [trackingApplyFlash, setTrackingApplyFlash] = useState(false);
 
   // Same global history stack the top bar's Undo/Redo use — kerning edits
   // (drag or precision input, single or family) already push onto it, so
@@ -1399,6 +1404,17 @@ export function SpecimenPanel() {
       setAutoKernProgress("idle");
     }
   }, [autoKernRunning, autoKernAllPairs, autoKernAllPairsForContext, kerningMode, familyContext]);
+
+  const handleAutoSpace = useCallback(() => {
+    autoSpaceAllGlyphs();
+  }, [autoSpaceAllGlyphs]);
+
+  const handleApplyTracking = useCallback(() => {
+    if (tracking === 0) return;
+    applyTrackingToAllGlyphs(tracking);
+    setTrackingApplyFlash(true);
+    window.setTimeout(() => setTrackingApplyFlash(false), 900);
+  }, [applyTrackingToAllGlyphs, tracking]);
 
   // Unlike the other presets (fixed strings), Multilingual reflects
   // whatever the font actually has right now: every "multilingual"
@@ -1749,6 +1765,31 @@ export function SpecimenPanel() {
                 : ""}
             </div>
           )}
+
+          <div className="fm-auto-space-row">
+            <button
+              className="fm-action-btn accent"
+              onClick={handleAutoSpace}
+              data-testid="auto-space-btn"
+              title="Normalize every glyph's left/right sidebearing to one consistent optical margin, on the currently active style"
+            >
+              <AlignHorizontalSpaceAround size={14} />
+              Auto Spacing
+            </button>
+          </div>
+          <div className="fm-hint">
+            Fixes inconsistent left/right margins across glyphs (e.g. from freehand drawing) before Auto Kerning
+            fine-tunes specific pairs on top. Applies to the active style only — switch tabs to run it on Bold,
+            Italic, or a custom family too.
+          </div>
+
+          {autoSpaceLastRun && (
+            <div className="fm-kern-complete" role="status" data-testid="auto-space-complete">
+              <span className="fm-status-dot" />
+              {autoSpaceLastRun.updated} glyph{autoSpaceLastRun.updated === 1 ? "" : "s"} re-spaced
+              {autoSpaceLastRun.skipped > 0 ? ` · ${autoSpaceLastRun.skipped} empty skipped` : ""}
+            </div>
+          )}
         </div>
 
         <div className="fm-lab-side-section">
@@ -1764,6 +1805,27 @@ export function SpecimenPanel() {
           <div className="fm-field">
             <div className="fm-slider-row-label"><label>Tracking</label><span>{tracking}u</span></div>
             <input type="range" min={-60} max={200} value={tracking} onChange={(e) => setTracking(Number(e.target.value))} data-testid="lab-tracking" />
+            <div className="fm-hint">
+              Preview-only until applied — it doesn't affect the exported font on its own.
+            </div>
+            <button
+              className={`fm-action-btn${trackingApplyFlash ? " done" : ""}`}
+              onClick={handleApplyTracking}
+              disabled={tracking === 0}
+              data-testid="apply-tracking-btn"
+              title="Bake this tracking value permanently into every glyph's spacing on the active style, so it's included when exporting"
+            >
+              <MoveHorizontal size={14} />
+              {trackingApplyFlash ? "Applied" : "Apply Tracking to Font"}
+            </button>
+            {trackingApplyLastRun && trackingApplyLastRun.units !== 0 && (
+              <div className="fm-kern-complete" role="status" data-testid="apply-tracking-complete">
+                <span className="fm-status-dot" />
+                {trackingApplyLastRun.units > 0 ? "+" : ""}
+                {trackingApplyLastRun.units}u baked into {trackingApplyLastRun.updated} glyph
+                {trackingApplyLastRun.updated === 1 ? "" : "s"}
+              </div>
+            )}
           </div>
           <div className="fm-field">
             <label>Alignment</label>
