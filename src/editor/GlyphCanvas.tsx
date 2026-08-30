@@ -580,6 +580,7 @@ export function GlyphCanvas() {
           .node-shape.selected { fill: var(--accent); stroke: var(--accent); }
           .node-shape.guide { opacity: 0.6; }
           .skeleton-guide-path { fill: none; stroke: var(--accent); stroke-width: ${1 / sc}; stroke-dasharray: ${3 / sc} ${3 / sc}; opacity: 0.4; }
+          .skeleton-guide-path.active { stroke-dasharray: none; stroke-width: ${1.25 / sc}; opacity: 0.9; }
           .close-ring { fill: none; stroke: var(--accent); stroke-width: ${1.8 / sc}; }
           .marquee-rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: ${1 / sc}; opacity: 0.5; }
           .sel-box { fill: none; stroke: var(--accent); stroke-width: ${1.2 / sc}; stroke-dasharray: ${5 / sc} ${4 / sc}; }
@@ -1017,28 +1018,45 @@ const NodesAndHandlesLayer = memo(function NodesAndHandlesLayer({
 }) {
   return (
     <>
-      {objects.map((obj) =>
-        obj.contours.map((contour) =>
-          contour.nodes.map((node) => {
-            const svgP = toSvgPoint(node.point, ascender);
-            const isSel = selectedNodes.some((r) => r.contourId === contour.id && r.nodeId === node.id);
-            const showHandles = tool === "node" ? isSel : Boolean(node.handleIn || node.handleOut);
-            return (
-              <g key={node.id}>
-                {showHandles && node.handleIn && (
-                  <HandleGlyph node={node} part="handleIn" ascender={ascender} hitScale={hitScale}
-                    selected={selectedHandle?.contourId === contour.id && selectedHandle?.nodeId === node.id && selectedHandle?.part === "handleIn"} />
-                )}
-                {showHandles && node.handleOut && (
-                  <HandleGlyph node={node} part="handleOut" ascender={ascender} hitScale={hitScale}
-                    selected={selectedHandle?.contourId === contour.id && selectedHandle?.nodeId === node.id && selectedHandle?.part === "handleOut"} />
-                )}
-                <NodeShape point={svgP} type={node.type} hitScale={hitScale} selected={isSel} />
-              </g>
-            );
-          })
-        )
-      )}
+      {objects.map((obj) => (
+        <g key={obj.id}>
+          {/* Solid skeleton/centerline for line & brush objects — this is the
+              actual path being edited, kept visible under its own thick
+              rendered stroke/silhouette (mirrors the "show path" behavior
+              you get in Node tool in apps like Affinity Designer), so you
+              can see exactly where the curve/nodes sit while dragging. */}
+          {(obj.kind === "line" || obj.kind === "brush") &&
+            obj.contours.map((contour) => (
+              <path
+                key={contour.id}
+                d={contourToPath(contour, ascender)}
+                className="skeleton-guide-path active"
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="none"
+              />
+            ))}
+          {obj.contours.map((contour) =>
+            contour.nodes.map((node) => {
+              const svgP = toSvgPoint(node.point, ascender);
+              const isSel = selectedNodes.some((r) => r.contourId === contour.id && r.nodeId === node.id);
+              const showHandles = tool === "node" ? isSel : Boolean(node.handleIn || node.handleOut);
+              return (
+                <g key={node.id}>
+                  {showHandles && node.handleIn && (
+                    <HandleGlyph node={node} part="handleIn" ascender={ascender} hitScale={hitScale}
+                      selected={selectedHandle?.contourId === contour.id && selectedHandle?.nodeId === node.id && selectedHandle?.part === "handleIn"} />
+                  )}
+                  {showHandles && node.handleOut && (
+                    <HandleGlyph node={node} part="handleOut" ascender={ascender} hitScale={hitScale}
+                      selected={selectedHandle?.contourId === contour.id && selectedHandle?.nodeId === node.id && selectedHandle?.part === "handleOut"} />
+                  )}
+                  <NodeShape point={svgP} type={node.type} hitScale={hitScale} selected={isSel} />
+                </g>
+              );
+            })
+          )}
+        </g>
+      ))}
     </>
   );
 });
