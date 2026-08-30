@@ -403,7 +403,20 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     === true;
   const { usage: exportUsage, refresh: refreshExportUsage, consumeExport } = useExportUsage();
 
-  const [format, setFormat] = useState<ExportFontFormat>("ttf");
+  // Multi-select: each format button toggles independently. Picking more
+  // than one (e.g. TTF + OTF, or all four) exports every selected binary
+  // into the same export ZIP — there's no separate "both" mode anymore.
+  const [formats, setFormats] = useState<ExportFontFormat[]>(["ttf"]);
+  const toggleFormat = useCallback((value: ExportFontFormat) => {
+    setFormats((current) => {
+      if (current.includes(value)) {
+        // Keep at least one format selected.
+        if (current.length === 1) return current;
+        return current.filter((item) => item !== value);
+      }
+      return [...current, value];
+    });
+  }, []);
   const [exportTab, setExportTab] = useState<ExportTab>("fontinfo");
   const [fontInfoForm, setFontInfoForm] = useState<FontInfoFormState>(emptyFontInfoForm);
   const [licenseInfoForm, setLicenseInfoForm] = useState<LicenseInfoFormState>(emptyLicenseInfoForm);
@@ -448,7 +461,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       restriction: "",
       note: "",
     });
-    setFormat("ttf");
+    setFormats(["ttf"]);
     setSelectedStyles(detectExportableStyles(s.glyphsByStyle, s.customFamilies));
     setExportTab("fontinfo");
     setExportOpen(true);
@@ -606,7 +619,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       const baseName = safeFontFileBaseName(fontName);
       const multiStyle = styles.length > 1;
       const files: Array<{
-        extension: "ttf" | "otf";
+        extension: "ttf" | "otf" | "woff" | "woff2";
         name: string;
         blob: Blob;
       }> = [];
@@ -653,7 +666,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
             s.metrics,
             exportInfo,
             effectiveKerning,
-            format,
+            formats,
             s.featureConfig,
           );
         } catch (error) {
@@ -1060,17 +1073,20 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
               <div className="fm-export-field">
                 <span>Format</span>
                 <div className="fm-format-segment" role="group" aria-label="Font format">
-                  {(["ttf", "otf", "both"] as ExportFontFormat[]).map((value) => (
-                    <button
-                      type="button"
-                      key={value}
-                      className={format === value ? "active" : ""}
-                      onClick={() => setFormat(value)}
-                      aria-pressed={format === value}
-                    >
-                      {value === "both" ? "TTF + OTF" : value.toUpperCase()}
-                    </button>
-                  ))}
+                  {(["ttf", "otf", "woff", "woff2"] as ExportFontFormat[]).map((value) => {
+                    const active = formats.includes(value);
+                    return (
+                      <button
+                        type="button"
+                        key={value}
+                        className={active ? "active" : ""}
+                        onClick={() => toggleFormat(value)}
+                        aria-pressed={active}
+                      >
+                        {value.toUpperCase()}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

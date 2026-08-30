@@ -18,7 +18,7 @@ export interface ImportedFontProject {
   kerningPairs: KerningPairs;
 }
 
-export type ExportFontFormat = "otf" | "ttf" | "both";
+export type ExportFontFormat = "otf" | "ttf" | "woff" | "woff2";
 
 function categoryFor(cp: number): GlyphCategory {
   if (cp >= 0x41 && cp <= 0x5a) return "upper";
@@ -40,8 +40,8 @@ export interface NormalizedFontMetadata extends FontInfo {
 }
 
 export interface GeneratedFontFile {
-  extension: "otf" | "ttf";
-  mimeType: "font/otf" | "font/ttf";
+  extension: "otf" | "ttf" | "woff" | "woff2";
+  mimeType: "font/otf" | "font/ttf" | "font/woff" | "font/woff2";
   buffer: ArrayBuffer;
 }
 
@@ -1440,12 +1440,20 @@ export async function exportTTF(glyphs: GlyphMap, metrics: FontMetrics, info: Fo
   return generateTTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  // woff-lib may hand back a view into a larger, over-allocated backing
+  // buffer, so copy out exactly the bytes that belong to this font.
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 export async function generateFontFiles(
   glyphs: GlyphMap,
   metrics: FontMetrics,
   info: FontInfo,
   kerningPairs: KerningPairs,
-  format: ExportFontFormat,
+  formats: ExportFontFormat[],
   featureConfig?: FeatureBuilderConfig,
 ): Promise<GeneratedFontFile[]> {
   const data = normalizeExportFontData({
@@ -1456,26 +1464,57 @@ export async function generateFontFiles(
     kerningPairs,
   });
   const files: GeneratedFontFile[] = [];
+  const wanted = new Set(formats);
 
-  // Generate both selected binaries before the caller opens any Save As UI.
+  // Generate every selected binary before the caller opens any Save As UI.
   // Each format is independent: no OTF->TTF rename/conversion chain exists.
-  if (format === "ttf" || format === "both") {
+
+  // WOFF and WOFF2 are just compressed containers around an existing sfnt.
+  // FontSeru wraps its TrueType (glyf) output for them — the same binary a
+  // plain .ttf export produces — since that's the most broadly compatible
+  // choice for web fonts and only needs generating once for both.
+  let ttfBuffer: ArrayBuffer | null = null;
+  if (wanted.has("ttf") || wanted.has("woff") || wanted.has("woff2")) {
     try {
-      const ttf = generateTTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
-      files.push({ extension: "ttf", mimeType: "font/ttf", buffer: ttf });
+      ttfBuffer = generateTTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
     } catch (error) {
       console.error("[FontSeru] TTF generation failed:", error);
       throw new Error(`Unable to generate TTF. ${technicalMessage(error)}`);
     }
+    if (wanted.has("ttf")) {
+      files.push({ extension: "ttf", mimeType: "font/ttf", buffer: ttfBuffer });
+    }
   }
 
-  if (format === "otf" || format === "both") {
+  if (wanted.has("otf")) {
     try {
       const otf = generateOTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
       files.push({ extension: "otf", mimeType: "font/otf", buffer: otf });
     } catch (error) {
       console.error("[FontSeru] OTF generation failed:", error);
       throw new Error(`Unable to generate OTF. ${technicalMessage(error)}`);
+    }
+  }
+
+  if (wanted.has("woff")) {
+    try {
+      const { woffEncode } = await import("woff-lib/woff/encode");
+      const woff = await woffEncode(new Uint8Array(ttfBuffer as ArrayBuffer));
+      files.push({ extension: "woff", mimeType: "font/woff", buffer: toArrayBuffer(woff) });
+    } catch (error) {
+      console.error("[FontSeru] WOFF generation failed:", error);
+      throw new Error(`Unable to generate WOFF. ${technicalMessage(error)}`);
+    }
+  }
+
+  if (wanted.has("woff2")) {
+    try {
+      const { woff2Encode } = await import("woff-lib/woff2/encode");
+      const woff2 = woff2Encode(new Uint8Array(ttfBuffer as ArrayBuffer));
+      files.push({ extension: "woff2", mimeType: "font/woff2", buffer: toArrayBuffer(woff2) });
+    } catch (error) {
+      console.error("[FontSeru] WOFF2 generation failed:", error);
+      throw new Error(`Unable to generate WOFF2. ${technicalMessage(error)}`);
     }
   }
 
