@@ -1792,7 +1792,7 @@ export function SpecimenPanel() {
           <div className="fm-auto-space-row fm-tooltip-anchor">
             <button
               className="fm-action-btn accent"
-              onClick={handleAutoSpace}
+              onClick={(e) => { handleAutoSpace(); e.currentTarget.blur(); }}
               disabled={autoSpaceRunning}
               data-testid="auto-space-btn"
             >
@@ -1806,17 +1806,19 @@ export function SpecimenPanel() {
               on Bold, Italic, or a custom family too.
             </div>
           </div>
-          <label className="fm-checkbox-row" data-testid="auto-space-exclude-manual">
+          <label className={`fm-flag-toggle${excludeManualKerning ? " active" : ""}`} data-testid="auto-space-exclude-manual">
             <input
               type="checkbox"
+              className="fm-flag-toggle-input"
               checked={excludeManualKerning}
               onChange={(e) => setExcludeManualKerning(e.target.checked)}
             />
             Lewati glyph yang sudah punya kerning manual
           </label>
-          <label className="fm-checkbox-row" data-testid="auto-space-rekern">
+          <label className={`fm-flag-toggle${reKernAfterSpacing ? " active" : ""}`} data-testid="auto-space-rekern">
             <input
               type="checkbox"
+              className="fm-flag-toggle-input"
               checked={reKernAfterSpacing}
               onChange={(e) => setReKernAfterSpacing(e.target.checked)}
             />
@@ -1835,7 +1837,7 @@ export function SpecimenPanel() {
           <div className="fm-auto-space-row fm-tooltip-anchor">
             <button
               className="fm-action-btn accent"
-              onClick={handleAutoWordSpacing}
+              onClick={(e) => { handleAutoWordSpacing(); e.currentTarget.blur(); }}
               data-testid="auto-word-spacing-btn"
             >
               <Wand2 size={14} />
