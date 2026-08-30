@@ -9,21 +9,13 @@ body { font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rende
 
 /* ------------------------------------------------------------------ TOKENS */
 .fm-root[data-theme="dark"] {
-  /* Soft, low-saturation mesh so the frosted chrome has something to
-     diffuse behind it. The canvas itself (--canvas) stays a flat opaque
-     color further down — this mesh never shows through the actual
-     drawing surface, only the docked chrome and floating modals. */
-  --bg:
-    radial-gradient(1100px 720px at 6% -10%, color-mix(in srgb, var(--accent) 13%, transparent) 0%, transparent 58%),
-    radial-gradient(950px 680px at 105% 4%, rgba(111, 211, 255, 0.10) 0%, transparent 55%),
-    radial-gradient(900px 800px at 46% 115%, rgba(198, 155, 255, 0.08) 0%, transparent 60%),
-    #0a0c0b;
-  --panel: color-mix(in srgb, #121613 72%, transparent);
-  --panel-2: color-mix(in srgb, #181d1a 64%, transparent);
-  --panel-3: color-mix(in srgb, #202623 56%, transparent);
-  --border: rgba(255, 255, 255, 0.08);
-  --line: rgba(255, 255, 255, 0.1);
-  --line-soft: rgba(255, 255, 255, 0.06);
+  --bg: #0a0c0b;
+  --panel: #101312;
+  --panel-2: #171b19;
+  --panel-3: #1e2320;
+  --border: #23282500;
+  --line: #262b28;
+  --line-soft: #1c211e;
   --text: #eef2ef;
   --text-dim: #8a938d;
   --text-faint: #5c635e;
@@ -45,23 +37,16 @@ body { font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rende
   --danger: #ff6b57;
   --overlap: #a6e034;
   --shadow: rgba(0, 0, 0, 0.5);
-  --glass-blur: 22px;
-  --glass-blur-soft: 13px;
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .fm-root[data-theme="light"] {
-  --bg:
-    radial-gradient(1100px 720px at 8% -10%, color-mix(in srgb, var(--accent) 9%, transparent) 0%, transparent 58%),
-    radial-gradient(950px 680px at 106% 6%, rgba(111, 211, 255, 0.16) 0%, transparent 55%),
-    radial-gradient(900px 800px at 44% 115%, rgba(198, 155, 255, 0.14) 0%, transparent 60%),
-    #f1f3f5;
-  --panel: color-mix(in srgb, #ffffff 66%, transparent);
-  --panel-2: color-mix(in srgb, #ffffff 52%, transparent);
-  --panel-3: color-mix(in srgb, #ffffff 40%, transparent);
-  --border: rgba(20, 24, 28, 0.07);
-  --line: rgba(20, 24, 28, 0.12);
-  --line-soft: rgba(20, 24, 28, 0.07);
+  --bg: #f7f8f9;
+  --panel: #ffffff;
+  --panel-2: #f3f4f6;
+  --panel-3: #ebedf0;
+  --border: #00000000;
+  --line: #e3e6e9;
+  --line-soft: #eef0f2;
   --text: #14181c;
   --text-dim: #62686f;
   --text-faint: #9aa1a8;
@@ -82,10 +67,7 @@ body { font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rende
   --thumb-ink: #1b1f23;
   --danger: #d1402d;
   --overlap: #6ea11a;
-  --shadow: rgba(20, 22, 24, 0.1);
-  --glass-blur: 22px;
-  --glass-blur-soft: 13px;
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --shadow: rgba(20, 22, 24, 0.08);
 }
 
 .fm-root {
@@ -137,13 +119,8 @@ button, input { font-family: inherit; }
   gap: 12px;
   padding: 0 14px;
   background: var(--panel);
-  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
   border-bottom: 1px solid var(--line);
-  box-shadow: var(--glass-highlight), 0 1px 24px var(--shadow);
   min-width: 0;
-  position: relative;
-  z-index: 40;
 }
 .fm-topbar .fm-topbtn { white-space: nowrap; }
 .fm-logo { display: flex; align-items: center; gap: 10px; }
@@ -261,10 +238,7 @@ button, input { font-family: inherit; }
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 190;
   width: 220px; padding: 10px;
   border: 1px solid var(--line); border-radius: 12px;
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
-  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
-  box-shadow: var(--glass-highlight), 0 16px 44px rgba(0,0,0,.36);
+  background: var(--panel); box-shadow: 0 16px 44px rgba(0,0,0,.36);
   display: grid; gap: 8px;
 }
 .fm-auth-menu-email {
@@ -288,10 +262,7 @@ button, input { font-family: inherit; }
 .fm-auth-dialog {
   width: min(400px, calc(100vw - 40px));
   border: 1px solid var(--line); border-radius: 16px;
-  background: color-mix(in srgb, var(--panel) 90%, transparent);
-  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
-  box-shadow: var(--glass-highlight), 0 28px 90px rgba(0,0,0,.46);
+  background: var(--panel); box-shadow: 0 28px 90px rgba(0,0,0,.46);
 }
 .fm-auth-dialog > header {
   display: flex; align-items: center; justify-content: space-between;
@@ -837,14 +808,8 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 /* ------------------------------------------------------------------ GLYPH NAV */
 .fm-glyphnav {
   width: 244px; flex: 0 0 auto;
-  background: var(--panel);
-  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
-  border-right: 1px solid var(--line);
-  box-shadow: var(--glass-highlight);
+  background: var(--panel); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; min-height: 0;
-  position: relative;
-  z-index: 10;
 }
 .fm-glyphnav-head { padding: 14px 14px 10px; border-bottom: 1px solid var(--line-soft); }
 .fm-glyphnav-eyebrow-row {
@@ -1059,13 +1024,8 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 .fm-bottombar {
   height: 44px; flex: 0 0 auto;
   border-top: 1px solid var(--line); background: var(--panel);
-  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
-  box-shadow: var(--glass-highlight);
   display: flex; align-items: center; gap: 12px; padding: 0 16px;
   font-size: 12px; color: var(--text-dim);
-  position: relative;
-  z-index: 40;
 }
 .fm-bottombar button {
   display: flex; align-items: center; gap: 6px;
@@ -1151,16 +1111,7 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 }
 
 /* ------------------------------------------------------------------ RIGHT PANEL */
-.fm-rightpanel {
-  width: 288px; flex: 0 0 auto; background: var(--panel);
-  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
-  border-left: 1px solid var(--line);
-  box-shadow: var(--glass-highlight);
-  overflow-y: auto;
-  position: relative;
-  z-index: 10;
-}
+.fm-rightpanel { width: 288px; flex: 0 0 auto; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
 .fm-panel-header {
   padding: 16px 18px; border-bottom: 1px solid var(--line);
   display: flex; align-items: center; gap: 14px;
@@ -1529,12 +1480,10 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-lab-modal {
   width: min(1180px, 100%);
   height: min(820px, 100%);
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
-  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 14px;
-  box-shadow: var(--glass-highlight), 0 24px 64px var(--shadow);
+  box-shadow: 0 24px 64px var(--shadow);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2225,14 +2174,12 @@ input[type="number"]::-webkit-outer-spin-button {
   padding: 9px 11px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--panel) 90%, transparent);
-  backdrop-filter: blur(var(--glass-blur-soft)) saturate(150%);
-  -webkit-backdrop-filter: blur(var(--glass-blur-soft)) saturate(150%);
+  background: color-mix(in srgb, var(--panel) 97%, #000 3%);
   color: var(--text-dim);
   font-size: 10.5px;
   line-height: 1.5;
   letter-spacing: .002em;
-  box-shadow: var(--glass-highlight), 0 10px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
   opacity: 0;
   transform: translateY(-4px);
   pointer-events: none;
@@ -2465,10 +2412,7 @@ input[type="number"]::-webkit-outer-spin-button {
   max-height: calc(100dvh - 48px);
   overflow: auto;
   border: 1px solid var(--line); border-radius: 16px;
-  background: color-mix(in srgb, var(--panel) 90%, transparent);
-  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
-  box-shadow: var(--glass-highlight), 0 28px 90px rgba(0,0,0,.46);
+  background: var(--panel); box-shadow: 0 28px 90px rgba(0,0,0,.46);
 }
 .fm-export-dialog > header {
   display: flex; align-items: center; justify-content: space-between;
