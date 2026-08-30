@@ -1746,116 +1746,127 @@ export function SpecimenPanel() {
             </div>
           )}
 
-          <div className="fm-kern-side-actions">
-            <button
-              className={`fm-action-btn accent fm-auto-kern-btn${autoKernRunning ? " running" : ""}${autoKernProgress === "done" ? " done" : ""}`}
-              style={autoKernRunning ? { "--fm-auto-kern-fill": `${Math.round(autoKernProgress * 100)}%` } as CSSProperties : undefined}
-              onClick={handleAutoKern}
-              disabled={autoKernRunning}
-              data-testid="kern-auto-common"
-            >
-              {autoKernRunning ? (
-                <Loader2 className="fm-auto-kern-icon fm-auto-kern-spin" size={14} strokeWidth={2} aria-hidden="true" />
-              ) : (
-                <Zap className="fm-auto-kern-icon" size={14} strokeWidth={2} aria-hidden="true" />
-              )}
-              {autoKernRunning ? `Kerning… ${Math.round(autoKernProgress * 100)}%` : "Auto Kerning"}
-            </button>
-            <button
-              className="fm-action-btn fm-kern-reset-btn"
-              disabled={
-                kerningMode === "single"
-                  ? !activeChar
-                  : !hasFamilyPrecisionPair ||
-                    (familyContext === "shared"
-                      ? !familyPairKey || !(familyPairKey in kerningPairs)
-                      : !familyHasOverride)
-              }
-              onClick={kerningMode === "single" ? resetActiveContext : resetFamilyActivePair}
-              data-testid={kerningMode === "single" ? "kern-reset-pair" : "kern-reset-family"}
-            >
-              <RotateCcw size={14} />{" "}
-              {kerningMode === "single" ? "Reset" : familyContext === "shared" ? "Reset Shared" : "Reset Override"}
-            </button>
+          <div className="fm-kern-block">
+            <div className="fm-kern-side-actions">
+              <button
+                className={`fm-action-btn accent fm-auto-kern-btn${autoKernRunning ? " running" : ""}${autoKernProgress === "done" ? " done" : ""}`}
+                style={autoKernRunning ? { "--fm-auto-kern-fill": `${Math.round(autoKernProgress * 100)}%` } as CSSProperties : undefined}
+                onClick={handleAutoKern}
+                disabled={autoKernRunning}
+                data-testid="kern-auto-common"
+              >
+                {autoKernRunning ? (
+                  <Loader2 className="fm-auto-kern-icon fm-auto-kern-spin" size={14} strokeWidth={2} aria-hidden="true" />
+                ) : (
+                  <Zap className="fm-auto-kern-icon" size={14} strokeWidth={2} aria-hidden="true" />
+                )}
+                {autoKernRunning ? `Kerning… ${Math.round(autoKernProgress * 100)}%` : "Auto Kerning"}
+              </button>
+              <button
+                className="fm-action-btn fm-kern-reset-btn"
+                disabled={
+                  kerningMode === "single"
+                    ? !activeChar
+                    : !hasFamilyPrecisionPair ||
+                      (familyContext === "shared"
+                        ? !familyPairKey || !(familyPairKey in kerningPairs)
+                        : !familyHasOverride)
+                }
+                onClick={kerningMode === "single" ? resetActiveContext : resetFamilyActivePair}
+                data-testid={kerningMode === "single" ? "kern-reset-pair" : "kern-reset-family"}
+              >
+                <RotateCcw size={14} />{" "}
+                {kerningMode === "single" ? "Reset" : familyContext === "shared" ? "Reset Shared" : "Reset Override"}
+              </button>
+            </div>
+
+            {autoKernLastRun && (
+              <div className="fm-kern-complete" role="status" data-testid="kern-auto-complete">
+                <span className="fm-status-dot" />
+                {autoKernLastRun.processed} pairs · {autoKernLastRun.updated} updated
+                {autoKernLastRun.preservedManual > 0
+                  ? ` · ${autoKernLastRun.preservedManual} manual kept`
+                  : ""}
+              </div>
+            )}
           </div>
 
-          {autoKernLastRun && (
-            <div className="fm-kern-complete" role="status" data-testid="kern-auto-complete">
-              <span className="fm-status-dot" />
-              {autoKernLastRun.processed} pairs · {autoKernLastRun.updated} updated
-              {autoKernLastRun.preservedManual > 0
-                ? ` · ${autoKernLastRun.preservedManual} manual kept`
-                : ""}
+          <div className="fm-kern-block">
+            <div className="fm-auto-space-row fm-tooltip-anchor">
+              <button
+                className="fm-action-btn accent"
+                onClick={(e) => { handleAutoSpace(); e.currentTarget.blur(); }}
+                disabled={autoSpaceRunning}
+                data-testid="auto-space-btn"
+              >
+                <AlignHorizontalSpaceAround size={14} />
+                {autoSpaceRunning ? "Spacing…" : "Auto Spacing"}
+              </button>
+              <div className="fm-tooltip-bubble" role="tooltip">
+                Normalize every glyph's left/right sidebearing to one consistent optical margin, on the currently
+                active style. Fixes inconsistent left/right margins across glyphs (e.g. from freehand drawing) before
+                Auto Kerning fine-tunes specific pairs on top. Applies to the active style only — switch tabs to run it
+                on Bold, Italic, or a custom family too.
+              </div>
             </div>
-          )}
 
-          <div className="fm-auto-space-row fm-tooltip-anchor">
-            <button
-              className="fm-action-btn accent"
-              onClick={(e) => { handleAutoSpace(); e.currentTarget.blur(); }}
-              disabled={autoSpaceRunning}
-              data-testid="auto-space-btn"
-            >
-              <AlignHorizontalSpaceAround size={14} />
-              {autoSpaceRunning ? "Spacing…" : "Auto Spacing"}
-            </button>
-            <div className="fm-tooltip-bubble" role="tooltip">
-              Normalize every glyph's left/right sidebearing to one consistent optical margin, on the currently
-              active style. Fixes inconsistent left/right margins across glyphs (e.g. from freehand drawing) before
-              Auto Kerning fine-tunes specific pairs on top. Applies to the active style only — switch tabs to run it
-              on Bold, Italic, or a custom family too.
+            <div className="fm-flag-toggle-group">
+              <label className={`fm-flag-toggle${excludeManualKerning ? " active" : ""}`} data-testid="auto-space-exclude-manual">
+                <input
+                  type="checkbox"
+                  className="fm-flag-toggle-input"
+                  checked={excludeManualKerning}
+                  onChange={(e) => setExcludeManualKerning(e.target.checked)}
+                />
+                <span className="fm-flag-toggle-box" aria-hidden="true" />
+                Lewati glyph yang sudah punya kerning manual
+              </label>
+              <label className={`fm-flag-toggle${reKernAfterSpacing ? " active" : ""}`} data-testid="auto-space-rekern">
+                <input
+                  type="checkbox"
+                  className="fm-flag-toggle-input"
+                  checked={reKernAfterSpacing}
+                  onChange={(e) => setReKernAfterSpacing(e.target.checked)}
+                />
+                <span className="fm-flag-toggle-box" aria-hidden="true" />
+                Kerning ulang otomatis (pair non-manual) setelah spacing
+              </label>
             </div>
-          </div>
-          <label className={`fm-flag-toggle${excludeManualKerning ? " active" : ""}`} data-testid="auto-space-exclude-manual">
-            <input
-              type="checkbox"
-              className="fm-flag-toggle-input"
-              checked={excludeManualKerning}
-              onChange={(e) => setExcludeManualKerning(e.target.checked)}
-            />
-            Lewati glyph yang sudah punya kerning manual
-          </label>
-          <label className={`fm-flag-toggle${reKernAfterSpacing ? " active" : ""}`} data-testid="auto-space-rekern">
-            <input
-              type="checkbox"
-              className="fm-flag-toggle-input"
-              checked={reKernAfterSpacing}
-              onChange={(e) => setReKernAfterSpacing(e.target.checked)}
-            />
-            Kerning ulang otomatis (pair non-manual) setelah spacing
-          </label>
 
-          {autoSpaceLastRun && (
-            <div className="fm-kern-complete" role="status" data-testid="auto-space-complete">
-              <span className="fm-status-dot" />
-              {autoSpaceLastRun.updated} glyph{autoSpaceLastRun.updated === 1 ? "" : "s"} re-spaced
-              {autoSpaceLastRun.skipped > 0 ? ` · ${autoSpaceLastRun.skipped} empty skipped` : ""}
-              {autoSpaceLastRun.skippedManual > 0 ? ` · ${autoSpaceLastRun.skippedManual} manual-kerned kept` : ""}
-            </div>
-          )}
-
-          <div className="fm-auto-space-row fm-tooltip-anchor">
-            <button
-              className="fm-action-btn accent"
-              onClick={(e) => { handleAutoWordSpacing(); e.currentTarget.blur(); }}
-              data-testid="auto-word-spacing-btn"
-            >
-              <Wand2 size={14} />
-              Auto Word Spacing
-            </button>
-            <div className="fm-tooltip-bubble" role="tooltip">
-              Sets the gap typed between words (the keyboard space bar) from the average width of the letters you've
-              already drawn — a bold/wide font gets a wider space, a condensed one gets a tighter space, instead of
-              one flat default. Separate from Auto Spacing above, which only touches per-letter margins.
-            </div>
+            {autoSpaceLastRun && (
+              <div className="fm-kern-complete" role="status" data-testid="auto-space-complete">
+                <span className="fm-status-dot" />
+                {autoSpaceLastRun.updated} glyph{autoSpaceLastRun.updated === 1 ? "" : "s"} re-spaced
+                {autoSpaceLastRun.skipped > 0 ? ` · ${autoSpaceLastRun.skipped} empty skipped` : ""}
+                {autoSpaceLastRun.skippedManual > 0 ? ` · ${autoSpaceLastRun.skippedManual} manual-kerned kept` : ""}
+              </div>
+            )}
           </div>
 
-          {wordSpacingFlash !== null && (
-            <div className="fm-kern-complete" role="status" data-testid="auto-word-spacing-complete">
-              <span className="fm-status-dot" />
-              Word Spacing set to {wordSpacingFlash} units
+          <div className="fm-kern-block">
+            <div className="fm-auto-space-row fm-tooltip-anchor">
+              <button
+                className="fm-action-btn accent"
+                onClick={(e) => { handleAutoWordSpacing(); e.currentTarget.blur(); }}
+                data-testid="auto-word-spacing-btn"
+              >
+                <Wand2 size={14} />
+                Auto Word Spacing
+              </button>
+              <div className="fm-tooltip-bubble" role="tooltip">
+                Sets the gap typed between words (the keyboard space bar) from the average width of the letters you've
+                already drawn — a bold/wide font gets a wider space, a condensed one gets a tighter space, instead of
+                one flat default. Separate from Auto Spacing above, which only touches per-letter margins.
+              </div>
             </div>
-          )}
+
+            {wordSpacingFlash !== null && (
+              <div className="fm-kern-complete" role="status" data-testid="auto-word-spacing-complete">
+                <span className="fm-status-dot" />
+                Word Spacing set to {wordSpacingFlash} units
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="fm-lab-side-section">
