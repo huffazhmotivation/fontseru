@@ -580,7 +580,7 @@ export function GlyphCanvas() {
           .node-shape.selected { fill: var(--accent); stroke: var(--accent); }
           .node-shape.guide { opacity: 0.6; }
           .skeleton-guide-path { fill: none; stroke: var(--accent); stroke-width: ${1 / sc}; stroke-dasharray: ${3 / sc} ${3 / sc}; opacity: 0.4; }
-          .skeleton-guide-path.active { stroke-dasharray: none; stroke-width: ${1.25 / sc}; opacity: 0.9; }
+          .skeleton-guide-path.active { stroke: #000; stroke-dasharray: none; stroke-width: ${1.25 / sc}; opacity: 0.85; }
           .close-ring { fill: none; stroke: var(--accent); stroke-width: ${1.8 / sc}; }
           .marquee-rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: ${1 / sc}; opacity: 0.5; }
           .sel-box { fill: none; stroke: var(--accent); stroke-width: ${1.2 / sc}; stroke-dasharray: ${5 / sc} ${4 / sc}; }
@@ -946,7 +946,7 @@ export function GlyphCanvas() {
              + node dots — so it stays legible while moving/scaling with
              other tools. Purely visual: no pointer events, so it never
              competes with whatever the active tool is doing. */
-          <SkeletonGuideLayer objects={objects} ascender={ascender} hitScale={hitScale} />
+          <SkeletonGuideLayer objects={objects} ascender={ascender} />
         )}
       </svg>
     </div>
@@ -1072,18 +1072,21 @@ const NodesAndHandlesLayer = memo(function NodesAndHandlesLayer({
  * what a big pasted vector adds a lot of.
  */
 /**
- * Non-interactive skeleton guide for "line"/"brush" objects: their centerline
- * (dashed) plus node dots, drawn on top of whatever tool is active so the
+ * Non-interactive skeleton guide for "line"/"brush" objects: just their
+ * centerline (dashed), drawn on top of whatever tool is active so the
  * spine stays visible while editing with Select/Shape/etc — not just while
  * Node/Pen is active. Deliberately has no selection/handle state and no
  * pointer events; it's a read-only overlay, not an alternate edit surface.
+ *
+ * Node dots are intentionally NOT drawn here — those only show up while
+ * the Node/Pen tool is active (see NodesAndHandlesLayer), so the presence
+ * of node dots is a reliable visual cue for "I'm in Node mode" vs. Select.
  */
 const SkeletonGuideLayer = memo(function SkeletonGuideLayer({
-  objects, ascender, hitScale,
+  objects, ascender,
 }: {
   objects: VectorObject[];
   ascender: number;
-  hitScale: number;
 }) {
   const skeletonObjects = objects.filter((o) => o.kind === "line" || o.kind === "brush");
   if (skeletonObjects.length === 0) return null;
@@ -1094,11 +1097,6 @@ const SkeletonGuideLayer = memo(function SkeletonGuideLayer({
           {obj.contours.map((contour) => (
             <path key={contour.id} d={contourToPath(contour, ascender)} className="skeleton-guide-path" vectorEffect="non-scaling-stroke" />
           ))}
-          {obj.contours.map((contour) =>
-            contour.nodes.map((node) => (
-              <NodeShape key={node.id} point={toSvgPoint(node.point, ascender)} type={node.type} hitScale={hitScale} selected={false} guide />
-            ))
-          )}
         </g>
       ))}
     </g>
