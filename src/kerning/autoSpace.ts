@@ -64,10 +64,59 @@ export function suggestGlyphSidebearings(glyph: Glyph, metrics: FontMetrics): Gl
   return { lsb, rsb };
 }
 
+const WORD_SPACE_RATIO = 0.45; // NORMAL-class default advance (600) * 0.45 = unitsPerEm * 0.27 — matches the app's existing fallback exactly, so a freshly-started font's "Auto" suggestion doesn't jump.
+const WORD_SPACE_MIN_RATIO = 0.15; // never suggest a space so tight words visually merge
+const WORD_SPACE_MAX_RATIO = 0.5; // never suggest a space so wide it reads as a tab
+
+/**
+ * Suggests a single, consistent inter-word space width ("Word Spacing") for
+ * the whole font, instead of leaving it as one flat default that ignores
+ * how wide this particular typeface's letters actually are — a bold or
+ * wide display face needs a visibly bigger space than a light condensed
+ * one, or the gap between words reads as too tight/too loose relative to
+ * the letters around it.
+ *
+ * The estimate is the average advance width of the lowercase letters the
+ * user has actually drawn (lowercase is what dominates running text),
+ * scaled down by WORD_SPACE_RATIO — a word space reads as "one blank
+ * letter's worth of room," not a full extra letter. Falls back to
+ * uppercase, then to any drawn glyph, then to the same flat
+ * `unitsPerEm * 0.27` the rest of the app already uses when nothing has
+ * been drawn yet, so an empty project still gets a sensible number.
+ */
+export function suggestWordSpacing(glyphs: GlyphMap, metrics: FontMetrics): number {
+  const fallback = metrics.unitsPerEm * 0.27;
+
+  const drawnAdvances = (chars: string): number[] =>
+    chars
+      .split("")
+      .map((ch) => glyphs[ch])
+      .filter((g): g is Glyph => !!g && hasOutline(g) && g.advanceWidth > 0)
+      .map((g) => g.advanceWidth);
+
+  let sample = drawnAdvances("abcdefghijklmnopqrstuvwxyz");
+  if (sample.length === 0) sample = drawnAdvances("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+  if (sample.length === 0) {
+    sample = Object.values(glyphs)
+      .filter((g) => hasOutline(g) && g.advanceWidth > 0)
+      .map((g) => g.advanceWidth);
+  }
+  if (sample.length === 0) return Math.round(fallback);
+
+  const avgAdvance = sample.reduce((sum, w) => sum + w, 0) / sample.length;
+  const raw = avgAdvance * WORD_SPACE_RATIO;
+
+  const min = metrics.unitsPerEm * WORD_SPACE_MIN_RATIO;
+  const max = metrics.unitsPerEm * WORD_SPACE_MAX_RATIO;
+  return Math.round(Math.min(max, Math.max(min, raw)));
+}
+
 export interface AutoSpaceResult {
   glyphs: GlyphMap;
   updated: number;
   skipped: number;
+  /** Glyphs left untouched because they're in `excludeChars` (already manually kerned). */
+  skippedManual: number;
 }
 
 /**
@@ -77,17 +126,29 @@ export interface AutoSpaceResult {
  * callback so this stays a pure function with no dependency on the app
  * store's glyph-metric semantics; the store supplies its own
  * `applyGlyphMetricPatch` here.
+ *
+ * `excludeChars`, when given, skips re-spacing any glyph in the set —
+ * used to leave glyphs the user has already hand-tuned kerning for
+ * (a manual kerning pair) untouched, since shifting their LSB/RSB out
+ * from under an existing manual kern value is what causes collisions.
  */
 export function autoSpaceAllGlyphs(
   glyphs: GlyphMap,
   metrics: FontMetrics,
-  applyPatch: (glyph: Glyph, patch: GlyphSpacingSuggestion) => Glyph
+  applyPatch: (glyph: Glyph, patch: GlyphSpacingSuggestion) => Glyph,
+  excludeChars?: Set<string>
 ): AutoSpaceResult {
   let next = glyphs;
   let updated = 0;
   let skipped = 0;
+  let skippedManual = 0;
 
   for (const [char, glyph] of Object.entries(glyphs)) {
+    if (excludeChars?.has(char)) {
+      skippedManual++;
+      continue;
+    }
+
     const suggestion = suggestGlyphSidebearings(glyph, metrics);
     if (!suggestion) {
       skipped++;
@@ -100,5 +161,5 @@ export function autoSpaceAllGlyphs(
     updated++;
   }
 
-  return { glyphs: next, updated, skipped };
+  return { glyphs: next, updated, skipped, skippedManual };
 }

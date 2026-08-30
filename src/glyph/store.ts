@@ -18,9 +18,9 @@ import { expandStrokeObject, normalizeBrushSettings } from "@/brushes/strokeToOu
 import { applyBooleanOp, type BooleanOp } from "@/editor/booleanOps";
 import { composeMultilingualGlyphs, type MultilingualResult } from "@/glyph/multilingual";
 import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext } from "@/types/kerning";
-import { kerningKey } from "@/types/kerning";
+import { kerningKey, decodeKerningKey } from "@/types/kerning";
 import { suggestKerningPair, autoKernAllAvailablePairs } from "@/kerning/autoKern";
-import { autoSpaceAllGlyphs as computeAutoSpaceAllGlyphs, type AutoSpaceResult } from "@/kerning/autoSpace";
+import { autoSpaceAllGlyphs as computeAutoSpaceAllGlyphs, suggestWordSpacing, type AutoSpaceResult } from "@/kerning/autoSpace";
 import type { FeatureBuilderConfig, LigatureRule, AlternateRule, SwashRule, FeatureGlyphRef } from "@/types/opentypeFeatures";
 import { emptyFeatureConfig, nextFeatureRuleId } from "@/types/opentypeFeatures";
 import { nextFeatureGlyphUnicode, buildFeatureGlyph, isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
@@ -80,6 +80,7 @@ function normalizedFontMetric(metrics: FontMetrics, key: keyof FontMetrics, raw:
   if (key === "baseline") return Math.max(metrics.descender + 1, Math.min(metrics.ascender - 1, rounded));
   if (key === "capHeight") return Math.max(metrics.descender, Math.min(metrics.ascender, rounded));
   if (key === "xHeight") return Math.max(metrics.descender, Math.min(metrics.ascender, rounded));
+  if (key === "wordSpacing") return Math.max(0, rounded);
   return rounded;
 }
 
@@ -231,7 +232,7 @@ interface AppState {
   kerningOverrideManualByStyle: KerningOverrideManualByStyle;
   autoKernLastRun: { processed: number; updated: number; preservedManual: number } | null;
   /** Last "Auto Spacing" run against the active style's glyphs, for a brief status readout. */
-  autoSpaceLastRun: { updated: number; skipped: number } | null;
+  autoSpaceLastRun: { updated: number; skipped: number; skippedManual: number } | null;
   /** Last "Apply Tracking" bake against the active style's glyphs. */
   trackingApplyLastRun: { units: number; updated: number } | null;
 
@@ -391,7 +392,9 @@ interface AppState {
   /** Normalizes every glyph's LSB/RSB in the active style to a shared,
    * optically-balanced baseline margin. Fixes inconsistent hand-drawn
    * sidebearings; runs before Auto Kern refines specific pairs on top. */
-  autoSpaceAllGlyphs: () => AutoSpaceResult;
+  autoSpaceAllGlyphs: (options?: { excludeManuallyKerned?: boolean; reKernAfter?: boolean }) => Promise<AutoSpaceResult>;
+  /** Computes a word-spacing value from the font's own drawn glyphs and applies it (see `suggestWordSpacing`). Returns the value that was set. */
+  autoWordSpacing: () => number;
   /** Bakes `trackingUnits` permanently into every glyph's LSB/RSB (split
    * evenly, so ink stays centered in its now-wider/narrower advance) in the
    * active style. Unlike Test Lab's live Tracking preview, this is real
@@ -778,6 +781,12 @@ export const useAppStore = create<AppState>()((set, get) => {
         past: [...past, { glyphs, metrics, kerningPairs, kerningManual }].slice(-HISTORY_LIMIT),
         future: [],
       });
+    },
+    autoWordSpacing: () => {
+      const { glyphs, metrics } = get();
+      const suggestion = suggestWordSpacing(glyphs, metrics);
+      get().setFontMetric("wordSpacing", suggestion);
+      return suggestion;
     },
     beginMetricDrag: () => {
       if (!metricDragSnapshot) metricDragSnapshot = { ...get().metrics };
@@ -1468,11 +1477,52 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ autoKernLastRun: { processed: result.processed, updated: result.updated, preservedManual: result.preservedManual } });
     },
 
-    autoSpaceAllGlyphs: () => {
-      const { glyphs, metrics } = get();
-      const result = computeAutoSpaceAllGlyphs(glyphs, metrics, applyGlyphMetricPatch);
+    autoSpaceAllGlyphs: async (options) => {
+      const excludeManuallyKerned = options?.excludeManuallyKerned ?? true;
+      const reKernAfter = options?.reKernAfter ?? true;
+      const { glyphs, metrics, kerningPairs, kerningManual } = get();
+
+      // Glyphs that already have a hand-tuned kerning pair are left out of
+      // the re-spacing pass by default: moving their LSB/RSB out from under
+      // an existing manual kern value is exactly what causes the collisions
+      // reported after running Auto Spacing on an already-kerned font.
+      let excludeChars: Set<string> | undefined;
+      if (excludeManuallyKerned) {
+        excludeChars = new Set<string>();
+        for (const [key, isManual] of Object.entries(kerningManual)) {
+          if (!isManual) continue;
+          const [left, right] = decodeKerningKey(key);
+          excludeChars.add(left);
+          excludeChars.add(right);
+        }
+      }
+
+      const result = computeAutoSpaceAllGlyphs(glyphs, metrics, applyGlyphMetricPatch, excludeChars);
       if (result.updated > 0) commit(result.glyphs);
-      set({ autoSpaceLastRun: { updated: result.updated, skipped: result.skipped } });
+      set({ autoSpaceLastRun: { updated: result.updated, skipped: result.skipped, skippedManual: result.skippedManual } });
+
+      // Re-run auto-kerning against the new spacing so non-manual pairs stay
+      // consistent with it. Manual pairs are preserved untouched by
+      // autoKernAllAvailablePairs itself (see kerningManual), so this never
+      // overwrites kerning the user set by hand.
+      if (reKernAfter && result.updated > 0) {
+        const after = get();
+        const kernResult = await autoKernAllAvailablePairs(
+          after.glyphs,
+          after.metrics,
+          after.kerningPairs,
+          after.kerningManual
+        );
+        commitKerning(kernResult.pairs, kernResult.manual);
+        set({
+          autoKernLastRun: {
+            processed: kernResult.processed,
+            updated: kernResult.updated,
+            preservedManual: kernResult.preservedManual,
+          },
+        });
+      }
+
       return result;
     },
 

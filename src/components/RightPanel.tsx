@@ -428,13 +428,23 @@ function FontMetricsSection() {
     setMetricFocus(null);
   }, [metricFocus, setMetricFocus]);
 
-  const rows: { key: keyof typeof metrics; label: string; testid: string }[] = [
+  // Narrowed to the exact keys used below (rather than the full `keyof
+  // typeof metrics`) so `metrics[key]` stays a plain `number` — `metrics`
+  // also has the optional `wordSpacing` field (handled separately, right
+  // below), and including it in this union would make every row's value
+  // `number | undefined`.
+  const rows: { key: "ascender" | "capHeight" | "xHeight" | "baseline" | "descender"; label: string; testid: string }[] = [
     { key: "ascender", label: "Ascender", testid: "font-metric-ascender" },
     { key: "capHeight", label: "Cap Height", testid: "font-metric-capHeight" },
     { key: "xHeight", label: "X-Height", testid: "font-metric-xHeight" },
     { key: "baseline", label: "Baseline", testid: "font-metric-baseline" },
     { key: "descender", label: "Descender", testid: "font-metric-descender" },
   ];
+
+  // Falls back to the same constant the live preview/export already use
+  // when wordSpacing hasn't been set explicitly (see FontMetrics.wordSpacing),
+  // purely so the field shows a sensible starting number instead of blank/0.
+  const wordSpacingValue = metrics.wordSpacing ?? Math.round(metrics.unitsPerEm * 0.27);
 
   return (
     <Section title="Font Metrics" defaultOpen={true}>
@@ -454,8 +464,26 @@ function FontMetricsSection() {
             />
           </div>
         ))}
+        <div className="fm-field fm-metric-field" key="wordSpacing">
+          <label htmlFor="font-metric-wordSpacing">Word Spacing</label>
+          <NumericInput
+            id="font-metric-wordSpacing"
+            ref={(el) => { refs.current.wordSpacing = el; }}
+            value={wordSpacingValue}
+            onChange={(next) => {
+              if (Number.isFinite(next)) setFontMetric("wordSpacing", next);
+            }}
+            onFocus={() => setMetricFocus(null)}
+            data-testid="font-metric-wordSpacing"
+          />
+        </div>
       </div>
-      <div className="fm-hint">Drag guides on the canvas for live adjustment · double-click a guide for precise input.</div>
+      <div className="fm-hint">
+        Drag guides on the canvas for live adjustment · double-click a guide for precise input. Word Spacing is the
+        gap typed between words (the keyboard space bar) — separate from any per-letter sidebearing. "Auto" derives a
+        width from the letters you've already drawn, so the gap stays proportional to this typeface instead of one
+        flat default.
+      </div>
     </Section>
   );
 }

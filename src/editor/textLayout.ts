@@ -15,9 +15,16 @@ export interface LineLayout {
   totalAdvance: number;
 }
 
-/** Fallback advance for characters with no glyph (space, or unsupported input) so layout doesn't collapse. */
-export function fallbackAdvance(char: string, unitsPerEm: number): number {
-  return char === " " ? unitsPerEm * 0.27 : unitsPerEm * 0.5;
+/**
+ * Fallback advance for characters with no glyph (space, or unsupported
+ * input) so layout doesn't collapse. `wordSpacing` is `metrics.wordSpacing`
+ * — when the user has set an explicit word-spacing value it wins for the
+ * space character; otherwise the space keeps its original 0.27 * unitsPerEm
+ * default so existing projects render exactly as before.
+ */
+export function fallbackAdvance(char: string, unitsPerEm: number, wordSpacing?: number): number {
+  if (char === " ") return wordSpacing ?? unitsPerEm * 0.27;
+  return unitsPerEm * 0.5;
 }
 
 /**
@@ -31,7 +38,8 @@ export function layoutLine(
   glyphs: Record<string, Glyph | undefined>,
   unitsPerEm: number,
   kerningPairs: Record<string, number>,
-  trackingUnits = 0
+  trackingUnits = 0,
+  wordSpacing?: number
 ): LineLayout {
   const chars = Array.from(text);
   let penX = 0;
@@ -46,7 +54,7 @@ export function layoutLine(
     }
 
     const g = glyphs[ch];
-    const advance = g ? g.advanceWidth : fallbackAdvance(ch, unitsPerEm);
+    const advance = g ? g.advanceWidth : fallbackAdvance(ch, unitsPerEm, wordSpacing);
     placed.push({ char: ch, x: penX, advance });
     penX += advance;
   }

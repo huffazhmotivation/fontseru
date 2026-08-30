@@ -113,7 +113,8 @@ export function layoutTokens(
   glyphs: GlyphMap,
   unitsPerEm: number,
   kerningPairs: Record<string, number>,
-  trackingUnits = 0
+  trackingUnits = 0,
+  wordSpacing?: number
 ): TokenLineLayout {
   let penX = 0;
   const placed: PlacedToken[] = [];
@@ -130,7 +131,7 @@ export function layoutTokens(
     }
 
     const g = glyphs[token];
-    const advance = g ? g.advanceWidth : fallbackAdvance(source, unitsPerEm);
+    const advance = g ? g.advanceWidth : fallbackAdvance(source, unitsPerEm, wordSpacing);
     placed.push({ token, source, x: penX, advance, substituted: token !== source });
     penX += advance;
   }

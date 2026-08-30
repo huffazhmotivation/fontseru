@@ -24,7 +24,7 @@ export function useTypingCaret(
   const glyphs = useAppStore((s) => s.glyphs);
   const metrics = useAppStore((s) => s.metrics);
   const kerningPairs = useAppStore((s) => s.kerningPairs);
-  const { unitsPerEm, ascender, descender } = metrics;
+  const { unitsPerEm, ascender, descender, wordSpacing } = metrics;
   const totalH = ascender - descender;
   const pxPerUnit = fontSizePx / unitsPerEm;
 
@@ -37,9 +37,9 @@ export function useTypingCaret(
 
   const linesKey = lines.join("\n");
   const layouts: LineLayout[] = useMemo(
-    () => lines.map((line) => layoutLine(line, glyphs, unitsPerEm, kerningPairs, trackingUnits)),
+    () => lines.map((line) => layoutLine(line, glyphs, unitsPerEm, kerningPairs, trackingUnits, wordSpacing)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [linesKey, glyphs, unitsPerEm, kerningPairs, trackingUnits]
+    [linesKey, glyphs, unitsPerEm, kerningPairs, trackingUnits, wordSpacing]
   );
 
   const lineStarts = useMemo(() => {

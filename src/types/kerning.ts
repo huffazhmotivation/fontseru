@@ -49,6 +49,13 @@ export function kerningKey(left: string, right: string): string {
   return `${encodeURIComponent(left)}|${encodeURIComponent(right)}`;
 }
 
+/** Inverse of `kerningKey` — recovers the [left, right] chars from a pair key. */
+export function decodeKerningKey(key: string): [string, string] {
+  const sep = key.indexOf("|");
+  if (sep === -1) return [key, ""];
+  return [decodeURIComponent(key.slice(0, sep)), decodeURIComponent(key.slice(sep + 1))];
+}
+
 export function parseKerningKey(key: string): { left: string; right: string } | null {
   const idx = key.indexOf("|");
   if (idx <= 0 || idx === key.length - 1) return null;

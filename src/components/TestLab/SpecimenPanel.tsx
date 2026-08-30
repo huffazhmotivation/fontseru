@@ -124,9 +124,10 @@ function EditableStage({
         metrics.unitsPerEm,
         kerningPairs,
         tracking,
-        maxWidthUnits
+        maxWidthUnits,
+        metrics.wordSpacing
       ),
-    [text, glyphs, metrics.unitsPerEm, kerningPairs, tracking, maxWidthUnits]
+    [text, glyphs, metrics.unitsPerEm, kerningPairs, tracking, maxWidthUnits, metrics.wordSpacing]
   );
   const visualLines = useMemo(() => wrappedLines.map((line) => line.text), [wrappedLines]);
   const sourceLineStarts = useMemo(
@@ -532,7 +533,8 @@ function wrapFamilyText(
   unitsPerEm: number,
   kerningPairs: KerningPairs,
   tracking: number,
-  maxWidthUnits: number
+  maxWidthUnits: number,
+  wordSpacing?: number
 ): WrappedFamilyLine[] {
   const out: WrappedFamilyLine[] = [];
   let chars: string[] = [];
@@ -546,7 +548,7 @@ function wrapFamilyText(
       text: lineText,
       start: lineStart,
       end,
-      layout: layoutLine(lineText, glyphs, unitsPerEm, kerningPairs, tracking),
+      layout: layoutLine(lineText, glyphs, unitsPerEm, kerningPairs, tracking, wordSpacing),
     });
     chars = [];
     advance = 0;
@@ -562,7 +564,7 @@ function wrapFamilyText(
       continue;
     }
 
-    const glyphAdvance = glyphs[ch]?.advanceWidth ?? fallbackAdvance(ch, unitsPerEm);
+    const glyphAdvance = glyphs[ch]?.advanceWidth ?? fallbackAdvance(ch, unitsPerEm, wordSpacing);
     const previous = chars[chars.length - 1] ?? null;
     const between = previous ? tracking + (kerningPairs[kerningKey(previous, ch)] ?? 0) : 0;
     const nextAdvance = advance + between + glyphAdvance;
@@ -581,7 +583,7 @@ function wrapFamilyText(
   flush(sourceIndex);
   return out.length
     ? out
-    : [{ text: "", start: 0, end: 0, layout: layoutLine("", glyphs, unitsPerEm, kerningPairs, tracking) }];
+    : [{ text: "", start: 0, end: 0, layout: layoutLine("", glyphs, unitsPerEm, kerningPairs, tracking, wordSpacing) }];
 }
 
 function caretColumnForSourceIndex(line: WrappedFamilyLine, sourceIndex: number): number {
@@ -662,8 +664,8 @@ function FamilyStylePreview({
   }, []);
 
   const wrappedLines = useMemo(
-    () => wrapFamilyText(text, glyphs, metrics.unitsPerEm, kerningPairs, tracking, maxWidthUnits),
-    [text, glyphs, metrics.unitsPerEm, kerningPairs, tracking, maxWidthUnits]
+    () => wrapFamilyText(text, glyphs, metrics.unitsPerEm, kerningPairs, tracking, maxWidthUnits, metrics.wordSpacing),
+    [text, glyphs, metrics.unitsPerEm, kerningPairs, tracking, maxWidthUnits, metrics.wordSpacing]
   );
 
   const syncCaretFromSelection = () => {
@@ -1163,8 +1165,8 @@ function FeatureSentencePreview({
     [previewText, glyphs, featureConfig, toggles]
   );
   const { placed, totalAdvance: rawAdvance } = useMemo(
-    () => layoutTokens(tokens, glyphs, unitsPerEm, kerningPairs, tracking),
-    [tokens, glyphs, unitsPerEm, kerningPairs, tracking]
+    () => layoutTokens(tokens, glyphs, unitsPerEm, kerningPairs, tracking, metrics.wordSpacing),
+    [tokens, glyphs, unitsPerEm, kerningPairs, tracking, metrics.wordSpacing]
   );
   const totalAdvance = Math.max(1, rawAdvance);
   const substitutedCount = placed.filter((p) => p.substituted).length;
@@ -1351,6 +1353,7 @@ export function SpecimenPanel() {
   const autoKernAllPairsForContext = useAppStore((s) => s.autoKernAllPairsForContext);
   const autoSpaceAllGlyphs = useAppStore((s) => s.autoSpaceAllGlyphs);
   const autoSpaceLastRun = useAppStore((s) => s.autoSpaceLastRun);
+  const autoWordSpacing = useAppStore((s) => s.autoWordSpacing);
   const applyTrackingToAllGlyphs = useAppStore((s) => s.applyTrackingToAllGlyphs);
   const trackingApplyLastRun = useAppStore((s) => s.trackingApplyLastRun);
   // "idle" | 0..1 while running | "done" briefly once the last chunk lands,
@@ -1405,9 +1408,29 @@ export function SpecimenPanel() {
     }
   }, [autoKernRunning, autoKernAllPairs, autoKernAllPairsForContext, kerningMode, familyContext]);
 
-  const handleAutoSpace = useCallback(() => {
-    autoSpaceAllGlyphs();
-  }, [autoSpaceAllGlyphs]);
+  const [excludeManualKerning, setExcludeManualKerning] = useState(true);
+  const [reKernAfterSpacing, setReKernAfterSpacing] = useState(true);
+  const [autoSpaceRunning, setAutoSpaceRunning] = useState(false);
+  const [wordSpacingFlash, setWordSpacingFlash] = useState<number | null>(null);
+
+  const handleAutoWordSpacing = useCallback(() => {
+    const value = autoWordSpacing();
+    setWordSpacingFlash(value);
+    window.setTimeout(() => setWordSpacingFlash(null), 1800);
+  }, [autoWordSpacing]);
+
+  const handleAutoSpace = useCallback(async () => {
+    if (autoSpaceRunning) return;
+    setAutoSpaceRunning(true);
+    try {
+      await autoSpaceAllGlyphs({
+        excludeManuallyKerned: excludeManualKerning,
+        reKernAfter: reKernAfterSpacing,
+      });
+    } finally {
+      setAutoSpaceRunning(false);
+    }
+  }, [autoSpaceRunning, autoSpaceAllGlyphs, excludeManualKerning, reKernAfterSpacing]);
 
   const handleApplyTracking = useCallback(() => {
     if (tracking === 0) return;
@@ -1770,13 +1793,30 @@ export function SpecimenPanel() {
             <button
               className="fm-action-btn accent"
               onClick={handleAutoSpace}
+              disabled={autoSpaceRunning}
               data-testid="auto-space-btn"
               title="Normalize every glyph's left/right sidebearing to one consistent optical margin, on the currently active style"
             >
               <AlignHorizontalSpaceAround size={14} />
-              Auto Spacing
+              {autoSpaceRunning ? "Spacing…" : "Auto Spacing"}
             </button>
           </div>
+          <label className="fm-checkbox-row" data-testid="auto-space-exclude-manual">
+            <input
+              type="checkbox"
+              checked={excludeManualKerning}
+              onChange={(e) => setExcludeManualKerning(e.target.checked)}
+            />
+            Lewati glyph yang sudah punya kerning manual
+          </label>
+          <label className="fm-checkbox-row" data-testid="auto-space-rekern">
+            <input
+              type="checkbox"
+              checked={reKernAfterSpacing}
+              onChange={(e) => setReKernAfterSpacing(e.target.checked)}
+            />
+            Kerning ulang otomatis (pair non-manual) setelah spacing
+          </label>
           <div className="fm-hint">
             Fixes inconsistent left/right margins across glyphs (e.g. from freehand drawing) before Auto Kerning
             fine-tunes specific pairs on top. Applies to the active style only — switch tabs to run it on Bold,
@@ -1788,6 +1828,31 @@ export function SpecimenPanel() {
               <span className="fm-status-dot" />
               {autoSpaceLastRun.updated} glyph{autoSpaceLastRun.updated === 1 ? "" : "s"} re-spaced
               {autoSpaceLastRun.skipped > 0 ? ` · ${autoSpaceLastRun.skipped} empty skipped` : ""}
+              {autoSpaceLastRun.skippedManual > 0 ? ` · ${autoSpaceLastRun.skippedManual} manual-kerned kept` : ""}
+            </div>
+          )}
+
+          <div className="fm-auto-space-row">
+            <button
+              className="fm-action-btn accent"
+              onClick={handleAutoWordSpacing}
+              data-testid="auto-word-spacing-btn"
+              title="Suggest a word-spacing width from this font's own letter widths, so word gaps read as consistent and correctly sized for this typeface"
+            >
+              <Wand2 size={14} />
+              Auto Word Spacing
+            </button>
+          </div>
+          <div className="fm-hint">
+            Sets the gap typed between words (the keyboard space bar) from the average width of the letters you've
+            already drawn — a bold/wide font gets a wider space, a condensed one gets a tighter space, instead of one
+            flat default. Separate from Auto Spacing above, which only touches per-letter margins.
+          </div>
+
+          {wordSpacingFlash !== null && (
+            <div className="fm-kern-complete" role="status" data-testid="auto-word-spacing-complete">
+              <span className="fm-status-dot" />
+              Word Spacing set to {wordSpacingFlash} units
             </div>
           )}
         </div>

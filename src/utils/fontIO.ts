@@ -599,13 +599,18 @@ function sanitizeGlyph(glyph: Glyph, metrics: FontMetrics): Glyph | null {
 }
 
 function syntheticSpace(metrics: FontMetrics): Glyph {
+  // metrics.wordSpacing, when the user has set it explicitly via the Word
+  // Spacing control, wins here so the exported font's space glyph matches
+  // what they saw in the live preview. Left unset, this keeps the original
+  // 0.5 * unitsPerEm default so existing projects export unchanged.
+  const advanceWidth = metrics.wordSpacing ?? metrics.unitsPerEm * 0.5;
   return {
     char: " ",
     unicode: 0x20,
     unicodes: [0x20],
     name: "space",
     category: "symbols",
-    advanceWidth: Math.max(1, Math.round(metrics.unitsPerEm * 0.5)),
+    advanceWidth: Math.max(1, Math.round(advanceWidth)),
     lsb: 0,
     rsb: 0,
     outline: { objects: [] },

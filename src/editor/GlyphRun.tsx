@@ -46,12 +46,12 @@ export function GlyphRun({
   const storeKerningPairs = useAppStore((s) => s.kerningPairs);
   const glyphs = glyphsOverride ?? storeGlyphs;
   const kerningPairs = kerningPairsOverride ?? storeKerningPairs;
-  const { ascender, descender, unitsPerEm } = metrics;
+  const { ascender, descender, unitsPerEm, wordSpacing } = metrics;
   const totalH = ascender - descender;
 
   // Single shared layout engine — also used by the Test Lab / Kerning caret
   // and click hit-testing, so rendering and caret position can never drift.
-  const { placed, totalAdvance: rawAdvance } = layoutLine(text, glyphs, unitsPerEm, kerningPairs, trackingUnits);
+  const { placed, totalAdvance: rawAdvance } = layoutLine(text, glyphs, unitsPerEm, kerningPairs, trackingUnits, wordSpacing);
   const totalAdvance = Math.max(1, rawAdvance);
 
   const pxPerUnit = fontSizePx / unitsPerEm;
