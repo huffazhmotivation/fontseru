@@ -578,6 +578,8 @@ export function GlyphCanvas() {
           .node-shape.smooth { fill: var(--canvas); stroke: var(--node-smooth); }
           .node-shape.symmetric { fill: var(--canvas); stroke: var(--node-symmetric); }
           .node-shape.selected { fill: var(--accent); stroke: var(--accent); }
+          .node-shape.guide { opacity: 0.6; }
+          .skeleton-guide-path { fill: none; stroke: var(--accent); stroke-width: ${1 / sc}; stroke-dasharray: ${3 / sc} ${3 / sc}; opacity: 0.4; }
           .close-ring { fill: none; stroke: var(--accent); stroke-width: ${1.8 / sc}; }
           .marquee-rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: ${1 / sc}; opacity: 0.5; }
           .sel-box { fill: none; stroke: var(--accent); stroke-width: ${1.2 / sc}; stroke-dasharray: ${5 / sc} ${4 / sc}; }
@@ -927,7 +929,7 @@ export function GlyphCanvas() {
 
         {/* Nodes + handles (Node tool, or while drawing with Pen) — memoized layer,
             see ObjectsLayer above for why. */}
-        {(tool === "node" || tool === "pen") && (
+        {(tool === "node" || tool === "pen") ? (
           <NodesAndHandlesLayer
             objects={objects}
             ascender={ascender}
@@ -936,6 +938,14 @@ export function GlyphCanvas() {
             selectedNodes={editor.selectedNodes}
             selectedHandle={editor.selectedHandle}
           />
+        ) : (
+          /* Outside Node/Pen: line + brush objects are built from a skeleton
+             (centerline) that the rendered fill/stroke hides. Keep that
+             skeleton visible as a non-interactive guide — dashed centerline
+             + node dots — so it stays legible while moving/scaling with
+             other tools. Purely visual: no pointer events, so it never
+             competes with whatever the active tool is doing. */
+          <SkeletonGuideLayer objects={objects} ascender={ascender} hitScale={hitScale} />
         )}
       </svg>
     </div>
@@ -1043,6 +1053,40 @@ const NodesAndHandlesLayer = memo(function NodesAndHandlesLayer({
  * string build is the part whose cost scales with node count — exactly
  * what a big pasted vector adds a lot of.
  */
+/**
+ * Non-interactive skeleton guide for "line"/"brush" objects: their centerline
+ * (dashed) plus node dots, drawn on top of whatever tool is active so the
+ * spine stays visible while editing with Select/Shape/etc — not just while
+ * Node/Pen is active. Deliberately has no selection/handle state and no
+ * pointer events; it's a read-only overlay, not an alternate edit surface.
+ */
+const SkeletonGuideLayer = memo(function SkeletonGuideLayer({
+  objects, ascender, hitScale,
+}: {
+  objects: VectorObject[];
+  ascender: number;
+  hitScale: number;
+}) {
+  const skeletonObjects = objects.filter((o) => o.kind === "line" || o.kind === "brush");
+  if (skeletonObjects.length === 0) return null;
+  return (
+    <g pointerEvents="none">
+      {skeletonObjects.map((obj) => (
+        <g key={obj.id}>
+          {obj.contours.map((contour) => (
+            <path key={contour.id} d={contourToPath(contour, ascender)} className="skeleton-guide-path" vectorEffect="non-scaling-stroke" />
+          ))}
+          {obj.contours.map((contour) =>
+            contour.nodes.map((node) => (
+              <NodeShape key={node.id} point={toSvgPoint(node.point, ascender)} type={node.type} hitScale={hitScale} selected={false} guide />
+            ))
+          )}
+        </g>
+      ))}
+    </g>
+  );
+});
+
 const ObjectShape = memo(function ObjectShape({
   obj, ascender, selected, outlineOnly, overlapping,
 }: { obj: VectorObject; ascender: number; selected: boolean; outlineOnly?: boolean; overlapping?: boolean }) {
@@ -1101,8 +1145,8 @@ const ObjectShape = memo(function ObjectShape({
   );
 });
 
-const NodeShape = memo(function NodeShape({ point, type, hitScale, selected }: { point: Point; type: NodeType; hitScale: number; selected: boolean }) {
-  const cls = `node-shape ${type} ${selected ? "selected" : ""}`;
+const NodeShape = memo(function NodeShape({ point, type, hitScale, selected, guide }: { point: Point; type: NodeType; hitScale: number; selected: boolean; guide?: boolean }) {
+  const cls = `node-shape ${type} ${selected ? "selected" : ""} ${guide ? "guide" : ""}`;
   if (type === "corner") {
     const s = 7 * hitScale;
     return <rect x={point.x - s / 2} y={point.y - s / 2} width={s} height={s} className={cls} />;
