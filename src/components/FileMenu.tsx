@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, Cloud, CloudDownload, CloudUpload, Download, FilePlus2, FileText, FolderOpen, Loader2, Lock, Save, SaveAll, ScrollText, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Cloud, CloudDownload, CloudUpload, Download, FilePlus2, FileText, FolderOpen, Loader2, Lock, Save, SaveAll, ScrollText, Trash2, X } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useAuth } from "@/auth/AuthProvider";
 import { useExportUsage } from "@/hooks/useExportUsage";
@@ -315,6 +315,14 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const [cloudSaveName, setCloudSaveName] = useState("");
   const [cloudSaving, setCloudSaving] = useState(false);
   const [cloudUsageBytes, setCloudUsageBytes] = useState<number | null>(null);
+  // Progress shown while a save is in flight, and the abort handle that lets
+  // the user actually cancel a stuck save instead of being stuck watching a
+  // spinner with no way out. `cloudSaveSuccess` drives a confirmation dialog
+  // that stays up until the user closes it (see confirmSaveToCloud below),
+  // rather than an auto-dismissing toast that can vanish before it's read.
+  const [cloudSaveProgress, setCloudSaveProgress] = useState<{ percent: number; label: string } | null>(null);
+  const [cloudSaveSuccess, setCloudSaveSuccess] = useState<string | null>(null);
+  const cloudSaveAbortRef = useRef<AbortController | null>(null);
 
   const refreshCloudProjects = useCallback(async () => {
     setCloudBusy(true);
@@ -357,20 +365,39 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const confirmSaveToCloud = useCallback(async () => {
     const name = safeProjectBaseName(cloudSaveName);
     if (!name) return;
+    const controller = new AbortController();
+    cloudSaveAbortRef.current = controller;
     setCloudSaving(true);
     setCloudError(null);
+    setCloudSaveProgress({ percent: 0, label: "Menyiapkan…" });
     try {
-      await saveCloudProject(name, snapshotFromStore());
+      await saveCloudProject(name, snapshotFromStore(), {
+        signal: controller.signal,
+        onProgress: (progress) => setCloudSaveProgress(progress),
+      });
       setCloudDialog(null);
-      showToast(`Saved "${name}" to Cloud`);
+      // A dedicated, manually-dismissed confirmation instead of the
+      // ephemeral Toast: cloud save is easy to miss/misread if it's gone
+      // in ~3s, so this one stays up until the user closes it.
+      setCloudSaveSuccess(name);
     } catch (error) {
-      console.error("[FontSeru] Cloud save failed.", error);
-      setCloudError(error instanceof Error ? error.message : "Unable to save to Cloud.");
-      void refreshCloudProjects(); // usage may have changed even on a failed/partial attempt
+      if (error instanceof DOMException && error.name === "AbortError") {
+        // User cancelled on purpose — nothing to report.
+      } else {
+        console.error("[FontSeru] Cloud save failed.", error);
+        setCloudError(error instanceof Error ? error.message : "Unable to save to Cloud.");
+        void refreshCloudProjects(); // usage may have changed even on a failed/partial attempt
+      }
     } finally {
       setCloudSaving(false);
+      setCloudSaveProgress(null);
+      cloudSaveAbortRef.current = null;
     }
   }, [cloudSaveName, refreshCloudProjects]);
+
+  const cancelCloudSave = useCallback(() => {
+    cloudSaveAbortRef.current?.abort();
+  }, []);
 
   const openFromCloud = useCallback(async (summary: CloudProjectSummary) => {
     setCloudActionId(summary.id);
@@ -1228,7 +1255,10 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
         <div
           className="fm-export-backdrop"
           onMouseDown={(event) => {
-            if (event.currentTarget === event.target && !cloudSaving) setCloudDialog(null);
+            if (event.currentTarget === event.target) {
+              if (cloudSaving) cancelCloudSave();
+              setCloudDialog(null);
+            }
           }}
         >
           <section className="fm-export-dialog fm-cloud-dialog" role="dialog" aria-modal="true" aria-labelledby="cloud-save-title">
@@ -1240,8 +1270,10 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
               <button
                 type="button"
                 className="fm-iconbtn"
-                onClick={() => setCloudDialog(null)}
-                disabled={cloudSaving}
+                onClick={() => {
+                  if (cloudSaving) cancelCloudSave();
+                  setCloudDialog(null);
+                }}
                 aria-label="Close save to cloud dialog"
               >
                 <X size={17} />
@@ -1255,6 +1287,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                   value={cloudSaveName}
                   onChange={(event) => setCloudSaveName(event.target.value)}
                   autoFocus
+                  disabled={cloudSaving}
                   spellCheck={false}
                   placeholder="My Font"
                   onKeyDown={(event) => {
@@ -1264,6 +1297,21 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                   }}
                 />
               </label>
+
+              {cloudSaving && cloudSaveProgress && (
+                <div className="fm-cloud-progress" role="status" aria-live="polite">
+                  <div className="fm-cloud-progress-row">
+                    <span>{cloudSaveProgress.label}</span>
+                    <span className="fm-cloud-progress-pct">{cloudSaveProgress.percent}%</span>
+                  </div>
+                  <div className="fm-cloud-progress-bar">
+                    <div
+                      className="fm-cloud-progress-fill"
+                      style={{ width: `${Math.max(4, Math.min(100, cloudSaveProgress.percent))}%` }}
+                    />
+                  </div>
+                </div>
+              )}
 
               {cloudError && <p className="fm-cloud-error">{cloudError}</p>}
 
@@ -1299,8 +1347,18 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
             </div>
 
             <footer className="fm-export-actions">
-              <button type="button" className="fm-secondary-btn" onClick={() => setCloudDialog(null)} disabled={cloudSaving}>
-                Cancel
+              <button
+                type="button"
+                className="fm-secondary-btn"
+                onClick={() => {
+                  if (cloudSaving) {
+                    cancelCloudSave();
+                  } else {
+                    setCloudDialog(null);
+                  }
+                }}
+              >
+                {cloudSaving ? "Batalkan" : "Cancel"}
               </button>
               <button
                 type="button"
@@ -1310,6 +1368,36 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
               >
                 {cloudSaving ? <Loader2 size={15} className="fm-spin" /> : <CloudUpload size={15} />}
                 {cloudSaving ? "Saving…" : "Save to Cloud"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {cloudSaveSuccess && (
+        <div
+          className="fm-export-backdrop"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setCloudSaveSuccess(null);
+          }}
+        >
+          <section
+            className="fm-export-dialog fm-cloud-dialog fm-cloud-success-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cloud-success-title"
+          >
+            <div className="fm-cloud-success-icon" aria-hidden="true">
+              <Check size={26} strokeWidth={2.5} />
+            </div>
+            <h2 id="cloud-success-title">Berhasil disimpan ke Cloud</h2>
+            <p className="fm-cloud-success-body">
+              Project <strong>&ldquo;{cloudSaveSuccess}&rdquo;</strong> berhasil disimpan ke Cloud dan bisa dibuka
+              lagi dari perangkat lain lewat menu <strong>File → Open from Cloud…</strong>
+            </p>
+            <footer className="fm-export-actions fm-cloud-success-actions">
+              <button type="button" className="fm-primary-btn" onClick={() => setCloudSaveSuccess(null)} autoFocus>
+                OK, Mengerti
               </button>
             </footer>
           </section>

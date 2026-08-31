@@ -24,6 +24,80 @@ function requireClient() {
   return supabase;
 }
 
+/**
+ * Progress reported back to the UI during `saveCloudProject`. There's no
+ * native byte-level upload progress here (the payload is a single small
+ * JSON request, not a chunked/streamed upload), so `percent` blends real
+ * milestones (auth check done, request sent, response received) with a
+ * gently-animated estimate while the request is actually in flight. This
+ * is purely cosmetic — it exists so the UI never sits on a bare spinner
+ * with zero feedback for many seconds.
+ */
+export interface CloudSaveProgress {
+  percent: number; // 0-100
+  label: string;
+}
+
+export interface CloudSaveOptions {
+  onProgress?: (progress: CloudSaveProgress) => void;
+  /** Lets the caller cancel a save that's taking too long / the user gave up on. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Previously, a hung network request (bad wifi, a stalled DNS lookup, a
+ * server that never responds) had no time limit at all: `fetch` doesn't
+ * time out on its own, so the "Saving…" spinner could sit there forever
+ * with no way to know whether it was still working or just stuck — and
+ * the dialog's Cancel button was disabled while saving, so the only way
+ * out was to force-reload the page. These timeouts make sure a stuck
+ * request always surfaces as a clear, actionable error instead.
+ */
+const AUTH_CHECK_TIMEOUT_MS = 10_000;
+const UPLOAD_TIMEOUT_MS = 20_000;
+
+class CloudTimeoutError extends Error {}
+
+function withTimeout<T>(promise: PromiseLike<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new CloudTimeoutError(message)), ms);
+    Promise.resolve(promise).then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw new DOMException("Cloud save was cancelled.", "AbortError");
+  }
+}
+
+/** Animates `percent` from `from` towards (but never reaching) `to` while
+ * a request is in flight, so the progress bar keeps visibly moving instead
+ * of freezing. Call the returned function once the real result is in. */
+function animateProgress(
+  from: number,
+  to: number,
+  label: string,
+  onProgress: ((progress: CloudSaveProgress) => void) | undefined
+): () => void {
+  let percent = from;
+  onProgress?.({ percent: Math.round(percent), label });
+  const interval = window.setInterval(() => {
+    percent += (to - percent) * 0.12;
+    onProgress?.({ percent: Math.round(percent), label });
+  }, 220);
+  return () => window.clearInterval(interval);
+}
+
 /** Lists the signed-in user's saved cloud projects, most recently updated first. */
 export async function listCloudProjects(): Promise<CloudProjectSummary[]> {
   const client = requireClient();
@@ -45,22 +119,60 @@ export async function listCloudProjects(): Promise<CloudProjectSummary[]> {
  * signed-in user. Overwriting-by-name mirrors local "Save" semantics and
  * relies on the `projects_user_id_name_key` unique index in the DB.
  */
-export async function saveCloudProject(name: string, project: FontSeruProject): Promise<void> {
+export async function saveCloudProject(
+  name: string,
+  project: FontSeruProject,
+  options?: CloudSaveOptions
+): Promise<void> {
+  const { onProgress, signal } = options ?? {};
   const client = requireClient();
-  const { data: userData, error: userError } = await client.auth.getUser();
-  if (userError) throw new Error(userError.message);
-  const userId = userData.user?.id;
-  if (!userId) throw new Error("You must be signed in to save to the cloud.");
+
+  throwIfAborted(signal);
+  onProgress?.({ percent: 5, label: "Menyiapkan data project…" });
 
   // Round-trip through the same serializer used for .fs files so the
   // stored JSON is byte-identical in shape to a downloaded project.
   const data = JSON.parse(serializeFontSeruProject(project));
+  throwIfAborted(signal);
+  onProgress?.({ percent: 20, label: "Memeriksa sesi login…" });
 
-  const { error } = await client
-    .from("projects")
-    .upsert({ user_id: userId, name, data }, { onConflict: "user_id,name" });
+  let userId: string | undefined;
+  try {
+    const { data: userData, error: userError } = await withTimeout(
+      client.auth.getUser(),
+      AUTH_CHECK_TIMEOUT_MS,
+      "Pemeriksaan sesi login memakan waktu terlalu lama. Periksa koneksi internet Anda dan coba lagi."
+    );
+    if (userError) throw new Error(userError.message);
+    userId = userData.user?.id;
+  } catch (error) {
+    if (error instanceof CloudTimeoutError) throw new Error(error.message);
+    throw error;
+  }
+  if (!userId) throw new Error("You must be signed in to save to the cloud.");
+  throwIfAborted(signal);
 
-  if (error) throw new Error(error.message);
+  // A single small JSON request has no meaningful native "bytes uploaded"
+  // progress, so we animate towards 90% while it's in flight and only jump
+  // to 100% once the server has actually confirmed the write.
+  const stopAnimating = animateProgress(35, 90, "Mengunggah ke Cloud…", onProgress);
+  try {
+    let query = client.from("projects").upsert({ user_id: userId, name, data }, { onConflict: "user_id,name" });
+    if (signal) query = query.abortSignal(signal);
+    const { error } = await withTimeout(
+      query,
+      UPLOAD_TIMEOUT_MS,
+      "Unggah ke Cloud memakan waktu terlalu lama (kemungkinan koneksi internet bermasalah). Coba lagi."
+    );
+    if (error) throw new Error(error.message);
+  } catch (error) {
+    if (error instanceof CloudTimeoutError) throw new Error(error.message);
+    throw error;
+  } finally {
+    stopAnimating();
+  }
+
+  onProgress?.({ percent: 100, label: "Tersimpan di Cloud" });
 }
 
 /** Downloads and parses one cloud project by id. */
