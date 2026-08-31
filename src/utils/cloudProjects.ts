@@ -119,6 +119,31 @@ function throwIfAborted(signal?: AbortSignal) {
 }
 
 /**
+ * Supabase/PostgREST errors carry a Postgres error `code` alongside a raw
+ * `message` — the raw message is often written for a DBA, not an end
+ * user (e.g. "canceling statement due to statement timeout" for Postgres
+ * code 57014, which is what a slow/overloaded database — a throttled Disk
+ * IO budget, a missing index, a big query — looks like from the client).
+ * This translates the handful of codes users can actually hit into
+ * something actionable; anything unrecognized falls back to the raw
+ * message rather than hiding it.
+ */
+function describePostgrestError(error: { message: string; code?: string }): string {
+  switch (error.code) {
+    case "57014": // query_canceled (statement_timeout)
+      return "Server database sedang lambat merespons dan membatalkan permintaan ini (timeout). Ini biasanya sementara — coba lagi dalam beberapa saat.";
+    case "42501": // insufficient_privilege (RLS denied)
+      return "Anda tidak punya akses untuk aksi ini. Pastikan akun Anda berstatus PRO dan sedang login.";
+    default:
+      return error.message;
+  }
+}
+
+function throwPostgrestError(error: { message: string; code?: string }): never {
+  throw new Error(describePostgrestError(error));
+}
+
+/**
  * On-the-wire encoding for the `data` column. Font/glyph JSON is highly
  * repetitive (lots of numeric path coordinates and repeated key names), so
  * gzip typically shrinks it by 70–90%. That directly fixes the "large
@@ -238,7 +263,7 @@ export async function listCloudProjects(): Promise<CloudProjectSummary[]> {
     .select("id, name, updated_at")
     .order("updated_at", { ascending: false });
 
-  if (error) throw new Error(error.message);
+  if (error) throwPostgrestError(error);
   return (data ?? []).map((row) => ({
     id: row.id as string,
     name: row.name as string,
@@ -311,7 +336,7 @@ export async function saveCloudProject(
       "Unggah ke Cloud memakan waktu terlalu lama (kemungkinan koneksi internet bermasalah, atau project ini berukuran sangat besar). Coba lagi.",
       () => uploadController.abort()
     );
-    if (error) throw new Error(error.message);
+    if (error) throwPostgrestError(error);
   } catch (error) {
     if (error instanceof CloudTimeoutError) throw new Error(error.message);
     throw error;
@@ -368,7 +393,7 @@ export async function loadCloudProject(
       "Mengunduh project dari Cloud memakan waktu terlalu lama (kemungkinan koneksi internet bermasalah). Coba lagi.",
       () => downloadController.abort()
     );
-    if (error) throw new Error(error.message);
+    if (error) throwPostgrestError(error);
     if (!data) throw new Error("Cloud project not found.");
     row = data as { name: string; data: unknown };
   } catch (error) {
@@ -403,7 +428,7 @@ export const CLOUD_STORAGE_QUOTA_BYTES = 100 * 1024 * 1024; // 100 MB, mirrors t
 export async function getCloudStorageUsage(): Promise<number> {
   const client = requireClient();
   const { data, error } = await client.rpc("get_project_storage_usage");
-  if (error) throw new Error(error.message);
+  if (error) throwPostgrestError(error);
   return typeof data === "number" ? data : Number(data ?? 0);
 }
 
@@ -411,5 +436,5 @@ export async function getCloudStorageUsage(): Promise<number> {
 export async function deleteCloudProject(id: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.from("projects").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) throwPostgrestError(error);
 }

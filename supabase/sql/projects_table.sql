@@ -23,6 +23,15 @@ create table if not exists public.projects (
   updated_at timestamptz not null default now()
 );
 
+-- Maintained alongside `data` (see `projects_enforce_quota` below) so quota
+-- checks never need to read/cast the full JSON payload of every other
+-- project a user has saved. Without this, `octet_length(data::text)` was
+-- being computed fresh, on every single save, across *all* of a user's
+-- other rows — for a user with several MB of saved projects this routinely
+-- exceeded Postgres's statement_timeout under any real load or disk I/O
+-- pressure, surfacing to the client as an unexplained failed save.
+alter table public.projects add column if not exists size_bytes bigint not null default 0;
+
 -- One saved slot per (user, name) — "Save" on an existing name overwrites
 -- it instead of creating a duplicate row, mirroring how "Save" behaves for
 -- local .fs files.
@@ -116,6 +125,15 @@ execute function public.projects_set_updated_at();
 -- the database on every insert/update, so it can't be bypassed by the
 -- client skipping a check. To change the limit, edit `quota_bytes` below
 -- and re-run just this function (the trigger doesn't need to change).
+--
+-- Deliberately sums the maintained `size_bytes` column instead of
+-- recomputing `octet_length(data::text)` over every other row on every
+-- write — the latter forces Postgres to read and detoast the full JSON of
+-- every project a user has, on every single save, which is the exact
+-- query that was hitting statement_timeout for accounts with a few MB of
+-- saved projects. `size_bytes` is a plain bigint the planner can sum
+-- cheaply without touching `data` at all for any row except the one being
+-- written.
 create or replace function public.projects_enforce_quota()
 returns trigger
 language plpgsql
@@ -127,10 +145,11 @@ declare
   total_bytes bigint;
 begin
   new_row_bytes := octet_length(new.data::text);
+  new.size_bytes := new_row_bytes;
 
   -- Sum every other project this user already has saved (on UPDATE, this
   -- excludes the row's own previous size, which `new_row_bytes` replaces).
-  select coalesce(sum(octet_length(data::text)), 0)
+  select coalesce(sum(size_bytes), 0)
   into other_rows_bytes
   from public.projects
   where user_id = new.user_id
@@ -155,16 +174,28 @@ before insert or update on public.projects
 for each row
 execute function public.projects_enforce_quota();
 
+-- One-time backfill for rows that existed before the `size_bytes` column
+-- was added — new rows get it set by the trigger above automatically.
+-- Safe to re-run (rows already backfilled are skipped). If this times out
+-- on a very large table under heavy load, re-run it later; it only needs
+-- to succeed once per row.
+update public.projects set size_bytes = octet_length(data::text) where size_bytes = 0;
+
 -- Lets the client show "X of 100 MB used" before the user even tries to
 -- save, without needing SELECT access to every row's full `data` payload.
 -- `security invoker` (the default) means this still only ever sums the
 -- calling user's own rows, same as the RLS-filtered SELECT policy above.
+-- Sums `size_bytes` for the same reason as the trigger above: summing a
+-- plain bigint column is cheap regardless of how large the saved projects
+-- are, where re-deriving it from `octet_length(data::text)` on every
+-- dialog open was doing the same expensive full-payload read that was
+-- timing out on save.
 create or replace function public.get_project_storage_usage()
 returns bigint
 language sql
 stable
 as $$
-  select coalesce(sum(octet_length(data::text)), 0) from public.projects;
+  select coalesce(sum(size_bytes), 0) from public.projects;
 $$;
 
 grant execute on function public.get_project_storage_usage() to authenticated;
