@@ -323,6 +323,12 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const [cloudSaveProgress, setCloudSaveProgress] = useState<{ percent: number; label: string } | null>(null);
   const [cloudSaveSuccess, setCloudSaveSuccess] = useState<string | null>(null);
   const cloudSaveAbortRef = useRef<AbortController | null>(null);
+  // Same idea as the save-progress state above, but for opening a project
+  // from Cloud: `cloudActionId` already tracks which item is busy (shared
+  // with delete), and this carries the percent/label for that item while
+  // it's specifically an "open" in progress rather than a delete.
+  const [cloudOpenProgress, setCloudOpenProgress] = useState<{ percent: number; label: string } | null>(null);
+  const cloudOpenAbortRef = useRef<AbortController | null>(null);
 
   const refreshCloudProjects = useCallback(async () => {
     setCloudBusy(true);
@@ -400,20 +406,36 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   }, []);
 
   const openFromCloud = useCallback(async (summary: CloudProjectSummary) => {
+    const controller = new AbortController();
+    cloudOpenAbortRef.current = controller;
     setCloudActionId(summary.id);
     setCloudError(null);
+    setCloudOpenProgress({ percent: 0, label: "Menyiapkan…" });
     try {
-      const { name, project } = await loadCloudProject(summary.id);
+      const { name, project } = await loadCloudProject(summary.id, {
+        signal: controller.signal,
+        onProgress: (progress) => setCloudOpenProgress(progress),
+      });
       hydrateProject(project, `${name}.fs`);
       useAppStore.getState().setFontName(name);
       setCloudDialog(null);
       showToast(`Opened "${name}" from Cloud`);
     } catch (error) {
-      console.error("[FontSeru] Cloud open failed.", error);
-      setCloudError(error instanceof Error ? error.message : "Unable to open this cloud project.");
+      if (error instanceof DOMException && error.name === "AbortError") {
+        // User cancelled on purpose — nothing to report.
+      } else {
+        console.error("[FontSeru] Cloud open failed.", error);
+        setCloudError(error instanceof Error ? error.message : "Unable to open this cloud project.");
+      }
     } finally {
       setCloudActionId(null);
+      setCloudOpenProgress(null);
+      cloudOpenAbortRef.current = null;
     }
+  }, []);
+
+  const cancelCloudOpen = useCallback(() => {
+    cloudOpenAbortRef.current?.abort();
   }, []);
 
   const deleteFromCloud = useCallback(async (summary: CloudProjectSummary) => {
@@ -1175,7 +1197,10 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
         <div
           className="fm-export-backdrop"
           onMouseDown={(event) => {
-            if (event.currentTarget === event.target) setCloudDialog(null);
+            if (event.currentTarget === event.target) {
+              if (cloudOpenProgress) cancelCloudOpen();
+              setCloudDialog(null);
+            }
           }}
         >
           <section className="fm-export-dialog fm-cloud-dialog" role="dialog" aria-modal="true" aria-labelledby="cloud-open-title">
@@ -1187,7 +1212,10 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
               <button
                 type="button"
                 className="fm-iconbtn"
-                onClick={() => setCloudDialog(null)}
+                onClick={() => {
+                  if (cloudOpenProgress) cancelCloudOpen();
+                  setCloudDialog(null);
+                }}
                 aria-label="Close cloud projects dialog"
               >
                 <X size={17} />
@@ -1212,18 +1240,30 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                 <ul className="fm-cloud-list" role="list">
                   {cloudProjects?.map((item) => {
                     const acting = cloudActionId === item.id;
+                    const opening = acting && cloudOpenProgress !== null;
+                    // While one item is opening, the rest of the list is
+                    // disabled too — opening isn't instant any more for
+                    // large projects, and letting the user start a second
+                    // action mid-download would be confusing.
+                    const disabled = cloudActionId !== null && !opening;
                     return (
                       <li key={item.id} className="fm-cloud-item">
                         <button
                           type="button"
                           className="fm-cloud-item-main"
                           onClick={() => void openFromCloud(item)}
-                          disabled={acting}
+                          disabled={acting || disabled}
                         >
-                          <span className="fm-cloud-item-icon"><FileText size={15} /></span>
+                          <span className="fm-cloud-item-icon">
+                            {opening ? <Loader2 size={15} className="fm-spin" /> : <FileText size={15} />}
+                          </span>
                           <span className="fm-cloud-item-info">
                             <span className="fm-cloud-item-name">{item.name}</span>
-                            <span className="fm-cloud-item-meta">Updated {new Date(item.updatedAt).toLocaleString()}</span>
+                            {opening && cloudOpenProgress ? (
+                              <span className="fm-cloud-item-meta">{cloudOpenProgress.label}</span>
+                            ) : (
+                              <span className="fm-cloud-item-meta">Updated {new Date(item.updatedAt).toLocaleString()}</span>
+                            )}
                           </span>
                         </button>
                         <button
@@ -1231,10 +1271,24 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                           className="fm-cloud-item-delete"
                           aria-label={`Delete ${item.name} from Cloud`}
                           onClick={() => void deleteFromCloud(item)}
-                          disabled={acting}
+                          disabled={acting || disabled}
                         >
-                          {acting ? <Loader2 size={14} className="fm-spin" /> : <Trash2 size={14} />}
+                          {acting && !opening ? <Loader2 size={14} className="fm-spin" /> : <Trash2 size={14} />}
                         </button>
+                        {opening && cloudOpenProgress && (
+                          <div className="fm-cloud-progress fm-cloud-progress-inline" role="status" aria-live="polite">
+                            <div className="fm-cloud-progress-row">
+                              <span>{cloudOpenProgress.label}</span>
+                              <span className="fm-cloud-progress-pct">{cloudOpenProgress.percent}%</span>
+                            </div>
+                            <div className="fm-cloud-progress-bar">
+                              <div
+                                className="fm-cloud-progress-fill"
+                                style={{ width: `${Math.max(4, Math.min(100, cloudOpenProgress.percent))}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </li>
                     );
                   })}
@@ -1243,8 +1297,18 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
             </div>
 
             <footer className="fm-export-actions">
-              <button type="button" className="fm-secondary-btn" onClick={() => setCloudDialog(null)}>
-                Close
+              <button
+                type="button"
+                className="fm-secondary-btn"
+                onClick={() => {
+                  if (cloudOpenProgress) {
+                    cancelCloudOpen();
+                  } else {
+                    setCloudDialog(null);
+                  }
+                }}
+              >
+                {cloudOpenProgress ? "Batalkan" : "Close"}
               </button>
             </footer>
           </section>

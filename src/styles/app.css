@@ -2637,6 +2637,7 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .fm-cloud-item {
   display: flex; align-items: center; gap: 4px;
+  flex-wrap: wrap;
 }
 .fm-cloud-item-main {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px;
@@ -2709,6 +2710,15 @@ input[type="number"]::-webkit-outer-spin-button {
   height: 100%; border-radius: 999px;
   background: var(--accent);
   transition: width .22s ease;
+}
+
+/* Per-item progress bar inside the "Open from Cloud" list (see
+   `.fm-cloud-item`, which wraps to let this take the full row width
+   beneath the item's name/delete buttons instead of squeezing into the
+   same line as them). */
+.fm-cloud-progress-inline {
+  flex: 0 0 100%;
+  margin: 0 6px 6px;
 }
 
 .fm-cloud-success-dialog {
