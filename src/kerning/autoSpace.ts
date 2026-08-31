@@ -119,6 +119,13 @@ export interface AutoSpaceResult {
   skippedManual: number;
 }
 
+/** Yields to the browser so a large glyph set doesn't freeze the UI thread. */
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+const SPACE_CHUNK_SIZE = 60; // glyphs processed per tick before yielding + reporting progress
+
 /**
  * Applies `suggestGlyphSidebearings` across every glyph in `glyphs`.
  * `applyPatch` performs the actual LSB/RSB mutation (translating the
@@ -131,35 +138,51 @@ export interface AutoSpaceResult {
  * used to leave glyphs the user has already hand-tuned kerning for
  * (a manual kerning pair) untouched, since shifting their LSB/RSB out
  * from under an existing manual kern value is what causes collisions.
+ *
+ * Runs in chunks (yielding back to the browser between them), the same way
+ * `autoKernAllAvailablePairs` does, so a caller can pass `onProgress` to
+ * drive a real, non-fake loading indicator on the triggering button.
  */
-export function autoSpaceAllGlyphs(
+export async function autoSpaceAllGlyphs(
   glyphs: GlyphMap,
   metrics: FontMetrics,
   applyPatch: (glyph: Glyph, patch: GlyphSpacingSuggestion) => Glyph,
-  excludeChars?: Set<string>
-): AutoSpaceResult {
+  excludeChars?: Set<string>,
+  onProgress?: (fraction: number) => void
+): Promise<AutoSpaceResult> {
   let next = glyphs;
   let updated = 0;
   let skipped = 0;
   let skippedManual = 0;
 
-  for (const [char, glyph] of Object.entries(glyphs)) {
+  const entries = Object.entries(glyphs);
+  const total = entries.length;
+  let processed = 0;
+  let sinceYield = 0;
+
+  for (const [char, glyph] of entries) {
+    processed++;
     if (excludeChars?.has(char)) {
       skippedManual++;
-      continue;
+    } else {
+      const suggestion = suggestGlyphSidebearings(glyph, metrics);
+      if (!suggestion) {
+        skipped++;
+      } else if (glyph.lsb !== suggestion.lsb || glyph.rsb !== suggestion.rsb) {
+        if (next === glyphs) next = { ...glyphs };
+        next[char] = applyPatch(glyph, suggestion);
+        updated++;
+      }
     }
 
-    const suggestion = suggestGlyphSidebearings(glyph, metrics);
-    if (!suggestion) {
-      skipped++;
-      continue;
+    sinceYield++;
+    if (sinceYield >= SPACE_CHUNK_SIZE) {
+      sinceYield = 0;
+      onProgress?.(total > 0 ? processed / total : 1);
+      await yieldToBrowser();
     }
-    if (glyph.lsb === suggestion.lsb && glyph.rsb === suggestion.rsb) continue;
-
-    if (next === glyphs) next = { ...glyphs };
-    next[char] = applyPatch(glyph, suggestion);
-    updated++;
   }
 
+  onProgress?.(1);
   return { glyphs: next, updated, skipped, skippedManual };
 }

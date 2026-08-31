@@ -1342,6 +1342,23 @@ input[type="number"]::-webkit-outer-spin-button {
   transition: background 0.12s linear;
 }
 .fm-auto-kern-btn.done { background: var(--accent-2); border-color: var(--accent-2); animation: fm-auto-kern-flash 0.55s ease; }
+
+/* Auto Spacing button: same real-progress fill treatment as Auto Kerning
+   above (now that autoSpaceAllGlyphs/autoSpaceAllGlyphsForContext are also
+   chunked and report onProgress), just its own CSS var so the two don't
+   fight over one fill value if both were ever running at once. */
+.fm-auto-space-btn.running {
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fm-auto-space-fill, 0%),
+    color-mix(in srgb, var(--accent) 22%, var(--panel-2)) var(--fm-auto-space-fill, 0%)
+  );
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  cursor: progress;
+  transition: background 0.12s linear;
+}
+.fm-auto-space-btn.done { background: var(--accent-2); border-color: var(--accent-2); animation: fm-auto-kern-flash 0.55s ease; }
 @keyframes fm-auto-kern-flash {
   0% { filter: brightness(1.5); }
   100% { filter: brightness(1); }

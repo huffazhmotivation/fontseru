@@ -1352,6 +1352,7 @@ export function SpecimenPanel() {
   const resetFamilyKerningPair = useAppStore((s) => s.resetFamilyKerningPair);
   const autoKernAllPairsForContext = useAppStore((s) => s.autoKernAllPairsForContext);
   const autoSpaceAllGlyphs = useAppStore((s) => s.autoSpaceAllGlyphs);
+  const autoSpaceAllGlyphsForContext = useAppStore((s) => s.autoSpaceAllGlyphsForContext);
   const autoSpaceLastRun = useAppStore((s) => s.autoSpaceLastRun);
   const autoWordSpacing = useAppStore((s) => s.autoWordSpacing);
   const applyTrackingToAllGlyphs = useAppStore((s) => s.applyTrackingToAllGlyphs);
@@ -1410,7 +1411,12 @@ export function SpecimenPanel() {
 
   const [excludeManualKerning, setExcludeManualKerning] = useState(true);
   const [reKernAfterSpacing, setReKernAfterSpacing] = useState(true);
-  const [autoSpaceRunning, setAutoSpaceRunning] = useState(false);
+  // Same "idle" | 0..1 | "done" pattern as autoKernProgress above, so Auto
+  // Spacing's button fills with real progress instead of a static "Spacing…"
+  // label — and so it can be driven by whichever of the two store actions
+  // below actually ran (single style, or a Family Test context).
+  const [autoSpaceProgress, setAutoSpaceProgress] = useState<"idle" | "done" | number>("idle");
+  const autoSpaceRunning = typeof autoSpaceProgress === "number";
   const [wordSpacingFlash, setWordSpacingFlash] = useState<number | null>(null);
 
   const handleAutoWordSpacing = useCallback(() => {
@@ -1421,16 +1427,24 @@ export function SpecimenPanel() {
 
   const handleAutoSpace = useCallback(async () => {
     if (autoSpaceRunning) return;
-    setAutoSpaceRunning(true);
+    setAutoSpaceProgress(0);
     try {
-      await autoSpaceAllGlyphs({
-        excludeManuallyKerned: excludeManualKerning,
-        reKernAfter: reKernAfterSpacing,
-      });
-    } finally {
-      setAutoSpaceRunning(false);
+      const options = { excludeManuallyKerned: excludeManualKerning, reKernAfter: reKernAfterSpacing };
+      // Family Test must re-space the style selected in "Kerning Context",
+      // not whatever style happens to be open in the main editor — that's
+      // what autoSpaceAllGlyphsForContext is for (see store.ts).
+      if (kerningMode === "family") {
+        await autoSpaceAllGlyphsForContext(familyContext, options, setAutoSpaceProgress);
+      } else {
+        await autoSpaceAllGlyphs(options, setAutoSpaceProgress);
+      }
+      setAutoSpaceProgress("done");
+      window.setTimeout(() => setAutoSpaceProgress("idle"), 550);
+    } catch (error) {
+      console.error("[FontSeru] Auto Spacing failed.", error);
+      setAutoSpaceProgress("idle");
     }
-  }, [autoSpaceRunning, autoSpaceAllGlyphs, excludeManualKerning, reKernAfterSpacing]);
+  }, [autoSpaceRunning, autoSpaceAllGlyphs, autoSpaceAllGlyphsForContext, kerningMode, familyContext, excludeManualKerning, reKernAfterSpacing]);
 
   const handleApplyTracking = useCallback(() => {
     if (tracking === 0) return;
@@ -1794,13 +1808,18 @@ export function SpecimenPanel() {
           <div className="fm-kern-block">
             <div className="fm-auto-space-row fm-tooltip-anchor">
               <button
-                className="fm-action-btn accent"
+                className={`fm-action-btn accent fm-auto-space-btn${autoSpaceRunning ? " running" : ""}${autoSpaceProgress === "done" ? " done" : ""}`}
+                style={autoSpaceRunning ? { "--fm-auto-space-fill": `${Math.round((autoSpaceProgress as number) * 100)}%` } as CSSProperties : undefined}
                 onClick={(e) => { handleAutoSpace(); e.currentTarget.blur(); }}
                 disabled={autoSpaceRunning}
                 data-testid="auto-space-btn"
               >
-                <AlignHorizontalSpaceAround size={14} />
-                {autoSpaceRunning ? "Spacing…" : "Auto Spacing"}
+                {autoSpaceRunning ? (
+                  <Loader2 className="fm-auto-kern-icon fm-auto-kern-spin" size={14} strokeWidth={2} aria-hidden="true" />
+                ) : (
+                  <AlignHorizontalSpaceAround size={14} />
+                )}
+                {autoSpaceRunning ? `Spacing… ${Math.round((autoSpaceProgress as number) * 100)}%` : "Auto Spacing"}
               </button>
               <div className="fm-tooltip-bubble" role="tooltip">
                 Normalize every glyph's left/right sidebearing to one consistent optical margin, on the currently

@@ -392,7 +392,7 @@ interface AppState {
   /** Normalizes every glyph's LSB/RSB in the active style to a shared,
    * optically-balanced baseline margin. Fixes inconsistent hand-drawn
    * sidebearings; runs before Auto Kern refines specific pairs on top. */
-  autoSpaceAllGlyphs: (options?: { excludeManuallyKerned?: boolean; reKernAfter?: boolean }) => Promise<AutoSpaceResult>;
+  autoSpaceAllGlyphs: (options?: { excludeManuallyKerned?: boolean; reKernAfter?: boolean }, onProgress?: (fraction: number) => void) => Promise<AutoSpaceResult>;
   /** Computes a word-spacing value from the font's own drawn glyphs and applies it (see `suggestWordSpacing`). Returns the value that was set. */
   autoWordSpacing: () => number;
   /** Bakes `trackingUnits` permanently into every glyph's LSB/RSB (split
@@ -408,6 +408,17 @@ interface AppState {
   setFamilyKerningPair: (context: KerningContext, left: string, right: string, value: number) => void;
   resetFamilyKerningPair: (context: KerningContext, left: string, right: string) => void;
   autoKernAllPairsForContext: (context: KerningContext, onProgress?: (fraction: number) => void) => Promise<void>;
+  /** Family-aware version of `autoSpaceAllGlyphs`: normalizes LSB/RSB for
+   * the style selected as Test Lab's "Kerning Context" ("shared" maps to
+   * Regular, the same baseline `autoKernAllPairsForContext` uses), instead
+   * of always operating on whatever style happens to be open in the main
+   * editor. This is what actually makes "Auto Spacing" work while Family
+   * Test is active. */
+  autoSpaceAllGlyphsForContext: (
+    context: KerningContext,
+    options?: { excludeManuallyKerned?: boolean; reKernAfter?: boolean },
+    onProgress?: (fraction: number) => void
+  ) => Promise<AutoSpaceResult>;
   beginFamilyKerningDrag: (context: KerningContext) => void;
   setFamilyKerningPairLive: (context: KerningContext, left: string, right: string, value: number) => void;
   endFamilyKerningDrag: () => void;
@@ -548,6 +559,33 @@ export const useAppStore = create<AppState>()((set, get) => {
         ...state.past,
         {
           glyphs: state.glyphs,
+          metrics: state.metrics,
+          kerningPairs: state.kerningPairs,
+          kerningManual: state.kerningManual,
+          kerningOverridesByStyle: state.kerningOverridesByStyle,
+          kerningOverrideManualByStyle: state.kerningOverrideManualByStyle,
+        },
+      ].slice(-HISTORY_LIMIT),
+      future: [],
+    });
+  }
+
+  /** Same history/commit shape as `commit()`, but targets an arbitrary
+   * family style instead of always writing to the currently active
+   * `fontStyle`/`glyphs`. Used by family-aware actions (e.g. Auto Spacing
+   * run against Test Lab's Family Test context) that must edit a style
+   * other than the one currently open in the main editor. */
+  function commitStyleGlyphs(style: FontStyle, nextGlyphs: GlyphMap) {
+    const state = get();
+    const nextFamily: GlyphFamily = { ...state.glyphsByStyle, [style]: nextGlyphs };
+    set({
+      glyphsByStyle: nextFamily,
+      glyphs: state.fontStyle === style ? nextGlyphs : state.glyphs,
+      past: [
+        ...state.past,
+        {
+          glyphs: state.glyphs,
+          glyphsByStyle: state.glyphsByStyle,
           metrics: state.metrics,
           kerningPairs: state.kerningPairs,
           kerningManual: state.kerningManual,
@@ -1481,7 +1519,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ autoKernLastRun: { processed: result.processed, updated: result.updated, preservedManual: result.preservedManual } });
     },
 
-    autoSpaceAllGlyphs: async (options) => {
+    autoSpaceAllGlyphs: async (options, onProgress) => {
       const excludeManuallyKerned = options?.excludeManuallyKerned ?? true;
       const reKernAfter = options?.reKernAfter ?? true;
       const { glyphs, metrics, kerningPairs, kerningManual } = get();
@@ -1501,7 +1539,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         }
       }
 
-      const result = computeAutoSpaceAllGlyphs(glyphs, metrics, applyGlyphMetricPatch, excludeChars);
+      const result = await computeAutoSpaceAllGlyphs(glyphs, metrics, applyGlyphMetricPatch, excludeChars, onProgress);
       if (result.updated > 0) commit(result.glyphs);
       set({ autoSpaceLastRun: { updated: result.updated, skipped: result.skipped, skippedManual: result.skippedManual } });
 
@@ -1525,6 +1563,74 @@ export const useAppStore = create<AppState>()((set, get) => {
             preservedManual: kernResult.preservedManual,
           },
         });
+      }
+
+      return result;
+    },
+
+    autoSpaceAllGlyphsForContext: async (context, options, onProgress) => {
+      const excludeManuallyKerned = options?.excludeManuallyKerned ?? true;
+      const reKernAfter = options?.reKernAfter ?? true;
+      // "shared" has no glyph geometry of its own to space — it uses Regular
+      // as the family baseline, the same convention autoKernAllPairsForContext
+      // already uses for its "shared" case.
+      const targetStyle = context === "shared" ? "regular" : context;
+      const state = get();
+      const styleGlyphs = state.glyphsByStyle[targetStyle] ?? {};
+
+      // Effective manual-kerning exclude set for this style: the shared
+      // layer plus this style's own override layer (a style override is
+      // just as "manually tuned" as a shared manual pair, and either one
+      // moving out from under a hand-set kern value causes the same
+      // collisions Auto Spacing's exclude option exists to prevent).
+      let excludeChars: Set<string> | undefined;
+      if (excludeManuallyKerned) {
+        excludeChars = new Set<string>();
+        const collect = (manual: KerningManualFlags | undefined) => {
+          if (!manual) return;
+          for (const [key, isManual] of Object.entries(manual)) {
+            if (!isManual) continue;
+            const [left, right] = decodeKerningKey(key);
+            excludeChars!.add(left);
+            excludeChars!.add(right);
+          }
+        };
+        collect(state.kerningManual);
+        if (context !== "shared") collect(state.kerningOverrideManualByStyle[context]);
+      }
+
+      const result = await computeAutoSpaceAllGlyphs(styleGlyphs, state.metrics, applyGlyphMetricPatch, excludeChars, onProgress);
+      if (result.updated > 0) commitStyleGlyphs(targetStyle, result.glyphs);
+      set({ autoSpaceLastRun: { updated: result.updated, skipped: result.skipped, skippedManual: result.skippedManual } });
+
+      // Re-run auto-kerning for this same context against the new spacing,
+      // mirroring autoKernAllPairsForContext's own shared/override split.
+      if (reKernAfter && result.updated > 0) {
+        const after = get();
+        const afterGlyphs = after.glyphsByStyle[targetStyle] ?? result.glyphs;
+        if (context === "shared") {
+          const kernResult = await autoKernAllAvailablePairs(afterGlyphs, after.metrics, after.kerningPairs, after.kerningManual);
+          commitKerning(kernResult.pairs, kernResult.manual);
+          set({
+            autoKernLastRun: {
+              processed: kernResult.processed,
+              updated: kernResult.updated,
+              preservedManual: kernResult.preservedManual,
+            },
+          });
+        } else {
+          const currentPairs = after.kerningOverridesByStyle[context] ?? {};
+          const currentManual = after.kerningOverrideManualByStyle[context] ?? {};
+          const kernResult = await autoKernAllAvailablePairs(afterGlyphs, after.metrics, currentPairs, currentManual, after.kerningPairs);
+          commitFamilyStyleKerning(context, kernResult.pairs, kernResult.manual);
+          set({
+            autoKernLastRun: {
+              processed: kernResult.processed,
+              updated: kernResult.updated,
+              preservedManual: kernResult.preservedManual,
+            },
+          });
+        }
       }
 
       return result;

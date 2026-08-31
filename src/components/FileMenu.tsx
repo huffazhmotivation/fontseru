@@ -277,6 +277,10 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const [open, setOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Real progress for the Export button: one step per selected style's font
+  // generation, plus one final step for zipping the result — not a fake
+  // timer, so it always reflects how much of `runExport` has actually run.
+  const [exportProgress, setExportProgress] = useState(0);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const toastId = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -606,6 +610,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     // bypassed by editing client code. PRO accounts always come back
     // allowed=true here and are never counted.
     setBusy(true);
+    setExportProgress(0);
     const quota = await consumeExport();
     if (!quota.allowed) {
       setBusy(false);
@@ -613,6 +618,15 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       openProModal("export");
       return;
     }
+
+    // One progress step per selected style's font generation, plus one for
+    // the final zip packaging (manifests + PDF + zip encoding).
+    const totalExportSteps = styles.length + 1;
+    let completedExportSteps = 0;
+    const advanceExportProgress = () => {
+      completedExportSteps++;
+      setExportProgress(completedExportSteps / totalExportSteps);
+    };
 
     try {
       const s = useAppStore.getState();
@@ -686,6 +700,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
             blob: new Blob([file.buffer], { type: file.mimeType }),
           });
         }
+        advanceExportProgress();
       }
 
       // --- Export Information System: manifests -----------------------
@@ -740,6 +755,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
         { name: "License Summary.pdf", blob: licensePdfBlob },
       ];
       const zipBlob = await createZipBlob(zipEntries);
+      advanceExportProgress();
       const zipName = styles.length > 1 ? `${baseName}-Family.zip` : `${baseName}.zip`;
       const result = await saveFontBlob(zipBlob, zipName, "zip");
       if (result === "cancelled") return;
@@ -755,6 +771,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       showToast(message, "error");
     } finally {
       setBusy(false);
+      setExportProgress(0);
     }
   };
 
@@ -1110,7 +1127,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                 onClick={() => void runExport()}
                 disabled={busy || selectedStyleCount === 0}
               >
-                <Download size={15} /> {busy ? "Preparing…" : primaryExportLabel}
+                <Download size={15} /> {busy ? `Preparing… ${Math.round(exportProgress * 100)}%` : primaryExportLabel}
               </button>
             </footer>
           </section>
