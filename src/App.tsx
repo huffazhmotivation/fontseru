@@ -81,6 +81,7 @@ export default function App() {
         kerningManual: snap.kerningManual,
         kerningOverridesByStyle: snap.kerningOverridesByStyle,
         kerningOverrideManualByStyle: snap.kerningOverrideManualByStyle,
+        wordSpacingOverridesByStyle: snap.wordSpacingOverridesByStyle,
         featureConfig: snap.featureConfig,
       });
       hydratedRef.current = true;
@@ -107,6 +108,7 @@ export default function App() {
         kerningManual: state.kerningManual,
         kerningOverridesByStyle: state.kerningOverridesByStyle,
         kerningOverrideManualByStyle: state.kerningOverrideManualByStyle,
+        wordSpacingOverridesByStyle: state.wordSpacingOverridesByStyle,
         featureConfig: state.featureConfig,
       });
     };

@@ -1,5 +1,5 @@
 import type { CustomFamily, FontStyle, GlyphFamily, GlyphMap } from "@/types/glyph";
-import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle } from "@/types/kerning";
+import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, WordSpacingOverridesByStyle } from "@/types/kerning";
 import type { FontInfo, FontMetrics } from "@/types/font";
 import type { FeatureBuilderConfig } from "@/types/opentypeFeatures";
 
@@ -30,6 +30,9 @@ interface ProjectSnapshot {
   kerningManual?: KerningManualFlags;
   kerningOverridesByStyle?: KerningOverridesByStyle;
   kerningOverrideManualByStyle?: KerningOverrideManualByStyle;
+  /** Sparse per-style word spacing layer. Optional so older saved snapshots
+   * without this field still load fine. */
+  wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle;
   /** OpenType Feature Builder config (ligatures/alternates/swashes). Optional
    * so older saved snapshots without this field still load fine. */
   featureConfig?: FeatureBuilderConfig;

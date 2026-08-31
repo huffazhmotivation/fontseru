@@ -19,6 +19,22 @@ export type KerningOverridesByStyle = Partial<Record<FontStyle, KerningPairs>>;
 export type KerningOverrideManualByStyle = Partial<Record<FontStyle, KerningManualFlags>>;
 export type KerningContext = "shared" | FontStyle;
 
+/**
+ * Word spacing follows the same Shared + sparse Style Override layering as
+ * kerning above: `metrics.wordSpacing` is the shared/family value, and this
+ * map holds only the styles that have explicitly diverged from it (e.g. a
+ * Bold cut that needs a slightly wider space than Regular).
+ */
+export type WordSpacingOverridesByStyle = Partial<Record<FontStyle, number>>;
+
+export function effectiveWordSpacing(
+  shared: number | undefined,
+  overridesByStyle: WordSpacingOverridesByStyle,
+  style: FontStyle
+): number | undefined {
+  return overridesByStyle[style] ?? shared;
+}
+
 export function effectiveKerningValue(
   shared: KerningPairs,
   overridesByStyle: KerningOverridesByStyle,

@@ -29,7 +29,7 @@ import {
 // make everyone pay for opentype.js + jspdf on every app load. The type-only
 // import has no runtime cost, so it stays static.
 import type { ExportFontFormat } from "@/utils/fontIO";
-import { effectiveKerningPairs } from "@/types/kerning";
+import { effectiveKerningPairs, effectiveWordSpacing } from "@/types/kerning";
 import { createZipBlob } from "@/utils/zip";
 import { Toast, type ToastKind, type ToastMessage } from "@/components/Toast";
 
@@ -176,6 +176,7 @@ function snapshotFromStore() {
     kerningManual: s.kerningManual,
     kerningOverridesByStyle: s.kerningOverridesByStyle,
     kerningOverrideManualByStyle: s.kerningOverrideManualByStyle,
+    wordSpacingOverridesByStyle: s.wordSpacingOverridesByStyle,
     featureConfig: s.featureConfig,
     activeChar: s.activeChar,
     gridSize: s.gridSize,
@@ -202,6 +203,7 @@ function hydrateProject(project: ReturnType<typeof parseFontSeruProject>, filena
     kerningManual: project.font.kerningManual,
     kerningOverridesByStyle: project.font.kerningOverridesByStyle,
     kerningOverrideManualByStyle: project.font.kerningOverrideManualByStyle,
+    wordSpacingOverridesByStyle: project.font.wordSpacingOverridesByStyle,
     featureConfig: project.font.featureConfig,
     activeChar: project.editor.activeChar,
     gridSize: project.editor.gridSize,
@@ -673,11 +675,19 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
           s.kerningOverridesByStyle,
           style,
         );
+        // Each exported style's space glyph should match the word spacing
+        // this style actually previews with — Bold/Italic can have their
+        // own override (see wordSpacingOverridesByStyle), otherwise they
+        // fall back to the shared metrics.wordSpacing like everything else.
+        const styleWordSpacing = effectiveWordSpacing(s.metrics.wordSpacing, s.wordSpacingOverridesByStyle, style);
+        const styleMetrics = styleWordSpacing !== undefined
+          ? { ...s.metrics, wordSpacing: styleWordSpacing }
+          : s.metrics;
         let generated: Awaited<ReturnType<typeof generateFontFiles>>;
         try {
           generated = await generateFontFiles(
             s.glyphsByStyle[style],
-            s.metrics,
+            styleMetrics,
             exportInfo,
             effectiveKerning,
             formats,

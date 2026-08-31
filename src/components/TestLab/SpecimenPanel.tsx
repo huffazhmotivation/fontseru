@@ -14,6 +14,7 @@ import { FONT_STYLES, fontStyleLabel, hasOutline, type FontStyle, type GlyphMap 
 import type { FeatureBuilderConfig } from "@/types/opentypeFeatures";
 import {
   effectiveKerningPairs,
+  effectiveWordSpacing,
   kerningKey,
   type KerningContext,
   type KerningPairs,
@@ -634,9 +635,15 @@ function FamilyStylePreview({
   const metrics = useAppStore((s) => s.metrics);
   const sharedPairs = useAppStore((s) => s.kerningPairs);
   const overridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
+  const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
   const beginFamilyKerningDrag = useAppStore((s) => s.beginFamilyKerningDrag);
   const setFamilyKerningPairLive = useAppStore((s) => s.setFamilyKerningPairLive);
   const endFamilyKerningDrag = useAppStore((s) => s.endFamilyKerningDrag);
+
+  // This style's own word spacing when it has diverged from the shared
+  // family value (see wordSpacingOverridesByStyle) — otherwise falls back
+  // to metrics.wordSpacing exactly like before per-style overrides existed.
+  const wordSpacing = effectiveWordSpacing(metrics.wordSpacing, wordSpacingOverridesByStyle, style);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -664,8 +671,8 @@ function FamilyStylePreview({
   }, []);
 
   const wrappedLines = useMemo(
-    () => wrapFamilyText(text, glyphs, metrics.unitsPerEm, kerningPairs, tracking, maxWidthUnits, metrics.wordSpacing),
-    [text, glyphs, metrics.unitsPerEm, kerningPairs, tracking, maxWidthUnits, metrics.wordSpacing]
+    () => wrapFamilyText(text, glyphs, metrics.unitsPerEm, kerningPairs, tracking, maxWidthUnits, wordSpacing),
+    [text, glyphs, metrics.unitsPerEm, kerningPairs, tracking, maxWidthUnits, wordSpacing]
   );
 
   const syncCaretFromSelection = () => {
@@ -1355,6 +1362,9 @@ export function SpecimenPanel() {
   const autoSpaceAllGlyphsForContext = useAppStore((s) => s.autoSpaceAllGlyphsForContext);
   const autoSpaceLastRun = useAppStore((s) => s.autoSpaceLastRun);
   const autoWordSpacing = useAppStore((s) => s.autoWordSpacing);
+  const autoWordSpacingForContext = useAppStore((s) => s.autoWordSpacingForContext);
+  const resetFamilyWordSpacing = useAppStore((s) => s.resetFamilyWordSpacing);
+  const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
   const applyTrackingToAllGlyphs = useAppStore((s) => s.applyTrackingToAllGlyphs);
   const trackingApplyLastRun = useAppStore((s) => s.trackingApplyLastRun);
   // "idle" | 0..1 while running | "done" briefly once the last chunk lands,
@@ -1420,10 +1430,15 @@ export function SpecimenPanel() {
   const [wordSpacingFlash, setWordSpacingFlash] = useState<number | null>(null);
 
   const handleAutoWordSpacing = useCallback(() => {
-    const value = autoWordSpacing();
+    // Family Test must suggest/set word spacing for the style selected in
+    // "Kerning Context", not the single global metric — the same split
+    // handleAutoSpace already makes for glyph LSB/RSB spacing.
+    const value = kerningMode === "family"
+      ? autoWordSpacingForContext(familyContext)
+      : autoWordSpacing();
     setWordSpacingFlash(value);
     window.setTimeout(() => setWordSpacingFlash(null), 1800);
-  }, [autoWordSpacing]);
+  }, [autoWordSpacing, autoWordSpacingForContext, kerningMode, familyContext]);
 
   const handleAutoSpace = useCallback(async () => {
     if (autoSpaceRunning) return;
@@ -1872,10 +1887,30 @@ export function SpecimenPanel() {
                 <Wand2 size={14} />
                 Auto Word Spacing
               </button>
+              {kerningMode === "family" && familyContext !== "shared" && wordSpacingOverridesByStyle[familyContext] !== undefined && (
+                <button
+                  type="button"
+                  className="fm-action-btn fm-kern-reset-btn"
+                  onClick={(e) => { resetFamilyWordSpacing(familyContext); e.currentTarget.blur(); }}
+                  data-testid="reset-word-spacing-override-btn"
+                  title={`Remove ${fontStyleLabel(familyContext, customFamilies)}'s own word spacing override and inherit Shared again`}
+                >
+                  <RotateCcw size={14} />
+                  Reset Override
+                </button>
+              )}
               <div className="fm-tooltip-bubble" role="tooltip">
                 Sets the gap typed between words (the keyboard space bar) from the average width of the letters you've
                 already drawn — a bold/wide font gets a wider space, a condensed one gets a tighter space, instead of
                 one flat default. Separate from Auto Spacing above, which only touches per-letter margins.
+                {kerningMode === "family" && (
+                  <>
+                    {" "}In Family Test this only sets the style selected in Kerning Context —{" "}
+                    {familyContext === "shared"
+                      ? "currently the Shared value every style without its own override inherits."
+                      : `currently ${fontStyleLabel(familyContext, customFamilies)}'s own override, leaving other styles untouched.`}
+                  </>
+                )}
               </div>
             </div>
 
@@ -1883,6 +1918,11 @@ export function SpecimenPanel() {
               <div className="fm-kern-complete" role="status" data-testid="auto-word-spacing-complete">
                 <span className="fm-status-dot" />
                 Word Spacing set to {wordSpacingFlash} units
+                {kerningMode === "family"
+                  ? familyContext === "shared"
+                    ? " (Shared)"
+                    : ` (${fontStyleLabel(familyContext, customFamilies)} override)`
+                  : ""}
               </div>
             )}
           </div>

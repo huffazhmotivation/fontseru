@@ -17,8 +17,8 @@ import { shortId } from "@/utils/id";
 import { expandStrokeObject, normalizeBrushSettings } from "@/brushes/strokeToOutline";
 import { applyBooleanOp, type BooleanOp } from "@/editor/booleanOps";
 import { composeMultilingualGlyphs, type MultilingualResult } from "@/glyph/multilingual";
-import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext } from "@/types/kerning";
-import { kerningKey, decodeKerningKey } from "@/types/kerning";
+import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext, WordSpacingOverridesByStyle } from "@/types/kerning";
+import { kerningKey, decodeKerningKey, effectiveWordSpacing } from "@/types/kerning";
 import { suggestKerningPair, autoKernAllAvailablePairs } from "@/kerning/autoKern";
 import { autoSpaceAllGlyphs as computeAutoSpaceAllGlyphs, suggestWordSpacing, type AutoSpaceResult } from "@/kerning/autoSpace";
 import type { FeatureBuilderConfig, LigatureRule, AlternateRule, SwashRule, FeatureGlyphRef } from "@/types/opentypeFeatures";
@@ -67,6 +67,8 @@ interface HistoryEntry {
   /** Optional so history created by pre-family operations remains compatible. */
   kerningOverridesByStyle?: KerningOverridesByStyle;
   kerningOverrideManualByStyle?: KerningOverrideManualByStyle;
+  /** Optional so history created before per-style word spacing remains compatible. */
+  wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle;
   autoKernLastRun?: { processed: number; updated: number; preservedManual: number } | null;
 }
 const HISTORY_LIMIT = 120;
@@ -230,6 +232,9 @@ interface AppState {
   /** Sparse style-specific layer; absence means inherit Shared kerningPairs. */
   kerningOverridesByStyle: KerningOverridesByStyle;
   kerningOverrideManualByStyle: KerningOverrideManualByStyle;
+  /** Sparse style-specific word spacing layer, same shape as the kerning
+   * override layers above; absence means inherit the shared metrics.wordSpacing. */
+  wordSpacingOverridesByStyle: WordSpacingOverridesByStyle;
   autoKernLastRun: { processed: number; updated: number; preservedManual: number } | null;
   /** Last "Auto Spacing" run against the active style's glyphs, for a brief status readout. */
   autoSpaceLastRun: { updated: number; skipped: number; skippedManual: number } | null;
@@ -382,7 +387,7 @@ interface AppState {
   // history / persistence
   undo: () => void;
   redo: () => void;
-  hydrate: (patch: { glyphs?: GlyphMap; glyphsByStyle?: Partial<GlyphFamily>; fontStyle?: FontStyle; customFamilies?: CustomFamily[]; fontName?: string; fontInfo?: Partial<FontInfo>; projectFileName?: string; metrics?: Partial<FontMetrics>; kerningPairs?: KerningPairs; kerningManual?: KerningManualFlags; kerningOverridesByStyle?: KerningOverridesByStyle; kerningOverrideManualByStyle?: KerningOverrideManualByStyle; featureConfig?: FeatureBuilderConfig; activeChar?: string; gridSize?: number; showGrid?: boolean; showGuides?: boolean; snapEnabled?: boolean; ghost?: Partial<GhostSettings>; brush?: BrushSettings }) => void;
+  hydrate: (patch: { glyphs?: GlyphMap; glyphsByStyle?: Partial<GlyphFamily>; fontStyle?: FontStyle; customFamilies?: CustomFamily[]; fontName?: string; fontInfo?: Partial<FontInfo>; projectFileName?: string; metrics?: Partial<FontMetrics>; kerningPairs?: KerningPairs; kerningManual?: KerningManualFlags; kerningOverridesByStyle?: KerningOverridesByStyle; kerningOverrideManualByStyle?: KerningOverrideManualByStyle; wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle; featureConfig?: FeatureBuilderConfig; activeChar?: string; gridSize?: number; showGrid?: boolean; showGuides?: boolean; snapEnabled?: boolean; ghost?: Partial<GhostSettings>; brush?: BrushSettings }) => void;
 
   // kerning
   setKerningPair: (left: string, right: string, value: number) => void;
@@ -422,6 +427,21 @@ interface AppState {
   beginFamilyKerningDrag: (context: KerningContext) => void;
   setFamilyKerningPairLive: (context: KerningContext, left: string, right: string, value: number) => void;
   endFamilyKerningDrag: () => void;
+
+  // Family word spacing — same Shared + sparse Style Override layering as
+  // family kerning above, so Family Test's "Kerning Context" picker also
+  // scopes word-spacing edits/suggestions to just that one style.
+  /** Sets an explicit word-spacing override for `context`. "shared" writes
+   * straight to `metrics.wordSpacing` (same as `setFontMetric("wordSpacing", ...)`). */
+  setFamilyWordSpacing: (context: KerningContext, value: number) => void;
+  /** Clears `context`'s override so it falls back to inheriting the shared
+   * `metrics.wordSpacing` again. No-op for "shared" (nothing to fall back to). */
+  resetFamilyWordSpacing: (context: KerningContext) => void;
+  /** Family-aware version of `autoWordSpacing`: computes the suggestion from
+   * the style selected as Test Lab's "Kerning Context" ("shared" maps to
+   * Regular) and writes it into that style's own override layer instead of
+   * the single shared metric. Returns the value that was set. */
+  autoWordSpacingForContext: (context: KerningContext) => number;
 
   // Test Lab overlay
   openTestLab: (tab?: "kerning" | "specimen") => void;
@@ -570,6 +590,27 @@ export const useAppStore = create<AppState>()((set, get) => {
     });
   }
 
+  /** Same history/commit shape as `commitFamilyStyleKerning`, but writes a
+   * single word-spacing override value for `style` instead of a kerning
+   * pairs map. */
+  function commitFamilyWordSpacing(style: FontStyle, overridesByStyle: WordSpacingOverridesByStyle) {
+    const state = get();
+    set({
+      wordSpacingOverridesByStyle: overridesByStyle,
+      past: [
+        ...state.past,
+        {
+          glyphs: state.glyphs,
+          metrics: state.metrics,
+          kerningPairs: state.kerningPairs,
+          kerningManual: state.kerningManual,
+          wordSpacingOverridesByStyle: state.wordSpacingOverridesByStyle,
+        },
+      ].slice(-HISTORY_LIMIT),
+      future: [],
+    });
+  }
+
   /** Same history/commit shape as `commit()`, but targets an arbitrary
    * family style instead of always writing to the currently active
    * `fontStyle`/`glyphs`. Used by family-aware actions (e.g. Auto Spacing
@@ -698,6 +739,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     kerningManual: {},
     kerningOverridesByStyle: {},
     kerningOverrideManualByStyle: {},
+    wordSpacingOverridesByStyle: {},
     autoKernLastRun: null,
     autoSpaceLastRun: null,
     trackingApplyLastRun: null,
@@ -764,6 +806,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         kerningManual: {},
         kerningOverridesByStyle: {},
         kerningOverrideManualByStyle: {},
+        wordSpacingOverridesByStyle: {},
         autoKernLastRun: null,
         autoSpaceLastRun: null,
         trackingApplyLastRun: null,
@@ -1353,7 +1396,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     undo: () => {
       const {
         past, future, glyphs, glyphsByStyle, fontStyle, metrics, kerningPairs, kerningManual,
-        kerningOverridesByStyle, kerningOverrideManualByStyle, activeChar, drawingContourId,
+        kerningOverridesByStyle, kerningOverrideManualByStyle, wordSpacingOverridesByStyle, activeChar, drawingContourId,
       } = get();
       if (past.length === 0) return;
       const prev = past[past.length - 1];
@@ -1369,6 +1412,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         kerningManual: prev.kerningManual,
         kerningOverridesByStyle: prev.kerningOverridesByStyle ?? kerningOverridesByStyle,
         kerningOverrideManualByStyle: prev.kerningOverrideManualByStyle ?? kerningOverrideManualByStyle,
+        wordSpacingOverridesByStyle: prev.wordSpacingOverridesByStyle ?? wordSpacingOverridesByStyle,
         past: past.slice(0, -1),
         future: [{
           glyphs,
@@ -1378,6 +1422,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           kerningManual,
           kerningOverridesByStyle,
           kerningOverrideManualByStyle,
+          wordSpacingOverridesByStyle,
         }, ...future].slice(0, HISTORY_LIMIT),
         selectedNodes: [], selectedHandle: null, selectedObjectIds: [],
         drawingContourId: stillDrawing ? drawingContourId : null,
@@ -1387,7 +1432,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     redo: () => {
       const {
         past, future, glyphs, glyphsByStyle, fontStyle, metrics, kerningPairs, kerningManual,
-        kerningOverridesByStyle, kerningOverrideManualByStyle, activeChar, drawingContourId,
+        kerningOverridesByStyle, kerningOverrideManualByStyle, wordSpacingOverridesByStyle, activeChar, drawingContourId,
       } = get();
       if (future.length === 0) return;
       const next = future[0];
@@ -1403,6 +1448,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         kerningManual: next.kerningManual,
         kerningOverridesByStyle: next.kerningOverridesByStyle ?? kerningOverridesByStyle,
         kerningOverrideManualByStyle: next.kerningOverrideManualByStyle ?? kerningOverrideManualByStyle,
+        wordSpacingOverridesByStyle: next.wordSpacingOverridesByStyle ?? wordSpacingOverridesByStyle,
         future: future.slice(1),
         past: [...past, {
           glyphs,
@@ -1412,6 +1458,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           kerningManual,
           kerningOverridesByStyle,
           kerningOverrideManualByStyle,
+          wordSpacingOverridesByStyle,
         }].slice(-HISTORY_LIMIT),
         selectedNodes: [], selectedHandle: null, selectedObjectIds: [],
         drawingContourId: stillDrawing ? drawingContourId : null,
@@ -1455,6 +1502,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           kerningManual: patch.kerningManual ?? s.kerningManual,
           kerningOverridesByStyle: patch.kerningOverridesByStyle ?? (incomingRegular ? {} : s.kerningOverridesByStyle),
           kerningOverrideManualByStyle: patch.kerningOverrideManualByStyle ?? (incomingRegular ? {} : s.kerningOverrideManualByStyle),
+          wordSpacingOverridesByStyle: patch.wordSpacingOverridesByStyle ?? (incomingRegular ? {} : s.wordSpacingOverridesByStyle),
           featureConfig: patch.featureConfig ?? (incomingRegular ? emptyFeatureConfig() : s.featureConfig),
           activeChar,
           gridSize: patch.gridSize ?? s.gridSize,
@@ -1815,6 +1863,40 @@ export const useAppStore = create<AppState>()((set, get) => {
         }].slice(-HISTORY_LIMIT),
         future: [],
       });
+    },
+
+    setFamilyWordSpacing: (context, value) => {
+      if (context === "shared") {
+        get().setFontMetric("wordSpacing", value);
+        return;
+      }
+      const state = get();
+      const rounded = Math.max(0, Math.round(value));
+      commitFamilyWordSpacing(context, { ...state.wordSpacingOverridesByStyle, [context]: rounded });
+    },
+
+    resetFamilyWordSpacing: (context) => {
+      if (context === "shared") return;
+      const state = get();
+      if (!(context in state.wordSpacingOverridesByStyle)) return;
+      const next = { ...state.wordSpacingOverridesByStyle };
+      delete next[context];
+      commitFamilyWordSpacing(context, next);
+    },
+
+    autoWordSpacingForContext: (context) => {
+      const state = get();
+      // "shared" has no glyph geometry of its own — Regular is the family
+      // baseline, the same convention autoKernAllPairsForContext and
+      // autoSpaceAllGlyphsForContext already use for their "shared" case.
+      const targetStyle = context === "shared" ? "regular" : context;
+      const suggestion = suggestWordSpacing(state.glyphsByStyle[targetStyle] ?? state.glyphs, state.metrics);
+      if (context === "shared") {
+        get().setFontMetric("wordSpacing", suggestion);
+      } else {
+        commitFamilyWordSpacing(context, { ...state.wordSpacingOverridesByStyle, [context]: suggestion });
+      }
+      return suggestion;
     },
 
     openTestLab: (tab) => set((s) => ({ testLabOpen: true, familyOpen: false, traceOpen: false, featureBuilderOpen: false, testLabTab: tab ?? s.testLabTab })),
