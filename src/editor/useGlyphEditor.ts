@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { Contour, GlyphOutline, NodeType, PathNode, Point, VectorObject } from "@/types/geometry";
 import { useAppStore, type NodeRef, type HandleRef } from "@/glyph/store";
 import { shortId } from "@/utils/id";
@@ -61,6 +61,7 @@ export function useGlyphEditor(hitScale: number) {
   const selectedHandle = useAppStore((s) => s.selectedHandle);
   const drawingContourId = useAppStore((s) => s.drawingContourId);
   const showGrid = useAppStore((s) => s.showGrid);
+  const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
 
   const commitOutline = useAppStore((s) => s.commitOutline);
   const setLiveOutline = useAppStore((s) => s.setLiveOutline);
@@ -84,6 +85,17 @@ export function useGlyphEditor(hitScale: number) {
   const hitRadius = 12 * hitScale;
   const closeRadius = 16 * hitScale;
   const segmentRadius = 10 * hitScale;
+
+  // Node tool should only "see" nodes belonging to the currently selected
+  // object(s) — with 2+ objects on the canvas, an unselected object's nodes
+  // must stay inactive so hovering/clicking near them can't select them by
+  // accident. If nothing is selected yet (e.g. Node tool picked with no
+  // prior selection), fall back to every object so the tool still works for
+  // the common single-object case.
+  const nodeableOutline: GlyphOutline = useMemo(() => {
+    if (selectedObjectIds.length === 0) return outline;
+    return { objects: outline.objects.filter((o) => selectedObjectIds.includes(o.id)) };
+  }, [outline, selectedObjectIds]);
   const gridSize = 10; // snap increment — intentionally independent of the visual grid's display spacing (store.gridSize)
 
   const maybeSnap = useCallback(
@@ -236,7 +248,7 @@ export function useGlyphEditor(hitScale: number) {
   /* ----------------------------------------------------------- NODE */
   const nodePointerDown = useCallback(
     (p: Point, shiftKey: boolean, altKey: boolean, cmdKey: boolean) => {
-      const hit = hitTestOutline(outline, p, hitRadius);
+      const hit = hitTestOutline(nodeableOutline, p, hitRadius);
 
       if (hit && hit.part === "point") {
         // Cmd/Ctrl+drag directly on a sharp corner rounds it instead of
@@ -300,7 +312,7 @@ export function useGlyphEditor(hitScale: number) {
       }
 
       // Cmd/Ctrl + drag on a segment -> bend into a Bézier curve.
-      const segHit = hitTestSegments(outline, p, segmentRadius * 1.6);
+      const segHit = hitTestSegments(nodeableOutline, p, segmentRadius * 1.6);
       if (cmdKey && segHit) {
         baseOutlineRef.current = cloneOutline(outline);
         dragRef.current = { mode: "curve", contourId: segHit.contourId, fromIndex: segHit.fromIndex, t: segHit.t };
@@ -318,7 +330,7 @@ export function useGlyphEditor(hitScale: number) {
       marqueeRectRef.current = initialRect;
       setMarqueeRect(initialRect);
     },
-    [outline, hitRadius, segmentRadius, selectedNodes, selectNodes, toggleNodeSelection, clearSelection, setSelectedHandle, activeChar, commitOutline]
+    [outline, nodeableOutline, hitRadius, segmentRadius, selectedNodes, selectNodes, toggleNodeSelection, clearSelection, setSelectedHandle, activeChar, commitOutline]
   );
 
   const nodePointerMove = useCallback(
@@ -378,14 +390,14 @@ export function useGlyphEditor(hitScale: number) {
     const rect = marqueeRectRef.current;
     if (rect && (rect.w > 1 || rect.h > 1)) {
       const found: NodeRef[] = [];
-      for (const obj of outline.objects) for (const contour of obj.contours) for (const node of contour.nodes) {
+      for (const obj of nodeableOutline.objects) for (const contour of obj.contours) for (const node of contour.nodes) {
         if (pointInRect(node.point, rect)) found.push({ contourId: contour.id, nodeId: node.id });
       }
       selectNodes(found, drag.additive);
     }
     marqueeRectRef.current = null;
     setMarqueeRect(null);
-  }, [outline, selectNodes]);
+  }, [nodeableOutline, selectNodes]);
 
   const cycleNodeType = useCallback(
     (contourId: string, nodeId: string) => {
@@ -399,10 +411,10 @@ export function useGlyphEditor(hitScale: number) {
 
   const insertNodeAt = useCallback(
     (p: Point) => {
-      const segHit = hitTestSegments(outline, p, segmentRadius * 1.8);
+      const segHit = hitTestSegments(nodeableOutline, p, segmentRadius * 1.8);
       if (segHit) commitOutline(activeChar, insertNodeOnSegment(outline, { contourId: segHit.contourId, fromIndex: segHit.fromIndex }, segHit.t));
     },
-    [outline, segmentRadius, activeChar, commitOutline]
+    [outline, nodeableOutline, segmentRadius, activeChar, commitOutline]
   );
 
   const deleteSelectedNodes = useCallback(() => {
@@ -523,7 +535,7 @@ export function useGlyphEditor(hitScale: number) {
   }, [drawingContourId, outline, hitRadius]);
 
   return {
-    outline, selectedNodes, selectedHandle, drawingContourId, marqueeRect, roundCornerLabel,
+    outline, nodeableOutline, selectedNodes, selectedHandle, drawingContourId, marqueeRect, roundCornerLabel,
     pointerDown, pointerMove, pointerUp, cycleNodeType, insertNodeAt,
     deleteSelectedNodes, nudgeNodes, finishOpenContour, isCurrentEndpoint,
     findObjectOfContour: (cid: string) => findObjectOfContour(outline, cid),

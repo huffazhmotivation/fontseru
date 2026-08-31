@@ -750,7 +750,11 @@ export const useAppStore = create<AppState>()((set, get) => {
         drawingContourId: null,
         selectedNodes: tool === "node" ? s.selectedNodes : [],
         selectedHandle: tool === "node" ? s.selectedHandle : null,
-        selectedObjectIds: tool === "select" ? s.selectedObjectIds : [],
+        // Keep selectedObjectIds when moving between Select <-> Node so the
+        // Node tool knows which object's nodes should be active. Any other
+        // tool (pen/shape/brush/...) still clears it, since those tools
+        // don't have a notion of "the active object's nodes".
+        selectedObjectIds: tool === "select" || tool === "node" ? s.selectedObjectIds : [],
       }));
     },
     setPenMode: (mode) => set({ penMode: mode }),

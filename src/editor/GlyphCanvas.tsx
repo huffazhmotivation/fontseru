@@ -290,6 +290,10 @@ export function GlyphCanvas() {
           const obj = editor.outline.objects[i];
           if (!pointHitsObject(obj, p, tol)) continue;
           const refs = obj.contours.flatMap((c) => c.nodes.map((n) => ({ contourId: c.id, nodeId: n.id })));
+          // Keep this object marked as selected so Node mode knows it's the
+          // only object whose nodes should be active (see useGlyphEditor's
+          // nodeableOutline / setTool in the store).
+          selectObjects([obj.id]);
           setTool("node");
           selectNodes(refs);
           return;
@@ -299,7 +303,10 @@ export function GlyphCanvas() {
 
       if (tool !== "node") return;
       const hitR = 12 * hitScale;
-      const hit = editor.outline.objects.some((o) =>
+      // Only the active (selected) object's nodes/segments are live in Node
+      // mode — editor.nodeableOutline is already filtered to that, so a
+      // double-click near another object's node can't cycle/insert on it.
+      const hit = editor.nodeableOutline.objects.some((o) =>
         o.contours.some((c) => c.nodes.some((n) => Math.hypot(n.point.x - p.x, n.point.y - p.y) <= hitR))
       );
       // double-click a node -> cycle type; a segment -> insert a node;
@@ -307,12 +314,12 @@ export function GlyphCanvas() {
       // select mode with that object selected — the reverse of select
       // mode's "double-click an object to jump into its nodes".
       if (hit) {
-        for (const o of editor.outline.objects)
+        for (const o of editor.nodeableOutline.objects)
           for (const c of o.contours)
             for (const n of c.nodes)
               if (Math.hypot(n.point.x - p.x, n.point.y - p.y) <= hitR) return editor.cycleNodeType(c.id, n.id);
       }
-      const segHit = hitTestSegments(editor.outline, p, 10 * hitScale * 1.8);
+      const segHit = hitTestSegments(editor.nodeableOutline, p, 10 * hitScale * 1.8);
       if (segHit) {
         editor.insertNodeAt(p);
         return;
@@ -932,7 +939,7 @@ export function GlyphCanvas() {
             see ObjectsLayer above for why. */}
         {(tool === "node" || tool === "pen") ? (
           <NodesAndHandlesLayer
-            objects={objects}
+            objects={tool === "node" ? editor.nodeableOutline.objects : objects}
             ascender={ascender}
             hitScale={hitScale}
             tool={tool}
