@@ -570,6 +570,30 @@ export const useAppStore = create<AppState>()((set, get) => {
     });
   }
 
+  /** `computeAutoSpaceAllGlyphs`/`autoKernAllAvailablePairs` each report
+   * their own independent 0..1, but Auto Spacing (re)kerns as a follow-up
+   * step after spacing. Without this, the caller's progress bar hits 100%
+   * the moment spacing finishes while the re-kern pass is still running in
+   * the background — exactly the "100% but still loading" mismatch this
+   * splits a single onProgress into two weighted, sequential segments so
+   * the bar only reaches 100% when everything is actually done. `hasSecondPhase`
+   * is decided up front from the `reKernAfter` option (before we know if the
+   * re-kern pass will actually run any work) so the spacing phase never
+   * claims more of the bar than it should; if the second phase turns out to
+   * be a no-op, the caller just jumps straight to onProgress(1) itself. */
+  function splitProgress(
+    onProgress: ((fraction: number) => void) | undefined,
+    hasSecondPhase: boolean
+  ): { first: ((fraction: number) => void) | undefined; second: ((fraction: number) => void) | undefined } {
+    if (!onProgress) return { first: undefined, second: undefined };
+    if (!hasSecondPhase) return { first: onProgress, second: undefined };
+    const FIRST_WEIGHT = 0.55;
+    return {
+      first: (fraction: number) => onProgress(fraction * FIRST_WEIGHT),
+      second: (fraction: number) => onProgress(FIRST_WEIGHT + fraction * (1 - FIRST_WEIGHT)),
+    };
+  }
+
   function commitFamilyStyleKerning(style: FontStyle, nextPairs: KerningPairs, nextManual: KerningManualFlags) {
     const state = get();
     set({
@@ -1587,7 +1611,13 @@ export const useAppStore = create<AppState>()((set, get) => {
         }
       }
 
-      const result = await computeAutoSpaceAllGlyphs(glyphs, metrics, applyGlyphMetricPatch, excludeChars, onProgress);
+      // Split the caller's progress bar up front between the spacing pass
+      // and the re-kern pass that may follow it (see splitProgress) so the
+      // bar's percentage always reflects real, still-running work instead
+      // of jumping to 100% while the re-kern pass silently continues.
+      const { first: spacingProgress, second: kernProgress } = splitProgress(onProgress, reKernAfter);
+
+      const result = await computeAutoSpaceAllGlyphs(glyphs, metrics, applyGlyphMetricPatch, excludeChars, spacingProgress);
       if (result.updated > 0) commit(result.glyphs);
       set({ autoSpaceLastRun: { updated: result.updated, skipped: result.skipped, skippedManual: result.skippedManual } });
 
@@ -1601,7 +1631,9 @@ export const useAppStore = create<AppState>()((set, get) => {
           after.glyphs,
           after.metrics,
           after.kerningPairs,
-          after.kerningManual
+          after.kerningManual,
+          undefined,
+          kernProgress
         );
         commitKerning(kernResult.pairs, kernResult.manual);
         set({
@@ -1611,6 +1643,12 @@ export const useAppStore = create<AppState>()((set, get) => {
             preservedManual: kernResult.preservedManual,
           },
         });
+      } else {
+        // The second phase was reserved on the bar (reKernAfter is on) but
+        // turned out to be a no-op (nothing got re-spaced) — or reKernAfter
+        // is off entirely and the whole bar belonged to spacing anyway.
+        // Either way, spacing finishing IS the operation finishing here.
+        onProgress?.(1);
       }
 
       return result;
@@ -1647,7 +1685,9 @@ export const useAppStore = create<AppState>()((set, get) => {
         if (context !== "shared") collect(state.kerningOverrideManualByStyle[context]);
       }
 
-      const result = await computeAutoSpaceAllGlyphs(styleGlyphs, state.metrics, applyGlyphMetricPatch, excludeChars, onProgress);
+      const { first: spacingProgress, second: kernProgress } = splitProgress(onProgress, reKernAfter);
+
+      const result = await computeAutoSpaceAllGlyphs(styleGlyphs, state.metrics, applyGlyphMetricPatch, excludeChars, spacingProgress);
       if (result.updated > 0) commitStyleGlyphs(targetStyle, result.glyphs);
       set({ autoSpaceLastRun: { updated: result.updated, skipped: result.skipped, skippedManual: result.skippedManual } });
 
@@ -1657,7 +1697,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         const after = get();
         const afterGlyphs = after.glyphsByStyle[targetStyle] ?? result.glyphs;
         if (context === "shared") {
-          const kernResult = await autoKernAllAvailablePairs(afterGlyphs, after.metrics, after.kerningPairs, after.kerningManual);
+          const kernResult = await autoKernAllAvailablePairs(afterGlyphs, after.metrics, after.kerningPairs, after.kerningManual, undefined, kernProgress);
           commitKerning(kernResult.pairs, kernResult.manual);
           set({
             autoKernLastRun: {
@@ -1669,7 +1709,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         } else {
           const currentPairs = after.kerningOverridesByStyle[context] ?? {};
           const currentManual = after.kerningOverrideManualByStyle[context] ?? {};
-          const kernResult = await autoKernAllAvailablePairs(afterGlyphs, after.metrics, currentPairs, currentManual, after.kerningPairs);
+          const kernResult = await autoKernAllAvailablePairs(afterGlyphs, after.metrics, currentPairs, currentManual, after.kerningPairs, kernProgress);
           commitFamilyStyleKerning(context, kernResult.pairs, kernResult.manual);
           set({
             autoKernLastRun: {
@@ -1679,6 +1719,8 @@ export const useAppStore = create<AppState>()((set, get) => {
             },
           });
         }
+      } else {
+        onProgress?.(1);
       }
 
       return result;

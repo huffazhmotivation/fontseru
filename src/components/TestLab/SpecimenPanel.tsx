@@ -1880,12 +1880,12 @@ export function SpecimenPanel() {
           <div className="fm-kern-block">
             <div className="fm-auto-space-row fm-tooltip-anchor">
               <button
-                className="fm-action-btn accent"
+                className={`fm-action-btn accent${wordSpacingFlash !== null ? " done" : ""}`}
                 onClick={(e) => { handleAutoWordSpacing(); e.currentTarget.blur(); }}
                 data-testid="auto-word-spacing-btn"
               >
-                <Wand2 size={14} />
-                Auto Word Spacing
+                {wordSpacingFlash !== null ? <Zap size={14} /> : <Wand2 size={14} />}
+                {wordSpacingFlash !== null ? "Applied" : "Auto Word Spacing"}
               </button>
               {kerningMode === "family" && familyContext !== "shared" && wordSpacingOverridesByStyle[familyContext] !== undefined && (
                 <button
