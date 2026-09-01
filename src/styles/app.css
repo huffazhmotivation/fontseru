@@ -2421,31 +2421,31 @@ input[type="number"]::-webkit-outer-spin-button {
 
 .fm-export-backdrop {
   position: fixed; inset: 0; z-index: 150; display: grid; place-items: center;
-  padding: 28px; background: rgba(3,5,8,.72); backdrop-filter: blur(8px);
+  padding: 32px; background: rgba(3,5,8,.72); backdrop-filter: blur(8px);
 }
 .fm-export-dialog {
-  width: min(840px, calc(100vw - 48px));
-  max-height: calc(100vh - 48px);
-  max-height: calc(100dvh - 48px);
+  width: min(1180px, calc(100vw - 48px));
+  height: min(780px, calc(100vh - 48px));
+  height: min(780px, calc(100dvh - 48px));
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--line); border-radius: 16px;
-  background: var(--panel); box-shadow: 0 28px 90px rgba(0,0,0,.46);
+  border: 1px solid var(--line); border-radius: 14px;
+  background: var(--panel); box-shadow: 0 24px 64px var(--shadow, rgba(0,0,0,.46));
   overflow: hidden;
 }
 .fm-export-dialog > header {
   display: flex; align-items: center; justify-content: space-between;
   flex: none;
-  padding: 20px 24px 16px; border-bottom: 1px solid var(--line);
+  padding: 22px 32px 18px; border-bottom: 1px solid var(--line);
 }
-.fm-export-dialog h2 { margin: 3px 0 0; font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
+.fm-export-dialog h2 { margin: 3px 0 0; font-size: 21px; font-weight: 650; letter-spacing: -.02em; }
 
-/* Two-pane body: a scrollable main column for the tabbed fields, and a
-   persistent sidebar for Styles / Format / the Export button. Putting the
-   export controls in the sidebar (instead of stacked after every tab) means
-   they stay visible no matter how much Font Info / License content is on
-   screen or how far the user has scrolled — this is the actual fix for the
-   dialog feeling cramped despite having a lot of features in it. */
+/* Two-pane body, sized to match the TestLab modal so the export dialog
+   doesn't feel cramped: a wide scrollable main column for the tabbed
+   fields, and a persistent sidebar for Styles / Format / the Export
+   button. Putting the export controls in the sidebar (instead of stacked
+   after every tab) means they stay visible no matter how much Font Info /
+   License content is on screen or how far the user has scrolled. */
 .fm-export-body {
   display: flex;
   align-items: stretch;
@@ -2454,7 +2454,7 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 .fm-export-main {
-  flex: 1 1 60%;
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -2462,12 +2462,12 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 .fm-export-sidebar {
-  flex: 0 0 296px;
+  flex: 0 0 320px;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px 24px 20px;
+  gap: 18px;
+  padding: 26px 28px 26px;
   border-left: 1px solid var(--line);
   background: var(--panel-2);
   overflow-y: auto;
@@ -2479,23 +2479,25 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-export-tabs {
   display: flex; gap: 4px;
   flex: none;
-  margin: 16px 24px 0;
+  margin: 20px 32px 0;
   padding: 3px;
   border: 1px solid var(--line); border-radius: 9px;
   background: var(--panel-2);
+  max-width: 720px;
 }
 .fm-export-tab {
   flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: 32px; border: 0; border-radius: 6px;
-  background: transparent; color: var(--text-dim); font: inherit; font-size: 12px; font-weight: 650;
+  height: 34px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text-dim); font: inherit; font-size: 12.5px; font-weight: 650;
   cursor: pointer;
 }
 .fm-export-tab:hover { color: var(--text); }
 .fm-export-tab.active { background: var(--accent); color: var(--accent-ink); }
 
 .fm-export-form {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px;
-  padding: 20px 24px 24px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 28px;
+  max-width: 720px;
+  padding: 24px 32px 32px;
 }
 /* Fields that shouldn't be paired up (long/standalone content) span the
    full width of the two-column grid instead of leaving an empty cell. */
@@ -2512,11 +2514,12 @@ input[type="number"]::-webkit-outer-spin-button {
   padding: 0;
   border: 0;
 }
-.fm-export-field { display: grid; gap: 6px; min-width: 0; }
+.fm-export-field { display: grid; gap: 7px; min-width: 0; }
 /* The sidebar's Styles/Format group stacks vertically rather than using
    the two-column field grid — the sidebar itself is the second column. */
 .fm-export-sidebar .fm-export-form {
-  display: flex; flex-direction: column; gap: 16px;
+  display: flex; flex-direction: column; gap: 18px;
+  max-width: none;
   padding: 0;
 }
 .fm-export-field > span {
@@ -2524,7 +2527,7 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .fm-export-dialog input,
 .fm-export-dialog select {
-  width: 100%; min-width: 0; height: 38px; padding: 0 10px;
+  width: 100%; min-width: 0; height: 40px; padding: 0 12px;
   border: 1px solid var(--line); border-radius: 8px; outline: none;
   background: var(--panel-2); color: var(--text); font: inherit;
 }
@@ -2812,11 +2815,16 @@ input[type="number"]::-webkit-outer-spin-button {
   background: var(--panel-2); color: var(--text-dim); font-size: 11px;
 }
 
+@media (max-width: 1240px) {
+  .fm-export-dialog { width: min(920px, calc(100vw - 32px)); }
+  .fm-export-tabs, .fm-export-form { max-width: none; }
+}
+
 @media (max-width: 860px) {
   .fm-export-backdrop { padding: 16px; }
-  .fm-export-dialog { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); }
+  .fm-export-dialog { width: min(560px, calc(100vw - 24px)); height: min(90vh, 780px); }
   /* Stack main content above the sidebar instead of splitting the width;
-     an 860px two-pane layout doesn't fit a narrow viewport, but the paired
+     a wide two-pane layout doesn't fit a narrow viewport, but the paired
      fields and grouped Styles/Format still read better than one long list. */
   .fm-export-body { flex-direction: column; overflow-y: auto; }
   .fm-export-main { overflow-y: visible; }
