@@ -16,6 +16,10 @@ const FAMILY_CATEGORIES: ReadonlyArray<{ id: GlyphCategory; label: string }> = [
 ];
 
 const FAMILY_CATEGORY_ORDER: Record<GlyphCategory, number> = {
+  // Not offered as a checkbox in FAMILY_CATEGORIES above — space has no
+  // outline to auto-bold/italicize — but this map must stay exhaustive
+  // over GlyphCategory, so it still needs a sort position.
+  spacing: -1,
   upper: 0,
   lower: 1,
   digits: 2,

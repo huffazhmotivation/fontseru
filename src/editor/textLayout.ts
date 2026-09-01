@@ -54,7 +54,15 @@ export function layoutLine(
     }
 
     const g = glyphs[ch];
-    const advance = g ? g.advanceWidth : fallbackAdvance(ch, unitsPerEm, wordSpacing);
+    // The space glyph is real now (see ensureSpaceGlyph in
+    // glyph/defaultGlyphs.ts), but word spacing is still meant to be a
+    // dedicated, separately-tunable control (RightPanel's "Word Spacing" /
+    // "Auto") rather than the space glyph's own static advanceWidth —
+    // exactly like before that glyph existed. So for " " specifically, an
+    // explicit wordSpacing still wins over g.advanceWidth; only an
+    // unencoded/missing glyph (any other character) falls all the way
+    // through to fallbackAdvance.
+    const advance = ch === " " && wordSpacing != null ? wordSpacing : g ? g.advanceWidth : fallbackAdvance(ch, unitsPerEm, wordSpacing);
     placed.push({ char: ch, x: penX, advance });
     penX += advance;
   }

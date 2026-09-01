@@ -722,7 +722,18 @@ function sanitizeGlyph(glyph: Glyph, metrics: FontMetrics): Glyph | null {
   if (!isUnicodeScalar(glyph.unicode)) return null;
   const fallbackAdvance = Math.max(1, Math.round(metrics.unitsPerEm * 0.6));
   const rawAdvance = finiteNumber(glyph.advanceWidth);
-  const advanceWidth = Math.max(1, Math.min(65535, Math.round(rawAdvance != null && rawAdvance > 0 ? rawAdvance : fallbackAdvance)));
+  // The real space glyph (see ensureSpaceGlyph in glyph/defaultGlyphs.ts,
+  // now always present) still defers to metrics.wordSpacing when the user
+  // has set it explicitly via the Word Spacing control — same rule
+  // syntheticSpace below used to apply back when a space glyph could be
+  // missing — so export always matches what was shown in the live preview
+  // and Kerning Lab, not whatever static width the glyph object happens
+  // to carry.
+  const wordSpacingOverride = glyph.unicode === 0x20 ? metrics.wordSpacing : undefined;
+  const advanceWidth =
+    wordSpacingOverride != null
+      ? Math.max(1, Math.round(wordSpacingOverride))
+      : Math.max(1, Math.min(65535, Math.round(rawAdvance != null && rawAdvance > 0 ? rawAdvance : fallbackAdvance)));
   const objects: VectorObject[] = [];
 
   for (const obj of exportableObjects(glyph)) {

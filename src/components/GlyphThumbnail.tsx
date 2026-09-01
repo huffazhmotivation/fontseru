@@ -21,6 +21,11 @@ function GlyphThumbnailImpl({ glyph, className = "" }: { glyph: Glyph; className
   const charClassName = `fm-thumb-char ${multiChar ? "fm-thumb-char-multi " : ""}${className}`;
 
   if (!hasOutline(glyph)) {
+    // " " renders as nothing at all in a plain <span> — unlike every other
+    // undrawn glyph, that leaves the tile looking empty/broken rather than
+    // "not drawn yet". Space never needs an outline (see hasSpace check in
+    // utils/unicodeValidator.ts), so show the open-box space mark instead.
+    if (glyph.char === " ") return <span className={charClassName} aria-hidden="true">␣</span>;
     return <span className={charClassName}>{glyph.char}</span>;
   }
 

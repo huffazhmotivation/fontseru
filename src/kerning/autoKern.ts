@@ -183,7 +183,13 @@ export async function autoKernAllAvailablePairs(
   fallbackPairs?: Record<string, number>,
   onProgress?: (fraction: number) => void
 ): Promise<GlobalAutoKernResult> {
-  const chars = Object.keys(glyphs);
+  // The space glyph (unicode 0x20) is excluded here: it has no ink to
+  // measure a real optical gap against, so suggestKerningPair would just
+  // fall back to its bare advanceWidth/lsb/rsb and manufacture kerning
+  // pairs against word-space out of nothing. Word spacing already has its
+  // own dedicated, purpose-built control (RightPanel's "Word Spacing" /
+  // "Auto") — auto-kern shouldn't quietly duplicate or fight it.
+  const chars = Object.keys(glyphs).filter((ch) => glyphs[ch].unicode !== 0x20);
   const pairs = { ...currentPairs };
   const manual = { ...manualFlags };
   let processed = 0;

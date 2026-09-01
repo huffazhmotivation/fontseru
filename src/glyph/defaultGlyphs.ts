@@ -1,6 +1,7 @@
 import type { Glyph, GlyphGroup, GlyphMap } from "@/types/glyph";
 import { emptyOutline } from "@/types/geometry";
 
+const SPACE = [" "];
 const UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const LOWER = "abcdefghijklmnopqrstuvwxyz".split("");
 const DIGITS = "0123456789".split("");
@@ -49,6 +50,12 @@ function widthClassFor(char: string) {
  */
 export function standardGlyphMetrics(char: string, upm = 1000): { advanceWidth: number; lsb: number; rsb: number } {
   const upmScale = upm / 1000;
+  // The space glyph has no outline, so sidebearings are meaningless — its
+  // advance IS the inter-word gap. 270/1000 matches fallbackAdvance's own
+  // 0.27 * unitsPerEm default (editor/textLayout.ts) so a freshly-created
+  // font's live preview and its exported OTF agree on word spacing from
+  // the start, with no synthetic-space fallback (utils/fontIO.ts) needed.
+  if (char === " ") return { advanceWidth: Math.round(270 * upmScale), lsb: 0, rsb: 0 };
   const cls = widthClassFor(char) ?? { advanceWidth: 600, lsb: 60, rsb: 60 }; // NORMAL: everything not called out above.
   return {
     advanceWidth: Math.round(cls.advanceWidth * upmScale),
@@ -58,6 +65,11 @@ export function standardGlyphMetrics(char: string, upm = 1000): { advanceWidth: 
 }
 
 export const GLYPH_GROUPS: GlyphGroup[] = [
+  // Encoded first and separately from Punctuation — it has no outline to
+  // draw (its advance width IS the whole glyph), and QA Check specifically
+  // looks for it at U+0020 (see utils/unicodeValidator.ts), so it shouldn't
+  // get buried in a group full of drawable marks.
+  { id: "spacing", label: "Spacing", chars: SPACE },
   { id: "upper", label: "Uppercase", chars: UPPER },
   { id: "lower", label: "Lowercase", chars: LOWER },
   { id: "digits", label: "Numbers", chars: DIGITS },
@@ -125,4 +137,23 @@ export function buildDefaultGlyphs(): GlyphMap {
     }
   }
   return map;
+}
+
+/**
+ * Migration for glyph maps saved before the space glyph became part of
+ * `buildDefaultGlyphs()` (older IndexedDB autosaves, older .fs project
+ * files, and any imported .ttf/.otf that genuinely has no space glyph
+ * of its own). Returns `glyphs` unchanged — same reference — when a real
+ * U+0020 mapping already exists, so calling this on every load is cheap
+ * and never overwrites a space a user already drew or an imported font
+ * already shipped.
+ */
+export function ensureSpaceGlyph(glyphs: GlyphMap, unitsPerEm: number): GlyphMap {
+  const hasSpace = glyphs[" "]?.unicode === 0x20 || Object.values(glyphs).some((g) => g.unicode === 0x20 || g.unicodes?.includes(0x20));
+  if (hasSpace) return glyphs;
+  const { advanceWidth, lsb, rsb } = standardGlyphMetrics(" ", unitsPerEm);
+  return {
+    ...glyphs,
+    " ": { char: " ", unicode: 0x20, category: "spacing", advanceWidth, lsb, rsb, outline: emptyOutline(), components: [] },
+  };
 }

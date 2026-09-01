@@ -5,7 +5,7 @@ import { MAX_CUSTOM_FAMILIES, hasOutline } from "@/types/glyph";
 import type { GlyphOutline, StrokeCap, VectorObject } from "@/types/geometry";
 import type { ToolId } from "@/types/tool";
 import type { BrushSettings, BrushType } from "@/types/brush";
-import { buildDefaultGlyphs } from "./defaultGlyphs";
+import { buildDefaultGlyphs, ensureSpaceGlyph } from "./defaultGlyphs";
 import { cloneGlyphMap, familyFromRegular, newCustomFamilyGlyphs } from "./family";
 import { generateBoldFromRegular, generateItalicFromRegular, generateCustomFromRegular, type FamilyGenerationResult } from "./autoGenerate";
 import { DEFAULT_METRICS, defaultFontInfo, type FontInfo, type FontMetrics } from "@/types/font";
@@ -1507,7 +1507,16 @@ export const useAppStore = create<AppState>()((set, get) => {
         };
         const customFamilies = patch.customFamilies ?? (incomingRegular ? [] : s.customFamilies);
         const style: FontStyle = patch.fontStyle ?? (incomingRegular ? "regular" : s.fontStyle);
-        const activeGlyphs = family[style];
+        // Migration: older autosaves/.fs files/imported fonts may predate
+        // the default space glyph (or a genuinely space-less imported
+        // font). Backfill it per style so every style's glyph map is
+        // QA-clean and layout-consistent, without touching a style that
+        // already has a real U+0020 mapping.
+        const unitsPerEm = patch.metrics?.unitsPerEm ?? s.metrics.unitsPerEm;
+        const familyWithSpace: GlyphFamily = Object.fromEntries(
+          Object.entries(family).map(([styleId, glyphs]) => [styleId, ensureSpaceGlyph(glyphs, unitsPerEm)])
+        ) as GlyphFamily;
+        const activeGlyphs = familyWithSpace[style];
         const activeChar = patch.activeChar && activeGlyphs[patch.activeChar]
           ? patch.activeChar
           : activeGlyphs[s.activeChar]
@@ -1515,7 +1524,7 @@ export const useAppStore = create<AppState>()((set, get) => {
             : Object.keys(activeGlyphs)[0] ?? s.activeChar;
         return {
           glyphs: activeGlyphs,
-          glyphsByStyle: family,
+          glyphsByStyle: familyWithSpace,
           fontStyle: style,
           customFamilies,
           fontName: patch.fontName ?? s.fontName,

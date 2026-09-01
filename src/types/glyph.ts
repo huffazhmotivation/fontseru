@@ -1,7 +1,7 @@
 import type { GlyphOutline } from "./geometry";
 import { totalNodeCount } from "./geometry";
 
-export type GlyphCategory = "upper" | "lower" | "digits" | "punct" | "symbols" | "multilingual" | "feature";
+export type GlyphCategory = "spacing" | "upper" | "lower" | "digits" | "punct" | "symbols" | "multilingual" | "feature";
 
 /**
  * One glyph in the working (master/Regular) font. `components` is left as

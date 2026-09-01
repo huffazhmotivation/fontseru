@@ -241,7 +241,7 @@ export function GlyphNav() {
                     key={ch}
                     className={`fm-tile ${activeChar === ch ? "active" : ""} ${done ? "done" : ""}`}
                     onClick={() => setActiveChar(ch)}
-                    title={`${ch} — ${unicodeHex(info.unicode)}`}
+                    title={`${ch === " " ? "Space" : ch} — ${unicodeHex(info.unicode)}`}
                     data-testid={`glyph-tile-${ch}`}
                   >
                     {done && <span className="fm-tile-dot" />}
