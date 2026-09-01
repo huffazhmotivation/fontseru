@@ -1042,6 +1042,8 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
               </button>
             </header>
 
+            <div className="fm-export-body">
+            <div className="fm-export-main">
             <div className="fm-export-tabs" role="tablist" aria-label="Export information">
               <button
                 type="button"
@@ -1296,7 +1298,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                   />
                 </label>
 
-                <label className="fm-export-field">
+                <label className="fm-export-field fm-export-field-full">
                   <span>Note</span>
                   <input
                     value={licenseInfoForm.note}
@@ -1307,6 +1309,9 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
               </div>
             )}
 
+            </div>
+
+            <div className="fm-export-sidebar">
             <div className="fm-export-form fm-export-options">
               <div className="fm-export-field">
                 <span>Styles</span>
@@ -1387,9 +1392,6 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
             )}
 
             <footer className="fm-export-actions">
-              <button type="button" className="fm-secondary-btn" onClick={() => setExportOpen(false)} disabled={busy}>
-                Cancel
-              </button>
               <button
                 type="button"
                 className="fm-primary-btn"
@@ -1398,7 +1400,12 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
               >
                 <Download size={15} /> {busy ? `Preparing… ${Math.round(exportProgress * 100)}%` : primaryExportLabel}
               </button>
+              <button type="button" className="fm-secondary-btn" onClick={() => setExportOpen(false)} disabled={busy}>
+                Cancel
+              </button>
             </footer>
+            </div>
+            </div>
           </section>
         </div>
       )}

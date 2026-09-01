@@ -2424,22 +2424,62 @@ input[type="number"]::-webkit-outer-spin-button {
   padding: 28px; background: rgba(3,5,8,.72); backdrop-filter: blur(8px);
 }
 .fm-export-dialog {
-  width: min(480px, calc(100vw - 40px));
+  width: min(840px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   max-height: calc(100dvh - 48px);
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--line); border-radius: 16px;
   background: var(--panel); box-shadow: 0 28px 90px rgba(0,0,0,.46);
+  overflow: hidden;
 }
 .fm-export-dialog > header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 18px 20px 14px; border-bottom: 1px solid var(--line);
+  flex: none;
+  padding: 20px 24px 16px; border-bottom: 1px solid var(--line);
 }
-.fm-export-dialog h2 { margin: 3px 0 0; font-size: 19px; font-weight: 650; letter-spacing: -.02em; }
+.fm-export-dialog h2 { margin: 3px 0 0; font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
+
+/* Two-pane body: a scrollable main column for the tabbed fields, and a
+   persistent sidebar for Styles / Format / the Export button. Putting the
+   export controls in the sidebar (instead of stacked after every tab) means
+   they stay visible no matter how much Font Info / License content is on
+   screen or how far the user has scrolled — this is the actual fix for the
+   dialog feeling cramped despite having a lot of features in it. */
+.fm-export-body {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.fm-export-main {
+  flex: 1 1 60%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.fm-export-sidebar {
+  flex: 0 0 296px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 24px 20px;
+  border-left: 1px solid var(--line);
+  background: var(--panel-2);
+  overflow-y: auto;
+}
+/* Push the actions footer to the bottom of the sidebar even when Styles +
+   Format don't fill the available height. */
+.fm-export-sidebar .fm-export-actions { margin-top: auto; }
 
 .fm-export-tabs {
   display: flex; gap: 4px;
-  margin: 14px 20px 0;
+  flex: none;
+  margin: 16px 24px 0;
   padding: 3px;
   border: 1px solid var(--line); border-radius: 9px;
   background: var(--panel-2);
@@ -2454,15 +2494,31 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-export-tab.active { background: var(--accent); color: var(--accent-ink); }
 
 .fm-export-form {
-  display: grid; gap: 14px;
-  padding: 18px 20px 8px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px;
+  padding: 20px 24px 24px;
+}
+/* Fields that shouldn't be paired up (long/standalone content) span the
+   full width of the two-column grid instead of leaving an empty cell. */
+.fm-export-field-full,
+.fm-export-form .fm-nametable-preview {
+  grid-column: 1 / -1;
+}
+/* The QA tab is single-column content, not paired fields, so it doesn't
+   use the two-column grid. */
+.fm-qa-panel {
+  grid-template-columns: 1fr;
 }
 .fm-export-options {
-  margin-top: -6px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+  padding: 0;
+  border: 0;
 }
 .fm-export-field { display: grid; gap: 6px; min-width: 0; }
+/* The sidebar's Styles/Format group stacks vertically rather than using
+   the two-column field grid — the sidebar itself is the second column. */
+.fm-export-sidebar .fm-export-form {
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 0;
+}
 .fm-export-field > span {
   color: var(--text-dim); font-size: 10.5px; font-weight: 650; letter-spacing: .055em; text-transform: uppercase;
 }
@@ -2584,12 +2640,15 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-format-segment button:hover { color: var(--text); }
 .fm-format-segment button.active { background: var(--accent); color: var(--accent-ink); }
 
-.fm-export-quota-note { padding: 0 20px; margin-top: -6px; }
+.fm-export-quota-note { padding: 0; margin: 0; }
 
 .fm-export-actions {
-  display: flex; justify-content: flex-end; gap: 9px;
-  padding: 16px 20px 20px;
+  display: flex; flex-direction: column; gap: 9px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--line);
 }
+.fm-export-actions .fm-primary-btn,
+.fm-export-actions .fm-secondary-btn { width: 100%; }
 .fm-primary-btn,
 .fm-secondary-btn {
   height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
@@ -2753,11 +2812,27 @@ input[type="number"]::-webkit-outer-spin-button {
   background: var(--panel-2); color: var(--text-dim); font-size: 11px;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .fm-export-backdrop { padding: 16px; }
-  .fm-export-dialog { width: min(480px, calc(100vw - 24px)); }
-  .fm-export-actions { flex-direction: column-reverse; }
-  .fm-primary-btn, .fm-secondary-btn { width: 100%; }
+  .fm-export-dialog { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); }
+  /* Stack main content above the sidebar instead of splitting the width;
+     an 860px two-pane layout doesn't fit a narrow viewport, but the paired
+     fields and grouped Styles/Format still read better than one long list. */
+  .fm-export-body { flex-direction: column; overflow-y: auto; }
+  .fm-export-main { overflow-y: visible; }
+  .fm-export-sidebar {
+    flex: none;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 560px) {
+  .fm-export-form { grid-template-columns: 1fr; }
+  .fm-export-tabs { margin: 14px 16px 0; }
+  .fm-export-dialog > header { padding: 16px 16px 12px; }
+  .fm-export-form { padding: 16px 16px 20px; }
+  .fm-export-sidebar { padding: 16px; }
 }
 
 /* Family generation intentionally inherits .fm-action-btn.accent so it tracks
