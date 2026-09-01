@@ -199,6 +199,38 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
+/**
+ * Font-unit coordinates only ever need to survive at the precision fonts
+ * actually work at — a couple of decimal places is already far finer than
+ * anything visible or exportable (OpenType outlines round to integer
+ * funits anyway). But hand-drawn brush strokes capture *raw* pointer
+ * coordinates and pressure at full floating-point precision (e.g.
+ * `483.2819374650187`), and — unlike the smooth, low-entropy numbers in a
+ * typical vector glyph — that precision is essentially random from
+ * sample to sample, which is close to the worst case for gzip: high
+ * source entropy compresses poorly no matter what. For a 5-family,
+ * 1155-glyph brush-heavy project this was the actual majority of the
+ * on-the-wire size even after compression. Rounding before compressing
+ * fixes both problems at once — shorter numbers *and* far more repetition
+ * for gzip to exploit — with no visible or exportable difference.
+ */
+const CLOUD_SAVE_COORDINATE_DECIMALS = 2;
+
+function roundNumbersForStorage(value: unknown, decimals: number): unknown {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return value; // leave NaN/Infinity untouched rather than corrupt them
+    const factor = 10 ** decimals;
+    return Math.round(value * factor) / factor;
+  }
+  if (Array.isArray(value)) return value.map((item) => roundNumbersForStorage(item, decimals));
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) out[key] = roundNumbersForStorage(item, decimals);
+    return out;
+  }
+  return value;
+}
+
 async function gzipCompress(text: string): Promise<Uint8Array> {
   const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
@@ -217,7 +249,8 @@ async function gzipDecompress(bytes: Uint8Array): Promise<string> {
 /** Compresses project JSON for upload when the browser supports it, falling
  * back to sending it uncompressed (identical to the previous behavior) when
  * it doesn't. Returns the value to store plus its actual on-the-wire byte
- * size, which drives `uploadTimeoutFor`. */
+ * size, which drives `uploadTimeoutFor`. `json` is expected to already have
+ * gone through `roundNumbersForStorage` — this function only compresses. */
 async function wrapPayload(json: string): Promise<{ value: unknown; bytes: number }> {
   if (!supportsGzipStreams()) {
     const value = JSON.parse(json);
@@ -293,9 +326,16 @@ export async function saveCloudProject(
   throwIfAborted(signal);
   onProgress?.({ percent: 12, label: "Mengompresi data…" });
 
+  // Quantize coordinate/pressure precision *only* for the cloud copy (the
+  // local autosave and any exported .fs file are untouched) — see
+  // `roundNumbersForStorage` for why this matters specifically for
+  // brush-heavy projects.
+  const roundedJson = JSON.stringify(roundNumbersForStorage(JSON.parse(json), CLOUD_SAVE_COORDINATE_DECIMALS));
+  throwIfAborted(signal);
+
   // See `wrapPayload` — this is what lets projects with a lot of glyphs
   // upload quickly and reliably instead of timing out.
-  const { value: data, bytes } = await wrapPayload(json);
+  const { value: data, bytes } = await wrapPayload(roundedJson);
   throwIfAborted(signal);
   onProgress?.({ percent: 25, label: "Memeriksa sesi login…" });
 

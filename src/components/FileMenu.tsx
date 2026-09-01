@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Cloud, CloudDownload, CloudUpload, Download, FilePlus2, FileText, FolderOpen, Loader2, Lock, Save, SaveAll, ScrollText, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Check, ChevronDown, Cloud, CloudDownload, CloudUpload, Download, FilePlus2, FileText, FolderOpen, Loader2, Lock, Save, SaveAll, ScrollText, Trash2, X, CheckCircle2, AlertTriangle, XCircle, Info, ShieldCheck } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useAuth } from "@/auth/AuthProvider";
 import { useExportUsage } from "@/hooks/useExportUsage";
@@ -32,6 +32,7 @@ import type { ExportFontFormat } from "@/utils/fontIO";
 import { effectiveKerningPairs, effectiveWordSpacing } from "@/types/kerning";
 import { createZipBlob } from "@/utils/zip";
 import { Toast, type ToastKind, type ToastMessage } from "@/components/Toast";
+import { runFontQA, type QAIssue, type QASeverity } from "@/utils/fontQA";
 
 // --- Export Information System -------------------------------------------
 // Purely additive: this data drives the OpenType name-table fields already
@@ -39,20 +40,30 @@ import { Toast, type ToastKind, type ToastMessage } from "@/components/Toast";
 // into the export ZIP. The TTF/OTF generator itself (`generateFontFiles`,
 // `exportOTF`, `trueTypeWriter`) is never touched.
 
+const QA_SEVERITY_ORDER: Record<QASeverity, number> = { error: 0, warning: 1, info: 2, pass: 3 };
+const QA_SEVERITY_ICON: Record<QASeverity, ReactNode> = {
+  error: <XCircle size={15} />,
+  warning: <AlertTriangle size={15} />,
+  info: <Info size={15} />,
+  pass: <CheckCircle2 size={15} />,
+};
+
 const LICENSE_TYPE_OPTIONS = ["Personal", "Commercial", "Corporate", "Extended"] as const;
 type LicenseType = (typeof LICENSE_TYPE_OPTIONS)[number] | "";
 
-type ExportTab = "fontinfo" | "license";
+type ExportTab = "fontinfo" | "license" | "qa";
 
 interface FontInfoFormState {
   fontName: string;
   familyName: string;
   style: string;
   designerName: string;
+  designerURL: string;
   foundry: string;
   copyright: string;
   version: string;
   website: string;
+  trademark: string;
 }
 
 interface LicenseInfoFormState {
@@ -69,10 +80,12 @@ function emptyFontInfoForm(): FontInfoFormState {
     familyName: "",
     style: "Regular",
     designerName: "",
+    designerURL: "",
     foundry: "",
     copyright: "",
     version: "1.000",
     website: "",
+    trademark: "",
   };
 }
 
@@ -292,6 +305,12 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const newProject = useAppStore((s) => s.newProject);
   const glyphsByStyle = useAppStore((s) => s.glyphsByStyle);
   const customFamilies = useAppStore((s) => s.customFamilies);
+  const qaFontStyle = useAppStore((s) => s.fontStyle);
+  const qaMetrics = useAppStore((s) => s.metrics);
+  const qaFontInfo = useAppStore((s) => s.fontInfo);
+  const qaKerningPairs = useAppStore((s) => s.kerningPairs);
+  const qaKerningOverridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
+  const qaFeatureConfig = useAppStore((s) => s.featureConfig);
   const styleAvailability = detectExportableStyles(glyphsByStyle, customFamilies);
   const openProModal = useAppStore((s) => s.openProModal);
   const { isPro, isConfigured, user } = useAuth();
@@ -487,6 +506,23 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     setLicenseInfoForm((current) => ({ ...current, [field]: value }));
   }, []);
 
+  // Runs against the currently active editing style — metadata, metrics,
+  // kerning structure and OpenType Feature rules are shared/family-level
+  // concerns anyway, and glyph geometry is checked for whichever style the
+  // designer is actually looking at right now. Recomputes live as the
+  // export dialog stays open, so fixes made elsewhere reflect immediately.
+  const qaReport = useMemo(() => {
+    const qaGlyphs = glyphsByStyle[qaFontStyle] ?? glyphsByStyle.regular ?? {};
+    const effectiveKerning = effectiveKerningPairs(qaKerningPairs, qaKerningOverridesByStyle, qaFontStyle);
+    return runFontQA({
+      glyphs: qaGlyphs,
+      metrics: qaMetrics,
+      info: qaFontInfo,
+      kerningPairs: effectiveKerning,
+      featureConfig: qaFeatureConfig,
+    });
+  }, [glyphsByStyle, qaFontStyle, qaMetrics, qaFontInfo, qaKerningPairs, qaKerningOverridesByStyle, qaFeatureConfig]);
+
   const dismissToast = useCallback(() => setToast(null), []);
   const showToast = useCallback((message: string, kind: ToastKind = "success") => {
     setToast({ id: ++toastId.current, kind, message });
@@ -504,10 +540,12 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       familyName: s.fontInfo.familyName?.trim() || initialFontName,
       style: fontStyleLabel(s.fontStyle, s.customFamilies),
       designerName: s.fontInfo.designer?.trim() || "",
+      designerURL: s.fontInfo.designerURL?.trim() || "",
       foundry: s.fontInfo.manufacturer?.trim() || "",
       copyright: s.fontInfo.copyright?.trim() || (initialFontName ? `Copyright © ${new Date().getFullYear()} ${initialFontName}` : ""),
       version: s.fontInfo.version?.trim() || "1.000",
       website: s.fontInfo.manufacturerURL?.trim() || "",
+      trademark: s.fontInfo.trademark?.trim() || "",
     });
     setLicenseInfoForm({
       licenseType: knownLicenseType ?? "",
@@ -633,6 +671,8 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     const familyName = fontInfoForm.familyName.trim() || fontName;
     const foundry = fontInfoForm.foundry.trim();
     const website = fontInfoForm.website.trim();
+    const designerURL = fontInfoForm.designerURL.trim();
+    const trademark = fontInfoForm.trademark.trim();
     const version = fontInfoForm.version.trim() || "1.000";
     const copyright = fontInfoForm.copyright.trim() || `Copyright © ${new Date().getFullYear()} ${fontName}`;
     const resolvedLicense = licenseInfoForm.licenseOwner.trim()
@@ -711,8 +751,10 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
           postscriptName: "",
           uniqueID: "",
           designer: designerName,
+          designerURL,
           manufacturer: foundry,
           manufacturerURL: website,
+          trademark,
           copyright,
           version,
           license: resolvedLicense,
@@ -963,7 +1005,60 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
               >
                 <ScrollText size={13} /> License Info
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={exportTab === "qa"}
+                className={`fm-export-tab${exportTab === "qa" ? " active" : ""}`}
+                onClick={() => setExportTab("qa")}
+              >
+                <ShieldCheck size={13} /> QA Check
+                {qaReport.errorCount > 0 && <span className="fm-qa-tab-badge fm-qa-tab-badge-error">{qaReport.errorCount}</span>}
+                {qaReport.errorCount === 0 && qaReport.warningCount > 0 && <span className="fm-qa-tab-badge fm-qa-tab-badge-warning">{qaReport.warningCount}</span>}
+              </button>
             </div>
+
+            {exportTab === "qa" && (
+              <div className="fm-export-form fm-qa-panel" role="tabpanel" aria-label="Font QA">
+                <div className={`fm-qa-summary${qaReport.errorCount > 0 ? " fm-qa-summary-error" : qaReport.warningCount > 0 ? " fm-qa-summary-warning" : " fm-qa-summary-ok"}`}>
+                  {qaReport.errorCount > 0 ? (
+                    <>
+                      <XCircle size={16} />
+                      <span>{qaReport.errorCount} masalah wajib dibenerin sebelum export aman disubmit.</span>
+                    </>
+                  ) : qaReport.warningCount > 0 ? (
+                    <>
+                      <AlertTriangle size={16} />
+                      <span>Tidak ada error, tapi ada {qaReport.warningCount} hal yang sebaiknya dicek dulu.</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={16} />
+                      <span>Semua pemeriksaan lolos. Font ini siap diekspor.</span>
+                    </>
+                  )}
+                </div>
+
+                <div className="fm-qa-list">
+                  {qaReport.issues
+                    .slice()
+                    .sort((a, b) => QA_SEVERITY_ORDER[a.severity] - QA_SEVERITY_ORDER[b.severity])
+                    .map((issue) => (
+                      <div key={issue.id} className={`fm-qa-item fm-qa-item-${issue.severity}`}>
+                        <div className="fm-qa-item-icon">{QA_SEVERITY_ICON[issue.severity]}</div>
+                        <div className="fm-qa-item-body">
+                          <div className="fm-qa-item-title">{issue.title}</div>
+                          <div className="fm-qa-item-message">{issue.message}</div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+
+                <p className="fm-hint">
+                  Pemeriksaan ini jalan otomatis di style yang sedang aktif ({fontStyleLabel(qaFontStyle, customFamilies)}) dan tidak menghalangi export — keputusan tetap di tangan kamu.
+                </p>
+              </div>
+            )}
 
             {exportTab === "fontinfo" && (
               <div className="fm-export-form" role="tabpanel" aria-label="Font info">
@@ -1008,6 +1103,16 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                 </label>
 
                 <label className="fm-export-field">
+                  <span>Designer URL</span>
+                  <input
+                    value={fontInfoForm.designerURL}
+                    onChange={(event) => setFontInfoField("designerURL", event.target.value)}
+                    spellCheck={false}
+                    placeholder="https://yourportfolio.com (opsional)"
+                  />
+                </label>
+
+                <label className="fm-export-field">
                   <span>Foundry</span>
                   <input
                     value={fontInfoForm.foundry}
@@ -1022,6 +1127,15 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                     value={fontInfoForm.copyright}
                     onChange={(event) => setFontInfoField("copyright", event.target.value)}
                     placeholder={`Copyright © ${new Date().getFullYear()}`}
+                  />
+                </label>
+
+                <label className="fm-export-field">
+                  <span>Trademark</span>
+                  <input
+                    value={fontInfoForm.trademark}
+                    onChange={(event) => setFontInfoField("trademark", event.target.value)}
+                    placeholder="ex: MyFont is a trademark of Foundry Name (opsional)"
                   />
                 </label>
 

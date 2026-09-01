@@ -4288,3 +4288,49 @@ input[type="number"]::-webkit-outer-spin-button {
   color: var(--labf-text-dim);
 }
 .fm-lab-feature-preview-empty { line-height: 1.5; }
+
+/* ------------------------------------------------------------- QA CHECK */
+.fm-qa-tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; font-size: 10px; font-weight: 700; line-height: 1;
+}
+.fm-qa-tab-badge-error { background: var(--danger); color: #fff; }
+.fm-qa-tab-badge-warning { background: var(--warn, #d99a2b); color: #fff; }
+
+.fm-qa-panel { gap: 12px; }
+
+.fm-qa-summary {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border-radius: 8px;
+  font-size: 12.5px; font-weight: 600;
+  border: 1px solid var(--line);
+}
+.fm-qa-summary-ok { color: var(--overlap); border-color: color-mix(in srgb, var(--overlap) 40%, var(--line)); background: color-mix(in srgb, var(--overlap) 10%, transparent); }
+.fm-qa-summary-warning { color: var(--warn, #d99a2b); border-color: color-mix(in srgb, var(--warn, #d99a2b) 40%, var(--line)); background: color-mix(in srgb, var(--warn, #d99a2b) 10%, transparent); }
+.fm-qa-summary-error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.fm-qa-summary svg { flex: none; }
+
+.fm-qa-list {
+  display: grid; gap: 6px;
+  max-height: 320px; overflow-y: auto;
+  padding-right: 2px;
+}
+
+.fm-qa-item {
+  display: flex; gap: 9px;
+  padding: 9px 10px; border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.fm-qa-item-icon { flex: none; margin-top: 1px; }
+.fm-qa-item-title { font-size: 12px; font-weight: 650; color: var(--text); }
+.fm-qa-item-message { font-size: 11.5px; color: var(--text-dim); line-height: 1.45; margin-top: 2px; }
+
+.fm-qa-item-error .fm-qa-item-icon { color: var(--danger); }
+.fm-qa-item-error { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); }
+.fm-qa-item-warning .fm-qa-item-icon { color: var(--warn, #d99a2b); }
+.fm-qa-item-warning { border-color: color-mix(in srgb, var(--warn, #d99a2b) 26%, var(--line)); }
+.fm-qa-item-info .fm-qa-item-icon { color: var(--text-dim); }
+.fm-qa-item-pass .fm-qa-item-icon { color: var(--overlap); }
+.fm-qa-item-pass { opacity: 0.75; }

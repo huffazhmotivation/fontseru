@@ -22,14 +22,24 @@ export interface TrueTypeGlyphInput {
 }
 
 export interface TrueTypeMetadata {
+  /** RIBBI-safe nameID 1 (Font Family). */
   familyName: string;
+  /** RIBBI-safe nameID 2 (Font Subfamily). */
   subfamilyName: string;
+  /** True family name for nameID 16. Only written when it differs from `familyName`. */
+  typographicFamilyName?: string;
+  /** True style name for nameID 17. Only written when it differs from `subfamilyName`. */
+  typographicSubfamilyName?: string;
   fullName: string;
   postScriptName: string;
   version: string;
   creator: string;
+  /** nameID 12: Designer URL. */
+  designerURL?: string;
   manufacturer: string;
   manufacturerURL?: string;
+  /** nameID 7: Trademark notice. */
+  trademark?: string;
   uniqueID: string;
   copyright: string;
   description?: string;
@@ -561,6 +571,38 @@ function utf16be(value: string): Uint8Array {
   return writer.toUint8Array();
 }
 
+/**
+ * The legacy Macintosh platform (1,0,0) name record predates Unicode and
+ * only supports the single-byte MacRoman charset. Non-ASCII characters
+ * (accents, curly quotes, etc.) have no safe 1:1 mapping here, so they're
+ * dropped rather than risk a mis-encoded byte in old Mac font pickers,
+ * which only ever fall back to this record when the Unicode one is absent.
+ */
+function macRoman(value: string): Uint8Array {
+  const writer = new ByteWriter();
+  const ascii = value.normalize("NFKD").replace(/[^\x20-\x7E]/g, "");
+  const safe = ascii.length > 0 ? ascii : value.replace(/[^\x20-\x7E]/g, "?") || " ";
+  for (let i = 0; i < safe.length; i++) writer.u8(safe.charCodeAt(i));
+  return writer.toUint8Array();
+}
+
+interface NameRecordPlatform {
+  platformID: number;
+  encodingID: number;
+  languageID: number;
+  encode: (value: string) => Uint8Array;
+}
+
+// Ordered by ascending platformID, as the OpenType spec expects name
+// records to be sorted. Macintosh Roman, English — kept purely for legacy
+// Mac font pickers that never learned to read the Windows platform records
+// below; every modern OS prefers the Windows/Unicode BMP, English (US)
+// entry, which is what virtually everything made since the mid-2000s reads.
+const NAME_PLATFORMS: NameRecordPlatform[] = [
+  { platformID: 1, encodingID: 0, languageID: 0, encode: macRoman },
+  { platformID: 3, encodingID: 1, languageID: 0x0409, encode: utf16be },
+];
+
 function buildName(input: TrueTypeFontInput): Uint8Array {
   const meta = input.metadata;
   const entries: Array<[number, string]> = [
@@ -574,17 +616,28 @@ function buildName(input: TrueTypeFontInput): Uint8Array {
     [8, meta.manufacturer],
     [9, meta.creator],
     [13, meta.license],
-    [16, meta.familyName],
-    [17, meta.subfamilyName],
   ];
+  if (meta.trademark) entries.push([7, meta.trademark]);
   if (meta.description) entries.push([10, meta.description]);
   if (meta.manufacturerURL) entries.push([11, meta.manufacturerURL]);
+  if (meta.designerURL) entries.push([12, meta.designerURL]);
   if (meta.licenseURL) entries.push([14, meta.licenseURL]);
+  // nameID 16/17 (typographic family/subfamily): only written when they'd
+  // actually differ from the RIBBI-safe 1/2 pair above — the OpenType spec
+  // says they may be omitted otherwise, and modern apps fall back to 1/2.
+  const typographicFamily = meta.typographicFamilyName ?? meta.familyName;
+  const typographicSubfamily = meta.typographicSubfamilyName ?? meta.subfamilyName;
+  if (typographicFamily !== meta.familyName || typographicSubfamily !== meta.subfamilyName) {
+    entries.push([16, typographicFamily], [17, typographicSubfamily]);
+  }
 
-  const records = entries
-    .filter(([, value]) => typeof value === "string" && value.length > 0)
-    .map(([nameID, value]) => ({ nameID, bytes: utf16be(value) }))
-    .sort((a, b) => a.nameID - b.nameID);
+  const values = entries.filter(([, value]) => typeof value === "string" && value.length > 0);
+
+  const records = NAME_PLATFORMS.flatMap(({ platformID, encodingID, languageID, encode }) =>
+    values
+      .map(([nameID, value]) => ({ platformID, encodingID, languageID, nameID, bytes: encode(value) }))
+      .sort((a, b) => a.nameID - b.nameID),
+  );
 
   const writer = new ByteWriter();
   const storageOffset = 6 + records.length * 12;
@@ -594,9 +647,9 @@ function buildName(input: TrueTypeFontInput): Uint8Array {
 
   let offset = 0;
   for (const record of records) {
-    writer.u16(3); // Windows
-    writer.u16(1); // Unicode BMP
-    writer.u16(0x0409); // English (United States)
+    writer.u16(record.platformID);
+    writer.u16(record.encodingID);
+    writer.u16(record.languageID);
     writer.u16(record.nameID);
     writer.u16(record.bytes.length);
     writer.u16(offset);

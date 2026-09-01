@@ -26,6 +26,8 @@ export interface FontInfo {
   fullName: string;
   postscriptName: string;
   designer: string;
+  /** OpenType name table nameID 12 (Designer URL). */
+  designerURL?: string;
   copyright: string;
   version: string;
   description: string;
@@ -33,6 +35,8 @@ export interface FontInfo {
   licenseURL: string;
   manufacturer?: string;
   manufacturerURL?: string;
+  /** OpenType name table nameID 7 (Trademark notice). */
+  trademark?: string;
   uniqueID?: string;
 }
 
@@ -61,6 +65,7 @@ export function defaultFontInfo(familyName: string): FontInfo {
     fullName: `${familyName} Regular`,
     postscriptName: defaultPostScriptName(familyName),
     designer: "",
+    designerURL: "",
     copyright: `Copyright © ${new Date().getFullYear()}`,
     version: "1.000",
     description: "",
@@ -68,6 +73,7 @@ export function defaultFontInfo(familyName: string): FontInfo {
     licenseURL: "",
     manufacturer: "",
     manufacturerURL: "",
+    trademark: "",
     uniqueID: "",
   };
 }

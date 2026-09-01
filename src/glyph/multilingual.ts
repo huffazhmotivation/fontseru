@@ -49,11 +49,29 @@ export const MULTILINGUAL_MARK_SLOTS: { char: string; unicode: number }[] = [
 
 // Arithmetic symbols that can't be safely formed by repositioning an
 // existing letterform (× ÷ would need genuinely new artwork, not a
-// reused "x" or "-") — registered as empty slots too so they're at least
+// reused "x" or "-"), plus punctuation marks in the standard "minimum
+// recommended character set" most type foundries/marketplaces check for
+// (Monotype's submission review flags exactly these as missing if a font
+// doesn't have them) that FontSeru's default Punctuation/Symbols groups
+// don't include — registered as empty slots too so they're at least
 // available to draw, without ever being auto-filled with a wrong shape.
 export const MULTILINGUAL_SYMBOL_SLOTS: { char: string; unicode: number }[] = [
   { char: "×", unicode: 0x00d7 },
   { char: "÷", unicode: 0x00f7 },
+  { char: "¢", unicode: 0x00a2 }, // cent sign
+  { char: "†", unicode: 0x2020 }, // dagger
+  { char: "•", unicode: 0x2022 }, // bullet
+  { char: "·", unicode: 0x00b7 }, // middle dot
+  { char: "«", unicode: 0x00ab }, // left guillemet
+  { char: "»", unicode: 0x00bb }, // right guillemet
+  { char: "¿", unicode: 0x00bf }, // inverted question mark
+  { char: "¡", unicode: 0x00a1 }, // inverted exclamation mark
+  { char: "\u2018", unicode: 0x2018 }, // left single curly quote
+  { char: "\u2019", unicode: 0x2019 }, // right single curly quote
+  { char: "\u201a", unicode: 0x201a }, // single low-9 quote
+  { char: "\u201c", unicode: 0x201c }, // left double curly quote
+  { char: "\u201d", unicode: 0x201d }, // right double curly quote
+  { char: "\u201e", unicode: 0x201e }, // double low-9 quote
 ];
 
 // Letters that genuinely need new artwork — no combination of existing
@@ -91,7 +109,7 @@ const RECIPES: DiacriticRecipe[] = [
   // Grave
   ...pairs("AEIOUaeiou", "`", "grave"),
   // Diaeresis
-  ...pairs("AEIOUaeiouy", "¨", "diaeresis"),
+  ...pairs("AEIOUYaeiouy", "¨", "diaeresis"),
   // Circumflex (mark already in default Symbols)
   ...pairs("AEIOUaeiou", "^", "circumflex"),
   // Tilde (mark already in default Symbols)
@@ -122,7 +140,7 @@ function accentedCodepoint(base: string, markKind: string): number | null {
   const TABLE: Record<string, Record<string, number>> = {
     acute: { A: 0xc1, E: 0xc9, I: 0xcd, O: 0xd3, U: 0xda, Y: 0xdd, a: 0xe1, e: 0xe9, i: 0xed, o: 0xf3, u: 0xfa, y: 0xfd },
     grave: { A: 0xc0, E: 0xc8, I: 0xcc, O: 0xd2, U: 0xd9, a: 0xe0, e: 0xe8, i: 0xec, o: 0xf2, u: 0xf9 },
-    diaeresis: { A: 0xc4, E: 0xcb, I: 0xcf, O: 0xd6, U: 0xdc, a: 0xe4, e: 0xeb, i: 0xef, o: 0xf6, u: 0xfc, y: 0xff },
+    diaeresis: { A: 0xc4, E: 0xcb, I: 0xcf, O: 0xd6, U: 0xdc, Y: 0x0178, a: 0xe4, e: 0xeb, i: 0xef, o: 0xf6, u: 0xfc, y: 0xff },
     circumflex: { A: 0xc2, E: 0xca, I: 0xce, O: 0xd4, U: 0xdb, a: 0xe2, e: 0xea, i: 0xee, o: 0xf4, u: 0xfb },
     tilde: { A: 0xc3, N: 0xd1, O: 0xd5, a: 0xe3, n: 0xf1, o: 0xf5 },
     ring: { A: 0xc5, a: 0xe5 },

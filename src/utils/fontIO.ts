@@ -31,7 +31,20 @@ function categoryFor(cp: number): GlyphCategory {
 export interface NormalizedFontMetadata extends FontInfo {
   manufacturer: string;
   manufacturerURL: string;
+  trademark: string;
+  designerURL: string;
   uniqueID: string;
+  /**
+   * RIBBI-safe nameID 1/2 pair (Font Family / Font Subfamily). Legacy
+   * GDI-era apps and Mac Font Book only understand four subfamily values
+   * (Regular/Bold/Italic/Bold Italic), so a non-RIBBI style like "Light" or
+   * a custom family name is folded into the family string here instead —
+   * exactly what desktop font managers expect for style linking to work.
+   * `familyName`/`styleName` above stay the true (typographic) name and
+   * drive nameID 16/17.
+   */
+  legacyFamilyName: string;
+  legacySubfamilyName: string;
   /** OpenType style-link metadata derived from the subfamily name. */
   weightClass: number;
   fsSelection: number;
@@ -191,6 +204,39 @@ export function fontStyleLinkMetadata(styleName: string): {
   };
 }
 
+/** The only four subfamily names GDI-era Windows apps and Mac Font Book
+ * can style-link within one family via nameID 1/2 + head.macStyle. */
+const RIBBI_SUBFAMILIES = new Set(["regular", "bold", "italic", "bold italic"]);
+
+/**
+ * Resolve the RIBBI-safe legacy family/subfamily pair (nameID 1/2) from the
+ * font's true (typographic) family/style.
+ *
+ * When the style is one of the four RIBBI names, nameID 1/2 can just be the
+ * real family/style. Otherwise (e.g. a "Light" or "Black" custom family)
+ * the style name is folded into the family string and the subfamily is
+ * forced to "Regular" — the standard trick so the font still installs and
+ * selects correctly as its own distinct entry in apps that predate
+ * typographic (nameID 16/17) family names.
+ */
+export function legacyStyleLinkNames(
+  familyName: string,
+  styleName: string,
+): { legacyFamilyName: string; legacySubfamilyName: string } {
+  const normalized = normalizedStyleWords(styleName);
+  if (RIBBI_SUBFAMILIES.has(normalized)) {
+    const canonical = normalized
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+    return { legacyFamilyName: familyName, legacySubfamilyName: canonical };
+  }
+  return {
+    legacyFamilyName: `${familyName} ${styleName}`.trim() || familyName,
+    legacySubfamilyName: "Regular",
+  };
+}
+
 export function normalizeFontMetadata(
   info: Partial<FontInfo> | null | undefined,
   fallbackFamily = "Untitled Font",
@@ -200,8 +246,10 @@ export function normalizeFontMetadata(
   const fullName = asText(info?.fullName) || `${familyName} ${styleName}`;
   const version = asText(info?.version).replace(/^Version\s+/i, "") || "1.000";
   const designer = asText(info?.designer);
+  const designerURL = asText(info?.designerURL);
   const manufacturer = asText(info?.manufacturer) || designer || "FontSeru";
   const manufacturerURL = asText(info?.manufacturerURL);
+  const trademark = asText(info?.trademark);
   const license = asText(info?.license) || "All Rights Reserved";
   const licenseURL = asText(info?.licenseURL);
   const copyright = asText(info?.copyright) || `Copyright © ${new Date().getFullYear()} ${familyName}`;
@@ -209,6 +257,7 @@ export function normalizeFontMetadata(
   const postscriptName = sanitizePostScriptName(familyName, styleName, asText(info?.postscriptName));
   const uniqueID = asText(info?.uniqueID) || `${manufacturer}:${postscriptName}:Version ${version}`;
   const styleLink = fontStyleLinkMetadata(styleName);
+  const { legacyFamilyName, legacySubfamilyName } = legacyStyleLinkNames(familyName, styleName);
 
   return {
     familyName,
@@ -216,6 +265,7 @@ export function normalizeFontMetadata(
     fullName,
     postscriptName,
     designer,
+    designerURL,
     copyright,
     version,
     description,
@@ -223,7 +273,10 @@ export function normalizeFontMetadata(
     licenseURL,
     manufacturer,
     manufacturerURL,
+    trademark,
     uniqueID,
+    legacyFamilyName,
+    legacySubfamilyName,
     ...styleLink,
   };
 }
@@ -240,10 +293,32 @@ export function normalizeFontMetadata(
  * throws ('Name table entry "en" does not exist...'), so OTF export never
  * produced a file at all before this fix.
  */
+/**
+ * The legacy Macintosh platform (1,0,0) name record predates Unicode and
+ * only supports the MacRoman single-byte charset. Non-ASCII characters
+ * (accents, curly quotes, etc.) have no safe 1:1 mapping here, so they're
+ * dropped rather than risk mis-encoded bytes in old Mac font pickers —
+ * those apps only ever read this record as a fallback anyway.
+ */
+function macRomanSafe(value: string): string {
+  const stripped = value
+    .normalize("NFKD")
+    .replace(/[^\x20-\x7E]/g, "")
+    .trim();
+  return stripped || value.replace(/[^\x20-\x7E]/g, "?") || " ";
+}
+
 function toOpenTypeNames(info: NormalizedFontMetadata): Record<string, Record<string, Record<string, string>>> {
+  // nameID 1/2 (Font Family / Subfamily): RIBBI-safe legacy strings, so
+  // GDI-era apps and Mac Font Book still install/select non-RIBBI custom
+  // families (e.g. "Light", "Black") correctly.
+  // nameID 16/17 (Preferred/Typographic Family / Subfamily): the font's
+  // true family/style, read by every modern app. Only written when they'd
+  // actually differ from 1/2 — the OpenType spec says they may be omitted
+  // otherwise.
   const fields: Record<string, Record<string, string>> = {
-    fontFamily: localized(info.familyName),
-    fontSubfamily: localized(info.styleName),
+    fontFamily: localized(info.legacyFamilyName),
+    fontSubfamily: localized(info.legacySubfamilyName),
     uniqueID: localized(info.uniqueID),
     fullName: localized(info.fullName),
     version: localized(`Version ${info.version}`),
@@ -252,13 +327,28 @@ function toOpenTypeNames(info: NormalizedFontMetadata): Record<string, Record<st
     designer: localized(info.designer || "FontSeru"),
     license: localized(info.license),
     copyright: localized(info.copyright),
-    preferredFamily: localized(info.familyName),
-    preferredSubfamily: localized(info.styleName),
   };
+  const typographicNamesDiffer =
+    info.legacyFamilyName !== info.familyName || info.legacySubfamilyName !== info.styleName;
+  if (typographicNamesDiffer) {
+    fields.preferredFamily = localized(info.familyName);
+    fields.preferredSubfamily = localized(info.styleName);
+  }
   if (info.description) fields.description = localized(info.description);
   if (info.licenseURL) fields.licenseURL = localized(info.licenseURL);
   if (info.manufacturerURL) fields.manufacturerURL = localized(info.manufacturerURL);
-  return { windows: fields };
+  if (info.trademark) fields.trademark = localized(info.trademark);
+  if (info.designerURL) fields.designerURL = localized(info.designerURL);
+
+  // Also write a Macintosh (1,0,0) platform copy of every field so fonts
+  // still identify themselves correctly in legacy Mac font tools that never
+  // learned to read the Windows/Unicode platform records.
+  const macFields: Record<string, Record<string, string>> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    macFields[key] = localized(macRomanSafe(value.en ?? ""));
+  }
+
+  return { windows: fields, macintosh: macFields };
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -819,6 +909,61 @@ function checksum(bytes: Uint8Array): number {
 }
 function align4(n: number): number { return (n + 3) & ~3; }
 
+/** Shared sfnt table-directory splicing logic: replace-or-add one table by
+ * tag, rebuild the directory (sorted by tag, as required), and recompute
+ * the `head` table's checksum adjustment. Used by the `GSUB`/`GPOS`
+ * injectors below; `injectKernTable`'s legacy `kern` splice predates this
+ * and is left as its own inline copy rather than risk touching it. */
+function spliceSfntTable(buffer: ArrayBuffer, tag: string, data: Uint8Array): ArrayBuffer {
+  const input = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  const numTables = u16(view, 4);
+  const tables: { tag: string; data: Uint8Array }[] = [];
+  for (let i = 0; i < numTables; i++) {
+    const d = 12 + i * 16;
+    const existingTag = tagAt(view, d);
+    if (existingTag === tag) continue;
+    const offset = u32(view, d + 8), length = u32(view, d + 12);
+    if (offset + length > input.length) throw new Error("Generated font has a malformed sfnt table directory.");
+    const existingData = input.slice(offset, offset + length);
+    if (existingTag === "head" && existingData.length >= 12) existingData.fill(0, 8, 12);
+    tables.push({ tag: existingTag, data: existingData });
+  }
+  tables.push({ tag, data });
+  tables.sort((a, b) => a.tag.localeCompare(b.tag));
+
+  const count = tables.length;
+  const maxPow2 = 2 ** Math.floor(Math.log2(count));
+  const searchRange = maxPow2 * 16;
+  const entrySelector = Math.floor(Math.log2(maxPow2));
+  const rangeShift = count * 16 - searchRange;
+  let cursor = 12 + count * 16;
+  const total = cursor + tables.reduce((n, t) => n + align4(t.data.length), 0);
+  const output = new Uint8Array(total);
+  const ov = new DataView(output.buffer);
+  for (let i = 0; i < 4; i++) output[i] = input[i];
+  ov.setUint16(4, count, false); ov.setUint16(6, searchRange, false);
+  ov.setUint16(8, entrySelector, false); ov.setUint16(10, rangeShift, false);
+
+  let headOffset = -1;
+  tables.forEach((table, i) => {
+    const d = 12 + i * 16;
+    writeTag(ov, d, table.tag);
+    ov.setUint32(d + 4, checksum(table.data), false);
+    ov.setUint32(d + 8, cursor, false);
+    ov.setUint32(d + 12, table.data.length, false);
+    output.set(table.data, cursor);
+    if (table.tag === "head") headOffset = cursor;
+    cursor += align4(table.data.length);
+  });
+
+  if (headOffset >= 0) {
+    const sum = checksum(output);
+    ov.setUint32(headOffset + 8, (0xB1B0AFBA - sum) >>> 0, false);
+  }
+  return output.buffer;
+}
+
 function makeKernTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
   const records: { left: number; right: number; value: number }[] = [];
   for (const [key, rawValue] of Object.entries(pairs ?? {})) {
@@ -1159,54 +1304,101 @@ export function injectGsubTable(buffer: ArrayBuffer, config: FeatureBuilderConfi
   if (isFeatureConfigEmpty(config)) return buffer.slice(0);
   const gsub = buildGsubTable(config, glyphIndexByChar);
   if (!gsub) return buffer.slice(0);
+  return spliceSfntTable(buffer, "GSUB", gsub);
+}
 
-  const input = new Uint8Array(buffer);
-  const view = new DataView(buffer);
-  const numTables = u16(view, 4);
-  const tables: { tag: string; data: Uint8Array }[] = [];
-  for (let i = 0; i < numTables; i++) {
-    const d = 12 + i * 16;
-    const tag = tagAt(view, d);
-    if (tag === "GSUB") continue;
-    const offset = u32(view, d + 8), length = u32(view, d + 12);
-    if (offset + length > input.length) throw new Error("Generated font has a malformed sfnt table directory.");
-    const data = input.slice(offset, offset + length);
-    if (tag === "head" && data.length >= 12) data.fill(0, 8, 12);
-    tables.push({ tag, data });
+// --- GPOS 'kern' feature (modern pair-positioning kerning) ----------------
+// The legacy `kern` table above (format-0, sfnt tag "kern") is what
+// classic Mac/Win TrueType rasterizers read. Most current tooling —
+// browsers, and notably third-party font QA/marketplace checks such as
+// Monotype's submission review — instead look for kerning expressed as
+// OpenType Layout: a GPOS table with a 'kern' feature using a Pair
+// Adjustment (lookupType 2) subtable. A font with only the legacy table
+// can genuinely read back as "no kerning" to those checks even though the
+// data is present and correct. Both are written from the exact same
+// `kerningPairs`, so they can never disagree with each other.
+
+/** PairPos format 1 (explicit per-pair values, matching how kerning pairs
+ * are already stored) for a single 'kern' lookup. `valueFormat1` is set to
+ * XAdvance-only (0x0004) — plain horizontal kerning — with no adjustment
+ * to the second glyph (`valueFormat2 = 0`), mirroring the legacy kern
+ * table's semantics exactly. */
+function buildPairPosFormat1(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
+  const byLeft = new Map<number, Array<{ right: number; value: number }>>();
+  for (const [key, rawValue] of Object.entries(pairs ?? {})) {
+    const pair = parseKerningKey(key);
+    if (!pair) continue;
+    const left = glyphIndexByChar.get(pair.left);
+    const right = glyphIndexByChar.get(pair.right);
+    if (left == null || right == null || !Number.isFinite(rawValue)) continue;
+    const value = Math.max(-32768, Math.min(32767, Math.round(rawValue)));
+    if (!value) continue;
+    const list = byLeft.get(left) ?? [];
+    list.push({ right, value });
+    byLeft.set(left, list);
   }
-  tables.push({ tag: "GSUB", data: gsub });
-  tables.sort((a, b) => a.tag.localeCompare(b.tag));
+  if (!byLeft.size) return null;
 
-  const count = tables.length;
-  const maxPow2 = 2 ** Math.floor(Math.log2(count));
-  const searchRange = maxPow2 * 16;
-  const entrySelector = Math.floor(Math.log2(maxPow2));
-  const rangeShift = count * 16 - searchRange;
-  let cursor = 12 + count * 16;
-  const total = cursor + tables.reduce((n, t) => n + align4(t.data.length), 0);
-  const output = new Uint8Array(total);
-  const ov = new DataView(output.buffer);
-  for (let i = 0; i < 4; i++) output[i] = input[i];
-  ov.setUint16(4, count, false); ov.setUint16(6, searchRange, false);
-  ov.setUint16(8, entrySelector, false); ov.setUint16(10, rangeShift, false);
+  const lefts = [...byLeft.keys()].sort((a, b) => a - b);
+  const coverage = buildCoverageFormat1(lefts);
 
-  let headOffset = -1;
-  tables.forEach((table, i) => {
-    const d = 12 + i * 16;
-    writeTag(ov, d, table.tag);
-    ov.setUint32(d + 4, checksum(table.data), false);
-    ov.setUint32(d + 8, cursor, false);
-    ov.setUint32(d + 12, table.data.length, false);
-    output.set(table.data, cursor);
-    if (table.tag === "head") headOffset = cursor;
-    cursor += align4(table.data.length);
+  const pairSets = lefts.map((left) => {
+    const records = [...(byLeft.get(left) ?? [])].sort((a, b) => a.right - b.right);
+    const w = new GsubByteWriter();
+    w.u16(records.length);
+    for (const rec of records) { w.u16(rec.right); w.u16(rec.value); } // valueRecord1 = xAdvance only (int16); valueRecord2 is absent (valueFormat2 = 0)
+    return w.toUint8Array();
   });
 
-  if (headOffset >= 0) {
-    const sum = checksum(output);
-    ov.setUint32(headOffset + 8, (0xB1B0AFBA - sum) >>> 0, false);
-  }
-  return output.buffer;
+  const headerSize = 10 + 2 * lefts.length; // posFormat + coverageOffset + valueFormat1 + valueFormat2 + pairSetCount + offsets[]
+  const coverageOffset = headerSize;
+  const pairSetOffsets: number[] = [];
+  let running = coverageOffset + coverage.length;
+  for (const set of pairSets) { pairSetOffsets.push(running); running += set.length; }
+
+  const w = new GsubByteWriter();
+  w.u16(1).u16(coverageOffset).u16(0x0004).u16(0x0000).u16(lefts.length);
+  for (const off of pairSetOffsets) w.u16(off);
+  w.raw(coverage);
+  for (const set of pairSets) w.raw(set);
+  return w.toUint8Array();
+}
+
+/** Compiles kerning pairs into a standard GPOS table (ScriptList +
+ * FeatureList with a single 'kern' feature + LookupList with one
+ * PairAdjustment lookup) — same header shape as `buildGsubTable`, since
+ * GSUB and GPOS share the same top-level "Common Tables" layout, they
+ * just point at different lookup subtable formats. */
+function buildGposTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
+  const pairPos = buildPairPosFormat1(pairs, glyphIndexByChar);
+  if (!pairPos) return null;
+
+  const lookupListBytes = buildLookupList([buildLookup(2, pairPos)]); // GPOS lookupType 2 = Pair Adjustment Positioning
+  const featureListBytes = buildFeatureList([{ tag: "kern", lookupIndex: 0 }]);
+  const scriptListBytes = buildScriptList(["DFLT", "latn"], [0]);
+
+  const headerSize = 10;
+  const scriptListOffset = headerSize;
+  const featureListOffset = scriptListOffset + scriptListBytes.length;
+  const lookupListOffset = featureListOffset + featureListBytes.length;
+
+  const w = new GsubByteWriter();
+  w.u16(1).u16(0); // version 1.0
+  w.u16(scriptListOffset).u16(featureListOffset).u16(lookupListOffset);
+  w.raw(scriptListBytes);
+  w.raw(featureListBytes);
+  w.raw(lookupListBytes);
+  return w.toUint8Array();
+}
+
+/** Add/replace a `GPOS` table carrying the same kerning pairs as
+ * `injectKernTable`'s legacy table — see the block comment above. Purely
+ * additive and independent of the legacy `kern`/`GSUB` injection, so it
+ * can be skipped on failure without affecting either. */
+export function injectGposTable(buffer: ArrayBuffer, pairs: KerningPairs, glyphIndexByChar: Map<string, number>): ArrayBuffer {
+  const gpos = buildGposTable(pairs, glyphIndexByChar);
+  if (!gpos) return buffer.slice(0);
+  return spliceSfntTable(buffer, "GPOS", gpos);
 }
 
 function signatureFor(buffer: ArrayBuffer): string {
@@ -1295,6 +1487,21 @@ function generateOTF(
     } catch (error) {
       console.warn("[FontSeru] Kerning export skipped; using the valid base OTF.", error);
     }
+
+    // Same pairs, also written as a modern GPOS 'kern' feature — see the
+    // block comment above `injectGposTable`. Independent of the legacy
+    // table above: if this fails, the legacy kern table written a moment
+    // ago is untouched and the export still has working kerning.
+    try {
+      const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar);
+      validateGeneratedFont(withGpos, "otf", {
+        familyName: info.familyName,
+        hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
+      });
+      buffer = withGpos;
+    } catch (error) {
+      console.warn("[FontSeru] GPOS kerning export skipped; kept the legacy kern table only.", error);
+    }
   }
 
   // OpenType Feature Builder (ligature/alternate/swash) is likewise an
@@ -1349,14 +1556,18 @@ function generateTTFBase(
     capHeight: metrics.capHeight,
     xHeight: metrics.xHeight,
     metadata: {
-      familyName: info.familyName,
-      subfamilyName: info.styleName,
+      familyName: info.legacyFamilyName,
+      subfamilyName: info.legacySubfamilyName,
+      typographicFamilyName: info.familyName,
+      typographicSubfamilyName: info.styleName,
       fullName: info.fullName,
       postScriptName: info.postscriptName,
       version: info.version,
       creator: info.designer || "FontSeru",
+      designerURL: info.designerURL,
       manufacturer: info.manufacturer || "FontSeru",
       manufacturerURL: info.manufacturerURL,
+      trademark: info.trademark,
       uniqueID: info.uniqueID,
       copyright: info.copyright,
       description: info.description,
@@ -1406,6 +1617,19 @@ function generateTTF(
       buffer = withKerning;
     } catch (error) {
       console.warn("[FontSeru] Kerning export skipped; using the valid base TTF.", error);
+    }
+
+    // Same pairs, also written as a modern GPOS 'kern' feature — see
+    // generateOTF above for why both are written.
+    try {
+      const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar);
+      validateGeneratedFont(withGpos, "ttf", {
+        familyName: info.familyName,
+        hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
+      });
+      buffer = withGpos;
+    } catch (error) {
+      console.warn("[FontSeru] GPOS kerning export skipped; kept the legacy kern table only.", error);
     }
   }
 
