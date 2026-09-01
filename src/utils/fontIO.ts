@@ -308,6 +308,71 @@ function macRomanSafe(value: string): string {
   return stripped || value.replace(/[^\x20-\x7E]/g, "?") || " ";
 }
 
+export interface NameTablePreviewRecord {
+  id: number;
+  label: string;
+  value: string;
+}
+
+const NAME_TABLE_ID_LABELS: Record<number, string> = {
+  0: "Copyright",
+  1: "Font Family",
+  2: "Font Subfamily",
+  3: "Unique Identifier",
+  4: "Full Font Name",
+  5: "Version",
+  6: "PostScript Name",
+  7: "Trademark",
+  8: "Manufacturer",
+  9: "Designer",
+  10: "Description",
+  11: "Vendor URL",
+  12: "Designer URL",
+  13: "License Description",
+  14: "License URL",
+  16: "Typographic Family",
+  17: "Typographic Subfamily",
+};
+
+/**
+ * The exact OpenType `name` table records FontSeru will write for this
+ * metadata — same nameIDs, same inclusion/omission rules, same values as
+ * `toOpenTypeNames` (OTF/WOFF/WOFF2, below) and `trueTypeWriter.ts`'s
+ * `buildName` (TTF) both apply on export. Exposed so the Export dialog can
+ * show the user exactly what's about to be baked into the font, before a
+ * single file is generated — keep this list in sync with those two if the
+ * set of written nameIDs ever changes.
+ */
+export function previewNameTableRecords(info: NormalizedFontMetadata): NameTablePreviewRecord[] {
+  const entries: Array<[number, string]> = [
+    [0, info.copyright],
+    [1, info.legacyFamilyName],
+    [2, info.legacySubfamilyName],
+    [3, info.uniqueID],
+    [4, info.fullName],
+    [5, `Version ${info.version}`],
+    [6, info.postscriptName],
+    [8, info.manufacturer],
+    [9, info.designer || "FontSeru"],
+    [13, info.license],
+  ];
+  if (info.trademark) entries.push([7, info.trademark]);
+  if (info.description) entries.push([10, info.description]);
+  if (info.manufacturerURL) entries.push([11, info.manufacturerURL]);
+  if (info.designerURL) entries.push([12, info.designerURL]);
+  if (info.licenseURL) entries.push([14, info.licenseURL]);
+  const typographicNamesDiffer =
+    info.legacyFamilyName !== info.familyName || info.legacySubfamilyName !== info.styleName;
+  if (typographicNamesDiffer) {
+    entries.push([16, info.familyName], [17, info.styleName]);
+  }
+
+  return entries
+    .filter(([, value]) => typeof value === "string" && value.length > 0)
+    .sort((a, b) => a[0] - b[0])
+    .map(([id, value]) => ({ id, label: NAME_TABLE_ID_LABELS[id] ?? `nameID ${id}`, value }));
+}
+
 function toOpenTypeNames(info: NormalizedFontMetadata): Record<string, Record<string, Record<string, string>>> {
   // nameID 1/2 (Font Family / Subfamily): RIBBI-safe legacy strings, so
   // GDI-era apps and Mac Font Book still install/select non-RIBBI custom

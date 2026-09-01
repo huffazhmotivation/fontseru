@@ -494,6 +494,16 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const [exportTab, setExportTab] = useState<ExportTab>("fontinfo");
   const [fontInfoForm, setFontInfoForm] = useState<FontInfoFormState>(emptyFontInfoForm);
   const [licenseInfoForm, setLicenseInfoForm] = useState<LicenseInfoFormState>(emptyLicenseInfoForm);
+  const [nameTablePreviewOpen, setNameTablePreviewOpen] = useState(false);
+  // `normalizeFontMetadata`/`previewNameTableRecords` live in fontIO.ts,
+  // which pulls in opentype.js at module scope — loaded lazily here (only
+  // once the Export dialog is actually open) so opening the app never pays
+  // for opentype.js, same reasoning as the existing dynamic `generateFontFiles`
+  // import in runExport below.
+  const [nameTableTools, setNameTableTools] = useState<Pick<
+    typeof import("@/utils/fontIO"),
+    "normalizeFontMetadata" | "previewNameTableRecords"
+  > | null>(null);
   const [selectedStyles, setSelectedStyles] = useState<FamilyStyleSelection>({
     regular: true,
   });
@@ -565,6 +575,52 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   useEffect(() => {
     onExportButtonReady?.(beginExport);
   }, [beginExport, onExportButtonReady]);
+
+  useEffect(() => {
+    if (!exportOpen || nameTableTools) return;
+    let cancelled = false;
+    void import("@/utils/fontIO").then(({ normalizeFontMetadata, previewNameTableRecords }) => {
+      if (!cancelled) setNameTableTools({ normalizeFontMetadata, previewNameTableRecords });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [exportOpen, nameTableTools]);
+
+  // Mirrors the metadata the real export builds in runExport below (same
+  // fallbacks, same license-string join) so this preview never drifts from
+  // what actually gets written to the font. Only the first selected style
+  // is shown — a multi-style Family export gets its own Regular/Bold/Italic
+  // subfamily per file, but the rest of the record set is identical.
+  const nameTablePreview = useMemo(() => {
+    if (!nameTableTools) return null;
+    const fontName = fontInfoForm.fontName.trim();
+    if (!fontName) return null;
+    const familyName = fontInfoForm.familyName.trim() || fontName;
+    const styleName = fontInfoForm.style.trim() || "Regular";
+    const resolvedLicense = licenseInfoForm.licenseOwner.trim()
+      ? `${licenseInfoForm.licenseType || "Personal"} - ${licenseInfoForm.licenseOwner.trim()}`
+      : licenseInfoForm.licenseType || "All Rights Reserved";
+
+    const previewInfo: Partial<FontInfo> = {
+      familyName,
+      styleName,
+      fullName: `${fontName} ${styleName}`,
+      postscriptName: "",
+      uniqueID: "",
+      designer: fontInfoForm.designerName.trim(),
+      designerURL: fontInfoForm.designerURL.trim(),
+      manufacturer: fontInfoForm.foundry.trim(),
+      manufacturerURL: fontInfoForm.website.trim(),
+      trademark: fontInfoForm.trademark.trim(),
+      copyright: fontInfoForm.copyright.trim(),
+      version: fontInfoForm.version.trim(),
+      license: resolvedLicense,
+      licenseURL: fontInfoForm.website.trim(),
+    };
+    const normalized = nameTableTools.normalizeFontMetadata(previewInfo, fontName);
+    return nameTableTools.previewNameTableRecords(normalized);
+  }, [nameTableTools, fontInfoForm, licenseInfoForm.licenseOwner, licenseInfoForm.licenseType]);
 
   const save = () => {
     try {
@@ -1157,6 +1213,46 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                     placeholder="https://example.com"
                   />
                 </label>
+
+                <div className="fm-nametable-preview">
+                  <button
+                    type="button"
+                    className="fm-nametable-preview-toggle"
+                    onClick={() => setNameTablePreviewOpen((current) => !current)}
+                    aria-expanded={nameTablePreviewOpen}
+                  >
+                    <ChevronDown
+                      size={14}
+                      className={`fm-nametable-preview-chevron${nameTablePreviewOpen ? " open" : ""}`}
+                    />
+                    <span>Name Table Preview</span>
+                    {nameTablePreview && <span className="fm-nametable-preview-count">{nameTablePreview.length}</span>}
+                  </button>
+
+                  {nameTablePreviewOpen && (
+                    <div className="fm-nametable-preview-body">
+                      {!nameTablePreview ? (
+                        <p className="fm-hint">Isi Font Name dulu untuk lihat preview name table.</p>
+                      ) : (
+                        <>
+                          <div className="fm-nametable-preview-list">
+                            {nameTablePreview.map((record) => (
+                              <div className="fm-nametable-preview-row" key={record.id}>
+                                <span className="fm-nametable-preview-label">
+                                  {record.label} <em>({record.id})</em>
+                                </span>
+                                <span className="fm-nametable-preview-value">{record.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="fm-hint">
+                            Ini persis record yang bakal ditulis ke name table font (TTF &amp; OTF) — dicek dulu di sini sebelum jadi file. Family export multi-style pakai subfamily masing-masing style, sisanya sama.
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
