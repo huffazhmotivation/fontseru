@@ -1,10 +1,24 @@
 import React from "react";
-import { Download, FlaskConical, Layers, Maximize, Minimize, Moon, Redo2, Sun, Undo2, Wand2 } from "lucide-react";
+import {
+  Download, FlaskConical, Layers, Maximize, Minimize, Moon, Redo2, Sun, Undo2, Wand2,
+  AlignStartVertical, AlignCenterVertical, AlignEndVertical,
+  AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
+} from "lucide-react";
 import { useAppStore } from "@/glyph/store";
+import type { AlignMode } from "@/editor/objectOps";
 import { FileMenu } from "@/components/FileMenu";
 import { FontSeruLogo } from "@/components/FontSeruLogo";
 import { AuthWidget } from "@/components/AuthWidget";
 import { AboutModal } from "@/components/AboutModal";
+
+const ALIGN_BUTTONS: { mode: AlignMode; label: string; icon: typeof AlignStartVertical }[] = [
+  { mode: "left", label: "Align Left", icon: AlignStartVertical },
+  { mode: "hcenter", label: "Align Horizontal Center", icon: AlignCenterVertical },
+  { mode: "right", label: "Align Right", icon: AlignEndVertical },
+  { mode: "top", label: "Align Top", icon: AlignStartHorizontal },
+  { mode: "vcenter", label: "Align Vertical Center", icon: AlignCenterHorizontal },
+  { mode: "bottom", label: "Align Bottom", icon: AlignEndHorizontal },
+];
 
 export function TopBar() {
   const exportRef = React.useRef<(() => void) | null>(null);
@@ -23,6 +37,8 @@ export function TopBar() {
   const openTestLab = useAppStore((s) => s.openTestLab);
   const openFamily = useAppStore((s) => s.openFamily);
   const openFeatureBuilder = useAppStore((s) => s.openFeatureBuilder);
+  const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
+  const alignSelectedObjects = useAppStore((s) => s.alignSelectedObjects);
 
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   React.useEffect(() => {
@@ -58,6 +74,25 @@ export function TopBar() {
         <button className="fm-topbtn" disabled={future.length === 0} onClick={redo} title="Redo (Cmd/Ctrl+Shift+Z)" data-testid="redo-btn">
           <Redo2 size={15} /> Redo
         </button>
+      </div>
+
+      <div className="fm-align-group" role="group" aria-label="Align selected objects">
+        {ALIGN_BUTTONS.map(({ mode, label, icon: Icon }, i) => (
+          <React.Fragment key={mode}>
+            {i === 3 && <div className="fm-align-divider" />}
+            <button
+              type="button"
+              className="fm-align-btn"
+              disabled={selectedObjectIds.length < 2}
+              onClick={() => alignSelectedObjects(mode)}
+              title={label}
+              aria-label={label}
+              data-testid={`align-${mode}`}
+            >
+              <Icon size={15} strokeWidth={1.7} />
+            </button>
+          </React.Fragment>
+        ))}
       </div>
 
       <div className="fm-spacer" />

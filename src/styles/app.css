@@ -174,6 +174,22 @@ button, input { font-family: inherit; }
 .fm-topbtn-locked { opacity: 0.45; }
 .fm-topbtn-locked:hover { opacity: 0.7; }
 .fm-lock-badge-inline { margin-left: 2px; vertical-align: -1px; color: var(--accent); }
+.fm-align-group {
+  display: flex; align-items: center; gap: 1px;
+  padding: 2px; border-radius: 9px;
+  background: var(--panel-2); border: 1px solid var(--line);
+}
+.fm-align-btn {
+  display: grid; place-items: center;
+  width: 28px; height: 28px;
+  border: none; border-radius: 7px;
+  background: transparent; color: var(--text-dim); cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.fm-align-btn:hover:not(:disabled) { background: var(--panel); color: var(--text); }
+.fm-align-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fm-align-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.fm-align-divider { width: 1px; height: 16px; background: var(--line); margin: 0 3px; flex: 0 0 auto; }
 .fm-spacer { flex: 1; }
 .fm-theme-toggle {
   width: 34px; height: 34px; border-radius: 9px;
@@ -2779,7 +2795,7 @@ input[type="number"]::-webkit-outer-spin-button {
    beneath the item's name/delete buttons instead of squeezing into the
    same line as them). */
 .fm-cloud-progress-inline {
-  flex: 0 0 100%;
+  flex: 0 0 calc(100% - 12px);
   margin: 0 6px 6px;
 }
 

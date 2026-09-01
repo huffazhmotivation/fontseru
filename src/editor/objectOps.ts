@@ -2,6 +2,8 @@ import type { Contour, GlyphOutline, Point, VectorObject } from "@/types/geometr
 import { cubicPoint, closestPointOnCubic, closestPointOnLine } from "./bezier";
 import { shortId } from "@/utils/id";
 
+export type AlignMode = "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom";
+
 export interface Bounds {
   minX: number;
   minY: number;
@@ -91,6 +93,33 @@ function mapObjectPoints(obj: VectorObject, fn: (p: Point) => Point): VectorObje
     })),
     samples: obj.samples ? obj.samples.map((s) => ({ ...fn(s), pressure: s.pressure })) : undefined,
   };
+}
+
+/**
+ * Returns the {dx, dy} needed to move an object with bounds `objBounds` so
+ * it sits on the requested edge/center of `groupBounds` (the selection's
+ * own combined bounding box — there's no page/artboard to align against
+ * here, only "align relative to the rest of the selection", same model
+ * Figma uses). Each mode only ever moves one axis, matching how every
+ * design tool's align buttons behave — left/hcenter/right only touch x;
+ * top/vcenter/bottom only touch y. Y is font-unit space (baseline at 0,
+ * increasing upward — see editor/coords.ts), so "top" means maxY.
+ */
+export function alignOffset(mode: AlignMode, objBounds: Bounds, groupBounds: Bounds): { dx: number; dy: number } {
+  switch (mode) {
+    case "left":
+      return { dx: groupBounds.minX - objBounds.minX, dy: 0 };
+    case "right":
+      return { dx: groupBounds.maxX - objBounds.maxX, dy: 0 };
+    case "hcenter":
+      return { dx: (groupBounds.minX + groupBounds.maxX) / 2 - (objBounds.minX + objBounds.maxX) / 2, dy: 0 };
+    case "top":
+      return { dx: 0, dy: groupBounds.maxY - objBounds.maxY };
+    case "bottom":
+      return { dx: 0, dy: groupBounds.minY - objBounds.minY };
+    case "vcenter":
+      return { dx: 0, dy: (groupBounds.minY + groupBounds.maxY) / 2 - (objBounds.minY + objBounds.maxY) / 2 };
+  }
 }
 
 export function translateObject(obj: VectorObject, dx: number, dy: number): VectorObject {

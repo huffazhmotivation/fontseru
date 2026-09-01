@@ -11,7 +11,7 @@ import { generateBoldFromRegular, generateItalicFromRegular, generateCustomFromR
 import { DEFAULT_METRICS, defaultFontInfo, type FontInfo, type FontMetrics } from "@/types/font";
 import { BRUSH_PRESETS } from "@/brushes/presets";
 import { cloneObject, deleteNodes } from "@/editor/nodeOps";
-import { cloneObjectWithNewIds, translateObject, objectsBounds, scaleObject } from "@/editor/objectOps";
+import { cloneObjectWithNewIds, translateObject, objectBounds, objectsBounds, scaleObject, alignOffset, type AlignMode } from "@/editor/objectOps";
 import type { ShapeKind } from "@/editor/shapeBuilder";
 import { shortId } from "@/utils/id";
 import { expandStrokeObject, normalizeBrushSettings } from "@/brushes/strokeToOutline";
@@ -363,6 +363,14 @@ interface AppState {
   deleteSelectedNodes: () => void;
   expandSelectedStrokes: () => void;
   flipSelectedObjects: (axis: "horizontal" | "vertical") => void;
+  /**
+   * Aligns every selected object to an edge/center of the selection's own
+   * combined bounding box — the same "align relative to selection" model
+   * design tools like Figma use when nothing else (no page/artboard) to
+   * align against. With fewer than 2 objects selected this is a no-op
+   * (nothing to align relative to); callers should disable the buttons.
+   */
+  alignSelectedObjects: (mode: AlignMode) => void;
   booleanSelectedObjects: (op: BooleanOp) => void;
   togglePenAutoClose: () => void;
   /** Composes accented-Latin + a few symbol glyphs from existing Regular
@@ -1252,6 +1260,25 @@ export const useAppStore = create<AppState>()((set, get) => {
       const objects = glyph.outline.objects.map((o) =>
         selectedObjectIds.includes(o.id) ? scaleObject(o, anchor, sx, sy, true) : o
       );
+      commit({ ...glyphs, [activeChar]: { ...glyph, outline: { objects } } });
+    },
+
+    // Aligns each selected object to an edge/center of the combined
+    // bounding box of the whole selection (see alignOffset in
+    // editor/objectOps.ts for the geometry). Objects not in the selection,
+    // and everything about each moved object other than its point/handle
+    // coordinates, are untouched — same contract as flipSelectedObjects.
+    alignSelectedObjects: (mode) => {
+      const glyph = activeGlyph();
+      const { glyphs, activeChar, selectedObjectIds } = get();
+      if (!glyph || selectedObjectIds.length < 2) return;
+      const groupBounds = objectsBounds(glyph.outline, selectedObjectIds);
+      if (!groupBounds) return;
+      const objects = glyph.outline.objects.map((o) => {
+        if (!selectedObjectIds.includes(o.id)) return o;
+        const { dx, dy } = alignOffset(mode, objectBounds(o), groupBounds);
+        return dx === 0 && dy === 0 ? o : translateObject(o, dx, dy);
+      });
       commit({ ...glyphs, [activeChar]: { ...glyph, outline: { objects } } });
     },
 
