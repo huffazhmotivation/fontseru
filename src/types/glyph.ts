@@ -20,6 +20,13 @@ export interface Glyph {
   rsb: number;
   outline: GlyphOutline;
   components: string[];
+  /** When true, this glyph's LSB/RSB are recomputed automatically (to the
+   * Pro optical-spacing standard, see `suggestGlyphSidebearings`) every
+   * time its outline is committed, instead of staying at whatever value
+   * was last set manually. Off by default — an explicit opt-in per glyph,
+   * toggled from the "Spacing Mode" control in Glyph Metrics or by
+   * clicking the AUTO badge on the LSB/RSB canvas handles. */
+  autoSpacing?: boolean;
 }
 
 export type GlyphMap = Record<string, Glyph>;

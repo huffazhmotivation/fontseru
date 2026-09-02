@@ -544,31 +544,42 @@ export function GlyphCanvas() {
           .guide-line { stroke: var(--guide); stroke-width: ${1 / sc}; stroke-dasharray: ${5 / sc} ${5 / sc}; }
           .metric-guide { opacity: 0.72; transition: opacity 120ms ease; }
           .metric-guide .metric-guide-line { stroke-width: ${1 / sc}; stroke-dasharray: ${5 / sc} ${5 / sc}; }
-          .metric-guide.metric-ascender .metric-guide-line { stroke: var(--guide-2); stroke-width: ${1.3 / sc}; }
-          .metric-guide.metric-cap .metric-guide-line { stroke: var(--guide); stroke-width: ${1.3 / sc}; }
-          .metric-guide.metric-xheight .metric-guide-line { stroke: var(--guide); stroke-width: ${1.3 / sc}; stroke-dasharray: ${2 / sc} ${4 / sc}; }
-          .metric-guide.metric-baseline .metric-guide-line { stroke: var(--accent); stroke-width: ${1.35 / sc}; }
-          .metric-guide.metric-descender .metric-guide-line { stroke: var(--guide-2); }
-          /* Ascender / Cap Height / x-Height read as too faint at a glance —
-             nudge their contrast up a bit while keeping them subtle and
-             leaving position, values, and behavior untouched. */
-          .metric-guide.metric-ascender, .metric-guide.metric-cap, .metric-guide.metric-xheight { opacity: 0.9; }
+          .metric-guide.metric-ascender .metric-guide-line { stroke: var(--m-ascender); stroke-width: ${1.3 / sc}; }
+          .metric-guide.metric-cap .metric-guide-line { stroke: var(--m-cap); stroke-width: ${1.3 / sc}; }
+          .metric-guide.metric-xheight .metric-guide-line { stroke: var(--m-xheight); stroke-width: ${1.3 / sc}; stroke-dasharray: ${2 / sc} ${4 / sc}; }
+          .metric-guide.metric-baseline .metric-guide-line { stroke: var(--accent); stroke-width: ${1.5 / sc}; }
+          .metric-guide.metric-descender .metric-guide-line { stroke: var(--m-descender); }
+          /* Each metric now carries its own hue (see --m-* tokens above), so
+             every guide is legible at a glance instead of reading as "one
+             faint gray line" the way a shared --guide/--guide-2 did. */
+          .metric-guide { opacity: 0.85; }
           .metric-guide:hover, .metric-guide.active { opacity: 1; }
-          .metric-guide:hover .metric-guide-line, .metric-guide.active .metric-guide-line { stroke-width: ${1.8 / sc}; }
+          .metric-guide:hover .metric-guide-line, .metric-guide.active .metric-guide-line { stroke-width: ${2 / sc}; }
           .metric-guide-hit { stroke: transparent; stroke-width: ${12 / sc}; cursor: ns-resize; pointer-events: stroke; }
-          .metric-guide.locked { opacity: 0.52; }
+          .metric-guide.locked { opacity: 0.5; }
           .metric-guide.locked .metric-guide-hit { pointer-events: none; cursor: default; }
           .metric-guide-value-bg { fill: var(--canvas); stroke: var(--accent); stroke-width: ${1 / sc}; opacity: 0.96; }
-          .metric-guide-value { fill: var(--text); font-size: ${11 / sc}px; font-family: var(--mono); }
-          .lsb-line, .rsb-line { stroke: var(--guide-2); stroke-width: ${1 / sc}; opacity: 0.7; }
-          .glyph-metric-guide-line { stroke: var(--guide-2); stroke-width: ${1 / sc}; stroke-dasharray: ${5 / sc} ${5 / sc}; opacity: 0.78; }
-          .glyph-metric-guide-line.advance { stroke: var(--accent); stroke-width: ${1.35 / sc}; }
-          .glyph-metric-handle { fill: var(--canvas); stroke: var(--guide-2); stroke-width: ${1 / sc}; cursor: ew-resize; }
+          .metric-guide-value { fill: var(--text); font-size: ${11 / sc}px; font-family: var(--mono); font-weight: 600; }
+          .lsb-line, .rsb-line { stroke: var(--sb); stroke-width: ${1.1 / sc}; opacity: 0.85; }
+          .glyph-metric-guide-line { stroke: var(--sb); stroke-width: ${1.1 / sc}; stroke-dasharray: ${5 / sc} ${5 / sc}; opacity: 0.85; }
+          .glyph-metric-guide-line.advance { stroke: var(--accent); stroke-width: ${1.4 / sc}; }
+          .glyph-metric-handle { fill: var(--canvas); stroke: var(--sb); stroke-width: ${1.25 / sc}; cursor: ew-resize; }
           .glyph-metric-handle.locked { opacity: 0.55; pointer-events: none; cursor: default; }
           .glyph-metric-handle.advance { stroke: var(--accent); }
-          .glyph-metric-handle.active { fill: var(--accent-soft); stroke: var(--accent); }
-          .glyph-metric-label { fill: var(--text); font-size: ${10.5 / sc}px; font-family: var(--mono); pointer-events: none; }
+          .glyph-metric-handle.active { fill: var(--sb-soft); stroke: var(--sb); stroke-width: ${1.7 / sc}; }
+          .glyph-metric-handle.advance.active { fill: var(--accent-soft); stroke: var(--accent); }
+          .glyph-metric-handle.auto { fill: var(--auto-soft); stroke: var(--auto-2); }
+          .glyph-metric-label { fill: var(--text); font-size: ${10.5 / sc}px; font-family: var(--mono); font-weight: 600; pointer-events: none; }
+          .glyph-metric-auto-dot { fill: var(--auto-2); }
           .guide-label { fill: var(--text-dim); font-size: ${11 / sc}px; font-family: var(--mono); }
+          /* Origin (x=0): the left boundary every LSB value is measured
+             from. Drawn as a solid, brighter line (never dashed, never
+             draggable) with its own "0" flag so it can never be mistaken
+             for the LSB guide sitting right next to it. */
+          .origin-line { stroke: var(--origin); stroke-width: ${1.4 / sc}; opacity: 0.9; }
+          .origin-tick { stroke: var(--origin); stroke-width: ${1.4 / sc}; }
+          .origin-flag-bg { fill: var(--origin-soft); stroke: var(--origin); stroke-width: ${1 / sc}; }
+          .origin-flag-label { fill: var(--origin); font-size: ${10 / sc}px; font-family: var(--mono); font-weight: 700; pointer-events: none; }
           .obj-fill { fill: var(--ink); fill-rule: nonzero; stroke: none; }
           .obj-fill-overlap { fill: var(--overlap); opacity: 0.88; }
           .obj-fill-preview-outline { fill: none; stroke: var(--ink); stroke-width: ${1.25 / sc}; opacity: 0.85; }
@@ -782,6 +793,8 @@ export function GlyphCanvas() {
           const clampX = (x: number) => Math.min(vbX + vbW - marginX, Math.max(vbX + marginX, x));
           const lsbXView = clampX(lsbX);
           const advanceXView = clampX(advanceX);
+          const originXView = clampX(0);
+          const isAuto = !!glyph.autoSpacing;
           const guides: { key: GlyphMetricKey; label: string; value: number; x: number; y: number; advance?: boolean }[] = [
             { key: "lsb", label: "LSB", value: glyph.lsb, x: lsbXView, y: top },
             { key: "advanceWidth", label: "Advance", value: glyph.advanceWidth, x: advanceXView, y: top, advance: true },
@@ -791,11 +804,23 @@ export function GlyphCanvas() {
           ];
           return (
             <>
+              {/* Origin (x=0): the fixed left boundary of glyph space that
+                  LSB is measured *from*. Solid + its own hue + a small "0"
+                  flag near the baseline, so the left edge of the glyph box
+                  always has an explicit, unmistakable mark — separate from
+                  the draggable, dashed LSB guide right next to it. */}
+              <line x1={originXView} y1={vbY} x2={originXView} y2={vbY + vbH} className="origin-line" pointerEvents="none" />
+              <g pointerEvents="none" data-testid="glyph-origin-mark">
+                <rect x={originXView - 9 / sc} y={vbY + vbH - 20 / sc} width={18 / sc} height={16 / sc} rx={3 / sc} className="origin-flag-bg" />
+                <text x={originXView} y={vbY + vbH - 8.5 / sc} textAnchor="middle" className="origin-flag-label">0</text>
+              </g>
+
               <line x1={lsbXView} y1={vbY} x2={lsbXView} y2={vbY + vbH} className="glyph-metric-guide-line" pointerEvents="none" />
               <line x1={advanceXView} y1={vbY} x2={advanceXView} y2={vbY + vbH} className="glyph-metric-guide-line advance" pointerEvents="none" />
               {guides.map((guide) => {
                 const active = activeGlyphMetricGuide === guide.key;
                 const rectX = guide.x - handleW / 2;
+                const showAutoBadge = isAuto && !guide.advance;
                 return (
                   <g key={guide.key} data-testid={`glyph-guide-${guide.key}`}>
                     <rect
@@ -804,7 +829,7 @@ export function GlyphCanvas() {
                       width={handleW}
                       height={handleH}
                       rx={4 / sc}
-                      className={`glyph-metric-handle ${guide.advance ? "advance" : ""} ${active ? "active" : ""} ${tool === "home" ? "" : "locked"}`}
+                      className={`glyph-metric-handle ${guide.advance ? "advance" : ""} ${showAutoBadge ? "auto" : ""} ${active ? "active" : ""} ${tool === "home" ? "" : "locked"}`}
                       pointerEvents={tool === "home" ? "all" : "none"}
                       onPointerDown={(e) => beginGlyphGuideDrag(guide.key, e)}
                       onPointerMove={moveGlyphGuideDrag}
@@ -813,6 +838,7 @@ export function GlyphCanvas() {
                       onLostPointerCapture={finishGlyphGuideDrag}
                       onDoubleClick={(e) => focusGlyphGuideMetric(guide.key, e)}
                     />
+                    {showAutoBadge && <circle cx={rectX + 8 / sc} cy={guide.y + handleH / 2} r={2.6 / sc} className="glyph-metric-auto-dot" pointerEvents="none" />}
                     <text
                       x={guide.x}
                       y={guide.y + 13.5 / sc}

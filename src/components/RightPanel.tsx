@@ -350,7 +350,9 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
   const setScope = useAppStore((s) => s.setGlyphMetricScope);
   const focus = useAppStore((s) => s.glyphMetricFocus);
   const setFocus = useAppStore((s) => s.setGlyphMetricFocus);
+  const setGlyphAutoSpacing = useAppStore((s) => s.setGlyphAutoSpacing);
   const refs = useRef<Partial<Record<GlyphMetricKey, HTMLInputElement | null>>>({});
+  const isAuto = !!glyph.autoSpacing;
 
   useEffect(() => {
     if (!focus) return;
@@ -369,6 +371,28 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
 
   return (
     <Section title="Glyph Metrics">
+      <div className="fm-field">
+        <label>Spacing mode</label>
+        <div className="fm-node-type-row fm-spacing-mode" role="group" aria-label="LSB/RSB spacing mode">
+          <button
+            className={`fm-node-type-btn ${!isAuto ? "active" : ""}`}
+            onClick={() => setGlyphAutoSpacing(char, false)}
+            data-testid="spacing-mode-manual"
+          >
+            Manual
+          </button>
+          <button
+            className={`fm-node-type-btn fm-spacing-auto-btn ${isAuto ? "active" : ""}`}
+            onClick={() => setGlyphAutoSpacing(char, true)}
+            data-testid="spacing-mode-auto"
+            title="Recomputes LSB/RSB from this glyph's outline (Pro optical-spacing standard) every time you edit it."
+          >
+            <span className="fm-spacing-auto-dot" aria-hidden="true" />
+            Auto
+          </button>
+        </div>
+      </div>
+
       <div className="fm-field">
         <label>Apply changes to</label>
         <div className="fm-node-type-row fm-metric-scope" role="group" aria-label="Glyph metric scope">
@@ -389,24 +413,38 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
         </div>
       </div>
 
-      {rows.map(({ key, label, value, testid }) => (
-        <div className="fm-field" key={key}>
-          <label htmlFor={testid}>{label}</label>
-          <NumericInput
-            id={testid}
-            ref={(el) => { refs.current[key] = el; }}
-            value={value}
-            onChange={(next) => {
-              if (Number.isFinite(next)) updateGlyphMetrics(char, { [key]: next });
-            }}
-            onFocus={() => setFocus(null)}
-            data-testid={testid}
-          />
-        </div>
-      ))}
+      {rows.map(({ key, label, value, testid }) => {
+        const isSidebearing = key === "lsb" || key === "rsb";
+        return (
+          <div className="fm-field" key={key}>
+            <label htmlFor={testid}>
+              {label}
+              {isAuto && isSidebearing && <span className="fm-spacing-auto-tag">Auto</span>}
+            </label>
+            <NumericInput
+              id={testid}
+              ref={(el) => { refs.current[key] = el; }}
+              value={value}
+              onChange={(next) => {
+                if (!Number.isFinite(next)) return;
+                // Typing a value by hand is the same "opt into Manual" signal
+                // as dragging the canvas handle — so a number the user just
+                // typed can never get silently overwritten by the next
+                // outline edit.
+                if (isSidebearing && isAuto) setGlyphAutoSpacing(char, false);
+                updateGlyphMetrics(char, { [key]: next });
+              }}
+              onFocus={() => setFocus(null)}
+              data-testid={testid}
+            />
+          </div>
+        );
+      })}
 
       <div className="fm-hint">
-        Drag the LSB / Advance / RSB handles on the canvas for live adjustment. The selected scope also applies to dragging.
+        {isAuto
+          ? "Auto: LSB/RSB follow this glyph's outline automatically, using FontSeru's Pro optical-spacing standard, every time you draw or edit it."
+          : "Manual: drag the LSB / Advance / RSB handles on the canvas, or type exact values above. Switch to Auto to let FontSeru keep spacing in sync with the outline for you."}
       </div>
     </Section>
   );

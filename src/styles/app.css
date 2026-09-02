@@ -37,6 +37,28 @@ body { font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rende
   --danger: #ff6b57;
   --overlap: #a6e034;
   --shadow: rgba(0, 0, 0, 0.5);
+  /* Sidebearing (LSB/RSB/Advance) metrics get their own vivid, high-contrast
+     color, distinct from the muted --guide-2 used for descender — otherwise
+     the box that actually controls spacing reads as "just another faint
+     dashed line" next to the ascender/cap/x-height guides. */
+  --sb: #4fd3ff;
+  --sb-soft: #0e2b36;
+  /* The x=0 glyph-space origin: a professional editor always marks this
+     boundary distinctly from LSB, since LSB is a *value measured from* it,
+     not the origin itself. */
+  --origin: #ff8a5b;
+  --origin-soft: #3a2013;
+  /* Auto-spacing indicator (glyph's LSB/RSB following the Pro standard live). */
+  --auto: #7bd858;
+  --auto-2: #8be06a;
+  --auto-soft: #16321c;
+  /* Each horizontal metric line gets its own hue (the way Glyphs/FontLab
+     color-code ascender/cap/x-height/descender) instead of everything
+     sharing --guide/--guide-2, which read as "one faint gray" at a glance. */
+  --m-ascender: #9b8cff;
+  --m-cap: #5ec8ff;
+  --m-xheight: #6fe0a0;
+  --m-descender: #ff9d5c;
 }
 
 .fm-root[data-theme="light"] {
@@ -68,6 +90,17 @@ body { font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rende
   --danger: #d1402d;
   --overlap: #6ea11a;
   --shadow: rgba(20, 22, 24, 0.08);
+  --sb: #0e86b8;
+  --sb-soft: #e2f4fb;
+  --origin: #c1471f;
+  --origin-soft: #fbe6dc;
+  --auto: #1f9d52;
+  --auto-2: #17853f;
+  --auto-soft: #e2f6e8;
+  --m-ascender: #6a56d6;
+  --m-cap: #1f7fce;
+  --m-xheight: #1f9d6c;
+  --m-descender: #c1691f;
 }
 
 .fm-root {
@@ -1329,6 +1362,19 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .fm-node-type-btn:hover { border-color: var(--text-faint); color: var(--text); }
 .fm-node-type-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+/* Auto/Manual spacing toggle (Glyph Metrics panel): a distinct accent
+   (--auto) so it never reads as just another scope button, plus a small
+   dot echoing the AUTO badge drawn on the canvas LSB/RSB handles. */
+.fm-spacing-auto-btn { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.fm-spacing-auto-btn.active { border-color: var(--auto-2); color: var(--auto-2); background: var(--auto-soft); }
+.fm-spacing-auto-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); transition: background 0.14s ease; }
+.fm-spacing-auto-btn.active .fm-spacing-auto-dot { background: var(--auto-2); }
+.fm-spacing-auto-tag {
+  margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.03em; text-transform: uppercase; color: var(--auto-2); background: var(--auto-soft);
+  vertical-align: middle;
+}
 
 .fm-action-btn {
   width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;

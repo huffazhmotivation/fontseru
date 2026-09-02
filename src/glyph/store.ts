@@ -20,7 +20,7 @@ import { composeMultilingualGlyphs, type MultilingualResult } from "@/glyph/mult
 import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext, WordSpacingOverridesByStyle } from "@/types/kerning";
 import { kerningKey, decodeKerningKey, effectiveWordSpacing } from "@/types/kerning";
 import { suggestKerningPair, autoKernAllAvailablePairs } from "@/kerning/autoKern";
-import { autoSpaceAllGlyphs as computeAutoSpaceAllGlyphs, suggestWordSpacing, type AutoSpaceResult } from "@/kerning/autoSpace";
+import { autoSpaceAllGlyphs as computeAutoSpaceAllGlyphs, suggestGlyphSidebearings, suggestWordSpacing, type AutoSpaceResult } from "@/kerning/autoSpace";
 import type { FeatureBuilderConfig, LigatureRule, AlternateRule, SwashRule, FeatureGlyphRef } from "@/types/opentypeFeatures";
 import { emptyFeatureConfig, nextFeatureRuleId } from "@/types/opentypeFeatures";
 import { nextFeatureGlyphUnicode, buildFeatureGlyph, isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
@@ -343,6 +343,11 @@ interface AppState {
   beginGlyphMetricDrag: () => void;
   setGlyphMetricLive: (char: string, key: GlyphMetricKey, value: number, scope?: GlyphMetricScope) => void;
   endGlyphMetricDrag: () => void;
+  /** Turns "Auto" spacing on/off for one glyph. Turning it on immediately
+   * snaps LSB/RSB to the Pro optical-spacing standard for the glyph's
+   * current outline (same math as "Auto Space" for the whole font); turning
+   * it off just stops future outline edits from re-triggering that snap. */
+  setGlyphAutoSpacing: (char: string, enabled: boolean) => void;
   commitOutline: (char: string, outline: GlyphOutline) => void;
   setLiveOutline: (outline: GlyphOutline | null) => void;
   updateSelectedObject: (patch: Partial<VectorObject>) => void;
@@ -1117,11 +1122,32 @@ export const useAppStore = create<AppState>()((set, get) => {
     setGlyphMetricLive: (char, key, value, scope) => {
       if (!Number.isFinite(value)) return;
       const { glyphs, glyphsByStyle, fontStyle, glyphMetricScope } = get();
-      const nextGlyphs = applyGlyphMetricToMap(glyphs, char, { [key]: value }, scope ?? glyphMetricScope);
+      // Dragging LSB/RSB by hand is the definition of "Manual" spacing —
+      // switch the glyph out of Auto so the very next outline edit doesn't
+      // immediately snap the handle right back to where it was just moved
+      // from. (Advance-width-only drags don't affect ink margins, so they
+      // don't touch the flag.)
+      let baseGlyphs = glyphs;
+      if ((key === "lsb" || key === "rsb") && glyphs[char]?.autoSpacing) {
+        baseGlyphs = { ...glyphs, [char]: { ...glyphs[char], autoSpacing: false } };
+      }
+      const nextGlyphs = applyGlyphMetricToMap(baseGlyphs, char, { [key]: value }, scope ?? glyphMetricScope);
       set({
         glyphs: nextGlyphs,
         glyphsByStyle: { ...glyphsByStyle, [fontStyle]: nextGlyphs },
       });
+    },
+
+    setGlyphAutoSpacing: (char, enabled) => {
+      const { glyphs, metrics } = get();
+      const glyph = glyphs[char];
+      if (!glyph) return;
+      let nextGlyph: Glyph = { ...glyph, autoSpacing: enabled };
+      if (enabled) {
+        const suggestion = suggestGlyphSidebearings(nextGlyph, metrics);
+        if (suggestion) nextGlyph = applyGlyphMetricPatch(nextGlyph, suggestion);
+      }
+      commit({ ...glyphs, [char]: nextGlyph });
     },
 
     endGlyphMetricDrag: () => {
@@ -1137,10 +1163,21 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
 
     commitOutline: (char, outline) => {
-      const { glyphs } = get();
+      const { glyphs, metrics } = get();
       const glyph = glyphs[char];
       if (!glyph) return;
-      commit({ ...glyphs, [char]: { ...glyph, outline } });
+      let nextGlyph: Glyph = { ...glyph, outline };
+      // Live Auto Spacing: whenever this glyph is in Auto mode, every
+      // committed outline edit (finishing a stroke, dragging a node,
+      // pasting a vector, etc.) immediately re-derives LSB/RSB from the
+      // freshly-drawn ink using the same optical standard as "Auto Space"
+      // for the whole font — so the sidebearings stay in sync with the
+      // outline without any extra manual step.
+      if (glyph.autoSpacing) {
+        const suggestion = suggestGlyphSidebearings(nextGlyph, metrics);
+        if (suggestion) nextGlyph = applyGlyphMetricPatch(nextGlyph, suggestion);
+      }
+      commit({ ...glyphs, [char]: nextGlyph });
       set({ liveOutline: null });
     },
 
