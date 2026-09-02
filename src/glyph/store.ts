@@ -770,7 +770,14 @@ export const useAppStore = create<AppState>()((set, get) => {
     brush: { type: "monoline", ...BRUSH_PRESETS.monoline.settings },
     glyphMetricScope: "current",
     glyphMetricFocus: null,
-    autoSpacingEnabled: false,
+    // Default ON: a brand-new font should let the just-drawn ink be the
+    // reference and have LSB/RSB/position follow it automatically (see
+    // `commitOutline`'s autoSpacingEnabled branch), not the other way
+    // around — a beginner drawing a shape wherever feels natural shouldn't
+    // have to separately learn "now go nudge LSB/RSB to match". Explicit
+    // opt-out (Manual) is one click away in Glyph Metrics for anyone who
+    // wants full manual control instead.
+    autoSpacingEnabled: true,
 
     glyphs: initialRegular,
     glyphsByStyle: initialFamily,
@@ -863,7 +870,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         clipboardSourceChar: null,
         glyphMetricScope: "current",
         glyphMetricFocus: null,
-        autoSpacingEnabled: false,
+        autoSpacingEnabled: true,
         past: [],
         future: [],
       });
