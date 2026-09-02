@@ -47,9 +47,17 @@ export function findNode(outline: GlyphOutline, contourId: string, nodeId: strin
 export const NODE_TYPE_ORDER: NodeType[] = ["corner", "smooth", "symmetric"];
 
 /** Comfortable default handle spread (font units) for a node that becomes
- * Symmetric with no existing handles to mirror — long enough to grab and
- * adjust easily, short enough not to overshoot small glyphs. */
-const DEFAULT_SYMMETRIC_HANDLE_LENGTH = 60;
+ * Smooth/Symmetric with no existing handles to mirror. Sized so the handle
+ * dot lands clearly away from the on-curve node at typical zoom — the old
+ * 60u default rendered as a ~25px on-screen reach at the editor's default
+ * fit, putting the handle's own ~12px grab radius right up against the
+ * node's, so nudging it apart required zooming in first. 90u roughly
+ * triples that separation margin (Glyphs/FontLab ship similarly generous
+ * defaults) without overshooting typical curved-letter proportions; this
+ * only seeds curve handles when retyping to Smooth/Symmetric, which in
+ * practice happens on round/diagonal shapes with plenty of room, not on
+ * narrow straight stems. */
+const DEFAULT_SYMMETRIC_HANDLE_LENGTH = 90;
 
 /** Tangent direction through `node`, inferred from its contour neighbors,
  * used to give a freshly-symmetric node's handles a sensible starting angle. */
@@ -66,8 +74,13 @@ function neighborTangent(contour: Contour, node: PathNode): Point {
   return len < 0.001 ? { x: 1, y: 0 } : { x: dir.x / len, y: dir.y / len };
 }
 
-/** Gives a handle-less node a comfortable, symmetric pair of handles along
- * its local tangent, so it's immediately easy to grab and adjust. */
+/** Gives a handle-less node a comfortable, symmetric pair of starting
+ * handles along its local tangent, so it's immediately easy to grab and
+ * adjust — used when retyping a corner (no handles yet) to either Smooth
+ * or Symmetric. Which type actually gets used only matters for what
+ * happens on the *next* drag (Smooth lets each side's length diverge,
+ * Symmetric keeps them mirrored); the starting handles themselves are the
+ * same reasonable default either way. */
 function ensureSymmetricHandles(contour: Contour, node: PathNode): void {
   if (node.handleIn || node.handleOut) return;
   const dir = neighborTangent(contour, node);
@@ -107,7 +120,11 @@ export function retypeNode(
     } else if (node.handleIn) {
       node.handleOut = reflect(node.handleIn, node.point);
     }
-  } else if (nextType === "symmetric") {
+  } else if (nextType !== "corner") {
+    // Handle-less node retyped to Smooth or Symmetric: without this, a
+    // fresh corner-with-no-handles node clicked to "Smooth" silently
+    // stayed handle-less — the type changed but nothing appeared to drag,
+    // which looked like the button did nothing.
     const contour = findContour(working, contourId);
     if (contour) ensureSymmetricHandles(contour, node);
   }
@@ -138,7 +155,7 @@ export function retypeNodes(
       } else if (node.handleIn) {
         node.handleOut = reflect(node.handleIn, node.point);
       }
-    } else if (nextType === "symmetric") {
+    } else if (nextType !== "corner") {
       const contour = findContour(working, ref.contourId);
       if (contour) ensureSymmetricHandles(contour, node);
     }
