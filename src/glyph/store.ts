@@ -216,6 +216,14 @@ interface AppState {
   glyphMetricScope: GlyphMetricScope;
   glyphMetricFocus: GlyphMetricKey | null;
 
+  /** Bottom-of-canvas live sentence preview shown while drawing glyphs.
+   * Off by default, session-only (not saved into the project file) —
+   * purely a drawing aid, toggled from BottomBar next to Grid/Guides/Ghost. */
+  productionPreviewOpen: boolean;
+  productionPreviewScale: number;
+  productionPreviewLineHeight: number;
+  productionPreviewAlign: "left" | "center" | "right";
+
   /** Glyph map for the currently selected family style. */
   glyphs: GlyphMap;
   glyphsByStyle: GlyphFamily;
@@ -313,6 +321,10 @@ interface AppState {
   setGridSize: (n: number) => void;
   toggleGuides: () => void;
   toggleSnap: () => void;
+  toggleProductionPreview: () => void;
+  setProductionPreviewScale: (n: number) => void;
+  setProductionPreviewLineHeight: (n: number) => void;
+  setProductionPreviewAlign: (align: "left" | "center" | "right") => void;
   setFontMetric: (key: keyof FontMetrics, value: number) => void;
   beginMetricDrag: () => void;
   setFontMetricLive: (key: keyof FontMetrics, value: number) => void;
@@ -770,6 +782,10 @@ export const useAppStore = create<AppState>()((set, get) => {
     brush: { type: "monoline", ...BRUSH_PRESETS.monoline.settings },
     glyphMetricScope: "current",
     glyphMetricFocus: null,
+    productionPreviewOpen: false,
+    productionPreviewScale: 28,
+    productionPreviewLineHeight: 1.3,
+    productionPreviewAlign: "left",
     // Default ON: a brand-new font should let the just-drawn ink be the
     // reference and have LSB/RSB/position follow it automatically (see
     // `commitOutline`'s autoSpacingEnabled branch), not the other way
@@ -908,6 +924,10 @@ export const useAppStore = create<AppState>()((set, get) => {
     setGridSize: (n) => set({ gridSize: Math.min(200, Math.max(2, Math.round(n))) }),
     toggleGuides: () => set((s) => ({ showGuides: !s.showGuides })),
     toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
+    toggleProductionPreview: () => set((s) => ({ productionPreviewOpen: !s.productionPreviewOpen })),
+    setProductionPreviewScale: (n) => set({ productionPreviewScale: Math.min(120, Math.max(10, Math.round(n))) }),
+    setProductionPreviewLineHeight: (n) => set({ productionPreviewLineHeight: Math.min(3, Math.max(0.8, Math.round(n * 100) / 100)) }),
+    setProductionPreviewAlign: (align) => set({ productionPreviewAlign: align }),
     setFontMetric: (key, value) => {
       const { metrics, glyphs, past, kerningPairs, kerningManual } = get();
       const nextValue = normalizedFontMetric(metrics, key, value);

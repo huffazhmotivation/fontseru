@@ -12,6 +12,7 @@ import { GlyphSideNav } from "@/components/GlyphSideNav";
 import { GlyphNav } from "@/components/GlyphNav";
 import { RightPanel } from "@/components/RightPanel";
 import { BottomBar } from "@/components/BottomBar";
+import { ProductionPreviewBar } from "@/components/ProductionPreviewBar";
 import { GlyphCanvas } from "@/editor/GlyphCanvas";
 import { LoginModal } from "@/components/LoginModal";
 import { EmailConfirmedWelcome } from "@/components/EmailConfirmedWelcome";
@@ -151,6 +152,7 @@ export default function App() {
             {sketchMode && <SketchRightPanelToggle />}
             {!sketchMode && <GlyphSideNav />}
           </div>
+          <ProductionPreviewBar />
           <BottomBar />
         </div>
         <RightPanel />

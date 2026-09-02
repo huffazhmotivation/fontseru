@@ -4,6 +4,7 @@ import { AlignHorizontalSpaceAround, Layers3, Loader2, MoveHorizontal, Redo2, Ro
 import { NumericInput } from "@/components/NumericInput";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
+import { UPPER_TEST, LOWER_TEST, NUMBERS_TEST, PUNCTUATION_TEST, SYMBOL_TEST } from "@/glyph/testSentences";
 import { GlyphRun } from "@/editor/GlyphRun";
 import { GlyphThumbnail } from "@/components/GlyphThumbnail";
 import { caretX, fallbackAdvance, layoutLine, nearestCaretColumn, type LineLayout } from "@/editor/textLayout";
@@ -45,8 +46,6 @@ const TESTS: { id: TestId; label: string }[] = [
   { id: "all", label: "All Glyphs" },
 ];
 
-const PUNCTUATION_TEST = (GLYPH_GROUPS.find((group) => group.id === "punct")?.chars ?? []).join(" ");
-const SYMBOL_TEST = (GLYPH_GROUPS.find((group) => group.id === "symbols")?.chars ?? []).join(" ");
 const ALL_GLYPHS_TEST = GLYPH_GROUPS.map((group) => group.chars.join("")).join("\n");
 const KERNING_TEST_LINES = ["AV AV AV", "VA VA VA", "To To To", "Ta Ta Ta", "Ty Ty Ty", "WA WA WA", "Yo Yo Yo", "LT LT LT", "LY LY LY"];
 const PANGRAM_LINES = [
@@ -345,6 +344,7 @@ function EditableStage({
                 text={wrappedLine.text || " "}
                 fontSizePx={fontSize}
                 trackingUnits={tracking}
+                ghostEmpty
                 colorForIndex={(index) =>
                   isDragging && rowActive === index ? "var(--accent)" : undefined
                 }
@@ -932,6 +932,7 @@ function FamilyStylePreview({
                     trackingUnits={tracking}
                     glyphsOverride={glyphs}
                     kerningPairsOverride={kerningPairs}
+                    ghostEmpty
                     colorForIndex={(index) =>
                       isDragging && activeIndex === index ? "var(--accent)" : undefined
                     }
@@ -1485,9 +1486,9 @@ export function SpecimenPanel() {
   const presetText = (id: TestId): string | null => {
     switch (id) {
       case "type": return "";
-      case "upper": return "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-      case "lower": return "abcdefghijklmnopqrstuvwxyz";
-      case "numbers": return "0123456789";
+      case "upper": return UPPER_TEST;
+      case "lower": return LOWER_TEST;
+      case "numbers": return NUMBERS_TEST;
       case "punctuation": return PUNCTUATION_TEST;
       case "symbol": return SYMBOL_TEST;
       case "multilingual": return multilingualText || "Draw or compose multilingual glyphs first.";

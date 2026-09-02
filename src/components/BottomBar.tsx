@@ -1,4 +1,4 @@
-import { Grid3x3, Ruler, Ghost, Magnet, Wand2, Maximize2, RotateCcw, Minus, Plus } from "lucide-react";
+import { Grid3x3, Ruler, Ghost, Magnet, Wand2, Maximize2, RotateCcw, Minus, Plus, Eye } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { NumericInput } from "./NumericInput";
 
@@ -22,6 +22,8 @@ export function BottomBar() {
   const toggleSnap = useAppStore((s) => s.toggleSnap);
   const autoSpacingEnabled = useAppStore((s) => s.autoSpacingEnabled);
   const setAutoSpacingEnabled = useAppStore((s) => s.setAutoSpacingEnabled);
+  const productionPreviewOpen = useAppStore((s) => s.productionPreviewOpen);
+  const toggleProductionPreview = useAppStore((s) => s.toggleProductionPreview);
   const fitGlyph = useAppStore((s) => s.fitGlyph);
   const resetView = useAppStore((s) => s.resetView);
 
@@ -59,6 +61,15 @@ export function BottomBar() {
         data-testid="toggle-auto-metrik"
       >
         <Wand2 size={13} /> Auto Metrik
+      </button>
+
+      <button
+        className={productionPreviewOpen ? "on" : ""}
+        onClick={toggleProductionPreview}
+        title="Tampilkan/sembunyikan preview satu kalimat pakai font yang lagi digambar"
+        data-testid="toggle-production-preview"
+      >
+        <Eye size={13} /> Preview
       </button>
 
       {tool === "pen" && penMode === "line" && (

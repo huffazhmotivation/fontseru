@@ -1,5 +1,5 @@
 import { useAppStore } from "@/glyph/store";
-import type { GlyphMap } from "@/types/glyph";
+import { hasOutline, type GlyphMap } from "@/types/glyph";
 import type { KerningPairs } from "@/types/kerning";
 import { layoutLine } from "./textLayout";
 import { getGlyphPaths } from "./glyphPaths";
@@ -29,6 +29,16 @@ interface GlyphRunProps {
   glyphsOverride?: GlyphMap;
   /** Additive Test Lab escape hatch: render an effective Shared + Style Override view. */
   kerningPairsOverride?: KerningPairs;
+  /**
+   * Test Lab only: when a character has no glyph yet (or a glyph with an
+   * empty outline — nothing drawn), render a faint placeholder ("ghost")
+   * instead of leaving invisible blank space. Purely a preview aid — it
+   * reads no data that export doesn't already ignore, and it never touches
+   * the glyph/outline model, so undrawn glyphs still export empty exactly
+   * as before. Defaults to off so every other GlyphRun caller (main editor
+   * canvas, thumbnails, etc.) renders exactly as it always has.
+   */
+  ghostEmpty?: boolean;
 }
 
 export function GlyphRun({
@@ -40,6 +50,7 @@ export function GlyphRun({
   colorForIndex,
   glyphsOverride,
   kerningPairsOverride,
+  ghostEmpty = false,
 }: GlyphRunProps) {
   const storeGlyphs = useAppStore((s) => s.glyphs);
   const metrics = useAppStore((s) => s.metrics);
@@ -68,28 +79,56 @@ export function GlyphRun({
       aria-label={text}
     >
       <g fill={color} stroke={color}>
-        {placed.map(({ char, x }, i) => {
+        {placed.map(({ char, x, advance }, i) => {
           const g = glyphs[char];
-          if (!g) return null;
           const glyphColor = colorForIndex?.(i, char) ?? color;
-          const paths = getGlyphPaths(g, ascender);
+
+          if (g && hasOutline(g)) {
+            const paths = getGlyphPaths(g, ascender);
+            return (
+              <g key={i} transform={`translate(${x} 0)`} fill={glyphColor} stroke={glyphColor}>
+                {paths.map((entry) =>
+                  entry.kind === "stroke" ? (
+                    <path
+                      key={entry.id}
+                      d={entry.d}
+                      fill="none"
+                      stroke={glyphColor}
+                      strokeWidth={entry.strokeWidth}
+                      strokeLinecap={entry.cap as "round" | "butt" | "square"}
+                      strokeLinejoin={entry.join as "round" | "miter" | "bevel"}
+                    />
+                  ) : (
+                    <path key={entry.id} d={entry.d} fill={glyphColor} fillRule="nonzero" stroke="none" />
+                  )
+                )}
+              </g>
+            );
+          }
+
+          // No outline drawn yet. Left as `return null` this used to just
+          // vanish — correct spacing (layoutLine already reserves the right
+          // advance) but visually indistinguishable from "this character
+          // doesn't exist", which is what confused users in Test Lab. When
+          // ghostEmpty is on, show a faint placeholder glyph purely for
+          // preview; it carries no outline data, so Export (which reads
+          // glyph.outline directly) still produces an empty glyph exactly
+          // as before.
+          if (!ghostEmpty || char === " ") return null;
           return (
-            <g key={i} transform={`translate(${x} 0)`} fill={glyphColor} stroke={glyphColor}>
-              {paths.map((entry) =>
-                entry.kind === "stroke" ? (
-                  <path
-                    key={entry.id}
-                    d={entry.d}
-                    fill="none"
-                    stroke={glyphColor}
-                    strokeWidth={entry.strokeWidth}
-                    strokeLinecap={entry.cap as "round" | "butt" | "square"}
-                    strokeLinejoin={entry.join as "round" | "miter" | "bevel"}
-                  />
-                ) : (
-                  <path key={entry.id} d={entry.d} fill={glyphColor} fillRule="nonzero" stroke="none" />
-                )
-              )}
+            <g key={i} transform={`translate(${x} 0)`} opacity={0.32} style={{ pointerEvents: "none" }}>
+              <text
+                x={advance / 2}
+                y={ascender}
+                textAnchor="middle"
+                fontFamily="'Helvetica Neue', Arial, sans-serif"
+                fontStyle="italic"
+                fontSize={ascender * 0.72}
+                fill={glyphColor}
+                stroke="none"
+              >
+                {char}
+              </text>
             </g>
           );
         })}
