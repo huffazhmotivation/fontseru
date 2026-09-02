@@ -542,28 +542,24 @@ export function GlyphCanvas() {
           .grid-line { stroke: var(--grid); stroke-width: ${1 / sc}; }
           .grid-major { stroke: var(--grid-major); stroke-width: ${1 / sc}; }
           .guide-line { stroke: var(--guide); stroke-width: ${1 / sc}; stroke-dasharray: ${5 / sc} ${5 / sc}; }
-          .metric-guide { opacity: 0.85; transition: opacity 120ms ease; }
-          .metric-guide .metric-guide-line { stroke-width: ${1.2 / sc}; stroke-dasharray: ${5 / sc} ${5 / sc}; }
-          /* Each metric line gets its own hue (same convention as Glyphs/
-             FontLab) so ascender/cap/x-height/baseline/descender can be
-             told apart at a glance instead of all reading as "gray dash". */
-          .metric-guide.metric-ascender .metric-guide-line { stroke: var(--guide-ascender); stroke-width: ${1.3 / sc}; }
-          .metric-guide.metric-cap .metric-guide-line { stroke: var(--guide-cap); stroke-width: ${1.3 / sc}; }
-          .metric-guide.metric-xheight .metric-guide-line { stroke: var(--guide-xheight); stroke-width: ${1.3 / sc}; stroke-dasharray: ${2 / sc} ${4 / sc}; }
-          .metric-guide.metric-baseline .metric-guide-line { stroke: var(--guide-baseline); stroke-width: ${1.5 / sc}; stroke-dasharray: none; }
-          .metric-guide.metric-descender .metric-guide-line { stroke: var(--guide-descender); }
+          .metric-guide { opacity: 0.72; transition: opacity 120ms ease; }
+          .metric-guide .metric-guide-line { stroke-width: ${1 / sc}; stroke-dasharray: ${5 / sc} ${5 / sc}; }
+          .metric-guide.metric-ascender .metric-guide-line { stroke: var(--guide-2); stroke-width: ${1.3 / sc}; }
+          .metric-guide.metric-cap .metric-guide-line { stroke: var(--guide); stroke-width: ${1.3 / sc}; }
+          .metric-guide.metric-xheight .metric-guide-line { stroke: var(--guide); stroke-width: ${1.3 / sc}; stroke-dasharray: ${2 / sc} ${4 / sc}; }
+          .metric-guide.metric-baseline .metric-guide-line { stroke: var(--accent); stroke-width: ${1.35 / sc}; }
+          .metric-guide.metric-descender .metric-guide-line { stroke: var(--guide-2); }
+          /* Ascender / Cap Height / x-Height read as too faint at a glance —
+             nudge their contrast up a bit while keeping them subtle and
+             leaving position, values, and behavior untouched. */
+          .metric-guide.metric-ascender, .metric-guide.metric-cap, .metric-guide.metric-xheight { opacity: 0.9; }
           .metric-guide:hover, .metric-guide.active { opacity: 1; }
-          .metric-guide:hover .metric-guide-line, .metric-guide.active .metric-guide-line { stroke-width: ${1.9 / sc}; }
+          .metric-guide:hover .metric-guide-line, .metric-guide.active .metric-guide-line { stroke-width: ${1.8 / sc}; }
           .metric-guide-hit { stroke: transparent; stroke-width: ${12 / sc}; cursor: ns-resize; pointer-events: stroke; }
-          .metric-guide.locked { opacity: 0.5; }
+          .metric-guide.locked { opacity: 0.52; }
           .metric-guide.locked .metric-guide-hit { pointer-events: none; cursor: default; }
           .metric-guide-value-bg { fill: var(--canvas); stroke: var(--accent); stroke-width: ${1 / sc}; opacity: 0.96; }
           .metric-guide-value { fill: var(--text); font-size: ${11 / sc}px; font-family: var(--mono); }
-          /* x=0: the true left edge of the glyph box (not draggable — it's
-             the coordinate origin). Solid + neutral so it reads as a fixed
-             boundary, distinct from the dashed/colored LSB ink-margin line. */
-          .box-edge-line { stroke: var(--box-edge); stroke-width: ${1.4 / sc}; opacity: 0.55; }
-          .box-edge-label { fill: var(--text-dim); font-size: ${10 / sc}px; font-family: var(--mono); pointer-events: none; }
           .lsb-line, .rsb-line { stroke: var(--guide-2); stroke-width: ${1 / sc}; opacity: 0.7; }
           .glyph-metric-guide-line { stroke: var(--guide-2); stroke-width: ${1 / sc}; stroke-dasharray: ${5 / sc} ${5 / sc}; opacity: 0.78; }
           .glyph-metric-guide-line.advance { stroke: var(--accent); stroke-width: ${1.35 / sc}; }
@@ -795,12 +791,6 @@ export function GlyphCanvas() {
           ];
           return (
             <>
-              {/* Box left edge (x=0) — the actual glyph-box boundary, fixed
-                  by definition. LSB is a gap measured FROM this line to the
-                  ink, not the box edge itself, so it gets its own distinct
-                  solid/neutral treatment instead of sharing the LSB style. */}
-              <line x1={0} y1={vbY} x2={0} y2={vbY + vbH} className="box-edge-line" pointerEvents="none" />
-              <text x={4 / sc} y={vbY + 12 / sc} className="box-edge-label">0</text>
               <line x1={lsbXView} y1={vbY} x2={lsbXView} y2={vbY + vbH} className="glyph-metric-guide-line" pointerEvents="none" />
               <line x1={advanceXView} y1={vbY} x2={advanceXView} y2={vbY + vbH} className="glyph-metric-guide-line advance" pointerEvents="none" />
               {guides.map((guide) => {
