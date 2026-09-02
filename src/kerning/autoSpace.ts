@@ -1,7 +1,7 @@
 import type { Glyph, GlyphMap } from "@/types/glyph";
 import { hasOutline } from "@/types/glyph";
 import type { FontMetrics } from "@/types/font";
-import { outlineBounds } from "@/editor/objectOps";
+import { outlineBounds, translateObject } from "@/editor/objectOps";
 import { inkExtentAtY } from "./autoKern";
 
 /**
@@ -32,6 +32,45 @@ const OPTICAL_COMPENSATION = 0.6; // how much of the recession to trade back
 export interface GlyphSpacingSuggestion {
   lsb: number;
   rsb: number;
+}
+
+/**
+ * Applies a `GlyphSpacingSuggestion` by anchoring to the outline's ACTUAL
+ * current geometry (`outlineBounds`), not the glyph's previously stored
+ * `lsb`/`rsb` fields.
+ *
+ * This distinction matters: the stored fields are only guaranteed accurate
+ * immediately after a prior optical-spacing pass (or a manual LSB/RSB
+ * handle drag, which always keeps them in sync by construction). The moment
+ * a shape is drawn fresh with the Pen/Shape/Brush tool, pasted, or dragged,
+ * its real ink can land anywhere on the canvas — completely independent of
+ * whatever `lsb` a previous glyph (or the default template) happened to
+ * leave behind. Computing a translation as `target - glyph.lsb` in that
+ * case moves the outline by a essentially arbitrary/stale amount instead of
+ * to the target position, which reads as "barely moves" or "doesn't
+ * reposition itself" — exactly the live Auto Spacing bug this fixes.
+ * Deriving the translation from the outline's real bounding box instead
+ * makes the result correct regardless of how the ink got there.
+ */
+export function applyOpticalSidebearings(glyph: Glyph, suggestion: GlyphSpacingSuggestion): Glyph {
+  const bounds = outlineBounds(glyph.outline);
+  if (!bounds) {
+    // No ink to anchor a translation to — just keep the metric fields
+    // consistent with the suggestion so they're correct the moment ink
+    // does appear, without touching advance/outline (nothing to move).
+    return { ...glyph, lsb: Math.round(suggestion.lsb), rsb: Math.round(suggestion.rsb) };
+  }
+  const lsb = Math.round(suggestion.lsb);
+  const rsb = Math.round(suggestion.rsb);
+  const inkWidth = bounds.maxX - bounds.minX;
+  const dx = lsb - bounds.minX;
+  return {
+    ...glyph,
+    lsb,
+    rsb,
+    advanceWidth: Math.max(1, Math.round(lsb + inkWidth + rsb)),
+    outline: { objects: glyph.outline.objects.map((o) => translateObject(o, dx, 0)) },
+  };
 }
 
 export function suggestGlyphSidebearings(glyph: Glyph, metrics: FontMetrics): GlyphSpacingSuggestion | null {

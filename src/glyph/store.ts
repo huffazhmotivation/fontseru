@@ -20,7 +20,7 @@ import { composeMultilingualGlyphs, type MultilingualResult } from "@/glyph/mult
 import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext, WordSpacingOverridesByStyle } from "@/types/kerning";
 import { kerningKey, decodeKerningKey, effectiveWordSpacing } from "@/types/kerning";
 import { suggestKerningPair, autoKernAllAvailablePairs } from "@/kerning/autoKern";
-import { autoSpaceAllGlyphs as computeAutoSpaceAllGlyphs, suggestGlyphSidebearings, suggestWordSpacing, type AutoSpaceResult } from "@/kerning/autoSpace";
+import { autoSpaceAllGlyphs as computeAutoSpaceAllGlyphs, suggestGlyphSidebearings, suggestWordSpacing, applyOpticalSidebearings, type AutoSpaceResult } from "@/kerning/autoSpace";
 import type { FeatureBuilderConfig, LigatureRule, AlternateRule, SwashRule, FeatureGlyphRef } from "@/types/opentypeFeatures";
 import { emptyFeatureConfig, nextFeatureRuleId } from "@/types/opentypeFeatures";
 import { nextFeatureGlyphUnicode, buildFeatureGlyph, isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
@@ -1179,13 +1179,16 @@ export const useAppStore = create<AppState>()((set, get) => {
       // every committed outline edit for ANY glyph — finishing a stroke,
       // dragging a node, moving/scaling a shape, pasting a vector, etc. —
       // immediately re-derives LSB/RSB from the freshly-edited ink using
-      // the same optical standard as "Auto Space". Since changing LSB
-      // translates the outline (see applyGlyphMetricPatch), this is also
-      // what keeps a glyph correctly *positioned* the instant it's drawn,
-      // even if it was drawn off-center — not just spaced.
+      // the same optical standard as "Auto Space". `applyOpticalSidebearings`
+      // (unlike `applyGlyphMetricPatch`) anchors the translation to the
+      // outline's ACTUAL current bounding box rather than the glyph's
+      // previously stored lsb/rsb fields, which is what keeps a glyph
+      // correctly *positioned* the instant it's drawn — even freehand, off
+      // to one side, or a totally different size than whatever this glyph
+      // (or the template) last had stored — not just spaced.
       if (autoSpacingEnabled) {
         const suggestion = suggestGlyphSidebearings(nextGlyph, metrics);
-        if (suggestion) nextGlyph = applyGlyphMetricPatch(nextGlyph, suggestion);
+        if (suggestion) nextGlyph = applyOpticalSidebearings(nextGlyph, suggestion);
       }
       commit({ ...glyphs, [char]: nextGlyph });
       set({ liveOutline: null });
@@ -1709,7 +1712,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       // of jumping to 100% while the re-kern pass silently continues.
       const { first: spacingProgress, second: kernProgress } = splitProgress(onProgress, reKernAfter);
 
-      const result = await computeAutoSpaceAllGlyphs(glyphs, metrics, applyGlyphMetricPatch, excludeChars, spacingProgress);
+      const result = await computeAutoSpaceAllGlyphs(glyphs, metrics, applyOpticalSidebearings, excludeChars, spacingProgress);
       if (result.updated > 0) commit(result.glyphs);
       set({ autoSpaceLastRun: { updated: result.updated, skipped: result.skipped, skippedManual: result.skippedManual } });
 
@@ -1779,7 +1782,7 @@ export const useAppStore = create<AppState>()((set, get) => {
 
       const { first: spacingProgress, second: kernProgress } = splitProgress(onProgress, reKernAfter);
 
-      const result = await computeAutoSpaceAllGlyphs(styleGlyphs, state.metrics, applyGlyphMetricPatch, excludeChars, spacingProgress);
+      const result = await computeAutoSpaceAllGlyphs(styleGlyphs, state.metrics, applyOpticalSidebearings, excludeChars, spacingProgress);
       if (result.updated > 0) commitStyleGlyphs(targetStyle, result.glyphs);
       set({ autoSpaceLastRun: { updated: result.updated, skipped: result.skipped, skippedManual: result.skippedManual } });
 
@@ -2069,7 +2072,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       let nextGlyph: Glyph = { ...glyph, outline };
       if (state.autoSpacingEnabled) {
         const suggestion = suggestGlyphSidebearings(nextGlyph, state.metrics);
-        if (suggestion) nextGlyph = applyGlyphMetricPatch(nextGlyph, suggestion);
+        if (suggestion) nextGlyph = applyOpticalSidebearings(nextGlyph, suggestion);
       }
       const nextRegular: GlyphMap = { ...regularGlyphs, [char]: nextGlyph };
       const nextFamily: GlyphFamily = { ...state.glyphsByStyle, regular: nextRegular };
