@@ -1021,6 +1021,37 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
   border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px var(--accent);
 }
 
+/* ------------------------------------------------------------------ CANVAS PAPER
+   Pro font/vector editors (Glyphs, FontLab, RoboFont) keep the glyph
+   drawing surface light/paper-colored even when the app chrome is dark —
+   judging letterform shape and contrast only works against something
+   close to the eventual printed/rendered background. This scopes a fixed
+   light palette to just the canvas frame (and everything inside the SVG),
+   regardless of the app-wide light/dark theme toggle. It does not leak
+   outside .fm-canvas-frame, so panels/toolbars keep their own theme. */
+.fm-canvas-frame {
+  --canvas: #fbfbf9;
+  --ink: #14181c;
+  --grid: #e6e8ea;
+  --grid-major: #cfd3d6;
+  --guide: #aab0b6;
+  --guide-2: #b79a4e;
+  --handle-line: #a9aeb4;
+  --node-corner: #6d747b;
+  --node-smooth: #1f8fce;
+  --node-symmetric: #7b45d6;
+  --accent-soft: #eaedf0;
+  --accent: #5b8a17;
+  --accent-2: #46700f;
+  --overlap: #7cb305;
+  --box-edge: #2b2f33;
+  --guide-ascender: #8b5cf6;
+  --guide-cap: #2563eb;
+  --guide-xheight: #0d9488;
+  --guide-baseline: #dc2626;
+  --guide-descender: #d97706;
+}
+
 /* ------------------------------------------------------------------ CANVAS */
 .fm-canvas-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
 .fm-canvas-area { flex: 1; min-height: 0; padding: 20px; display: flex; position: relative; }
