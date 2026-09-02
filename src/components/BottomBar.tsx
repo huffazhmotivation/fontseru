@@ -1,4 +1,4 @@
-import { Grid3x3, Ruler, Ghost, Magnet, Maximize2, RotateCcw, Minus, Plus } from "lucide-react";
+import { Grid3x3, Ruler, Ghost, Magnet, Wand2, Maximize2, RotateCcw, Minus, Plus } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { NumericInput } from "./NumericInput";
 
@@ -20,6 +20,8 @@ export function BottomBar() {
   const setGhost = useAppStore((s) => s.setGhost);
   const snapEnabled = useAppStore((s) => s.snapEnabled);
   const toggleSnap = useAppStore((s) => s.toggleSnap);
+  const autoSpacingEnabled = useAppStore((s) => s.autoSpacingEnabled);
+  const setAutoSpacingEnabled = useAppStore((s) => s.setAutoSpacingEnabled);
   const fitGlyph = useAppStore((s) => s.fitGlyph);
   const resetView = useAppStore((s) => s.resetView);
 
@@ -45,6 +47,19 @@ export function BottomBar() {
       <button className={showGuides ? "on" : ""} onClick={toggleGuides} data-testid="toggle-guides"><Ruler size={13} /> Guides</button>
       <button className={ghost.enabled ? "on" : ""} onClick={() => setGhost({ enabled: !ghost.enabled })} data-testid="toggle-ghost"><Ghost size={13} /> Ghost</button>
       <button className={snapEnabled ? "on" : ""} onClick={toggleSnap} title="Snap objects to guide lines" data-testid="toggle-snap"><Magnet size={13} /> Snap</button>
+      {/* Same "Auto" toggle as Glyph Metrics' Spacing mode, mirrored here so
+          it stays visible and reachable no matter which tool is active —
+          previously it only showed up under the Home tool, so switching to
+          Pen/Shape/Brush to actually draw hid the only place that showed
+          (or let you fix) whether Auto was on. One flag, two switches. */}
+      <button
+        className={autoSpacingEnabled ? "on" : ""}
+        onClick={() => setAutoSpacingEnabled(!autoSpacingEnabled)}
+        title="Auto Metrik: posisi, LSB, RSB & advance width tiap glyph mengikuti bentuk outline-nya sendiri secara otomatis setiap kali digambar/diedit."
+        data-testid="toggle-auto-metrik"
+      >
+        <Wand2 size={13} /> Auto Metrik
+      </button>
 
       {tool === "pen" && penMode === "line" && (
         <div className="fm-inline-field">

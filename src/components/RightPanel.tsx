@@ -372,8 +372,8 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
   return (
     <Section title="Glyph Metrics">
       <div className="fm-field">
-        <label>Spacing mode (whole font)</label>
-        <div className="fm-node-type-row fm-spacing-mode" role="group" aria-label="LSB/RSB spacing mode">
+        <label>Auto Metrik (whole font)</label>
+        <div className="fm-node-type-row fm-spacing-mode" role="group" aria-label="Auto Metrik mode">
           <button
             className={`fm-node-type-btn ${!isAuto ? "active" : ""}`}
             onClick={() => setAutoSpacingEnabled(false)}
@@ -385,7 +385,7 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
             className={`fm-node-type-btn fm-spacing-auto-btn ${isAuto ? "active" : ""}`}
             onClick={() => setAutoSpacingEnabled(true)}
             data-testid="spacing-mode-auto"
-            title="Every glyph's LSB/RSB — and position — follows this glyph's outline automatically, using FontSeru's Pro optical-spacing standard."
+            title="Every glyph's position, LSB, RSB, and advance width follow its own outline automatically, using FontSeru's Pro optical-spacing standard. Also mirrored as the 'Auto Metrik' toggle in the bottom bar, next to Snap, so it stays reachable from any tool."
           >
             <span className="fm-spacing-auto-dot" aria-hidden="true" />
             Auto
@@ -443,8 +443,8 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
 
       <div className="fm-hint">
         {isAuto
-          ? "Auto is ON for the whole font: every glyph's LSB/RSB — and horizontal position — is recomputed to FontSeru's Pro optical-spacing standard the moment you draw or edit it, so a glyph drawn off-center still lands correctly. Dragging a handle or typing a value switches back to Manual."
-          : "Manual: drag the LSB / Advance / RSB handles on the canvas, or type exact values above. Switch to Auto to keep every glyph's spacing and position in sync automatically as you draw."}
+          ? "Auto Metrik is ON for the whole font: every glyph's horizontal position, LSB, RSB, and advance width are recomputed together from that glyph's own outline — using FontSeru's Pro optical-spacing standard — the instant you draw or edit it, so a glyph drawn off-center or off-size still lands correctly. Dragging a handle or typing a value switches back to Manual."
+          : "Manual: drag the LSB / Advance / RSB handles on the canvas, or type exact values above. Switch back to Auto Metrik (here or in the bottom bar) to keep every glyph's position, spacing, and width in sync automatically as you draw."}
       </div>
     </Section>
   );

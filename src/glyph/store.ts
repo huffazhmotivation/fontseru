@@ -1413,7 +1413,11 @@ export const useAppStore = create<AppState>()((set, get) => {
         return o;
       });
       const objects = [...glyph.outline.objects, ...pasted];
-      commit({ ...glyphs, [activeChar]: { ...glyph, outline: { objects } } });
+      // Route through commitOutline (not a raw commit()) so a pasted vector
+      // gets the same live Auto Spacing pass as drawing/dragging does —
+      // otherwise a shape pasted at an arbitrary position just sits there
+      // with stale LSB/RSB instead of being re-centered on its own ink.
+      get().commitOutline(activeChar, { objects });
       // After landing in this glyph, treat it as the new clipboard "home" so
       // a repeated paste here nudges (avoiding an invisible exact-stack)
       // instead of re-pasting on top of the shape we just placed.
@@ -1437,7 +1441,12 @@ export const useAppStore = create<AppState>()((set, get) => {
       const glyph = glyphs[activeChar];
       if (!glyph || objects.length === 0) return;
       const merged = [...glyph.outline.objects, ...objects];
-      commit({ ...glyphs, [activeChar]: { ...glyph, outline: { objects: merged } } });
+      // Same reasoning as pasteClipboard: this is the entry point for
+      // OS-clipboard SVG paste (Illustrator/Affinity/etc.) and manual SVG
+      // import, both of which can land at an arbitrary position/size — go
+      // through commitOutline so Auto Spacing immediately re-centers and
+      // re-derives LSB/RSB from the freshly-inserted ink.
+      get().commitOutline(activeChar, { objects: merged });
       set({ tool: "select", selectedObjectIds: objects.map((o) => o.id), selectedNodes: [], selectedHandle: null });
     },
 
@@ -2051,7 +2060,18 @@ export const useAppStore = create<AppState>()((set, get) => {
       const regularGlyphs = state.glyphsByStyle.regular;
       const glyph = regularGlyphs[char];
       if (!glyph) return;
-      const nextRegular: GlyphMap = { ...regularGlyphs, [char]: { ...glyph, outline } };
+      // Same live Auto Spacing pass commitOutline runs for hand-drawn/pasted
+      // edits, applied here too: Trace Image (single-letter Apply and bulk
+      // worksheet import) is just another way a vector lands in a glyph,
+      // and its centering (fitTracedObjectsToGlyph) only scales to cap
+      // height + centers in the advance box — it doesn't derive LSB/RSB
+      // from the traced ink's own optical recess the way Auto Spacing does.
+      let nextGlyph: Glyph = { ...glyph, outline };
+      if (state.autoSpacingEnabled) {
+        const suggestion = suggestGlyphSidebearings(nextGlyph, state.metrics);
+        if (suggestion) nextGlyph = applyGlyphMetricPatch(nextGlyph, suggestion);
+      }
+      const nextRegular: GlyphMap = { ...regularGlyphs, [char]: nextGlyph };
       const nextFamily: GlyphFamily = { ...state.glyphsByStyle, regular: nextRegular };
       set({
         glyphsByStyle: nextFamily,
