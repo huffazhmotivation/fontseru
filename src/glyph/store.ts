@@ -343,11 +343,16 @@ interface AppState {
   beginGlyphMetricDrag: () => void;
   setGlyphMetricLive: (char: string, key: GlyphMetricKey, value: number, scope?: GlyphMetricScope) => void;
   endGlyphMetricDrag: () => void;
-  /** Turns "Auto" spacing on/off for one glyph. Turning it on immediately
-   * snaps LSB/RSB to the Pro optical-spacing standard for the glyph's
-   * current outline (same math as "Auto Space" for the whole font); turning
-   * it off just stops future outline edits from re-triggering that snap. */
-  setGlyphAutoSpacing: (char: string, enabled: boolean) => void;
+  /** Font-wide "Auto Spacing" master switch. When ON, every drawn/edited
+   * glyph's LSB/RSB (and, via LSB's translate-the-outline behavior, its
+   * horizontal position) is kept in sync with the Pro optical-spacing
+   * standard automatically — for EVERY glyph, not just the one currently
+   * open, so switching glyphs never requires re-enabling it. Turning it on
+   * also immediately re-spaces every glyph already drawn (same pass as the
+   * "Auto Space" action), so existing off-position glyphs snap into place
+   * right away instead of waiting for their next edit. */
+  autoSpacingEnabled: boolean;
+  setAutoSpacingEnabled: (enabled: boolean) => void;
   commitOutline: (char: string, outline: GlyphOutline) => void;
   setLiveOutline: (outline: GlyphOutline | null) => void;
   updateSelectedObject: (patch: Partial<VectorObject>) => void;
@@ -765,6 +770,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     brush: { type: "monoline", ...BRUSH_PRESETS.monoline.settings },
     glyphMetricScope: "current",
     glyphMetricFocus: null,
+    autoSpacingEnabled: false,
 
     glyphs: initialRegular,
     glyphsByStyle: initialFamily,
@@ -857,6 +863,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         clipboardSourceChar: null,
         glyphMetricScope: "current",
         glyphMetricFocus: null,
+        autoSpacingEnabled: false,
         past: [],
         future: [],
       });
@@ -1121,33 +1128,27 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     setGlyphMetricLive: (char, key, value, scope) => {
       if (!Number.isFinite(value)) return;
-      const { glyphs, glyphsByStyle, fontStyle, glyphMetricScope } = get();
-      // Dragging LSB/RSB by hand is the definition of "Manual" spacing —
-      // switch the glyph out of Auto so the very next outline edit doesn't
-      // immediately snap the handle right back to where it was just moved
-      // from. (Advance-width-only drags don't affect ink margins, so they
-      // don't touch the flag.)
-      let baseGlyphs = glyphs;
-      if ((key === "lsb" || key === "rsb") && glyphs[char]?.autoSpacing) {
-        baseGlyphs = { ...glyphs, [char]: { ...glyphs[char], autoSpacing: false } };
-      }
-      const nextGlyphs = applyGlyphMetricToMap(baseGlyphs, char, { [key]: value }, scope ?? glyphMetricScope);
+      const { glyphs, glyphsByStyle, fontStyle, glyphMetricScope, autoSpacingEnabled } = get();
+      // Dragging LSB/RSB by hand is the definition of "Manual" — flip the
+      // font-wide Auto switch off so this deliberate tweak doesn't get
+      // immediately overwritten the next time ANY glyph's outline commits.
+      // (Advance-width-only drags don't move ink margins, so they don't
+      // touch the switch.)
+      const nextGlyphs = applyGlyphMetricToMap(glyphs, char, { [key]: value }, scope ?? glyphMetricScope);
       set({
         glyphs: nextGlyphs,
         glyphsByStyle: { ...glyphsByStyle, [fontStyle]: nextGlyphs },
+        autoSpacingEnabled: (key === "lsb" || key === "rsb") && autoSpacingEnabled ? false : autoSpacingEnabled,
       });
     },
 
-    setGlyphAutoSpacing: (char, enabled) => {
-      const { glyphs, metrics } = get();
-      const glyph = glyphs[char];
-      if (!glyph) return;
-      let nextGlyph: Glyph = { ...glyph, autoSpacing: enabled };
-      if (enabled) {
-        const suggestion = suggestGlyphSidebearings(nextGlyph, metrics);
-        if (suggestion) nextGlyph = applyGlyphMetricPatch(nextGlyph, suggestion);
-      }
-      commit({ ...glyphs, [char]: nextGlyph });
+    setAutoSpacingEnabled: (enabled) => {
+      set({ autoSpacingEnabled: enabled });
+      // Turning Auto on doesn't just arm it for the *next* edit — it also
+      // immediately re-spaces (and, via LSB, re-positions) every glyph
+      // that's already drawn, the same pass "Auto Space" runs, so nothing
+      // has to wait for its next redraw to snap into place.
+      if (enabled) void get().autoSpaceAllGlyphs();
     },
 
     endGlyphMetricDrag: () => {
@@ -1163,17 +1164,19 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
 
     commitOutline: (char, outline) => {
-      const { glyphs, metrics } = get();
+      const { glyphs, metrics, autoSpacingEnabled } = get();
       const glyph = glyphs[char];
       if (!glyph) return;
       let nextGlyph: Glyph = { ...glyph, outline };
-      // Live Auto Spacing: whenever this glyph is in Auto mode, every
-      // committed outline edit (finishing a stroke, dragging a node,
-      // pasting a vector, etc.) immediately re-derives LSB/RSB from the
-      // freshly-drawn ink using the same optical standard as "Auto Space"
-      // for the whole font — so the sidebearings stay in sync with the
-      // outline without any extra manual step.
-      if (glyph.autoSpacing) {
+      // Live Auto Spacing (font-wide): whenever the master switch is on,
+      // every committed outline edit for ANY glyph — finishing a stroke,
+      // dragging a node, moving/scaling a shape, pasting a vector, etc. —
+      // immediately re-derives LSB/RSB from the freshly-edited ink using
+      // the same optical standard as "Auto Space". Since changing LSB
+      // translates the outline (see applyGlyphMetricPatch), this is also
+      // what keeps a glyph correctly *positioned* the instant it's drawn,
+      // even if it was drawn off-center — not just spaced.
+      if (autoSpacingEnabled) {
         const suggestion = suggestGlyphSidebearings(nextGlyph, metrics);
         if (suggestion) nextGlyph = applyGlyphMetricPatch(nextGlyph, suggestion);
       }

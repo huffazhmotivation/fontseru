@@ -63,6 +63,7 @@ export function GlyphCanvas() {
   const setGlyphMetricLive = useAppStore((s) => s.setGlyphMetricLive);
   const endGlyphMetricDrag = useAppStore((s) => s.endGlyphMetricDrag);
   const setGlyphMetricFocus = useAppStore((s) => s.setGlyphMetricFocus);
+  const autoSpacingEnabled = useAppStore((s) => s.autoSpacingEnabled);
   const glyph = useAppStore((s) => s.glyphs[s.activeChar]);
   const activeChar = useAppStore((s) => s.activeChar);
   const ghost = useAppStore((s) => s.ghost);
@@ -589,8 +590,10 @@ export function GlyphCanvas() {
           .brush-preview { fill: none; stroke: var(--accent); opacity: 0.85; }
           .rubber-line { stroke: var(--accent); stroke-width: ${1.2 / sc}; stroke-dasharray: ${4 / sc} ${3 / sc}; }
           .handle-line { stroke: var(--handle-line); stroke-width: ${1 / sc}; }
+          .handle-line.dim { opacity: 0.4; }
           .handle-dot { fill: var(--canvas); stroke: var(--accent); stroke-width: ${1.4 / sc}; }
           .handle-dot.active { fill: var(--accent); }
+          .handle-dot.dim { opacity: 0.55; }
           .node-shape { stroke-width: ${1.6 / sc}; }
           .node-shape.corner { fill: var(--canvas); stroke: var(--node-corner); }
           .node-shape.smooth { fill: var(--canvas); stroke: var(--node-smooth); }
@@ -794,7 +797,7 @@ export function GlyphCanvas() {
           const lsbXView = clampX(lsbX);
           const advanceXView = clampX(advanceX);
           const originXView = clampX(0);
-          const isAuto = !!glyph.autoSpacing;
+          const isAuto = autoSpacingEnabled;
           const guides: { key: GlyphMetricKey; label: string; value: number; x: number; y: number; advance?: boolean }[] = [
             { key: "lsb", label: "LSB", value: glyph.lsb, x: lsbXView, y: top },
             { key: "advanceWidth", label: "Advance", value: glyph.advanceWidth, x: advanceXView, y: top, advance: true },
@@ -1072,15 +1075,22 @@ const NodesAndHandlesLayer = memo(function NodesAndHandlesLayer({
             contour.nodes.map((node) => {
               const svgP = toSvgPoint(node.point, ascender);
               const isSel = selectedNodes.some((r) => r.contourId === contour.id && r.nodeId === node.id);
-              const showHandles = tool === "node" ? isSel : Boolean(node.handleIn || node.handleOut);
+              // Font editors (Glyphs, FontLab, RoboFont) keep every on-curve
+              // and off-curve handle visible for the whole glyph while the
+              // Node tool is active — not just the selected node's — because
+              // seeing the full curve skeleton at once is how you spot a
+              // stray handle angle elsewhere in the shape. Outside Node tool
+              // (Select/Shape/etc), fall back to "only nodes that actually
+              // have handles" so other tools' overlays stay uncluttered.
+              const showHandles = tool === "node" ? true : Boolean(node.handleIn || node.handleOut);
               return (
                 <g key={node.id}>
                   {showHandles && node.handleIn && (
-                    <HandleGlyph node={node} part="handleIn" ascender={ascender} hitScale={hitScale}
+                    <HandleGlyph node={node} part="handleIn" ascender={ascender} hitScale={hitScale} emphasized={isSel}
                       selected={selectedHandle?.contourId === contour.id && selectedHandle?.nodeId === node.id && selectedHandle?.part === "handleIn"} />
                   )}
                   {showHandles && node.handleOut && (
-                    <HandleGlyph node={node} part="handleOut" ascender={ascender} hitScale={hitScale}
+                    <HandleGlyph node={node} part="handleOut" ascender={ascender} hitScale={hitScale} emphasized={isSel}
                       selected={selectedHandle?.contourId === contour.id && selectedHandle?.nodeId === node.id && selectedHandle?.part === "handleOut"} />
                   )}
                   <NodeShape point={svgP} type={node.type} hitScale={hitScale} selected={isSel} />
@@ -1205,10 +1215,15 @@ const NodeShape = memo(function NodeShape({ point, type, hitScale, selected, gui
 });
 
 const HandleGlyph = memo(function HandleGlyph({
-  node, part, ascender, hitScale, selected,
+  node, part, ascender, hitScale, selected, emphasized = true,
 }: {
   node: { point: Point; handleIn: Point | null; handleOut: Point | null };
   part: "handleIn" | "handleOut"; ascender: number; hitScale: number; selected: boolean;
+  /** Whether this handle's own node is the currently selected one. When
+   * false (drawn only because Node tool shows the whole glyph's skeleton at
+   * once), the line/dot render dimmed so the selected node's own handles —
+   * the ones actually draggable right now — stay the visual focus. */
+  emphasized?: boolean;
 }) {
   const handle = part === "handleIn" ? node.handleIn : node.handleOut;
   if (!handle) return null;
@@ -1216,8 +1231,8 @@ const HandleGlyph = memo(function HandleGlyph({
   const to = toSvgPoint(handle, ascender);
   return (
     <>
-      <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} className="handle-line" />
-      <circle cx={to.x} cy={to.y} r={3.4 * hitScale} className={`handle-dot ${selected ? "active" : ""}`} />
+      <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} className={`handle-line ${emphasized ? "" : "dim"}`} />
+      <circle cx={to.x} cy={to.y} r={3.4 * hitScale} className={`handle-dot ${selected ? "active" : ""} ${emphasized ? "" : "dim"}`} />
     </>
   );
 });

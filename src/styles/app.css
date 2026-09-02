@@ -1363,6 +1363,17 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-node-type-btn:hover { border-color: var(--text-faint); color: var(--text); }
 .fm-node-type-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 
+/* Node inspector: precise numeric X/Y (was read-only) and handle
+   length/angle — the numeric counterpart to dragging on canvas, matching
+   FontLab/Glyphs' node inspector. */
+.fm-node-xy-row { display: flex; gap: 6px; }
+.fm-node-xy-row > * { flex: 1; min-width: 0; }
+.fm-node-handle-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.fm-node-handle-row:first-of-type { margin-top: 0; }
+.fm-node-handle-row > * { flex: 1; min-width: 0; }
+.fm-node-handle-label { flex: 0 0 auto; width: 22px; font-size: 11px; color: var(--text-dim); font-weight: 600; }
+.fm-node-handle-unit { flex: 0 0 auto; width: auto; font-size: 11px; color: var(--text-faint); }
+
 /* Auto/Manual spacing toggle (Glyph Metrics panel): a distinct accent
    (--auto) so it never reads as just another scope button, plus a small
    dot echoing the AUTO badge drawn on the canvas LSB/RSB handles. */

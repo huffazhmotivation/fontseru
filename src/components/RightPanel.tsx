@@ -6,7 +6,7 @@ import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
 import { hasOutline } from "@/types/glyph";
 import type { Glyph } from "@/types/glyph";
 import { unicodeHex } from "@/utils/unicode";
-import { findNode, retypeNode, retypeNodes, deleteNodes } from "@/editor/nodeOps";
+import { findNode, retypeNode, retypeNodes, deleteNodes, moveNodesBy, setHandlePoint } from "@/editor/nodeOps";
 import { objectsBounds, skewObject, scaleObject } from "@/editor/objectOps";
 import { isBooleanEligible, type BooleanOp } from "@/editor/booleanOps";
 import type { NodeType, PathNode, StrokeCap, VectorObject } from "@/types/geometry";
@@ -350,9 +350,9 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
   const setScope = useAppStore((s) => s.setGlyphMetricScope);
   const focus = useAppStore((s) => s.glyphMetricFocus);
   const setFocus = useAppStore((s) => s.setGlyphMetricFocus);
-  const setGlyphAutoSpacing = useAppStore((s) => s.setGlyphAutoSpacing);
+  const isAuto = useAppStore((s) => s.autoSpacingEnabled);
+  const setAutoSpacingEnabled = useAppStore((s) => s.setAutoSpacingEnabled);
   const refs = useRef<Partial<Record<GlyphMetricKey, HTMLInputElement | null>>>({});
-  const isAuto = !!glyph.autoSpacing;
 
   useEffect(() => {
     if (!focus) return;
@@ -372,20 +372,20 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
   return (
     <Section title="Glyph Metrics">
       <div className="fm-field">
-        <label>Spacing mode</label>
+        <label>Spacing mode (whole font)</label>
         <div className="fm-node-type-row fm-spacing-mode" role="group" aria-label="LSB/RSB spacing mode">
           <button
             className={`fm-node-type-btn ${!isAuto ? "active" : ""}`}
-            onClick={() => setGlyphAutoSpacing(char, false)}
+            onClick={() => setAutoSpacingEnabled(false)}
             data-testid="spacing-mode-manual"
           >
             Manual
           </button>
           <button
             className={`fm-node-type-btn fm-spacing-auto-btn ${isAuto ? "active" : ""}`}
-            onClick={() => setGlyphAutoSpacing(char, true)}
+            onClick={() => setAutoSpacingEnabled(true)}
             data-testid="spacing-mode-auto"
-            title="Recomputes LSB/RSB from this glyph's outline (Pro optical-spacing standard) every time you edit it."
+            title="Every glyph's LSB/RSB — and position — follows this glyph's outline automatically, using FontSeru's Pro optical-spacing standard."
           >
             <span className="fm-spacing-auto-dot" aria-hidden="true" />
             Auto
@@ -427,11 +427,11 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
               value={value}
               onChange={(next) => {
                 if (!Number.isFinite(next)) return;
-                // Typing a value by hand is the same "opt into Manual" signal
-                // as dragging the canvas handle — so a number the user just
-                // typed can never get silently overwritten by the next
-                // outline edit.
-                if (isSidebearing && isAuto) setGlyphAutoSpacing(char, false);
+                // Typing a value by hand is the same "switch to Manual"
+                // signal as dragging the canvas handle — so a number the
+                // user just typed can never get silently overwritten by
+                // the next outline edit on this or any other glyph.
+                if (isSidebearing && isAuto) setAutoSpacingEnabled(false);
                 updateGlyphMetrics(char, { [key]: next });
               }}
               onFocus={() => setFocus(null)}
@@ -443,8 +443,8 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
 
       <div className="fm-hint">
         {isAuto
-          ? "Auto: LSB/RSB follow this glyph's outline automatically, using FontSeru's Pro optical-spacing standard, every time you draw or edit it."
-          : "Manual: drag the LSB / Advance / RSB handles on the canvas, or type exact values above. Switch to Auto to let FontSeru keep spacing in sync with the outline for you."}
+          ? "Auto is ON for the whole font: every glyph's LSB/RSB — and horizontal position — is recomputed to FontSeru's Pro optical-spacing standard the moment you draw or edit it, so a glyph drawn off-center still lands correctly. Dragging a handle or typing a value switches back to Manual."
+          : "Manual: drag the LSB / Advance / RSB handles on the canvas, or type exact values above. Switch to Auto to keep every glyph's spacing and position in sync automatically as you draw."}
       </div>
     </Section>
   );
@@ -584,13 +584,57 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
   const node = findNode(glyph.outline, ref.contourId, ref.nodeId);
   if (!node) return null;
 
+  const moveNodeTo = (x: number, y: number) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const dx = x - node.point.x;
+    const dy = y - node.point.y;
+    if (dx === 0 && dy === 0) return;
+    commitOutline(char, moveNodesBy(glyph.outline, [ref], { x: dx, y: dy }));
+  };
+
+  // Handle length/angle: the numeric complement to dragging the handle dot
+  // on canvas — lets a curve's tangent be set to an exact value (e.g. a
+  // perfectly horizontal/vertical handle, or matching another node's
+  // length) the way FontLab/Glyphs' node inspector does, instead of only
+  // ever being eyeballed by dragging.
+  const handleReadout = (part: "handleIn" | "handleOut") => {
+    const h = node[part];
+    if (!h) return null;
+    const dx = h.x - node.point.x;
+    const dy = h.y - node.point.y;
+    const len = Math.hypot(dx, dy);
+    const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+    return { len, angleDeg };
+  };
+
+  const setHandleLengthAngle = (part: "handleIn" | "handleOut", len: number, angleDeg: number) => {
+    if (!Number.isFinite(len) || !Number.isFinite(angleDeg)) return;
+    const rad = (angleDeg * Math.PI) / 180;
+    const nx = node.point.x + Math.cos(rad) * Math.max(0, len);
+    const ny = node.point.y + Math.sin(rad) * Math.max(0, len);
+    commitOutline(char, setHandlePoint(glyph.outline, ref.contourId, ref.nodeId, part, { x: nx, y: ny }, node.type));
+  };
+
+  const handleIn = handleReadout("handleIn");
+  const handleOut = handleReadout("handleOut");
+
   return (
     <Section title="Node">
       <div className="fm-field">
         <label>Position</label>
-        <div style={{ display: "flex", gap: 6 }}>
-          <input type="number" value={Math.round(node.point.x)} readOnly />
-          <input type="number" value={Math.round(node.point.y)} readOnly />
+        <div className="fm-node-xy-row">
+          <NumericInput
+            value={Math.round(node.point.x)}
+            onChange={(x) => moveNodeTo(x, node.point.y)}
+            data-testid="node-pos-x"
+            aria-label="Node X position"
+          />
+          <NumericInput
+            value={Math.round(node.point.y)}
+            onChange={(y) => moveNodeTo(node.point.x, y)}
+            data-testid="node-pos-y"
+            aria-label="Node Y position"
+          />
         </div>
       </div>
       <div className="fm-field">
@@ -604,6 +648,47 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
           ))}
         </div>
       </div>
+      {(handleIn || handleOut) && (
+        <div className="fm-field">
+          <label>Handles (length · angle)</label>
+          {handleIn && (
+            <div className="fm-node-handle-row">
+              <span className="fm-node-handle-label">In</span>
+              <NumericInput
+                value={Math.round(handleIn.len)}
+                onChange={(len) => setHandleLengthAngle("handleIn", len, handleIn.angleDeg)}
+                data-testid="node-handlein-len"
+                aria-label="Handle In length"
+              />
+              <NumericInput
+                value={Math.round(handleIn.angleDeg)}
+                onChange={(deg) => setHandleLengthAngle("handleIn", handleIn.len, deg)}
+                data-testid="node-handlein-angle"
+                aria-label="Handle In angle"
+              />
+              <span className="fm-node-handle-unit">°</span>
+            </div>
+          )}
+          {handleOut && (
+            <div className="fm-node-handle-row">
+              <span className="fm-node-handle-label">Out</span>
+              <NumericInput
+                value={Math.round(handleOut.len)}
+                onChange={(len) => setHandleLengthAngle("handleOut", len, handleOut.angleDeg)}
+                data-testid="node-handleout-len"
+                aria-label="Handle Out length"
+              />
+              <NumericInput
+                value={Math.round(handleOut.angleDeg)}
+                onChange={(deg) => setHandleLengthAngle("handleOut", handleOut.len, deg)}
+                data-testid="node-handleout-angle"
+                aria-label="Handle Out angle"
+              />
+              <span className="fm-node-handle-unit">°</span>
+            </div>
+          )}
+        </div>
+      )}
       <button className="fm-action-btn danger" onClick={() => { commitOutline(char, deleteNodes(glyph.outline, [ref])); clearSelection(); }} data-testid="delete-node-btn">
         <Trash2 size={14} /> Delete Node
       </button>

@@ -183,6 +183,38 @@ export function moveNodesBy(
   return working;
 }
 
+/**
+ * Sets one handle to an exact absolute point — the numeric-input counterpart
+ * to dragging the handle dot on canvas (see useGlyphEditor's "move-handle"
+ * drag). Applies the same mirroring the drag path uses for a non-broken
+ * drag: symmetric nodes keep both handles at equal length/opposite angle,
+ * smooth nodes keep both handles on the same line (independent length),
+ * corner nodes leave the other handle untouched. Lets a curve's tangent be
+ * dialed in to an exact length/angle instead of only ever eyeballed.
+ */
+export function setHandlePoint(
+  outline: GlyphOutline,
+  contourId: string,
+  nodeId: string,
+  part: "handleIn" | "handleOut",
+  point: Point,
+  nodeType: NodeType
+): GlyphOutline {
+  const working = cloneOutline(outline);
+  const node = findNode(working, contourId, nodeId);
+  if (!node) return working;
+  if (part === "handleOut") {
+    node.handleOut = point;
+    if (nodeType === "symmetric") node.handleIn = reflect(point, node.point);
+    else if (nodeType === "smooth" && node.handleIn) node.handleIn = reflectDirection(point, node.point, length(subtract(node.handleIn, node.point)));
+  } else {
+    node.handleIn = point;
+    if (nodeType === "symmetric") node.handleOut = reflect(point, node.point);
+    else if (nodeType === "smooth" && node.handleOut) node.handleOut = reflectDirection(point, node.point, length(subtract(node.handleOut, node.point)));
+  }
+  return working;
+}
+
 export interface SegmentRef {
   contourId: string;
   /** Index of the segment's starting node; runs to the next node (wrapping if closed). */
