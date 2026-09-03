@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useAppStore } from "@/glyph/store";
 import type { ToolId } from "@/types/tool";
 import { pasteSvgFromSystemClipboard } from "@/trace/svgImport";
+import { getOrderedChars } from "@/glyph/defaultGlyphs";
 
 const KEY_TO_TOOL: Record<string, ToolId> = {
   v: "select", p: "pen", y: "pencil", b: "brush", n: "node", h: "hand", z: "zoom",
@@ -22,6 +23,20 @@ async function handlePasteShortcut() {
   }
 }
 
+/**
+ * Moves to the next/previous glyph in the same order GlyphNav/GlyphStepper/
+ * GlyphSideNav already use, so the keyboard shortcut always lands on
+ * whatever the UI's own Prev/Next arrows would.
+ */
+function stepGlyph(direction: 1 | -1) {
+  const s = useAppStore.getState();
+  const ordered = getOrderedChars(s.glyphs);
+  const idx = ordered.indexOf(s.activeChar);
+  const nextIdx = idx + direction;
+  if (idx < 0 || nextIdx < 0 || nextIdx >= ordered.length) return;
+  s.setActiveChar(ordered[nextIdx]);
+}
+
 /** Global shortcuts: tools, undo/redo, clipboard, and object delete/nudge. */
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -33,6 +48,15 @@ export function useKeyboardShortcuts() {
       const s = useAppStore.getState();
       if (s.testLabOpen) return; // Test Lab / Kerning overlay owns keyboard input while open
       const mod = e.metaKey || e.ctrlKey;
+
+      // Next/Prev glyph — Tab / Shift+Tab, matching the Prev/Next chevrons
+      // in GlyphSideNav & GlyphStepper. Works regardless of tool so it never
+      // collides with ArrowLeft/Right (used below to nudge a selection).
+      if (e.key === "Tab" && !mod) {
+        e.preventDefault();
+        stepGlyph(e.shiftKey ? -1 : 1);
+        return;
+      }
 
       if (mod) {
         const k = e.key.toLowerCase();

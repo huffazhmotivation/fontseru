@@ -85,28 +85,99 @@ function polygonArea(pts: Point[]): number {
 // handles. This turns it back into a proper curve: points where the path
 // barely turns get smooth Catmull-Rom-derived handles (so round edges stay
 // round), while points with a sharp turn stay plain corner nodes with no
-// handles (so rectangle corners etc. stay crisp instead of getting rounded
-// off).
+// handles (so rectangle corners, and the real cut edge the boolean op just
+// made, stay crisp instead of getting rounded off).
 const CORNER_TURN_DEG = 28;
 
-function ringToSmoothNodes(ring: Point[]): PathNode[] {
+function turnAngleDeg(prev: Point, p: Point, next: Point): number {
+  const v1x = p.x - prev.x, v1y = p.y - prev.y;
+  const v2x = next.x - p.x, v2y = next.y - p.y;
+  const len1 = Math.hypot(v1x, v1y) || 1e-9;
+  const len2 = Math.hypot(v2x, v2y) || 1e-9;
+  const cosA = Math.min(1, Math.max(-1, (v1x * v2x + v1y * v2y) / (len1 * len2)));
+  return (Math.acos(cosA) * 180) / Math.PI;
+}
+
+/**
+ * Simplifies a clipped ring down to a sparse point set WITHOUT letting the
+ * simplification itself invent fake corners on curves the boolean op never
+ * actually touched.
+ *
+ * Bug this fixes: the previous code ran `simplifyPolyline` (Ramer–Douglas–
+ * Peucker) over the whole ring FIRST, then measured the turn angle between
+ * whatever points survived to decide corner vs. smooth. RDP is free to drop
+ * a long run of points along a shallow, perfectly smooth curve (that's the
+ * point of simplifying) — but once those in-between points are gone, the
+ * turn angle between the two remaining neighbors on that same curve can
+ * easily exceed CORNER_TURN_DEG, even though the original curve never had
+ * a sharp turn anywhere. That's exactly what made an untouched round edge
+ * come out of Subtract as hard, faceted corners: the corner test was being
+ * run on already-decimated points instead of the real curve.
+ *
+ * Fix: classify corner vs. smooth FIRST, on the dense ring straight out of
+ * curve sampling (CLIP_SAMPLE_STEPS points per original curve segment —
+ * fine-grained enough that the turn angle reflects the actual local
+ * curvature, not simplification artifacts). Only genuinely sharp turns —
+ * which is exactly where the front shape's edge actually cut into the back
+ * shape, plus any real corners the original shapes already had — become
+ * fixed corner points. Then simplification runs separately WITHIN each
+ * corner-to-corner run, with both endpoints of every run pinned, so a
+ * curve you never touched keeps exactly the smooth classification (and
+ * shape) it had before the boolean op, while the new cut edge still reads
+ * as the crisp corner it geometrically is.
+ */
+function simplifyRingPreservingCorners(ring: Point[], epsilon: number): { points: Point[]; isCorner: boolean[] } {
   const n = ring.length;
-  if (n < 3) {
-    return ring.map((p) => ({ id: shortId("node"), point: p, handleIn: null, handleOut: null, type: "corner" }));
-  }
-  return ring.map((p, i) => {
+  if (n < 4) return { points: ring, isCorner: ring.map(() => true) };
+
+  const cornerIdx: number[] = [];
+  for (let i = 0; i < n; i++) {
     const prev = ring[(i - 1 + n) % n];
     const next = ring[(i + 1) % n];
-    const v1x = p.x - prev.x, v1y = p.y - prev.y;
-    const v2x = next.x - p.x, v2y = next.y - p.y;
-    const len1 = Math.hypot(v1x, v1y) || 1e-9;
-    const len2 = Math.hypot(v2x, v2y) || 1e-9;
-    const cosA = Math.min(1, Math.max(-1, (v1x * v2x + v1y * v2y) / (len1 * len2)));
-    const turnDeg = (Math.acos(cosA) * 180) / Math.PI;
+    if (turnAngleDeg(prev, ring[i], next) > CORNER_TURN_DEG) cornerIdx.push(i);
+  }
 
-    if (turnDeg > CORNER_TURN_DEG) {
+  if (cornerIdx.length === 0) {
+    // No sharp turns anywhere (e.g. a circle/blob untouched by the cut) —
+    // simplify the whole loop as one run, all points stay "smooth".
+    const simplified = simplifyPolyline(ring, epsilon);
+    return { points: simplified, isCorner: simplified.map(() => false) };
+  }
+
+  const outPoints: Point[] = [];
+  const outCorner: boolean[] = [];
+  for (let k = 0; k < cornerIdx.length; k++) {
+    const startIdx = cornerIdx[k];
+    const endIdx = cornerIdx[(k + 1) % cornerIdx.length];
+    const run: Point[] = [];
+    for (let i = startIdx; ; i = (i + 1) % n) {
+      run.push(ring[i]);
+      if (i === endIdx) break;
+    }
+    const simplifiedRun = run.length > 2 ? simplifyPolyline(run, epsilon) : run;
+    // Drop the run's last point (it's the NEXT corner, appended as that
+    // corner's own run start instead) so it isn't duplicated in the output.
+    for (let j = 0; j < simplifiedRun.length - 1; j++) {
+      outPoints.push(simplifiedRun[j]);
+      outCorner.push(j === 0);
+    }
+  }
+  return { points: outPoints, isCorner: outCorner };
+}
+
+function ringToSmoothNodes(points: Point[], isCorner: boolean[]): PathNode[] {
+  const n = points.length;
+  if (n < 3) {
+    return points.map((p) => ({ id: shortId("node"), point: p, handleIn: null, handleOut: null, type: "corner" }));
+  }
+  return points.map((p, i) => {
+    if (isCorner[i]) {
       return { id: shortId("node"), point: p, handleIn: null, handleOut: null, type: "corner" as const };
     }
+    const prev = points[(i - 1 + n) % n];
+    const next = points[(i + 1) % n];
+    const len1 = Math.hypot(p.x - prev.x, p.y - prev.y) || 1e-9;
+    const len2 = Math.hypot(next.x - p.x, next.y - p.y) || 1e-9;
 
     // Standard 1/6 Catmull-Rom-to-Bezier tangent, clamped to half the
     // shorter neighboring segment so handles never overshoot on uneven
@@ -207,8 +278,8 @@ export function applyBooleanOp(objectsInZOrder: VectorObject[], op: BooleanOp): 
     const wantPositive = depths[idx] % 2 === 0;
     const area = polygonArea(ring);
     const oriented = (area > 0) === wantPositive ? ring : [...ring].reverse();
-    const simplified = simplifyPolyline(oriented, ringSimplifyTolerance(oriented));
-    const nodes: PathNode[] = ringToSmoothNodes(simplified);
+    const { points, isCorner } = simplifyRingPreservingCorners(oriented, ringSimplifyTolerance(oriented));
+    const nodes: PathNode[] = ringToSmoothNodes(points, isCorner);
     return { id: shortId("contour"), nodes, closed: true };
   });
 

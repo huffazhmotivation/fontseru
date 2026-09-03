@@ -7,6 +7,9 @@ import type { ShapeKind } from "@/editor/shapeBuilder";
 
 // Floating toolbar order (left → right):
 // Home → Select → Node → Pen → Pencil → Shape → Brush → Trace Image → Zoom → Hand
+// Pencil sits immediately to the right of Pen — Shape's popover button is
+// injected right after Pencil (not Pen) so it never wedges itself between
+// the two.
 // Eraser / Import remain implemented (used elsewhere / kept for future
 // phases) but are intentionally not shown in this toolbar.
 const GROUPS: ToolConfig[][] = [
@@ -156,7 +159,7 @@ export function FloatingToolbar() {
                   )}
                   <span className="fm-tool-tip">{t.label}{t.key ? ` · ${t.key}` : ""}{!enabled ? " (soon)" : locked ? " (PRO)" : ""}</span>
                 </button>
-                {t.id === "pen" && gi === 1 && <ShapeToolButton />}
+                {t.id === "pencil" && gi === 1 && <ShapeToolButton />}
               </Fragment>
             );
           })}

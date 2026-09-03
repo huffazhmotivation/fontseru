@@ -390,7 +390,13 @@ export function samplesToCenterline(rawSamples: StrokeSample[], settings: BrushS
   if (windowRadius > 0) {
     smoothed = movingAverage(smoothed, Math.max(1, Math.round(windowRadius * 0.6)));
   }
-  const epsilon = Math.max(0.4, settings.size * 0.03);
+  // Raised from 0.03x to 0.05x of brush size: the old tolerance kept more
+  // centerline points than the downstream smooth-handle fit in
+  // centerlineToOutline/centerlineToContour needs, so ordinary strokes
+  // carried more on-curve nodes than the resulting curve actually
+  // required. A wider tolerance thins the point set going into the fit —
+  // fewer nodes for the same visual curve, not a less accurate one.
+  const epsilon = Math.max(0.6, settings.size * 0.05);
   return simplifyPolyline(smoothed, epsilon);
 }
 
@@ -405,7 +411,8 @@ export function samplesToCenterline(rawSamples: StrokeSample[], settings: BrushS
  */
 export function centerlineToContour(
   centerline: { x: number; y: number }[],
-  autoSmooth = true
+  autoSmooth = true,
+  closeSmoothly = false
 ): Contour | null {
   if (centerline.length < 2) return null;
 
@@ -422,6 +429,17 @@ export function centerlineToContour(
     return { id: shortId("contour"), closed: false, nodes };
   }
 
+  const n = points.length;
+  // `closeSmoothly` (Pencil's auto-close) treats the point array as a ring:
+  // node 0's "previous" neighbor wraps to the last point and the last
+  // node's "next" neighbor wraps to point 0. That lets the closing seam get
+  // exactly the same corner/smooth classification and tangent-fit treatment
+  // as every interior node, instead of being forced into a hard straight
+  // line the way `contour.closed = true` alone would render it (no handles
+  // on either side of the seam). A genuinely sharp turn at the seam still
+  // stays a corner — this only stops smooth curves from being faceted shut.
+  const wrap = (i: number) => (i + n) % n;
+
   const unit = (dx: number, dy: number) => {
     const d = Math.hypot(dx, dy) || 1;
     return { x: dx / d, y: dy / d };
@@ -432,12 +450,14 @@ export function centerlineToContour(
   // bend should remain a smooth node. Only very sharp cusp-like changes stay
   // corners so the brush never turns a deliberate point into a loop/overshoot.
   const maxSmoothTurn = (120 * Math.PI) / 180;
-  const smoothFlags = new Array(points.length).fill(false);
+  const smoothFlags = new Array(n).fill(false);
 
-  for (let i = 1; i < points.length - 1; i++) {
-    const a = points[i - 1];
+  const loEnd = closeSmoothly ? 0 : 1;
+  const hiEnd = closeSmoothly ? n - 1 : n - 2;
+  for (let i = loEnd; i <= hiEnd; i++) {
+    const a = points[closeSmoothly ? wrap(i - 1) : i - 1];
     const b = points[i];
-    const c = points[i + 1];
+    const c = points[closeSmoothly ? wrap(i + 1) : i + 1];
     const u0 = unit(b.x - a.x, b.y - a.y);
     const u1 = unit(c.x - b.x, c.y - b.y);
     const dot = Math.max(-1, Math.min(1, u0.x * u1.x + u0.y * u1.y));
@@ -445,28 +465,32 @@ export function centerlineToContour(
     smoothFlags[i] = turn <= maxSmoothTurn;
   }
 
-  // Give endpoints a one-sided smooth handle when the adjacent section is
-  // smooth. This avoids a visibly straight first/last segment on a curved
-  // freehand stroke without pretending the endpoint has two equal handles.
-  smoothFlags[0] = smoothFlags[1] ?? false;
-  smoothFlags[points.length - 1] = smoothFlags[points.length - 2] ?? false;
+  if (!closeSmoothly) {
+    // Give endpoints a one-sided smooth handle when the adjacent section is
+    // smooth. This avoids a visibly straight first/last segment on a curved
+    // freehand stroke without pretending the endpoint has two equal handles.
+    smoothFlags[0] = smoothFlags[1] ?? false;
+    smoothFlags[n - 1] = smoothFlags[n - 2] ?? false;
+  }
 
-  for (let i = 0; i < points.length; i++) {
+  for (let i = 0; i < n; i++) {
     if (!smoothFlags[i]) continue;
-    const prev = points[Math.max(0, i - 1)];
+    const prev = points[closeSmoothly ? wrap(i - 1) : Math.max(0, i - 1)];
     const cur = points[i];
-    const next = points[Math.min(points.length - 1, i + 1)];
+    const next = points[closeSmoothly ? wrap(i + 1) : Math.min(n - 1, i + 1)];
 
     let tangent: Point;
-    if (i === 0) tangent = unit(next.x - cur.x, next.y - cur.y);
-    else if (i === points.length - 1) tangent = unit(cur.x - prev.x, cur.y - prev.y);
+    if (!closeSmoothly && i === 0) tangent = unit(next.x - cur.x, next.y - cur.y);
+    else if (!closeSmoothly && i === n - 1) tangent = unit(cur.x - prev.x, cur.y - prev.y);
     else tangent = unit(next.x - prev.x, next.y - prev.y);
 
     // Independent incoming/outgoing lengths are deliberate: this is a
     // `smooth` node, not a `symmetric` node. The 0.30 factor keeps the fitted
     // curve close to the user's gesture and avoids overshoot on dense samples.
-    const inLen = i > 0 ? Math.max(0.5, dist(prev, cur) * 0.30) : 0;
-    const outLen = i < points.length - 1 ? Math.max(0.5, dist(cur, next) * 0.30) : 0;
+    const hasIn = closeSmoothly || i > 0;
+    const hasOut = closeSmoothly || i < n - 1;
+    const inLen = hasIn ? Math.max(0.5, dist(prev, cur) * 0.30) : 0;
+    const outLen = hasOut ? Math.max(0.5, dist(cur, next) * 0.30) : 0;
 
     nodes[i].type = "smooth";
     if (inLen > 0) {
@@ -477,7 +501,7 @@ export function centerlineToContour(
     }
   }
 
-  return { id: shortId("contour"), closed: false, nodes };
+  return { id: shortId("contour"), closed: closeSmoothly, nodes };
 }
 
 /**

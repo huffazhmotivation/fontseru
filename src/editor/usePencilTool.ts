@@ -75,8 +75,15 @@ export function smoothPencilPoints(rawPoints: Point[], smoothing: number, hitSca
   let smoothed = movingAveragePoints(rawPoints, windowRadius);
   smoothed = movingAveragePoints(smoothed, Math.max(1, Math.round(windowRadius * 0.6)));
   // Tolerance is in screen-pixel terms (scaled to font units via hitScale)
-  // so the same visual crispness holds regardless of zoom level.
-  const epsilon = Math.max(1.1, 1 + effective * 5) * hitScale;
+  // so the same visual crispness holds regardless of zoom level. Raised
+  // from the original 1.1–6px range to 1.6–8.5px: the previous tolerance
+  // kept far more raw polyline points than the cubic-bezier fit below
+  // actually needs to represent the same curve, so simple strokes ended up
+  // with noticeably more on-curve nodes than a hand-drawn curve should
+  // have. Wider tolerance means fewer, better-placed points go into the
+  // fit, i.e. fewer nodes for the same visual smoothness — not a laxer
+  // curve.
+  const epsilon = Math.max(1.6, 1.4 + effective * 7.1) * hitScale;
   return simplifyPolyline(smoothed, epsilon);
 }
 
@@ -106,7 +113,7 @@ export function usePencilTool(hitScale: number) {
       pts.push(p);
       if (pts.length < 2) return;
       const smoothed = smoothPencilPoints(pts, pencilSmoothing, hitScale);
-      setPreviewContour(centerlineToContour(smoothed, true));
+      setPreviewContour(centerlineToContour(smoothed, true, true));
     },
     [isDrawing, pencilSmoothing, hitScale]
   );
@@ -120,15 +127,17 @@ export function usePencilTool(hitScale: number) {
     if (raw.length < MIN_RAW_POINTS || !glyph) return;
 
     const smoothed = smoothPencilPoints(raw, pencilSmoothing, hitScale);
-    const contour = centerlineToContour(smoothed, true);
-    if (!contour || contour.nodes.length < MIN_SHAPE_NODES) return;
-
     // Pencil always finishes as a closed, filled shape — standard
     // professional-app Pencil behavior (Illustrator/Affinity): releasing
     // the pointer auto-closes the path even when the stroke's start and
-    // end never actually met, joining the last node straight back to the
-    // first rather than leaving an open, unfillable outline.
-    contour.closed = true;
+    // end never actually met. `closeSmoothly=true` fits the closing seam
+    // the same way as every other node on the stroke (smooth tangent when
+    // the gesture's curvature calls for it, a real corner only when the
+    // seam is a genuinely sharp turn) instead of always forcing a straight
+    // line across the gap.
+    const contour = centerlineToContour(smoothed, true, true);
+    if (!contour || contour.nodes.length < MIN_SHAPE_NODES) return;
+
     const obj: VectorObject = { id: shortId("obj"), kind: "shape", contours: [contour] };
     commitOutline(activeChar, { objects: [...glyph.outline.objects, obj] });
     // Deliberately stays on the Pencil tool (matching Brush) rather than
