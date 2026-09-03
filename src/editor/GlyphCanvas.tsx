@@ -600,7 +600,7 @@ export function GlyphCanvas() {
           .pencil-preview { fill: none; stroke: var(--accent); opacity: 0.9; }
           .pencil-preview-fill { fill: var(--accent); opacity: 0.16; }
           .rubber-line { stroke: var(--accent); stroke-width: ${1.2 / sc}; stroke-dasharray: ${4 / sc} ${3 / sc}; }
-          .handle-line { stroke: var(--handle-line); stroke-width: ${1.1 / sc}; }
+          .handle-line { stroke: var(--handle-line); stroke-width: ${1.5 / sc}; }
           .handle-line.dim { opacity: 0.4; }
           .handle-dot { fill: var(--canvas); stroke: var(--accent); stroke-width: ${1.3 / sc}; opacity: 0.85; }
           .handle-dot.active { opacity: 1; }
@@ -1291,7 +1291,7 @@ const HandleGlyph = memo(function HandleGlyph({
   // This matches FontLab's off-curve node glyph, and reads more clearly
   // against the round on-curve smooth/symmetric nodes right next to it.
   const r = (selected ? 4.2 : 3.6) * hitScale;
-  const diamond = `${to.x} ${to.y - r} L ${to.x + r} ${to.y} L ${to.x} ${to.y + r} L ${to.x - r} ${to.y} Z`;
+  const diamond = `M ${to.x} ${to.y - r} L ${to.x + r} ${to.y} L ${to.x} ${to.y + r} L ${to.x - r} ${to.y} Z`;
   return (
     <>
       <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} className={`handle-line ${emphasized ? "" : "dim"}`} />

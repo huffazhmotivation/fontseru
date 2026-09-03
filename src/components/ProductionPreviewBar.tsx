@@ -5,27 +5,7 @@ import { GlyphRun } from "@/editor/GlyphRun";
 import { wrapLines } from "@/editor/textLayout";
 import { sentenceForCategory } from "@/glyph/testSentences";
 import type { GlyphCategory } from "@/types/glyph";
-
-/** Minimal light/dark glyphs for the preview background toggle, standing
- * in for lucide's Sun/Moon. Lucide's Sun draws 8 separate rays which reads
- * as busy at the ~13px toolbar size and doesn't match the plain single-
- * stroke language the rest of this bar's icons use (AlignLeft/X, etc.) —
- * these are a single outlined circle and a single crescent, at the same
- * stroke weight the rest of the app's toolbar icons use (see TopBar.tsx). */
-function SunIcon({ size = 13 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round">
-      <circle cx="12" cy="12" r="6.5" />
-    </svg>
-  );
-}
-function MoonIcon({ size = 13 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.6 6.6 0 0 0 10.5 10.5Z" />
-    </svg>
-  );
-}
+import { SunIcon, MoonIcon } from "@/components/icons/ThemeIcon";
 
 /** Small icon toggles for the categories that actually have a preset
  * sentence (see sentenceForCategory) — spacing/multilingual/feature glyphs

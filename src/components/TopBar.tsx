@@ -1,6 +1,6 @@
 import React from "react";
 import {
-  Download, FlaskConical, Layers, Maximize, Minimize, Moon, Redo2, Sun, Undo2, Wand2,
+  Download, FlaskConical, Layers, Maximize, Minimize, Redo2, Undo2, Wand2,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
 } from "lucide-react";
@@ -8,6 +8,7 @@ import { useAppStore } from "@/glyph/store";
 import type { AlignMode } from "@/editor/objectOps";
 import { isBooleanEligible, type BooleanOp } from "@/editor/booleanOps";
 import { BooleanOpIcon } from "@/components/icons/BooleanOpIcon";
+import { SunIcon, MoonIcon } from "@/components/icons/ThemeIcon";
 import { FileMenu } from "@/components/FileMenu";
 import { FontSeruLogo } from "@/components/FontSeruLogo";
 import { AuthWidget } from "@/components/AuthWidget";
@@ -168,7 +169,7 @@ export function TopBar() {
         {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
       </button>
       <button className="fm-theme-toggle" onClick={toggleTheme} title="Toggle theme" data-testid="theme-toggle">
-        {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+        {theme === "light" ? <MoonIcon size={16} /> : <SunIcon size={16} />}
       </button>
       <AuthWidget />
     </div>
