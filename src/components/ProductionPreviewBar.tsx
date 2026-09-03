@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlignCenter, AlignLeft, AlignRight, Ampersand, CaseLower, CaseUpper, GripHorizontal, Hash, Quote, Wand2, X } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Ampersand, CaseLower, CaseUpper, Hash, Quote, Wand2, X } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { GlyphRun } from "@/editor/GlyphRun";
 import { wrapLines } from "@/editor/textLayout";
@@ -48,6 +48,7 @@ export function ProductionPreviewBar() {
   const kerningPairs = useAppStore((s) => s.kerningPairs);
 
   const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const [isResizingPreview, setIsResizingPreview] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageWidth, setStageWidth] = useState(0);
 
@@ -75,6 +76,14 @@ export function ProductionPreviewBar() {
   function startResize(e: ReactPointerEvent) {
     e.preventDefault();
     resizeRef.current = { startY: e.clientY, startHeight: stageHeight };
+    setIsResizingPreview(true);
+    // Lock the cursor and stop stray text selection for the whole drag,
+    // not just while hovering the thin handle strip — otherwise fast drags
+    // that briefly leave the handle snap the cursor back and forth.
+    const prevUserSelect = document.body.style.userSelect;
+    const prevCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "row-resize";
     const onMove = (ev: PointerEvent) => {
       if (!resizeRef.current) return;
       const delta = ev.clientY - resizeRef.current.startY;
@@ -82,6 +91,9 @@ export function ProductionPreviewBar() {
     };
     const onUp = () => {
       resizeRef.current = null;
+      setIsResizingPreview(false);
+      document.body.style.userSelect = prevUserSelect;
+      document.body.style.cursor = prevCursor;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
@@ -92,12 +104,12 @@ export function ProductionPreviewBar() {
   return (
     <div className="fm-preview-bar" data-testid="production-preview-bar">
       <div
-        className="fm-preview-resize-handle"
+        className={`fm-preview-resize-handle${isResizingPreview ? " active" : ""}`}
         onPointerDown={startResize}
         title="Drag to resize preview"
         data-testid="preview-resize-handle"
       >
-        <GripHorizontal size={12} />
+        <span className="fm-preview-resize-grip" aria-hidden="true" />
       </div>
 
       <div className="fm-preview-stage" ref={stageRef} style={{ height: stageHeight }}>

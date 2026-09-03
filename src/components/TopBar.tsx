@@ -6,6 +6,8 @@ import {
 } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import type { AlignMode } from "@/editor/objectOps";
+import { isBooleanEligible, type BooleanOp } from "@/editor/booleanOps";
+import { BooleanOpIcon } from "@/components/icons/BooleanOpIcon";
 import { FileMenu } from "@/components/FileMenu";
 import { FontSeruLogo } from "@/components/FontSeruLogo";
 import { AuthWidget } from "@/components/AuthWidget";
@@ -18,6 +20,12 @@ const ALIGN_BUTTONS: { mode: AlignMode; label: string; icon: typeof AlignStartVe
   { mode: "top", label: "Align Top", icon: AlignStartHorizontal },
   { mode: "vcenter", label: "Align Vertical Center", icon: AlignCenterHorizontal },
   { mode: "bottom", label: "Align Bottom", icon: AlignEndHorizontal },
+];
+
+const BOOLEAN_BUTTONS: { op: BooleanOp; label: string }[] = [
+  { op: "union", label: "Add / Union" },
+  { op: "subtract", label: "Subtract" },
+  { op: "intersect", label: "Intersect" },
 ];
 
 export function TopBar() {
@@ -39,6 +47,12 @@ export function TopBar() {
   const openFeatureBuilder = useAppStore((s) => s.openFeatureBuilder);
   const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
   const alignSelectedObjects = useAppStore((s) => s.alignSelectedObjects);
+  const booleanSelectedObjects = useAppStore((s) => s.booleanSelectedObjects);
+  const activeGlyphObjects = useAppStore((s) => s.glyphs[s.activeChar]?.outline.objects);
+
+  const booleanEligibleCount = (activeGlyphObjects ?? [])
+    .filter((o) => selectedObjectIds.includes(o.id))
+    .filter(isBooleanEligible).length;
 
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   React.useEffect(() => {
@@ -92,6 +106,23 @@ export function TopBar() {
               <Icon size={15} strokeWidth={1.7} />
             </button>
           </React.Fragment>
+        ))}
+      </div>
+
+      <div className="fm-align-group" role="group" aria-label="Boolean shape actions">
+        {BOOLEAN_BUTTONS.map(({ op, label }) => (
+          <button
+            key={op}
+            type="button"
+            className="fm-align-btn"
+            disabled={booleanEligibleCount < 2}
+            onClick={() => booleanSelectedObjects(op)}
+            title={label}
+            aria-label={label}
+            data-testid={`boolean-${op}-btn`}
+          >
+            <BooleanOpIcon op={op} size={15} />
+          </button>
         ))}
       </div>
 

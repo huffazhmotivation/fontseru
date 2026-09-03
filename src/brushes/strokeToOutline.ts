@@ -390,13 +390,20 @@ export function samplesToCenterline(rawSamples: StrokeSample[], settings: BrushS
   if (windowRadius > 0) {
     smoothed = movingAverage(smoothed, Math.max(1, Math.round(windowRadius * 0.6)));
   }
-  // Raised from 0.03x to 0.05x of brush size: the old tolerance kept more
-  // centerline points than the downstream smooth-handle fit in
-  // centerlineToOutline/centerlineToContour needs, so ordinary strokes
-  // carried more on-curve nodes than the resulting curve actually
-  // required. A wider tolerance thins the point set going into the fit —
-  // fewer nodes for the same visual curve, not a less accurate one.
-  const epsilon = Math.max(0.6, settings.size * 0.05);
+  // Raised again (0.05x -> 0.18x of brush size, floor 0.6 -> 3): the old
+  // tolerance scaled only with stroke *width*, not with the size of the
+  // curve being drawn. A thin brush tracing a large, simple round shape
+  // (an "o"/"q" bowl, say) still produced a dense, near-collinear cluster
+  // of on-curve nodes all the way around — visually fine but heavy to
+  // edit and exactly what made a simple round gesture come out with far
+  // more nodes than it needed. The downstream Bezier fit in
+  // centerlineToOutline/centerlineToContour already carries the curve's
+  // roundness from just a handful of smooth nodes, so thinning harder here
+  // loses editing precision, not curve accuracy. Corners are unaffected —
+  // simplifyPolyline (Ramer-Douglas-Peucker) only drops points that don't
+  // deviate from their neighbors' chord by more than epsilon, so a real
+  // corner point (which deviates a lot) is always kept regardless.
+  const epsilon = Math.max(3, settings.size * 0.18);
   return simplifyPolyline(smoothed, epsilon);
 }
 
