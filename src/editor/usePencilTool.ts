@@ -76,14 +76,15 @@ export function smoothPencilPoints(rawPoints: Point[], smoothing: number, hitSca
   smoothed = movingAveragePoints(smoothed, Math.max(1, Math.round(windowRadius * 0.6)));
   // Tolerance is in screen-pixel terms (scaled to font units via hitScale)
   // so the same visual crispness holds regardless of zoom level. Raised
-  // from the original 1.1–6px range to 1.6–8.5px: the previous tolerance
-  // kept far more raw polyline points than the cubic-bezier fit below
-  // actually needs to represent the same curve, so simple strokes ended up
-  // with noticeably more on-curve nodes than a hand-drawn curve should
-  // have. Wider tolerance means fewer, better-placed points go into the
-  // fit, i.e. fewer nodes for the same visual smoothness — not a laxer
-  // curve.
-  const epsilon = Math.max(1.6, 1.4 + effective * 7.1) * hitScale;
+  // again (1.6–8.5px -> 2.6–13.5px): even the widened first pass still
+  // left a hand-drawn curve with noticeably more on-curve nodes than the
+  // cubic-bezier fit below actually needs — the same "dense samples become
+  // real nodes 1:1" issue the Brush tool had (see samplesToCenterline /
+  // centerlineToOutline). Wider tolerance means fewer, better-placed points
+  // go into the fit, i.e. fewer nodes for the same visual smoothness — not
+  // a laxer curve, since RDP only ever drops a point that doesn't deviate
+  // from the line between its kept neighbors by more than this tolerance.
+  const epsilon = Math.max(2.6, 2.4 + effective * 11) * hitScale;
   return simplifyPolyline(smoothed, epsilon);
 }
 

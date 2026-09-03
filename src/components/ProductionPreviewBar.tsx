@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlignCenter, AlignLeft, AlignRight, Ampersand, CaseLower, CaseUpper, Hash, Quote, Wand2, X } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Ampersand, CaseLower, CaseUpper, Hash, Moon, Quote, Sun, Wand2, X } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { GlyphRun } from "@/editor/GlyphRun";
 import { wrapLines } from "@/editor/textLayout";
@@ -51,6 +51,13 @@ export function ProductionPreviewBar() {
   const [isResizingPreview, setIsResizingPreview] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageWidth, setStageWidth] = useState(0);
+  // Independent from the app's global theme — same pattern Test Lab uses
+  // for its own "Preview Background" toggle: starts matching whatever the
+  // app looks like right now, but doesn't keep following it afterward, and
+  // flipping it here doesn't touch the app's real theme either. Lets you
+  // check a letter against both a light and dark backdrop without leaving
+  // the canvas or committing to a full app theme switch.
+  const [bg, setBg] = useState<"dark" | "light">(() => useAppStore.getState().theme);
 
   useEffect(() => {
     const el = stageRef.current;
@@ -112,7 +119,7 @@ export function ProductionPreviewBar() {
         <span className="fm-preview-resize-grip" aria-hidden="true" />
       </div>
 
-      <div className="fm-preview-stage" ref={stageRef} style={{ height: stageHeight }}>
+      <div className={`fm-preview-stage ${bg}`} ref={stageRef} style={{ height: stageHeight }}>
         <div
           className="fm-preview-lines"
           style={{
@@ -208,6 +215,15 @@ export function ProductionPreviewBar() {
             <AlignRight size={13} />
           </button>
         </div>
+
+        <button
+          className="fm-icon-btn"
+          onClick={() => setBg(bg === "dark" ? "light" : "dark")}
+          title={bg === "dark" ? "Switch preview to light background" : "Switch preview to dark background"}
+          data-testid="preview-bg-toggle"
+        >
+          {bg === "dark" ? <Moon size={13} /> : <Sun size={13} />}
+        </button>
 
         <button className="fm-icon-btn fm-preview-close" onClick={toggle} title="Hide preview" data-testid="preview-close">
           <X size={13} />

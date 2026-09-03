@@ -1135,7 +1135,13 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
   overflow-x: hidden; overflow-y: auto;
   min-height: 40px;
   color: var(--text);
+  border-radius: 8px;
+  padding: 4px 10px;
+  margin: 0 -10px;
+  transition: background 0.12s ease, color 0.12s ease;
 }
+.fm-preview-stage.dark { background: #0a0c0b; color: #f2f5f2; }
+.fm-preview-stage.light { background: #ffffff; color: #14160f; }
 .fm-preview-lines {
   display: flex; flex-direction: column; justify-content: center;
   min-height: 100%; width: 100%;

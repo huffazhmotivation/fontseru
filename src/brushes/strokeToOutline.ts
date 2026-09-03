@@ -763,7 +763,25 @@ export function centerlineToOutline(
   const cleanedLeft = SELF_CLEAN_SKIP.includes(settings.type) ? left : removeSelfIntersectionLoops(left);
   const cleanedRight = SELF_CLEAN_SKIP.includes(settings.type) ? right : removeSelfIntersectionLoops(right);
 
-  const polygon = [...cleanedLeft, ...endCapPts, ...cleanedRight.reverse(), ...startCapPts];
+  // The edges above are built from the DENSE catmullRomResample points
+  // (spaced every ~0.06x brush size) so the nib's width tracks the gesture
+  // accurately — but every one of those points becomes a real, editable
+  // "corner" node below. On a simple, gently-curving letterform that's
+  // hundreds of near-collinear nodes doing the job three or four could do.
+  // Thin each edge back down with the same Ramer-Douglas-Peucker pass used
+  // elsewhere, at a tolerance tied to the nib's own half-width so it stays
+  // invisible at the letter's actual size — corners and genuine texture
+  // survive (RDP only drops points that don't deviate from the line
+  // between their kept neighbors), only the redundant in-between points
+  // along straight/near-straight runs go. Brushes with deliberate
+  // per-sample edge noise (grunge/oil/rough) keep every sample, same as
+  // the self-intersection cleanup above, since thinning would iron their
+  // texture back out.
+  const edgeSimplifyEpsilon = Math.max(0.6, Math.min(4, semiMajor * 0.09));
+  const simplifiedLeft = SELF_CLEAN_SKIP.includes(settings.type) ? cleanedLeft : simplifyPolyline(cleanedLeft, edgeSimplifyEpsilon);
+  const simplifiedRight = SELF_CLEAN_SKIP.includes(settings.type) ? cleanedRight : simplifyPolyline(cleanedRight, edgeSimplifyEpsilon);
+
+  const polygon = [...simplifiedLeft, ...endCapPts, ...simplifiedRight.reverse(), ...startCapPts];
   if (polygon.length < 3) return null;
   return {
     id: shortId("contour"),

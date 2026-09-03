@@ -600,12 +600,12 @@ export function GlyphCanvas() {
           .pencil-preview { fill: none; stroke: var(--accent); opacity: 0.9; }
           .pencil-preview-fill { fill: var(--accent); opacity: 0.16; }
           .rubber-line { stroke: var(--accent); stroke-width: ${1.2 / sc}; stroke-dasharray: ${4 / sc} ${3 / sc}; }
-          .handle-line { stroke: var(--handle-line); stroke-width: ${1.4 / sc}; }
+          .handle-line { stroke: var(--handle-line); stroke-width: ${1.1 / sc}; }
           .handle-line.dim { opacity: 0.4; }
-          .handle-dot { fill: var(--accent); stroke: var(--canvas); stroke-width: ${2 / sc}; opacity: 0.65; }
+          .handle-dot { fill: var(--canvas); stroke: var(--accent); stroke-width: ${1.3 / sc}; opacity: 0.85; }
           .handle-dot.active { opacity: 1; }
-          .handle-dot.dim { opacity: 0.35; }
-          .node-shape { stroke-width: ${2.2 / sc}; }
+          .handle-dot.dim { opacity: 0.3; }
+          .node-shape { stroke-width: ${1.3 / sc}; }
           .node-shape.corner { fill: var(--node-corner); stroke: var(--canvas); }
           .node-shape.smooth { fill: var(--node-smooth); stroke: var(--canvas); }
           .node-shape.symmetric { fill: var(--node-symmetric); stroke: var(--canvas); }
@@ -1238,10 +1238,11 @@ const ObjectShape = memo(function ObjectShape({
 const NodeShape = memo(function NodeShape({ point, type, hitScale, selected, guide }: { point: Point; type: NodeType; hitScale: number; selected: boolean; guide?: boolean }) {
   const cls = `node-shape ${type} ${selected ? "selected" : ""} ${guide ? "guide" : ""}`;
   if (type === "corner") {
-    const s = 10 * hitScale;
-    return <rect x={point.x - s / 2} y={point.y - s / 2} width={s} height={s} className={cls} />;
+    const s = (selected ? 7.5 : 6.5) * hitScale;
+    const rx = 1.5 * hitScale;
+    return <rect x={point.x - s / 2} y={point.y - s / 2} width={s} height={s} rx={rx} ry={rx} className={cls} />;
   }
-  const r = (type === "symmetric" ? 6.5 : 6) * hitScale;
+  const r = (selected ? 4.5 : type === "symmetric" ? 4 : 3.6) * hitScale;
   return <circle cx={point.x} cy={point.y} r={r} className={cls} />;
 });
 
@@ -1263,7 +1264,7 @@ const HandleGlyph = memo(function HandleGlyph({
   return (
     <>
       <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} className={`handle-line ${emphasized ? "" : "dim"}`} />
-      <circle cx={to.x} cy={to.y} r={5 * hitScale} className={`handle-dot ${selected ? "active" : ""} ${emphasized ? "" : "dim"}`} />
+      <circle cx={to.x} cy={to.y} r={3 * hitScale} className={`handle-dot ${selected ? "active" : ""} ${emphasized ? "" : "dim"}`} />
     </>
   );
 });
