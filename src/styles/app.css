@@ -29,10 +29,10 @@ body { font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rende
   --node-symmetric: #c69bff;
   --guide: #454f47;
   --guide-2: #6b5a2e;
-  --grid: #1e2420;
-  --grid-major: #333b35;
+  --grid: #232a25;
+  --grid-major: #363f38;
   --handle-line: #4a534d;
-  --canvas: #0c0f0d;
+  --canvas: #151916;
   --thumb-ink: #d6ddd7;
   --danger: #ff6b57;
   --overlap: #a6e034;
@@ -1060,7 +1060,7 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 .fm-canvas-frame {
   flex: 1; min-width: 0;
   background:
-    radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--panel-2) 40%, var(--canvas)) 0%, var(--canvas) 60%);
+    radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--panel-2) 55%, var(--canvas)) 0%, var(--canvas) 65%);
   border: 1px solid var(--line);
   border-radius: 16px;
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 6%, transparent);

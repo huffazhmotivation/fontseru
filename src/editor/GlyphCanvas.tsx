@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from "react";
+import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useAppStore, type GlyphMetricKey } from "@/glyph/store";
 import { useGlyphEditor } from "./useGlyphEditor";
 import { useBrushTool } from "./useBrushTool";
@@ -591,6 +591,12 @@ export function GlyphCanvas() {
           .origin-flag-bg { fill: var(--origin-soft); stroke: var(--origin); stroke-width: ${1 / sc}; }
           .origin-flag-label { fill: var(--origin); font-size: ${10 / sc}px; font-family: var(--mono); font-weight: 700; pointer-events: none; }
           .obj-fill { fill: var(--ink); fill-rule: nonzero; stroke: none; }
+          /* FontLab/Glyphs-style "semi-fill": in Node mode the shape being
+             actively edited renders at reduced opacity by default — their
+             True Fill toggle is what gives the solid/opaque version — so
+             nodes and handles read clearly against it instead of vanishing
+             into a solid dark silhouette. */
+          .obj-fill.semi-fill { opacity: 0.62; }
           .obj-fill-overlap { fill: var(--overlap); opacity: 0.88; }
           .obj-fill-preview-outline { fill: none; stroke: var(--ink); stroke-width: ${1.25 / sc}; opacity: 0.85; }
           .obj-stroke { fill: none; stroke: var(--ink); }
@@ -1076,14 +1082,32 @@ const ObjectsLayer = memo(function ObjectsLayer({
           !penAutoCloseShape &&
           drawingContourId != null &&
           obj.contours.some((c) => c.id === drawingContourId && !c.closed);
+        const isSelected = selectedObjectIds.includes(obj.id);
+        // Node tool: dim every object except the one being edited. The
+        // active object stays fully solid (opacity here would blur exactly
+        // the outline you're trying to read while dragging nodes/handles),
+        // but everything else recedes — this is what keeps a dense, mostly-
+        // black glyph canvas from reading as one flat pekat mass while you
+        // work, without touching fill color/opacity itself.
+        const dimmed = tool === "node" && selectedObjectIds.length > 0 && !isSelected;
+        // FontLab/Glyphs default to a semi-transparent "working" fill in
+        // Node mode (their True Fill toggle is what gives the opaque
+        // version) — nodes/handles read clearly against the shape instead
+        // of a solid dark silhouette swallowing them. Only applies to the
+        // object(s) actually being edited; a dimmed object is already
+        // faded by its wrapper opacity, so it skips this to avoid stacking
+        // two separate transparency effects into an almost-invisible shape.
+        const semiFill = tool === "node" && !dimmed;
         return (
           <ObjectShape
             key={obj.id}
             obj={obj}
             ascender={ascender}
-            selected={selectedObjectIds.includes(obj.id)}
+            selected={isSelected}
             outlineOnly={isLiveDrawPreview}
             overlapping={overlappingIds.has(obj.id)}
+            dimmed={dimmed}
+            semiFill={semiFill}
           />
         );
       })}
@@ -1203,8 +1227,8 @@ const SkeletonGuideLayer = memo(function SkeletonGuideLayer({
 });
 
 const ObjectShape = memo(function ObjectShape({
-  obj, ascender, selected, outlineOnly, overlapping,
-}: { obj: VectorObject; ascender: number; selected: boolean; outlineOnly?: boolean; overlapping?: boolean }) {
+  obj, ascender, selected, outlineOnly, overlapping, dimmed, semiFill,
+}: { obj: VectorObject; ascender: number; selected: boolean; outlineOnly?: boolean; overlapping?: boolean; dimmed?: boolean; semiFill?: boolean }) {
   const isFillKind = obj.kind === "shape" || obj.kind === "expanded";
   const isMonolineBrush = obj.kind === "brush" && obj.brushType === "monoline";
   const isVariableBrush = obj.kind === "brush" && !isMonolineBrush;
@@ -1219,14 +1243,26 @@ const ObjectShape = memo(function ObjectShape({
     return brushOutlineContours(obj).map((c) => contourToPath(c, ascender)).join(" ");
   }, [obj, ascender, isVariableBrush]);
 
+  // Node tool dimming wraps whichever branch below fires in a <g> with
+  // reduced opacity. Deliberately opacity on the group, not a fill-color
+  // change — the shape's own ink stays --ink at full strength, so if this
+  // object gets selected next the color doesn't "pop" or shift, only the
+  // surrounding recede/return.
+  const wrap = (node: ReactNode) =>
+    dimmed ? <g opacity={0.42}>{node}</g> : <>{node}</>;
+
+  // obj-fill + optional overlap/semi-fill modifiers, joined conditionally.
+  const fillClass = () =>
+    ["obj-fill", overlapping && "obj-fill-overlap", semiFill && "semi-fill"].filter(Boolean).join(" ");
+
   if (isFillKind) {
     const d = fillOrStrokeD;
     if (outlineOnly) {
       return <path d={d} className="obj-fill-preview-outline" vectorEffect="non-scaling-stroke" />;
     }
-    return (
+    return wrap(
       <>
-        <path d={d} className={overlapping ? "obj-fill obj-fill-overlap" : "obj-fill"} />
+        <path d={d} className={fillClass()} />
         {selected && <path d={d} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
       </>
     );
@@ -1234,7 +1270,7 @@ const ObjectShape = memo(function ObjectShape({
   if (obj.kind === "brush") {
     if (isMonolineBrush) {
       const d = fillOrStrokeD;
-      return (
+      return wrap(
         <>
           <path d={d} className={overlapping ? "obj-stroke obj-stroke-overlap" : "obj-stroke"} strokeWidth={obj.strokeWidth ?? 20} strokeLinecap={obj.cap ?? "round"} strokeLinejoin={obj.join ?? "round"} />
           {selected && <path d={d} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
@@ -1244,15 +1280,15 @@ const ObjectShape = memo(function ObjectShape({
     // Variable-profile brushes render a derived silhouette while retaining the
     // editable centerline as their stored geometry.
     const d = variableBrushD;
-    return (
+    return wrap(
       <>
-        <path d={d} className={overlapping ? "obj-fill obj-fill-overlap" : "obj-fill"} />
+        <path d={d} className={fillClass()} />
         {selected && <path d={d} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
       </>
     );
   }
   const d = fillOrStrokeD;
-  return (
+  return wrap(
     <>
       <path d={d} className={overlapping ? "obj-stroke obj-stroke-overlap" : "obj-stroke"} strokeWidth={obj.strokeWidth ?? 20} strokeLinecap={obj.cap ?? "round"} strokeLinejoin={obj.join ?? "round"} />
       {selected && <path d={d} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
