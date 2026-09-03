@@ -3338,6 +3338,31 @@ input[type="number"]::-webkit-outer-spin-button {
   background: var(--panel-2);
   color: var(--text-faint);
 }
+.fm-kern-origin-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 17px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: 8.5px;
+  font-family: var(--mono);
+  font-weight: 750;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  cursor: default;
+}
+.fm-kern-origin-badge.manual {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.fm-kern-origin-badge.class {
+  background: color-mix(in srgb, #8b5cf6 18%, transparent);
+  color: #8b5cf6;
+}
+.fm-kern-origin-badge.auto {
+  background: var(--panel-2);
+  color: var(--text-faint);
+}
 .fm-kern-context-style {
   color: var(--accent);
   font-family: var(--sans);

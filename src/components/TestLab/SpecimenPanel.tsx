@@ -17,9 +17,11 @@ import {
   effectiveKerningPairs,
   effectiveWordSpacing,
   kerningKey,
+  getKerningOrigin,
   type KerningContext,
   type KerningPairs,
   type KerningClass,
+  type KerningOrigin,
 } from "@/types/kerning";
 import { getClassKerningValue } from "@/kerning/kerningClasses";
 import { Plus, X, Sparkles, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
@@ -1483,6 +1485,7 @@ export function SpecimenPanel() {
   const openFeatureBuilder = useAppStore((s) => s.openFeatureBuilder);
   const customFamilies = useAppStore((s) => s.customFamilies);
   const kerningPairs = useAppStore((s) => s.kerningPairs);
+  const kerningManual = useAppStore((s) => s.kerningManual);
   const kerningOverridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
   const autoKernLastRun = useAppStore((s) => s.autoKernLastRun);
   const setKerningPair = useAppStore((s) => s.setKerningPair);
@@ -1757,6 +1760,20 @@ export function SpecimenPanel() {
   const panelLeft = kerningMode === "single" ? precisionLeft : familyPrecisionLeft;
   const panelRight = kerningMode === "single" ? precisionRight : familyPrecisionRight;
 
+  // Origin badge: only meaningful in Single mode, since Kerning Classes are
+  // a base/shared-layer concept — a Family Test override is always a
+  // deliberate hand-set value for that style, i.e. always "manual".
+  const panelOrigin: KerningOrigin | null =
+    kerningMode === "single" && panelHasPair && panelLeft && panelRight
+      ? getKerningOrigin(kerningKey(panelLeft, panelRight), kerningPairs, kerningManual, kerningClasses, classKerningPairs)
+      : null;
+  const panelOriginLabel: Record<KerningOrigin, string> = { manual: "Manual", class: "Group", auto: "Auto" };
+  const panelOriginTitle: Record<KerningOrigin, string> = {
+    manual: "Hand-tuned — never overwritten by Auto Kerning or a Kerning Group value.",
+    class: "Filled by this pair's Kerning Group value.",
+    auto: "Filled by geometry-based Auto Kerning.",
+  };
+
   const resetFamilyActivePair = () => {
     if (!familyPrecisionLeft || !familyPrecisionRight) return;
     resetFamilyKerningPair(familyContext, familyPrecisionLeft, familyPrecisionRight);
@@ -1892,6 +1909,15 @@ export function SpecimenPanel() {
                     {familyHasOverride ? "Override" : "Inherited"}
                   </span>
                 )}
+              {panelOrigin && (
+                <span
+                  className={`fm-kern-origin-badge ${panelOrigin}`}
+                  title={panelOriginTitle[panelOrigin]}
+                  data-testid="kern-origin-badge"
+                >
+                  {panelOriginLabel[panelOrigin]}
+                </span>
+              )}
             </label>
             <div className="fm-kern-value-row">
               <NumericInput

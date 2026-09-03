@@ -11,7 +11,7 @@ import {
   type KerningManualFlags,
 } from "@/types/kerning";
 
-const PROFILE_SAMPLES = 14;
+const PROFILE_SAMPLES: number = 14;
 // Two glyphs join the same class when their normalized edge profiles differ
 // by less than this (fraction of unitsPerEm). Loose enough that e.g. "O"
 // and "Q" (which only differ by a small tail) still cluster together, tight

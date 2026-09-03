@@ -141,6 +141,55 @@ export function findKerningClass(classes: KerningClass[], ch: string): KerningCl
   return classes.find((c) => c.members.includes(ch));
 }
 
+/**
+ * Where a single flat `kerningPairs` entry currently "comes from", for the
+ * small origin badge in the Kerning panel:
+ *  - "manual"  — hand-tuned by the user (kerningManual[key] === true).
+ *  - "class"   — currently filled by a Kerning Class (Group-to-Group) value
+ *                via `materializeClassKerning` and not since overwritten.
+ *  - "auto"    — filled by the geometry-based Auto Kerning pass (global run
+ *                or a single accepted suggestion), or simply unset.
+ *
+ * This is intentionally *derived*, not persisted: `materializeClassKerning`
+ * and the geometry auto-kern pass both write into the same flat
+ * `kerningPairs`/`kerningManual` maps (by design — see the block comment on
+ * `KerningClass`), so there's no separate "class vs auto" flag stored
+ * anywhere. Deriving the origin instead of adding a third parallel map means
+ * it automatically stays correct across undo/redo, family-style layering,
+ * and project load/save without touching any of those call sites.
+ *
+ * A pair reads as "class" when: it isn't manual, both its glyphs currently
+ * belong to a left/right class pairing, that class pairing has a non-zero
+ * configured value, and the pair's live value still matches it exactly. The
+ * moment any of that stops being true (glyph removed from its class, class
+ * value changed, or the geometry auto-kern pass overwrites the pair with a
+ * different suggestion) it correctly falls back to "auto".
+ */
+export type KerningOrigin = "manual" | "class" | "auto";
+
+export function getKerningOrigin(
+  key: string,
+  pairs: KerningPairs,
+  manual: KerningManualFlags,
+  classes: KerningClasses,
+  classKerningPairs: Record<string, number>
+): KerningOrigin {
+  if (manual[key]) return "manual";
+
+  const parsed = parseKerningKey(key);
+  if (!parsed) return "auto";
+
+  const leftClass = findKerningClass(classes.left, parsed.left);
+  const rightClass = findKerningClass(classes.right, parsed.right);
+  if (!leftClass || !rightClass) return "auto";
+
+  const classValue = classKerningPairs[classPairKey(leftClass.id, rightClass.id)];
+  if (!classValue) return "auto"; // unset or explicit 0 never overrides "auto"
+
+  const liveValue = pairs[key] ?? 0;
+  return liveValue === classValue ? "class" : "auto";
+}
+
 /** Useful pair shortcuts for the Kerning panel. Global auto-kerning is not limited to this list. */
 export const AUTO_KERN_PRIORITY_PAIRS: [string, string][] = [
   ["A", "V"], ["V", "A"],

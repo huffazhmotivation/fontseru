@@ -843,6 +843,13 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
             effectiveKerning,
             formats,
             s.featureConfig,
+            // Kerning Classes are a shared/base-layer concept (never
+            // per-style — see types/kerning.ts), so the same set is passed
+            // for every style export. Any pair a style override has since
+            // diverged from its class value is still exported correctly:
+            // buildGposTable falls back to an explicit exception for it.
+            s.kerningClasses,
+            s.classKerningPairs,
           );
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error);
