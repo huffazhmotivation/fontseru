@@ -121,8 +121,8 @@ export function GlyphRun({
                 x={advance / 2}
                 y={ascender}
                 textAnchor="middle"
-                fontFamily="'Helvetica Neue', Arial, sans-serif"
-                fontStyle="italic"
+                fontFamily="'Inter', system-ui, sans-serif"
+                fontWeight={600}
                 fontSize={ascender * 0.72}
                 fill={glyphColor}
                 stroke="none"

@@ -76,6 +76,7 @@ export function RightPanel() {
   // "nothing selected yet" state itself).
   const showNode = tool === "node";
   const showPenLine = tool === "pen";
+  const showPencil = tool === "pencil";
   const showShape = tool === "shape";
 
   return (
@@ -97,6 +98,8 @@ export function RightPanel() {
         <NodePanel char={activeChar} glyph={glyph} selectedNodes={selectedNodes} />
       ) : showPenLine ? (
         <PenPanel />
+      ) : showPencil ? (
+        <PencilPanel />
       ) : showShape ? (
         <ShapePanel />
       ) : (
@@ -727,7 +730,28 @@ function ShapePanel() {
         </div>
       </div>
       <div className="fm-hint" style={{ marginTop: 8 }}>
-        Click-drag on the canvas to draw. Hold Shift to constrain to a square / circle / regular triangle. Releasing hands the new shape straight to the Select tool.
+        Click-drag on the canvas to draw. Hold Shift to constrain to a square / circle / regular triangle. Stays on the Shape tool after releasing, so you can keep drawing more shapes in a row — switch to Select when you're ready to move/edit one.
+      </div>
+    </Section>
+  );
+}
+
+function PencilPanel() {
+  const pencilSmoothing = useAppStore((s) => s.pencilSmoothing);
+  const setPencilSmoothing = useAppStore((s) => s.setPencilSmoothing);
+  return (
+    <Section title="Pencil">
+      <Slider
+        label="Smoothing"
+        value={pencilSmoothing}
+        min={0}
+        max={1}
+        step={0.05}
+        onChange={setPencilSmoothing}
+        format={(v) => `${Math.round(v * 100)}%`}
+      />
+      <div className="fm-hint">
+        Draw freehand — the gesture is fit to a smooth editable curve as you go. A shaky or jagged stroke is detected automatically and gets extra smoothing on top of this setting, so it never comes out as a zigzag. Releasing always closes the path into a filled shape, even if the start and end points didn't quite meet. Edit the result anytime with the Node tool.
       </div>
     </Section>
   );

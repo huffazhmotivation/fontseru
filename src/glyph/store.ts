@@ -193,6 +193,12 @@ interface AppState {
    * double-click the last point) auto-closes it into a filled shape instead
    * of leaving it open. Default false preserves the pre-existing behavior. */
   penAutoClose: boolean;
+  /** Pencil tool only: 0..1 curve-fit smoothing strength. Boosted further,
+   * automatically, on any given stroke that measures as rough/zigzaggy —
+   * see usePencilTool's estimateRoughness — so this is a baseline, not a
+   * hard ceiling. Defaults fairly high since freehand mouse/touch input is
+   * rarely steady enough to want it low. */
+  pencilSmoothing: number;
   lineWidth: number;
   lineCap: StrokeCap;
   brushCap: StrokeCap;
@@ -223,6 +229,13 @@ interface AppState {
   productionPreviewScale: number;
   productionPreviewLineHeight: number;
   productionPreviewAlign: "left" | "center" | "right";
+  /** Which preset sentence the preview shows. "auto" follows the active
+   * glyph's category (original behavior); any other value pins the preview
+   * to that category regardless of what's being drawn. */
+  productionPreviewCategory: GlyphCategory | "auto";
+  /** User-adjustable height (px) of the preview stage, changed by dragging
+   * the resize handle at the top of the bar. */
+  productionPreviewHeight: number;
 
   /** Glyph map for the currently selected family style. */
   glyphs: GlyphMap;
@@ -309,6 +322,7 @@ interface AppState {
   setPenMode: (mode: PenMode) => void;
   setShapeKind: (kind: ShapeKind) => void;
   setPenAutoClose: (on: boolean) => void;
+  setPencilSmoothing: (v: number) => void;
   setLineWidth: (w: number) => void;
   setLineCap: (cap: StrokeCap) => void;
   setBrushCap: (cap: StrokeCap) => void;
@@ -325,6 +339,8 @@ interface AppState {
   setProductionPreviewScale: (n: number) => void;
   setProductionPreviewLineHeight: (n: number) => void;
   setProductionPreviewAlign: (align: "left" | "center" | "right") => void;
+  setProductionPreviewCategory: (category: GlyphCategory | "auto") => void;
+  setProductionPreviewHeight: (n: number) => void;
   setFontMetric: (key: keyof FontMetrics, value: number) => void;
   beginMetricDrag: () => void;
   setFontMetricLive: (key: keyof FontMetrics, value: number) => void;
@@ -765,6 +781,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     penMode: "shape",
     shapeKind: "rectangle",
     penAutoClose: false,
+    pencilSmoothing: 0.6,
     lineWidth: 24,
     lineCap: "round",
     brushCap: "round",
@@ -786,6 +803,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     productionPreviewScale: 28,
     productionPreviewLineHeight: 1.3,
     productionPreviewAlign: "left",
+    productionPreviewCategory: "auto",
+    productionPreviewHeight: 120,
     // Default ON: a brand-new font should let the just-drawn ink be the
     // reference and have LSB/RSB/position follow it automatically (see
     // `commitOutline`'s autoSpacingEnabled branch), not the other way
@@ -909,6 +928,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     setShapeKind: (kind) => set({ shapeKind: kind }),
     setPenAutoClose: (on) => set({ penAutoClose: on }),
     togglePenAutoClose: () => set((s) => ({ penAutoClose: !s.penAutoClose })),
+    setPencilSmoothing: (v) => set({ pencilSmoothing: Math.max(0, Math.min(1, v)) }),
     setLineWidth: (w) => set({ lineWidth: Math.max(1, Math.round(w)) }),
     setLineCap: (cap) => set({ lineCap: cap }),
     setBrushCap: (cap) => set({ brushCap: cap }),
@@ -928,6 +948,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     setProductionPreviewScale: (n) => set({ productionPreviewScale: Math.min(120, Math.max(10, Math.round(n))) }),
     setProductionPreviewLineHeight: (n) => set({ productionPreviewLineHeight: Math.min(3, Math.max(0.8, Math.round(n * 100) / 100)) }),
     setProductionPreviewAlign: (align) => set({ productionPreviewAlign: align }),
+    setProductionPreviewCategory: (category) => set({ productionPreviewCategory: category }),
+    setProductionPreviewHeight: (n) => set({ productionPreviewHeight: Math.min(400, Math.max(60, Math.round(n))) }),
     setFontMetric: (key, value) => {
       const { metrics, glyphs, past, kerningPairs, kerningManual } = get();
       const nextValue = normalizedFontMetric(metrics, key, value);

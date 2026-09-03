@@ -106,6 +106,68 @@ export function nearestCaretColumn(placed: PlacedChar[], xUnits: number): number
   return bestCol;
 }
 
+export interface WrappedLine {
+  text: string;
+  layout: LineLayout;
+}
+
+/**
+ * Soft-wraps `text` against real glyph advances/kerning (not browser text
+ * metrics) so it breaks exactly where it will actually render — used by
+ * previews that grow taller instead of scrolling sideways as glyph scale
+ * increases. Explicit "\n" is preserved as a hard break; any line whose
+ * next glyph would cross `maxWidthUnits` wraps to a new line instead
+ * (character-level, matching Test Lab's own wrapping so both stay
+ * predictable at the same scale).
+ */
+export function wrapLines(
+  text: string,
+  glyphs: Record<string, Glyph | undefined>,
+  unitsPerEm: number,
+  kerningPairs: Record<string, number>,
+  trackingUnits = 0,
+  maxWidthUnits = Infinity,
+  wordSpacing?: number
+): WrappedLine[] {
+  const out: WrappedLine[] = [];
+  let lineChars: string[] = [];
+  let advance = 0;
+
+  const flush = () => {
+    const lineText = lineChars.join("");
+    out.push({ text: lineText, layout: layoutLine(lineText, glyphs, unitsPerEm, kerningPairs, trackingUnits, wordSpacing) });
+    lineChars = [];
+    advance = 0;
+  };
+
+  for (const ch of Array.from(text)) {
+    if (ch === "\n") {
+      flush();
+      continue;
+    }
+
+    const g = glyphs[ch];
+    const glyphAdvance = ch === " " && wordSpacing != null ? wordSpacing : g ? g.advanceWidth : fallbackAdvance(ch, unitsPerEm, wordSpacing);
+    const previous = lineChars[lineChars.length - 1] ?? null;
+    const between = previous ? trackingUnits + (kerningPairs[kerningKey(previous, ch)] ?? 0) : 0;
+    const nextAdvance = advance + between + glyphAdvance;
+
+    if (lineChars.length > 0 && nextAdvance > maxWidthUnits) {
+      flush();
+      lineChars.push(ch);
+      advance = glyphAdvance;
+    } else {
+      lineChars.push(ch);
+      advance = nextAdvance;
+    }
+  }
+
+  flush();
+  return out.length
+    ? out
+    : [{ text: "", layout: layoutLine("", glyphs, unitsPerEm, kerningPairs, trackingUnits, wordSpacing) }];
+}
+
 /** Glyph index nearest to x, used by the glyph-centric kerning workflow. */
 export function nearestGlyphIndex(placed: PlacedChar[], xUnits: number): number {
   if (placed.length === 0) return -1;

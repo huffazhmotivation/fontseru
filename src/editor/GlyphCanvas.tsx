@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent }
 import { useAppStore, type GlyphMetricKey } from "@/glyph/store";
 import { useGlyphEditor } from "./useGlyphEditor";
 import { useBrushTool } from "./useBrushTool";
+import { usePencilTool } from "./usePencilTool";
 import { useSelectTool, handlePositions, type HandleId, type SkewHandleId } from "./useSelectTool";
 import { useSketchGestures } from "./useSketchGestures";
 import { clientToFontPoint } from "./coords";
@@ -115,6 +116,7 @@ export function GlyphCanvas() {
 
   const editor = useGlyphEditor(hitScale);
   const brushTool = useBrushTool();
+  const pencilTool = usePencilTool(hitScale);
   const selectTool = useSelectTool(hitScale);
 
   // Track container size for the viewBox math.
@@ -201,9 +203,10 @@ export function GlyphCanvas() {
   const getZoomNow = useCallback(() => useAppStore.getState().zoom, []);
   const cancelActiveInteraction = useCallback(() => {
     brushTool.cancel();
+    pencilTool.cancel();
     if (tool === "select") selectTool.pointerUp();
-    else if (tool !== "brush") editor.pointerUp();
-  }, [brushTool, selectTool, editor, tool]);
+    else if (tool !== "brush" && tool !== "pencil") editor.pointerUp();
+  }, [brushTool, pencilTool, selectTool, editor, tool]);
   // 2-finger drag pan: reuses the exact same hand-pan math as the "hand"
   // tool's single-pointer drag (panDragRef above), just driven by the
   // touch midpoint's frame-to-frame delta instead of a single pointer.
@@ -236,10 +239,11 @@ export function GlyphCanvas() {
       }
       if (tool === "zoom") return applyZoomAt(zoom * (e.shiftKey ? 0.8 : 1.25), e.clientX, e.clientY);
       if (tool === "brush") return brushTool.pointerDown(p, e);
+      if (tool === "pencil") return pencilTool.pointerDown(p);
       if (tool === "select") return selectTool.pointerDown(p, e.shiftKey, e.metaKey || e.ctrlKey);
       editor.pointerDown(p, e.shiftKey, e.altKey, e.metaKey || e.ctrlKey);
     },
-    [getFontPoint, tool, editor, brushTool, selectTool, pan, zoom, applyZoomAt, usingHandPan, sketchGestures]
+    [getFontPoint, tool, editor, brushTool, pencilTool, selectTool, pan, zoom, applyZoomAt, usingHandPan, sketchGestures]
   );
 
   const onPointerMove = useCallback(
@@ -256,19 +260,21 @@ export function GlyphCanvas() {
         return;
       }
       if (tool === "brush") return brushTool.pointerMove(p, e);
+      if (tool === "pencil") return pencilTool.pointerMove(p);
       if (tool === "select") return selectTool.pointerMove(p, e.shiftKey, e.pointerType);
       editor.pointerMove(p, e.shiftKey, e.altKey);
     },
-    [getFontPoint, tool, editor, brushTool, selectTool, sc, setPan, sketchGestures]
+    [getFontPoint, tool, editor, brushTool, pencilTool, selectTool, sc, setPan, sketchGestures]
   );
 
   const onPointerUp = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
     sketchGestures.handlePointerUp(e);
     panDragRef.current = null;
     if (tool === "brush") return brushTool.pointerUp();
+    if (tool === "pencil") return pencilTool.pointerUp();
     if (tool === "select") return selectTool.pointerUp();
     editor.pointerUp();
-  }, [editor, brushTool, selectTool, tool, sketchGestures]);
+  }, [editor, brushTool, pencilTool, selectTool, tool, sketchGestures]);
 
   const onDoubleClick = useCallback(
     (e: ReactMouseEvent<SVGSVGElement>) => {
@@ -341,6 +347,7 @@ export function GlyphCanvas() {
       sketchGestures.handlePointerUp(e);
       panDragRef.current = null;
       if (tool === "brush") brushTool.pointerUp();
+      else if (tool === "pencil") pencilTool.pointerUp();
       else if (tool === "select") selectTool.pointerUp();
       else editor.pointerUp();
     }
@@ -356,14 +363,14 @@ export function GlyphCanvas() {
       window.removeEventListener("pointerup", onWindowPointerUp);
       window.removeEventListener("pointercancel", onWindowPointerCancel);
     };
-  }, [editor, brushTool, selectTool, tool, sketchGestures]);
+  }, [editor, brushTool, pencilTool, selectTool, tool, sketchGestures]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
       if (e.code === "Space") spacePanRef.current = true;
-      if (e.key === "Escape") { editor.finishOpenContour(); brushTool.cancel(); }
+      if (e.key === "Escape") { editor.finishOpenContour(); brushTool.cancel(); pencilTool.cancel(); }
       if (tool === "node") {
         if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); editor.deleteSelectedNodes(); }
         const step = e.shiftKey ? 10 : 1;
@@ -377,7 +384,7 @@ export function GlyphCanvas() {
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); };
-  }, [editor, brushTool, tool]);
+  }, [editor, brushTool, pencilTool, tool]);
 
   const beginGuideDrag = useCallback(
     (key: MetricGuideKey, e: ReactPointerEvent<SVGLineElement>) => {
@@ -510,6 +517,7 @@ export function GlyphCanvas() {
     : tool === "hand" ? "cursor-hand"
     : tool === "zoom" ? "cursor-zoom"
     : tool === "brush" ? "cursor-brush"
+    : tool === "pencil" ? "cursor-pencil"
     : tool === "select" && selectTool.hoverHandle ? handleCursor(selectTool.hoverHandle)
     : "cursor-select";
 
@@ -535,6 +543,7 @@ export function GlyphCanvas() {
         <style>{`
           .cursor-pen { cursor: crosshair; } .cursor-node { cursor: default; }
           .cursor-shape { cursor: crosshair; }
+          .cursor-pencil { cursor: crosshair; }
           .cursor-hand { cursor: grab; } .cursor-zoom { cursor: zoom-in; }
           .cursor-brush { cursor: crosshair; } .cursor-select { cursor: default; }
           .cursor-nwse { cursor: nwse-resize; } .cursor-nesw { cursor: nesw-resize; }
@@ -588,6 +597,8 @@ export function GlyphCanvas() {
           .obj-stroke-overlap { stroke: var(--overlap); opacity: 0.88; }
           .obj-sel-outline { fill: none; stroke: var(--accent); stroke-width: ${1.5 / sc}; opacity: 0.9; }
           .brush-preview { fill: none; stroke: var(--accent); opacity: 0.85; }
+          .pencil-preview { fill: none; stroke: var(--accent); opacity: 0.9; }
+          .pencil-preview-fill { fill: var(--accent); opacity: 0.16; }
           .rubber-line { stroke: var(--accent); stroke-width: ${1.2 / sc}; stroke-dasharray: ${4 / sc} ${3 / sc}; }
           .handle-line { stroke: var(--handle-line); stroke-width: ${1 / sc}; }
           .handle-line.dim { opacity: 0.4; }
@@ -889,6 +900,26 @@ export function GlyphCanvas() {
             strokeLinecap={brushCap}
             strokeLinejoin="round"
           />
+        )}
+
+        {/* Pencil preview: the live curve-fit result, shown both as the
+            open gesture drawn so far AND — faintly — as it will land once
+            closed, so the eventual auto-close never comes as a surprise. */}
+        {pencilTool.previewContour && (
+          <>
+            <path
+              d={contourToPath({ ...pencilTool.previewContour, closed: true }, ascender)}
+              className="pencil-preview-fill"
+              fillRule="nonzero"
+            />
+            <path
+              d={contourToPath({ ...pencilTool.previewContour, closed: false }, ascender)}
+              className="pencil-preview"
+              strokeWidth={2 * hitScale}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </>
         )}
 
         {/* Pen rubber-band */}

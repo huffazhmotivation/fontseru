@@ -52,8 +52,6 @@ export function useGlyphEditor(hitScale: number) {
   const lineWidth = useAppStore((s) => s.lineWidth);
   const lineCap = useAppStore((s) => s.lineCap);
   const shapeKind = useAppStore((s) => s.shapeKind);
-  const setTool = useAppStore((s) => s.setTool);
-  const selectObjects = useAppStore((s) => s.selectObjects);
   const activeChar = useAppStore((s) => s.activeChar);
   const glyph = useAppStore((s) => s.glyphs[s.activeChar]);
   const liveOutline = useAppStore((s) => s.liveOutline);
@@ -476,11 +474,10 @@ export function useGlyphEditor(hitScale: number) {
       const added = liveOutline?.objects.some((o) => o.id === drag.objectId) ?? false;
       if (added && liveOutline) {
         commitOutline(activeChar, liveOutline);
-        // Drop straight into Select with the new shape selected — matches
-        // how Pen-drawn shapes and other creation flows hand off, and lets
-        // Cmd/Ctrl+drag-a-corner (Node tool) start rounding it right away.
-        setTool("select");
-        selectObjects([drag.objectId]);
+        // Stays on the Shape tool (matching Pencil and Brush) instead of
+        // hopping to Select — drawing several rectangles/ellipses/polygons
+        // in a row is the common case, and re-picking the tool after every
+        // single shape got in the way of that.
       } else {
         // Click without a real drag: nothing was added, so just clear the
         // no-op liveOutline snapshot instead of leaving a stale copy around.
@@ -491,7 +488,7 @@ export function useGlyphEditor(hitScale: number) {
     }
     if (liveOutline) commitOutline(activeChar, liveOutline);
     baseOutlineRef.current = null;
-  }, [liveOutline, activeChar, commitOutline, finishMarquee, setTool, selectObjects, setLiveOutline]);
+  }, [liveOutline, activeChar, commitOutline, finishMarquee, setLiveOutline]);
 
   const finishOpenContour = useCallback(() => {
     if (!drawingContourId) return;

@@ -2,6 +2,7 @@ export type ToolId =
   | "home"
   | "select"
   | "pen"
+  | "pencil"
   | "brush"
   | "eraser"
   | "node"

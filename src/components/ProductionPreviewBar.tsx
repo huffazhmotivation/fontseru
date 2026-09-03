@@ -1,7 +1,21 @@
-import { AlignCenter, AlignLeft, AlignRight, X } from "lucide-react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { AlignCenter, AlignLeft, AlignRight, Ampersand, CaseLower, CaseUpper, GripHorizontal, Hash, Quote, Wand2, X } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { GlyphRun } from "@/editor/GlyphRun";
+import { wrapLines } from "@/editor/textLayout";
 import { sentenceForCategory } from "@/glyph/testSentences";
+import type { GlyphCategory } from "@/types/glyph";
+
+/** Small icon toggles for the categories that actually have a preset
+ * sentence (see sentenceForCategory) — spacing/multilingual/feature glyphs
+ * fall back to the uppercase pangram so they don't get a button here. */
+const CATEGORY_OPTIONS: { id: GlyphCategory; label: string; Icon: typeof CaseUpper }[] = [
+  { id: "upper", label: "Uppercase", Icon: CaseUpper },
+  { id: "lower", label: "Lowercase", Icon: CaseLower },
+  { id: "digits", label: "Numbers", Icon: Hash },
+  { id: "punct", label: "Punctuation", Icon: Quote },
+  { id: "symbols", label: "Symbols", Icon: Ampersand },
+];
 
 /**
  * Lightweight, always-in-place preview shown while drawing glyphs — one
@@ -26,22 +40,83 @@ export function ProductionPreviewBar() {
   const setAlign = useAppStore((s) => s.setProductionPreviewAlign);
   const activeChar = useAppStore((s) => s.activeChar);
   const glyphs = useAppStore((s) => s.glyphs);
+  const category = useAppStore((s) => s.productionPreviewCategory);
+  const setCategory = useAppStore((s) => s.setProductionPreviewCategory);
+  const stageHeight = useAppStore((s) => s.productionPreviewHeight);
+  const setStageHeight = useAppStore((s) => s.setProductionPreviewHeight);
+  const metrics = useAppStore((s) => s.metrics);
+  const kerningPairs = useAppStore((s) => s.kerningPairs);
+
+  const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageWidth, setStageWidth] = useState(0);
+
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const update = () => setStageWidth(Math.max(1, el.clientWidth));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [open]);
 
   if (!open) return null;
 
-  const category = glyphs[activeChar]?.category;
-  const text = sentenceForCategory(category);
+  const activeCategory = category === "auto" ? glyphs[activeChar]?.category : category;
+  const text = sentenceForCategory(activeCategory);
+
+  // Wrap to the box's own width so enlarging the glyph scale grows the
+  // preview downward (more lines) instead of forcing sideways scrolling.
+  const pxPerUnit = scale / metrics.unitsPerEm;
+  const maxWidthUnits = Math.max(1, (stageWidth || 720) / Math.max(pxPerUnit, 0.0001));
+  const lines = wrapLines(text, glyphs, metrics.unitsPerEm, kerningPairs, 0, maxWidthUnits, metrics.wordSpacing);
+
+  function startResize(e: ReactPointerEvent) {
+    e.preventDefault();
+    resizeRef.current = { startY: e.clientY, startHeight: stageHeight };
+    const onMove = (ev: PointerEvent) => {
+      if (!resizeRef.current) return;
+      const delta = ev.clientY - resizeRef.current.startY;
+      setStageHeight(resizeRef.current.startHeight + delta);
+    };
+    const onUp = () => {
+      resizeRef.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
 
   return (
     <div className="fm-preview-bar" data-testid="production-preview-bar">
       <div
-        className="fm-preview-stage"
-        style={{
-          justifyContent: align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center",
-          lineHeight,
-        }}
+        className="fm-preview-resize-handle"
+        onPointerDown={startResize}
+        title="Drag to resize preview"
+        data-testid="preview-resize-handle"
       >
-        <GlyphRun text={text} fontSizePx={scale} ghostEmpty />
+        <GripHorizontal size={12} />
+      </div>
+
+      <div className="fm-preview-stage" ref={stageRef} style={{ height: stageHeight }}>
+        <div
+          className="fm-preview-lines"
+          style={{
+            alignItems: align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center",
+          }}
+        >
+          {lines.map((line, i) => (
+            <div
+              key={i}
+              className="fm-preview-line"
+              style={{ marginTop: i > 0 ? scale * (lineHeight - 1) : 0 }}
+            >
+              <GlyphRun text={line.text || " "} fontSizePx={scale} ghostEmpty className="fm-preview-glyphrun" />
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="fm-preview-controls">
@@ -71,6 +146,28 @@ export function ProductionPreviewBar() {
             data-testid="preview-line-height-slider"
           />
           <span className="fm-preview-value">{lineHeight.toFixed(2)}x</span>
+        </div>
+
+        <div className="fm-preview-category-group" role="group" aria-label="Preview text">
+          <button
+            className={category === "auto" ? "on" : ""}
+            onClick={() => setCategory("auto")}
+            title="Auto (follow the letter you're drawing)"
+            data-testid="preview-category-auto"
+          >
+            <Wand2 size={13} />
+          </button>
+          {CATEGORY_OPTIONS.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              className={category === id ? "on" : ""}
+              onClick={() => setCategory(id)}
+              title={label}
+              data-testid={`preview-category-${id}`}
+            >
+              <Icon size={13} />
+            </button>
+          ))}
         </div>
 
         <div className="fm-preview-align-group" role="group" aria-label="Alignment">

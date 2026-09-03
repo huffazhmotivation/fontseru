@@ -4,7 +4,7 @@ import type { ToolId } from "@/types/tool";
 import { pasteSvgFromSystemClipboard } from "@/trace/svgImport";
 
 const KEY_TO_TOOL: Record<string, ToolId> = {
-  v: "select", p: "pen", b: "brush", n: "node", h: "hand", z: "zoom",
+  v: "select", p: "pen", y: "pencil", b: "brush", n: "node", h: "hand", z: "zoom",
 };
 
 /**

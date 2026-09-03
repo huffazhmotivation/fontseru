@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { MousePointer2, Paintbrush, Spline, PenTool, Hand, ZoomIn, Image, Lock, Shapes, Square, Circle, Triangle } from "lucide-react";
+import { MousePointer2, Paintbrush, Spline, PenTool, Pencil, Hand, ZoomIn, Image, Lock, Shapes, Square, Circle, Triangle } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useAuth } from "@/auth/AuthProvider";
 import type { ToolConfig } from "@/types/tool";
 import type { ShapeKind } from "@/editor/shapeBuilder";
 
 // Floating toolbar order (left → right):
-// Home → Select → Node → Pen → Shape → Brush → Trace Image → Zoom → Hand
+// Home → Select → Node → Pen → Pencil → Shape → Brush → Trace Image → Zoom → Hand
 // Eraser / Import remain implemented (used elsewhere / kept for future
 // phases) but are intentionally not shown in this toolbar.
 const GROUPS: ToolConfig[][] = [
@@ -15,6 +15,7 @@ const GROUPS: ToolConfig[][] = [
     { id: "select", label: "Select", key: "V", phase: 1 },
     { id: "node", label: "Node", key: "N", phase: 2 },
     { id: "pen", label: "Pen", key: "P", phase: 2 },
+    { id: "pencil", label: "Pencil", key: "Y", phase: 2 },
     { id: "brush", label: "Brush", key: "B", phase: 3 },
   ],
   [
@@ -28,6 +29,7 @@ const ICONS = {
   brush: Paintbrush,
   node: Spline,
   pen: PenTool,
+  pencil: Pencil,
   hand: Hand,
   zoom: ZoomIn,
   trace: Image,
