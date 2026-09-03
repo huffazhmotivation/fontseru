@@ -1641,18 +1641,36 @@ export function SpecimenPanel() {
     const prevCursor = document.body.style.cursor;
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
+    // Pointermove fires far more often than the browser can actually paint
+    // (sometimes 200+/sec). sideWidth lives on this component, so calling
+    // setSideWidth straight from the raw event forced a full re-render/
+    // reconciliation of the entire Test Lab panel -- including the Kerning
+    // Groups list -- on every single one of those events, which is what
+    // made dragging (and the panel generally, while a drag was in flight)
+    // feel laggy. Coalescing to one setSideWidth per animation frame keeps
+    // the drag visually just as responsive while capping the re-render
+    // rate to the screen's actual refresh rate.
+    let pendingWidth: number | null = null;
+    let rafId = 0;
+    const flush = () => {
+      rafId = 0;
+      if (pendingWidth !== null) setSideWidth(pendingWidth);
+    };
     const onMove = (ev: PointerEvent) => {
       const drag = sideResizeRef.current;
       if (!drag) return;
       // The rail sits to the right of the stage, so dragging left (negative
       // clientX delta) should widen it.
       const delta = drag.startX - ev.clientX;
-      const next = Math.min(620, Math.max(260, drag.startWidth + delta));
-      setSideWidth(next);
+      pendingWidth = Math.min(620, Math.max(260, drag.startWidth + delta));
+      if (!rafId) rafId = requestAnimationFrame(flush);
     };
     const onUp = () => {
       sideResizeRef.current = null;
       setIsResizingSide(false);
+      if (rafId) cancelAnimationFrame(rafId);
+      if (pendingWidth !== null) setSideWidth(pendingWidth);
+      pendingWidth = null;
       document.body.style.userSelect = prevUserSelect;
       document.body.style.cursor = prevCursor;
       window.removeEventListener("pointermove", onMove);
