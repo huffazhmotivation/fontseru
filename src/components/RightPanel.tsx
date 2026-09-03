@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, PenLine, Minus, Highlighter, Feather, Pencil, Zap, Scissors, Copy, Trash2, Flame, Grid3x3, Lock, Unlock, ImagePlus, FlipHorizontal, FlipVertical, CircleDashed, Droplet, Triangle, Circle, Square } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, PenLine, Minus, Highlighter, Feather, Pencil, Zap, Scissors, Copy, Trash2, Flame, Grid3x3, Lock, Unlock, ImagePlus, FlipHorizontal, FlipVertical, CircleDashed, Droplet, Triangle, Circle, Square, ScanLine } from "lucide-react";
 import type { ShapeKind } from "@/editor/shapeBuilder";
 import { useAppStore, type NodeRef, type GlyphMetricKey } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -411,7 +411,77 @@ function FontMetricsSection() {
   const setFontMetric = useAppStore((s) => s.setFontMetric);
   const metricFocus = useAppStore((s) => s.metricFocus);
   const setMetricFocus = useAppStore((s) => s.setMetricFocus);
+  const glyphs = useAppStore((s) => s.glyphs);
   const refs = useRef<Partial<Record<keyof typeof metrics, HTMLInputElement | null>>>({});
+
+  const [angleDetecting, setAngleDetecting] = useState(false);
+  const [angleFlash, setAngleFlash] = useState<number | null>(null);
+
+  // Auto-detect italic angle from drawn glyphs.
+  // Strategy: for each candidate "stem" glyph (I, l, H, i, 1, etc.),
+  // collect all contour nodes, find the topmost and bottommost on-curve
+  // points for each vertical stroke, then compute arctan(Δx/Δy).
+  // Average across all detected stems → round to 1 decimal.
+  const handleDetectAngle = useCallback(() => {
+    setAngleDetecting(true);
+
+    requestAnimationFrame(() => {
+      // Priority candidates: tall, straight-stemmed glyphs
+      const CANDIDATES = ["I", "l", "H", "i", "1", "T", "L", "E", "F", "b", "d", "h", "k", "n", "m", "p", "q"];
+      const angles: number[] = [];
+
+      for (const ch of CANDIDATES) {
+        const glyph = glyphs[ch];
+        if (!glyph || !glyph.outline?.objects?.length) continue;
+
+        // Collect all on-curve nodes across every contour
+        const allNodes: { x: number; y: number }[] = [];
+        for (const obj of glyph.outline.objects) {
+          for (const contour of obj.contours) {
+            for (const node of contour.nodes) {
+              allNodes.push({ x: node.point.x, y: node.point.y });
+            }
+          }
+        }
+        if (allNodes.length < 2) continue;
+
+        // Sort by y (ascending = bottom in font coords where 0=baseline, ascender=top)
+        const sorted = [...allNodes].sort((a, b) => a.y - b.y);
+        const bottom = sorted[0];
+        const top = sorted[sorted.length - 1];
+
+        const dy = top.y - bottom.y;
+        if (dy < metrics.unitsPerEm * 0.2) continue; // too short, skip
+
+        // In OpenType: italic leans right = top nodes shift RIGHT relative to bottom
+        // angle = arctan(Δx / Δy), negative = lean right (OpenType convention)
+        const dx = top.x - bottom.x;
+        const angleRad = Math.atan2(dx, dy);
+        const angleDeg = (angleRad * 180) / Math.PI;
+
+        // Sanity: ignore if outside plausible italic range
+        if (angleDeg < -45 || angleDeg > 45) continue;
+        angles.push(-angleDeg); // negate: rightward lean → negative in OpenType
+      }
+
+      if (angles.length === 0) {
+        setAngleDetecting(false);
+        return;
+      }
+
+      // Trim outliers: drop top & bottom 20% if enough samples
+      const sorted = [...angles].sort((a, b) => a - b);
+      const trim = angles.length >= 5 ? Math.floor(sorted.length * 0.2) : 0;
+      const trimmed = sorted.slice(trim, sorted.length - trim);
+      const avg = trimmed.reduce((s, v) => s + v, 0) / trimmed.length;
+      const result = Math.round(avg * 10) / 10; // 1 decimal
+
+      setFontMetric("italicAngle", result);
+      setAngleFlash(result);
+      setAngleDetecting(false);
+      window.setTimeout(() => setAngleFlash(null), 2200);
+    });
+  }, [glyphs, metrics.unitsPerEm, setFontMetric]);
 
   useEffect(() => {
     if (!metricFocus) return;
@@ -474,18 +544,38 @@ function FontMetricsSection() {
             data-testid="font-metric-wordSpacing"
           />
         </div>
-        <div className="fm-field fm-metric-field" key="italicAngle">
-          <label htmlFor="font-metric-italicAngle">Italic Angle</label>
-          <NumericInput
-            id="font-metric-italicAngle"
-            ref={(el) => { refs.current.italicAngle = el; }}
-            value={italicAngleValue}
-            onChange={(next) => {
-              if (Number.isFinite(next)) setFontMetric("italicAngle", next);
-            }}
-            onFocus={() => setMetricFocus(null)}
-            data-testid="font-metric-italicAngle"
-          />
+        <div className="fm-field fm-metric-field fm-metric-italic-angle" key="italicAngle">
+          <label htmlFor="font-metric-italicAngle">
+            Italic Angle
+            {angleFlash !== null && (
+              <span className="fm-italic-angle-flash" data-testid="italic-angle-flash">
+                → {angleFlash > 0 ? "+" : ""}{angleFlash}°
+              </span>
+            )}
+          </label>
+          <div className="fm-italic-angle-row">
+            <NumericInput
+              id="font-metric-italicAngle"
+              ref={(el) => { refs.current.italicAngle = el; }}
+              value={italicAngleValue}
+              onChange={(next) => {
+                if (Number.isFinite(next)) setFontMetric("italicAngle", next);
+              }}
+              onFocus={() => setMetricFocus(null)}
+              data-testid="font-metric-italicAngle"
+            />
+            <button
+              type="button"
+              className={`fm-action-btn fm-italic-angle-detect${angleDetecting ? " running" : ""}${angleFlash !== null ? " done" : ""}`}
+              onClick={handleDetectAngle}
+              disabled={angleDetecting}
+              title="Auto-detect italic angle from your drawn glyphs (reads stems of I, l, H, etc.)"
+              data-testid="italic-angle-auto-detect"
+            >
+              <ScanLine size={13} />
+              {angleDetecting ? "Scanning…" : angleFlash !== null ? "Done" : "Auto"}
+            </button>
+          </div>
         </div>
       </div>
       <div className="fm-hint">

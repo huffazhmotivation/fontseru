@@ -2575,6 +2575,47 @@ input[type="number"]::-webkit-outer-spin-button {
   color: var(--accent);
 }
 
+/* ── Group-to-Group Kerning redesigned row ── */
+.fm-kern-group-pair-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.fm-kern-group-pair-row .fm-kern-group-pair-selects {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.fm-kern-group-pair-value-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+  width: 90px;
+}
+.fm-kern-group-pair-value-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.fm-kern-group-pair-value-row .fm-numeric-control {
+  flex: 1;
+  min-width: 0;
+}
+.fm-kern-group-pair-value-empty {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 14px;
+  border: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-2) 40%, transparent);
+}
+
 /* ── Bottom bar: Specimen controls ── */
 .fm-lab-bottom-bar {
   display: flex;
@@ -2889,6 +2930,43 @@ input[type="number"]::-webkit-outer-spin-button {
   border-color: color-mix(in srgb, var(--accent) 68%, var(--border));
   box-shadow: 0 0 0 2px var(--accent-soft);
   outline: none;
+}
+/* Italic Angle spans full width so Auto button fits comfortably */
+.fm-metric-field.fm-metric-italic-angle {
+  grid-column: 1 / -1;
+}
+/* Italic Angle auto-detect row */
+.fm-italic-angle-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fm-italic-angle-row .fm-numeric-control {
+  flex: 1;
+  min-width: 0;
+}
+.fm-italic-angle-detect {
+  flex: 0 0 auto;
+  font-size: 10px;
+  padding: 4px 8px;
+  gap: 4px;
+  white-space: nowrap;
+}
+.fm-italic-angle-detect.done {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+}
+.fm-italic-angle-flash {
+  margin-left: 6px;
+  color: var(--accent);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  animation: fm-flash-in 0.25s ease;
+}
+@keyframes fm-flash-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 

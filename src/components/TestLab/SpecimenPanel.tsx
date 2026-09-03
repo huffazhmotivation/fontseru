@@ -2300,58 +2300,68 @@ export function SpecimenPanel() {
               <div className="fm-field fm-kern-group-pair">
                 <label>Group-to-Group Kerning</label>
                 <div className="fm-hint fm-kern-group-pair-hint">
-                  Pick one left group and one right group to set the kerning value applied between every letter pair across them.
+                  Pilih satu left group dan satu right group, lalu set nilai kerning-nya — nilai ini berlaku untuk setiap pasangan huruf di antara kedua grup tersebut.
                 </div>
-                <div className="fm-kern-group-pair-selects">
-                  <div className="fm-kern-group-pair-select-wrap">
-                    <span className="fm-kern-group-pair-select-label">Left group</span>
-                    <select
-                      value={groupPairLeft}
-                      onChange={(e) => setGroupPairLeft(e.target.value)}
-                      disabled={kerningClasses.left.length === 0}
-                      data-testid="kern-group-pair-left"
-                    >
-                      <option value="">Choose…</option>
-                      {kerningClasses.left.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
+                <div className="fm-kern-group-pair-row">
+                  <div className="fm-kern-group-pair-selects">
+                    <div className="fm-kern-group-pair-select-wrap">
+                      <span className="fm-kern-group-pair-select-label">LEFT GROUP</span>
+                      <select
+                        value={groupPairLeft}
+                        onChange={(e) => setGroupPairLeft(e.target.value)}
+                        disabled={kerningClasses.left.length === 0}
+                        data-testid="kern-group-pair-left"
+                      >
+                        <option value="">Choose…</option>
+                        {kerningClasses.left.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="fm-kern-group-pair-select-wrap">
+                      <span className="fm-kern-group-pair-select-label">RIGHT GROUP</span>
+                      <select
+                        value={groupPairRight}
+                        onChange={(e) => setGroupPairRight(e.target.value)}
+                        disabled={kerningClasses.right.length === 0}
+                        data-testid="kern-group-pair-right"
+                      >
+                        <option value="">Choose…</option>
+                        {kerningClasses.right.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <div className="fm-kern-group-pair-select-wrap">
-                    <span className="fm-kern-group-pair-select-label">Right group</span>
-                    <select
-                      value={groupPairRight}
-                      onChange={(e) => setGroupPairRight(e.target.value)}
-                      disabled={kerningClasses.right.length === 0}
-                      data-testid="kern-group-pair-right"
-                    >
-                      <option value="">Choose…</option>
-                      {kerningClasses.right.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {groupPairLeft && groupPairRight ? (
+                    <div className="fm-kern-group-pair-value-col">
+                      <span className="fm-kern-group-pair-select-label">VALUE</span>
+                      <div className="fm-kern-group-pair-value-row">
+                        <NumericInput
+                          value={groupPairValue}
+                          disabled={false}
+                          onChange={(value) => setClassKerningPair(groupPairLeft, groupPairRight, value)}
+                          data-testid="kern-group-pair-value"
+                        />
+                        <button
+                          type="button"
+                          className="fm-action-btn fm-kern-reset-btn"
+                          disabled={!groupPairHasValue}
+                          onClick={() => resetClassKerningPair(groupPairLeft, groupPairRight)}
+                          title="Clear kerning value for this group pair"
+                          data-testid="kern-group-pair-reset"
+                        >
+                          <RotateCcw size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="fm-kern-group-pair-value-col fm-kern-group-pair-value-placeholder">
+                      <span className="fm-kern-group-pair-select-label">VALUE</span>
+                      <div className="fm-kern-group-pair-value-empty">—</div>
+                    </div>
+                  )}
                 </div>
-                {groupPairLeft && groupPairRight && (
-                  <div className="fm-kern-value-row">
-                    <NumericInput
-                      value={groupPairValue}
-                      disabled={false}
-                      onChange={(value) => setClassKerningPair(groupPairLeft, groupPairRight, value)}
-                      data-testid="kern-group-pair-value"
-                    />
-                    <button
-                      type="button"
-                      className="fm-action-btn fm-kern-reset-btn"
-                      disabled={!groupPairHasValue}
-                      onClick={() => resetClassKerningPair(groupPairLeft, groupPairRight)}
-                      title="Clear this group's kerning value"
-                      data-testid="kern-group-pair-reset"
-                    >
-                      <RotateCcw size={14} />
-                    </button>
-                  </div>
-                )}
               </div>
 
               {Object.keys(classKerningPairs).length > 0 && (
