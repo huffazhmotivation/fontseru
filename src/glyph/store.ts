@@ -17,9 +17,10 @@ import { shortId } from "@/utils/id";
 import { expandStrokeObject, normalizeBrushSettings } from "@/brushes/strokeToOutline";
 import { applyBooleanOp, type BooleanOp } from "@/editor/booleanOps";
 import { composeMultilingualGlyphs, type MultilingualResult } from "@/glyph/multilingual";
-import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext, WordSpacingOverridesByStyle } from "@/types/kerning";
-import { kerningKey, decodeKerningKey, effectiveWordSpacing } from "@/types/kerning";
+import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext, WordSpacingOverridesByStyle, KerningClasses } from "@/types/kerning";
+import { kerningKey, decodeKerningKey, effectiveWordSpacing, classPairKey, EMPTY_KERNING_CLASSES } from "@/types/kerning";
 import { suggestKerningPair, autoKernAllAvailablePairs } from "@/kerning/autoKern";
+import { autoGenerateKerningClasses as computeAutoKerningClasses, materializeClassKerning } from "@/kerning/kerningClasses";
 import { autoSpaceAllGlyphs as computeAutoSpaceAllGlyphs, suggestGlyphSidebearings, suggestWordSpacing, applyOpticalSidebearings, type AutoSpaceResult } from "@/kerning/autoSpace";
 import type { FeatureBuilderConfig, LigatureRule, AlternateRule, SwashRule, FeatureGlyphRef } from "@/types/opentypeFeatures";
 import { emptyFeatureConfig, nextFeatureRuleId } from "@/types/opentypeFeatures";
@@ -257,6 +258,13 @@ interface AppState {
    * override layers above; absence means inherit the shared metrics.wordSpacing. */
   wordSpacingOverridesByStyle: WordSpacingOverridesByStyle;
   autoKernLastRun: { processed: number; updated: number; preservedManual: number } | null;
+  /** Kerning Classes ("groups") — a bulk-editing convenience layered over
+   * kerningPairs; see types/kerning.ts for why this never needs its own
+   * rendering/export path. Not part of the undo/redo `past`/`future` stack,
+   * same treatment as featureConfig — only the flat kerningPairs/kerningManual
+   * writes a class produces go through the regular kerning history. */
+  kerningClasses: KerningClasses;
+  classKerningPairs: Record<string, number>;
   /** Last "Auto Spacing" run against the active style's glyphs, for a brief status readout. */
   autoSpaceLastRun: { updated: number; skipped: number; skippedManual: number } | null;
   /** Last "Apply Tracking" bake against the active style's glyphs. */
@@ -433,7 +441,7 @@ interface AppState {
   // history / persistence
   undo: () => void;
   redo: () => void;
-  hydrate: (patch: { glyphs?: GlyphMap; glyphsByStyle?: Partial<GlyphFamily>; fontStyle?: FontStyle; customFamilies?: CustomFamily[]; fontName?: string; fontInfo?: Partial<FontInfo>; projectFileName?: string; metrics?: Partial<FontMetrics>; kerningPairs?: KerningPairs; kerningManual?: KerningManualFlags; kerningOverridesByStyle?: KerningOverridesByStyle; kerningOverrideManualByStyle?: KerningOverrideManualByStyle; wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle; featureConfig?: FeatureBuilderConfig; activeChar?: string; gridSize?: number; showGrid?: boolean; showGuides?: boolean; snapEnabled?: boolean; ghost?: Partial<GhostSettings>; brush?: BrushSettings }) => void;
+  hydrate: (patch: { glyphs?: GlyphMap; glyphsByStyle?: Partial<GlyphFamily>; fontStyle?: FontStyle; customFamilies?: CustomFamily[]; fontName?: string; fontInfo?: Partial<FontInfo>; projectFileName?: string; metrics?: Partial<FontMetrics>; kerningPairs?: KerningPairs; kerningManual?: KerningManualFlags; kerningOverridesByStyle?: KerningOverridesByStyle; kerningOverrideManualByStyle?: KerningOverrideManualByStyle; wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle; kerningClasses?: KerningClasses; classKerningPairs?: Record<string, number>; featureConfig?: FeatureBuilderConfig; activeChar?: string; gridSize?: number; showGrid?: boolean; showGuides?: boolean; snapEnabled?: boolean; ghost?: Partial<GhostSettings>; brush?: BrushSettings }) => void;
 
   // kerning
   setKerningPair: (left: string, right: string, value: number) => void;
@@ -454,6 +462,16 @@ interface AppState {
   beginKerningDrag: () => void;
   setKerningPairLive: (left: string, right: string, value: number) => void;
   endKerningDrag: () => void;
+
+  // Kerning Classes ("groups") — see types/kerning.ts + kerning/kerningClasses.ts
+  autoGenerateKerningClasses: () => { leftCount: number; rightCount: number };
+  createKerningClass: (side: "left" | "right", name: string) => string;
+  renameKerningClass: (side: "left" | "right", id: string, name: string) => void;
+  deleteKerningClass: (side: "left" | "right", id: string) => void;
+  addGlyphToKerningClass: (side: "left" | "right", id: string, ch: string) => void;
+  removeGlyphFromKerningClass: (side: "left" | "right", id: string, ch: string) => void;
+  setClassKerningPair: (leftId: string, rightId: string, value: number) => void;
+  resetClassKerningPair: (leftId: string, rightId: string) => void;
 
   // Family kerning — additive layer over the existing Single Test API.
   setFamilyKerningPair: (context: KerningContext, left: string, right: string, value: number) => void;
@@ -826,6 +844,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     kerningOverrideManualByStyle: {},
     wordSpacingOverridesByStyle: {},
     autoKernLastRun: null,
+    kerningClasses: EMPTY_KERNING_CLASSES,
+    classKerningPairs: {},
     autoSpaceLastRun: null,
     trackingApplyLastRun: null,
     testLabOpen: false,
@@ -893,6 +913,8 @@ export const useAppStore = create<AppState>()((set, get) => {
         kerningOverrideManualByStyle: {},
         wordSpacingOverridesByStyle: {},
         autoKernLastRun: null,
+        kerningClasses: EMPTY_KERNING_CLASSES,
+        classKerningPairs: {},
         autoSpaceLastRun: null,
         trackingApplyLastRun: null,
         featureConfig: emptyFeatureConfig(),
@@ -1664,6 +1686,8 @@ export const useAppStore = create<AppState>()((set, get) => {
           kerningOverridesByStyle: patch.kerningOverridesByStyle ?? (incomingRegular ? {} : s.kerningOverridesByStyle),
           kerningOverrideManualByStyle: patch.kerningOverrideManualByStyle ?? (incomingRegular ? {} : s.kerningOverrideManualByStyle),
           wordSpacingOverridesByStyle: patch.wordSpacingOverridesByStyle ?? (incomingRegular ? {} : s.wordSpacingOverridesByStyle),
+          kerningClasses: patch.kerningClasses ?? (incomingRegular ? EMPTY_KERNING_CLASSES : s.kerningClasses),
+          classKerningPairs: patch.classKerningPairs ?? (incomingRegular ? {} : s.classKerningPairs),
           featureConfig: patch.featureConfig ?? (incomingRegular ? emptyFeatureConfig() : s.featureConfig),
           activeChar,
           gridSize: patch.gridSize ?? s.gridSize,
@@ -1909,6 +1933,104 @@ export const useAppStore = create<AppState>()((set, get) => {
         past: [...past, { glyphs, metrics: get().metrics, kerningPairs: snapshot.kerningPairs, kerningManual: snapshot.kerningManual }].slice(-HISTORY_LIMIT),
         future: [],
       });
+    },
+
+    // ---------------------------- Kerning Classes ("groups") ----------
+    // Class metadata itself (kerningClasses/classKerningPairs) is a plain
+    // `set()`, same treatment as featureConfig — it doesn't touch the
+    // undo/redo `past` stack. But every class-pair value change DOES flow
+    // through `commitKerning`, so the flat glyph pairs it fills in remain
+    // fully undoable exactly like any other kerning edit.
+    autoGenerateKerningClasses: () => {
+      const { glyphs, metrics } = get();
+      const classes = computeAutoKerningClasses(glyphs, metrics);
+      // Re-running clustering replaces the auto-generated groups wholesale
+      // (ids change), so any class-pair values set against the old groups
+      // are cleared too — there's nothing meaningful left for them to
+      // reference. Already-filled glyph pairs in kerningPairs are left
+      // untouched; they simply become ordinary auto-kern pairs.
+      set({ kerningClasses: classes, classKerningPairs: {} });
+      return { leftCount: classes.left.length, rightCount: classes.right.length };
+    },
+
+    createKerningClass: (side, name) => {
+      const id = `custom-${side}-${Date.now().toString(36)}-${Math.round(Math.random() * 1e4)}`;
+      set((s) => ({
+        kerningClasses: {
+          ...s.kerningClasses,
+          [side]: [...s.kerningClasses[side], { id, name: name.trim() || "New Group", side, members: [], auto: false }],
+        },
+      }));
+      return id;
+    },
+
+    renameKerningClass: (side, id, name) => {
+      set((s) => ({
+        kerningClasses: {
+          ...s.kerningClasses,
+          [side]: s.kerningClasses[side].map((c) => (c.id === id ? { ...c, name: name.trim() || c.name, auto: false } : c)),
+        },
+      }));
+    },
+
+    deleteKerningClass: (side, id) => {
+      set((s) => {
+        const remaining = { ...s.classKerningPairs };
+        for (const key of Object.keys(remaining)) {
+          const [l, r] = key.split("::");
+          if ((side === "left" && l === id) || (side === "right" && r === id)) delete remaining[key];
+        }
+        return {
+          kerningClasses: { ...s.kerningClasses, [side]: s.kerningClasses[side].filter((c) => c.id !== id) },
+          classKerningPairs: remaining,
+        };
+      });
+    },
+
+    addGlyphToKerningClass: (side, id, ch) => {
+      const state = get();
+      // A glyph belongs to at most one class per side — pull it out of
+      // whichever class (if any) already claims it first.
+      const withoutCh = state.kerningClasses[side].map((c) => ({ ...c, members: c.members.filter((m) => m !== ch) }));
+      const nextSideClasses = withoutCh.map((c) => (c.id === id ? { ...c, members: [...c.members, ch] } : c));
+      const nextClasses: KerningClasses = { ...state.kerningClasses, [side]: nextSideClasses };
+      set({ kerningClasses: nextClasses });
+      // Re-fill so the newly added glyph immediately gets every class-pair
+      // value already defined for this class, instead of waiting for the
+      // user to re-touch the value.
+      const { kerningPairs, kerningManual } = get();
+      const { pairs, manual } = materializeClassKerning(nextClasses, get().classKerningPairs, kerningPairs, kerningManual);
+      commitKerning(pairs, manual);
+    },
+
+    removeGlyphFromKerningClass: (side, id, ch) => {
+      set((s) => ({
+        kerningClasses: {
+          ...s.kerningClasses,
+          [side]: s.kerningClasses[side].map((c) => (c.id === id ? { ...c, members: c.members.filter((m) => m !== ch) } : c)),
+        },
+      }));
+    },
+
+    setClassKerningPair: (leftId, rightId, value) => {
+      const state = get();
+      const nextClassPairs = { ...state.classKerningPairs, [classPairKey(leftId, rightId)]: Math.round(value) };
+      set({ classKerningPairs: nextClassPairs });
+      const { pairs, manual } = materializeClassKerning(state.kerningClasses, nextClassPairs, state.kerningPairs, state.kerningManual);
+      commitKerning(pairs, manual);
+    },
+
+    resetClassKerningPair: (leftId, rightId) => {
+      const state = get();
+      const key = classPairKey(leftId, rightId);
+      const nextClassPairs = { ...state.classKerningPairs };
+      delete nextClassPairs[key];
+      set({ classKerningPairs: nextClassPairs });
+      // Re-materialize with the value effectively at 0 so previously
+      // class-filled (non-manual) pairs for this combo are cleared too.
+      const zeroed = { ...nextClassPairs, [key]: 0 };
+      const { pairs, manual } = materializeClassKerning(state.kerningClasses, zeroed, state.kerningPairs, state.kerningManual);
+      commitKerning(pairs, manual);
     },
 
     setFamilyKerningPair: (context, left, right, value) => {

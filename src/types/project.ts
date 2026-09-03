@@ -1,7 +1,7 @@
 import type { BrushSettings } from "./brush";
 import type { FontInfo, FontMetrics } from "./font";
 import type { CustomFamily, FontStyle, GlyphFamily, GlyphMap } from "./glyph";
-import type { KerningManualFlags, KerningPairs, KerningOverridesByStyle, KerningOverrideManualByStyle, WordSpacingOverridesByStyle } from "./kerning";
+import type { KerningManualFlags, KerningPairs, KerningOverridesByStyle, KerningOverrideManualByStyle, WordSpacingOverridesByStyle, KerningClasses } from "./kerning";
 import type { FeatureBuilderConfig } from "./opentypeFeatures";
 
 export const FONTSERU_PROJECT_FORMAT = "fontseru-project" as const;
@@ -30,6 +30,11 @@ export interface FontSeruProjectV1 {
      * style still inherits the shared metrics.wordSpacing. Optional so
      * older .fs files without this field still open fine. */
     wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle;
+    /** Kerning Classes ("groups") and their class-pair values. Optional so
+     * older .fs files without this field still open fine — their kerning
+     * stays exactly as a flat kerningPairs table with no groups defined. */
+    kerningClasses?: KerningClasses;
+    classKerningPairs?: Record<string, number>;
     /** OpenType Feature Builder config. Optional so older .fs files without
      * this field still open fine. */
     featureConfig?: FeatureBuilderConfig;

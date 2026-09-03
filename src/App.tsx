@@ -83,6 +83,8 @@ export default function App() {
         kerningOverridesByStyle: snap.kerningOverridesByStyle,
         kerningOverrideManualByStyle: snap.kerningOverrideManualByStyle,
         wordSpacingOverridesByStyle: snap.wordSpacingOverridesByStyle,
+        kerningClasses: snap.kerningClasses,
+        classKerningPairs: snap.classKerningPairs,
         featureConfig: snap.featureConfig,
       });
       hydratedRef.current = true;
@@ -110,6 +112,8 @@ export default function App() {
         kerningOverridesByStyle: state.kerningOverridesByStyle,
         kerningOverrideManualByStyle: state.kerningOverrideManualByStyle,
         wordSpacingOverridesByStyle: state.wordSpacingOverridesByStyle,
+        kerningClasses: state.kerningClasses,
+        classKerningPairs: state.classKerningPairs,
         featureConfig: state.featureConfig,
       });
     };

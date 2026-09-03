@@ -82,6 +82,65 @@ export function parseKerningKey(key: string): { left: string; right: string } | 
   }
 }
 
+/**
+ * Kerning Classes (a.k.a. kerning groups) let a font builder set ONE value
+ * that applies to many glyph pairs at once — the "pro" workflow used by
+ * tools like Glyphs/FontLab, where e.g. every round letter (O, Q, C, G, D)
+ * shares the same behavior against every diagonal letter (A, V, W, Y).
+ *
+ * FontSeru keeps this additive rather than replacing the existing flat
+ * `KerningPairs` model: a class is just a named group of glyphs on one
+ * "side" of a pair, and a class-pair value is *materialized* (flattened)
+ * into ordinary `KerningPairs` entries the moment it's set — every member
+ * combination gets written, unless a specific pair is already flagged
+ * `manual` (hand-tuned pairs are never overwritten, exactly like the
+ * existing global Auto Kerning pass already guarantees). Because of this,
+ * every existing consumer of `kerningPairs` (rendering, export, Test Lab,
+ * Auto Word Spacing, …) keeps working unmodified — classes are a
+ * bulk-editing convenience layered on top, not a second kerning engine.
+ *
+ * `side: "left"` = groups glyphs by how they behave as the FIRST (left)
+ * glyph of a pair (grouped by shape of their own right edge).
+ * `side: "right"` = groups glyphs by how they behave as the SECOND (right)
+ * glyph of a pair (grouped by shape of their own left edge).
+ * A glyph belongs to at most one class per side — matching how every
+ * professional kerning-class tool works, and what keeps "which value wins"
+ * unambiguous.
+ */
+export interface KerningClass {
+  id: string;
+  name: string;
+  side: "left" | "right";
+  members: string[];
+  /** True for classes produced by Auto-Generate Groups; false once the user
+   * creates a class by hand or renames an auto one. Purely informational —
+   * used to label the class in the UI, never to restrict editing. */
+  auto: boolean;
+}
+
+export interface KerningClasses {
+  left: KerningClass[];
+  right: KerningClass[];
+}
+
+export const EMPTY_KERNING_CLASSES: KerningClasses = { left: [], right: [] };
+
+/** Key for a class-pair kerning value, kept visually distinct from
+ * `kerningKey`'s glyph-pair keys (which never contain "::"). */
+export function classPairKey(leftClassId: string, rightClassId: string): string {
+  return `${leftClassId}::${rightClassId}`;
+}
+
+export function decodeClassPairKey(key: string): [string, string] | null {
+  const sep = key.indexOf("::");
+  if (sep === -1) return null;
+  return [key.slice(0, sep), key.slice(sep + 2)];
+}
+
+export function findKerningClass(classes: KerningClass[], ch: string): KerningClass | undefined {
+  return classes.find((c) => c.members.includes(ch));
+}
+
 /** Useful pair shortcuts for the Kerning panel. Global auto-kerning is not limited to this list. */
 export const AUTO_KERN_PRIORITY_PAIRS: [string, string][] = [
   ["A", "V"], ["V", "A"],

@@ -19,7 +19,10 @@ import {
   kerningKey,
   type KerningContext,
   type KerningPairs,
+  type KerningClass,
 } from "@/types/kerning";
+import { getClassKerningValue } from "@/kerning/kerningClasses";
+import { Plus, X, Sparkles, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 
 type TestId = "type" | "upper" | "lower" | "numbers" | "punctuation" | "symbol" | "multilingual" | "feature" | "kerning" | "pangram" | "paragraph" | "all";
 type ActiveGlyph = {
@@ -1343,6 +1346,135 @@ function FeatureSpecimen({
   );
 }
 
+/**
+ * One column of Kerning Classes for a single side ("left" = groups glyphs
+ * by how they behave as the FIRST glyph of a pair; "right" = as the
+ * SECOND). Each class card shows its members as removable chips, a "+" to
+ * add another glyph, an editable name, and a delete button — a compact
+ * take on the group editor found in professional kerning tools.
+ */
+function KerningClassColumn({
+  side,
+  title,
+  classes,
+  glyphs,
+  onCreate,
+  onRename,
+  onDelete,
+  onAddGlyph,
+  onRemoveGlyph,
+}: {
+  side: "left" | "right";
+  title: string;
+  classes: KerningClass[];
+  glyphs: GlyphMap;
+  onCreate: (name: string) => void;
+  onRename: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
+  onAddGlyph: (id: string, ch: string) => void;
+  onRemoveGlyph: (id: string, ch: string) => void;
+}) {
+  const [newName, setNewName] = useState("");
+  const [addingTo, setAddingTo] = useState<string | null>(null);
+
+  const availableChars = useMemo(
+    () => Object.keys(glyphs).filter((ch) => glyphs[ch].unicode !== 0x20).sort(),
+    [glyphs]
+  );
+
+  return (
+    <div className="fm-kern-group-column" data-testid={`kern-group-column-${side}`}>
+      <div className="fm-kern-group-column-title">{title}</div>
+      <div className="fm-kern-group-list">
+        {classes.length === 0 && <div className="fm-hint">No groups yet.</div>}
+        {classes.map((c) => (
+          <div className="fm-kern-group-card" key={c.id} data-testid={`kern-group-card-${c.id}`}>
+            <div className="fm-kern-group-card-head">
+              <input
+                className="fm-kern-group-name-input"
+                value={c.name}
+                onChange={(e) => onRename(c.id, e.target.value)}
+                data-testid={`kern-group-name-${c.id}`}
+              />
+              <button
+                type="button"
+                className="fm-kern-group-delete"
+                onClick={() => onDelete(c.id)}
+                title="Delete group"
+                data-testid={`kern-group-delete-${c.id}`}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+            <div className="fm-kern-group-members">
+              {c.members.map((ch) => (
+                <span className="fm-kern-group-chip" key={ch}>
+                  {ch}
+                  <button type="button" onClick={() => onRemoveGlyph(c.id, ch)} aria-label={`Remove ${ch}`}>
+                    <X size={9} />
+                  </button>
+                </span>
+              ))}
+              {addingTo === c.id ? (
+                <select
+                  autoFocus
+                  className="fm-kern-group-add-select"
+                  onChange={(e) => {
+                    if (e.target.value) onAddGlyph(c.id, e.target.value);
+                    setAddingTo(null);
+                  }}
+                  onBlur={() => setAddingTo(null)}
+                  data-testid={`kern-group-add-${c.id}`}
+                >
+                  <option value="">+ letter…</option>
+                  {availableChars
+                    .filter((ch) => !c.members.includes(ch))
+                    .map((ch) => (
+                      <option key={ch} value={ch}>{ch}</option>
+                    ))}
+                </select>
+              ) : (
+                <button
+                  type="button"
+                  className="fm-kern-group-chip fm-kern-group-chip-add"
+                  onClick={() => setAddingTo(c.id)}
+                  title="Add a letter to this group"
+                >
+                  <Plus size={10} />
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="fm-kern-group-create">
+        <input
+          placeholder="New group name"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && newName.trim()) {
+              onCreate(newName.trim());
+              setNewName("");
+            }
+          }}
+          data-testid={`kern-group-create-input-${side}`}
+        />
+        <button
+          type="button"
+          className="fm-action-btn"
+          onClick={() => {
+            if (newName.trim()) { onCreate(newName.trim()); setNewName(""); }
+          }}
+          data-testid={`kern-group-create-btn-${side}`}
+        >
+          <Plus size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SpecimenPanel() {
   const glyphs = useAppStore((s) => s.glyphs);
   const featureConfig = useAppStore((s) => s.featureConfig);
@@ -1359,6 +1491,16 @@ export function SpecimenPanel() {
   const setFamilyKerningPair = useAppStore((s) => s.setFamilyKerningPair);
   const resetFamilyKerningPair = useAppStore((s) => s.resetFamilyKerningPair);
   const autoKernAllPairsForContext = useAppStore((s) => s.autoKernAllPairsForContext);
+  const kerningClasses = useAppStore((s) => s.kerningClasses);
+  const classKerningPairs = useAppStore((s) => s.classKerningPairs);
+  const autoGenerateKerningClasses = useAppStore((s) => s.autoGenerateKerningClasses);
+  const createKerningClass = useAppStore((s) => s.createKerningClass);
+  const renameKerningClass = useAppStore((s) => s.renameKerningClass);
+  const deleteKerningClass = useAppStore((s) => s.deleteKerningClass);
+  const addGlyphToKerningClass = useAppStore((s) => s.addGlyphToKerningClass);
+  const removeGlyphFromKerningClass = useAppStore((s) => s.removeGlyphFromKerningClass);
+  const setClassKerningPair = useAppStore((s) => s.setClassKerningPair);
+  const resetClassKerningPair = useAppStore((s) => s.resetClassKerningPair);
   const autoWordSpacing = useAppStore((s) => s.autoWordSpacing);
   const autoWordSpacingForContext = useAppStore((s) => s.autoWordSpacingForContext);
   const resetFamilyWordSpacing = useAppStore((s) => s.resetFamilyWordSpacing);
@@ -1399,6 +1541,46 @@ export function SpecimenPanel() {
   const [focusNonce, setFocusNonce] = useState(0);
   const [kerningMode, setKerningMode] = useState<"single" | "family">("single");
   const [familyContext, setFamilyContext] = useState<KerningContext>("shared");
+
+  // ---------------------------- Kerning Groups (Classes) panel state ----
+  const [groupsExpanded, setGroupsExpanded] = useState(false);
+  const [groupAutoRunning, setGroupAutoRunning] = useState(false);
+  const [groupAutoFlash, setGroupAutoFlash] = useState<{ leftCount: number; rightCount: number } | null>(null);
+  const [groupPairLeft, setGroupPairLeft] = useState<string>("");
+  const [groupPairRight, setGroupPairRight] = useState<string>("");
+
+  const handleAutoGenerateGroups = useCallback(() => {
+    if (groupAutoRunning) return;
+    const hasExisting = kerningClasses.left.length > 0 || kerningClasses.right.length > 0;
+    if (hasExisting) {
+      const ok = window.confirm(
+        "Auto-Generate akan mengganti semua Kerning Group yang ada saat ini (nilai per-grup yang sudah diatur akan ikut hilang; pasangan huruf yang sudah terisi tetap tersimpan). Lanjutkan?"
+      );
+      if (!ok) return;
+    }
+    setGroupAutoRunning(true);
+    // Runs synchronously today (class counts are far smaller than the full
+    // n^2 pair auto-kern), but kept on a rAF tick so the button's own
+    // pressed state has a chance to paint first on very large glyph sets.
+    requestAnimationFrame(() => {
+      const result = autoGenerateKerningClasses();
+      setGroupAutoRunning(false);
+      setGroupAutoFlash(result);
+      setGroupPairLeft("");
+      setGroupPairRight("");
+      window.setTimeout(() => setGroupAutoFlash(null), 2600);
+    });
+  }, [groupAutoRunning, kerningClasses, autoGenerateKerningClasses]);
+
+  const groupPairValue = groupPairLeft && groupPairRight ? getClassKerningValue(classKerningPairs, groupPairLeft, groupPairRight) : 0;
+  const groupPairHasValue = !!(groupPairLeft && groupPairRight) && `${groupPairLeft}::${groupPairRight}` in classKerningPairs;
+
+  // Deselect a group-pair side if that group was just deleted, instead of
+  // silently pointing the picker at a stale id.
+  useEffect(() => {
+    if (groupPairLeft && !kerningClasses.left.some((c) => c.id === groupPairLeft)) setGroupPairLeft("");
+    if (groupPairRight && !kerningClasses.right.some((c) => c.id === groupPairRight)) setGroupPairRight("");
+  }, [kerningClasses, groupPairLeft, groupPairRight]);
 
   // Drag-to-resize for the right settings rail. Dragging the handle moves
   // the boundary between the stage and the rail, widening/narrowing the
@@ -1897,6 +2079,155 @@ export function SpecimenPanel() {
               </div>
             )}
           </div>
+        </div>
+
+        <div className="fm-lab-side-section" data-testid="lab-kerning-groups-panel">
+          <button
+            type="button"
+            className="fm-section-title fm-kern-groups-toggle"
+            onClick={() => setGroupsExpanded((v) => !v)}
+            data-testid="kern-groups-toggle"
+          >
+            {groupsExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            Kerning Groups
+            {(kerningClasses.left.length + kerningClasses.right.length) > 0 && (
+              <span className="fm-kern-groups-count">
+                {kerningClasses.left.length + kerningClasses.right.length}
+              </span>
+            )}
+          </button>
+
+          {groupsExpanded && (
+            <>
+              <div className="fm-hint fm-kern-groups-intro">
+                Set one kerning value for a whole group of letters at once — e.g. every round letter
+                (O·Q·C·G) against every diagonal letter (A·V·W·Y) — instead of pair by pair. Groups fill
+                in ordinary kerning pairs; any pair you've hand-tuned stays protected.
+              </div>
+
+              <div className="fm-kern-block">
+                <button
+                  type="button"
+                  className={`fm-action-btn accent fm-kern-groups-auto-btn${groupAutoRunning ? " running" : ""}${groupAutoFlash ? " done" : ""}`}
+                  onClick={handleAutoGenerateGroups}
+                  disabled={groupAutoRunning}
+                  data-testid="kern-groups-auto-generate"
+                >
+                  {groupAutoRunning ? (
+                    <Loader2 className="fm-auto-kern-icon fm-auto-kern-spin" size={14} strokeWidth={2} aria-hidden="true" />
+                  ) : (
+                    <Sparkles size={14} strokeWidth={2} aria-hidden="true" />
+                  )}
+                  {groupAutoRunning ? "Analyzing shapes…" : "Auto-Generate Groups"}
+                </button>
+
+                {groupAutoFlash && (
+                  <div className="fm-kern-complete" role="status" data-testid="kern-groups-auto-complete">
+                    <span className="fm-status-dot" />
+                    {groupAutoFlash.leftCount} left group{groupAutoFlash.leftCount === 1 ? "" : "s"} ·{" "}
+                    {groupAutoFlash.rightCount} right group{groupAutoFlash.rightCount === 1 ? "" : "s"} created
+                  </div>
+                )}
+              </div>
+
+              <div className="fm-kern-group-columns">
+                <KerningClassColumn
+                  side="left"
+                  title="Left-position groups"
+                  classes={kerningClasses.left}
+                  glyphs={glyphs}
+                  onCreate={(name) => createKerningClass("left", name)}
+                  onRename={(id, name) => renameKerningClass("left", id, name)}
+                  onDelete={(id) => deleteKerningClass("left", id)}
+                  onAddGlyph={(id, ch) => addGlyphToKerningClass("left", id, ch)}
+                  onRemoveGlyph={(id, ch) => removeGlyphFromKerningClass("left", id, ch)}
+                />
+                <KerningClassColumn
+                  side="right"
+                  title="Right-position groups"
+                  classes={kerningClasses.right}
+                  glyphs={glyphs}
+                  onCreate={(name) => createKerningClass("right", name)}
+                  onRename={(id, name) => renameKerningClass("right", id, name)}
+                  onDelete={(id) => deleteKerningClass("right", id)}
+                  onAddGlyph={(id, ch) => addGlyphToKerningClass("right", id, ch)}
+                  onRemoveGlyph={(id, ch) => removeGlyphFromKerningClass("right", id, ch)}
+                />
+              </div>
+
+              <div className="fm-field fm-kern-group-pair">
+                <label>Group-to-Group Kerning</label>
+                <div className="fm-kern-group-pair-selects">
+                  <select
+                    value={groupPairLeft}
+                    onChange={(e) => setGroupPairLeft(e.target.value)}
+                    disabled={kerningClasses.left.length === 0}
+                    data-testid="kern-group-pair-left"
+                  >
+                    <option value="">Left group…</option>
+                    {kerningClasses.left.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={groupPairRight}
+                    onChange={(e) => setGroupPairRight(e.target.value)}
+                    disabled={kerningClasses.right.length === 0}
+                    data-testid="kern-group-pair-right"
+                  >
+                    <option value="">Right group…</option>
+                    {kerningClasses.right.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="fm-kern-value-row">
+                  <NumericInput
+                    value={groupPairValue}
+                    disabled={!groupPairLeft || !groupPairRight}
+                    onChange={(value) => setClassKerningPair(groupPairLeft, groupPairRight, value)}
+                    data-testid="kern-group-pair-value"
+                  />
+                  <button
+                    type="button"
+                    className="fm-action-btn fm-kern-reset-btn"
+                    disabled={!groupPairHasValue}
+                    onClick={() => resetClassKerningPair(groupPairLeft, groupPairRight)}
+                    title="Clear this group's kerning value"
+                    data-testid="kern-group-pair-reset"
+                  >
+                    <RotateCcw size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {Object.keys(classKerningPairs).length > 0 && (
+                <div className="fm-kern-group-pair-list" data-testid="kern-group-pair-list">
+                  {Object.entries(classKerningPairs).map(([key, value]) => {
+                    const sep = key.indexOf("::");
+                    if (sep === -1) return null;
+                    const lId = key.slice(0, sep);
+                    const rId = key.slice(sep + 2);
+                    const l = kerningClasses.left.find((c) => c.id === lId);
+                    const r = kerningClasses.right.find((c) => c.id === rId);
+                    if (!l || !r) return null;
+                    return (
+                      <button
+                        type="button"
+                        key={key}
+                        className={`fm-kern-group-pair-chip${groupPairLeft === lId && groupPairRight === rId ? " active" : ""}`}
+                        onClick={() => { setGroupPairLeft(lId); setGroupPairRight(rId); }}
+                        data-testid={`kern-group-pair-chip-${key}`}
+                      >
+                        {l.name} × {r.name}
+                        <span>{value > 0 ? `+${value}` : value}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div className="fm-lab-side-section">

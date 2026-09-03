@@ -2188,6 +2188,192 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-kern-glyph-hit.active {
   background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
+
+/* -------------------- Kerning Groups (Classes) -------------------- */
+.fm-kern-groups-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.fm-kern-groups-toggle:hover { color: var(--text); }
+.fm-kern-groups-count {
+  margin-left: auto;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.fm-kern-groups-intro {
+  margin-bottom: 12px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-2);
+}
+.fm-kern-groups-auto-btn { width: 100%; }
+.fm-kern-group-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0;
+}
+.fm-kern-group-column-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-bottom: 7px;
+}
+.fm-kern-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.fm-kern-group-card {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-2);
+  padding: 6px 7px;
+}
+.fm-kern-group-card-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+.fm-kern-group-name-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 1px 2px;
+  border-radius: 4px;
+}
+.fm-kern-group-name-input:focus {
+  outline: none;
+  background: var(--panel);
+}
+.fm-kern-group-delete {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 4px;
+}
+.fm-kern-group-delete:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.fm-kern-group-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.fm-kern-group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+}
+.fm-kern-group-chip button {
+  display: inline-flex;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 0;
+}
+.fm-kern-group-chip button:hover { color: var(--danger); }
+.fm-kern-group-chip-add {
+  cursor: pointer;
+  color: var(--text-dim);
+  justify-content: center;
+  min-width: 20px;
+}
+.fm-kern-group-chip-add:hover { border-color: var(--accent); color: var(--accent); }
+.fm-kern-group-add-select {
+  font-size: 11px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 1px 3px;
+}
+.fm-kern-group-create {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.fm-kern-group-create input {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text);
+}
+.fm-kern-group-create input:focus { border-color: var(--accent); outline: none; }
+.fm-kern-group-create .fm-action-btn {
+  width: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0;
+}
+.fm-kern-group-pair-selects {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+.fm-kern-group-pair-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.fm-kern-group-pair-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.fm-kern-group-pair-chip:hover { border-color: var(--text-faint); color: var(--text); }
+.fm-kern-group-pair-chip.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.fm-kern-group-pair-chip span { font-family: var(--mono); font-weight: 700; }
+
+@media (max-width: 900px) {
+  .fm-kern-group-columns { grid-template-columns: 1fr; }
+}
+
 .fm-sr-only {
   position: absolute;
   width: 1px;
