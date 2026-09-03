@@ -2574,6 +2574,80 @@ input[type="number"]::-webkit-outer-spin-button {
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* ── Bottom bar: Specimen controls ── */
+.fm-lab-bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--panel-2) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  border-radius: 10px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.fm-lab-bottom-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.fm-lab-bottom-slider {
+  flex: 1 1 100px;
+  min-width: 80px;
+  max-width: 180px;
+}
+.fm-lab-bottom-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.fm-lab-bottom-value {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.fm-lab-bottom-bar input[type="range"] {
+  width: 100%;
+  margin: 0;
+}
+.fm-lab-bottom-divider {
+  width: 1px;
+  height: 28px;
+  background: color-mix(in srgb, var(--line) 60%, transparent);
+  flex-shrink: 0;
+  align-self: center;
+}
+/* Compact tab-select variant for the bottom bar */
+.fm-tab-select.fm-tab-select-sm {
+  gap: 2px;
+}
+.fm-tab-select.fm-tab-select-sm button {
+  padding: 3px 7px;
+  font-size: 11px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.fm-tab-select.fm-tab-select-sm button::after { display: none; }
+.fm-tab-select.fm-tab-select-sm button:hover { color: var(--text); background: var(--panel); }
+.fm-tab-select.fm-tab-select-sm button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: transparent;
+}
+.fm-lab-bottom-apply-tracking {
+  font-size: 11px;
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+
 .fm-kern-context {
   border: 0;
   background: color-mix(in srgb, var(--panel-2) 72%, transparent);

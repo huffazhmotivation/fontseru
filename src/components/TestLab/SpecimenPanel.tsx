@@ -1889,6 +1889,95 @@ export function SpecimenPanel() {
             />
           </div>
         )}
+
+        {/* ── Bottom bar: Specimen controls ── */}
+        <div className="fm-lab-bottom-bar" data-testid="lab-bottom-bar">
+          {/* Font Size */}
+          <div className="fm-lab-bottom-control fm-lab-bottom-slider">
+            <div className="fm-lab-bottom-label">
+              <span>Size</span>
+              <span className="fm-lab-bottom-value">{fontSize}px</span>
+            </div>
+            <input
+              type="range"
+              min={16}
+              max={280}
+              value={fontSize}
+              onChange={(e) => setFontSize(Number(e.target.value))}
+              data-testid="lab-fontsize"
+            />
+          </div>
+
+          {/* Line Height */}
+          <div className="fm-lab-bottom-control fm-lab-bottom-slider">
+            <div className="fm-lab-bottom-label">
+              <span>Leading</span>
+              <span className="fm-lab-bottom-value">{lineHeight.toFixed(2)}×</span>
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={2.5}
+              step={0.05}
+              value={lineHeight}
+              onChange={(e) => setLineHeight(Number(e.target.value))}
+              data-testid="lab-lineheight"
+            />
+          </div>
+
+          {/* Tracking */}
+          <div className="fm-lab-bottom-control fm-lab-bottom-slider">
+            <div className="fm-lab-bottom-label">
+              <span>Tracking</span>
+              <span className="fm-lab-bottom-value">{tracking}u</span>
+            </div>
+            <input
+              type="range"
+              min={-60}
+              max={200}
+              value={tracking}
+              onChange={(e) => setTracking(Number(e.target.value))}
+              data-testid="lab-tracking"
+            />
+          </div>
+
+          {/* Divider */}
+          <div className="fm-lab-bottom-divider" aria-hidden="true" />
+
+          {/* Alignment */}
+          <div className="fm-lab-bottom-control">
+            <div className="fm-lab-bottom-label"><span>Align</span></div>
+            <div className="fm-tab-select fm-tab-select-sm" data-testid="lab-align">
+              <button className={align === "left" ? "active" : ""} onClick={() => setAlign("left")} title="Align left">L</button>
+              <button className={align === "center" ? "active" : ""} onClick={() => setAlign("center")} title="Align center">C</button>
+              <button className={align === "right" ? "active" : ""} onClick={() => setAlign("right")} title="Align right">R</button>
+            </div>
+          </div>
+
+          {/* Preview Background */}
+          <div className="fm-lab-bottom-control">
+            <div className="fm-lab-bottom-label"><span>BG</span></div>
+            <div className="fm-tab-select fm-tab-select-sm" data-testid="lab-bg">
+              <button className={bg === "dark" ? "active" : ""} onClick={() => setBg("dark")} title="Dark background">Dark</button>
+              <button className={bg === "light" ? "active" : ""} onClick={() => setBg("light")} title="Light background">Light</button>
+            </div>
+          </div>
+
+          {/* Apply Tracking (shown only when tracking ≠ 0) */}
+          {tracking !== 0 && (
+            <div className="fm-lab-bottom-control">
+              <button
+                className={`fm-action-btn fm-lab-bottom-apply-tracking${trackingApplyFlash ? " done" : ""}`}
+                onClick={handleApplyTracking}
+                data-testid="apply-tracking-btn"
+                title="Bake tracking permanently into every glyph's spacing"
+              >
+                <MoveHorizontal size={13} />
+                {trackingApplyFlash ? "Applied" : "Apply"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div
@@ -2243,24 +2332,26 @@ export function SpecimenPanel() {
                     </select>
                   </div>
                 </div>
-                <div className="fm-kern-value-row">
-                  <NumericInput
-                    value={groupPairValue}
-                    disabled={!groupPairLeft || !groupPairRight}
-                    onChange={(value) => setClassKerningPair(groupPairLeft, groupPairRight, value)}
-                    data-testid="kern-group-pair-value"
-                  />
-                  <button
-                    type="button"
-                    className="fm-action-btn fm-kern-reset-btn"
-                    disabled={!groupPairHasValue}
-                    onClick={() => resetClassKerningPair(groupPairLeft, groupPairRight)}
-                    title="Clear this group's kerning value"
-                    data-testid="kern-group-pair-reset"
-                  >
-                    <RotateCcw size={14} />
-                  </button>
-                </div>
+                {groupPairLeft && groupPairRight && (
+                  <div className="fm-kern-value-row">
+                    <NumericInput
+                      value={groupPairValue}
+                      disabled={false}
+                      onChange={(value) => setClassKerningPair(groupPairLeft, groupPairRight, value)}
+                      data-testid="kern-group-pair-value"
+                    />
+                    <button
+                      type="button"
+                      className="fm-action-btn fm-kern-reset-btn"
+                      disabled={!groupPairHasValue}
+                      onClick={() => resetClassKerningPair(groupPairLeft, groupPairRight)}
+                      title="Clear this group's kerning value"
+                      data-testid="kern-group-pair-reset"
+                    >
+                      <RotateCcw size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
 
               {Object.keys(classKerningPairs).length > 0 && (
@@ -2293,57 +2384,14 @@ export function SpecimenPanel() {
           )}
         </div>
 
-        <div className="fm-lab-side-section">
-          <div className="fm-section-title">Specimen</div>
-          <div className="fm-field">
-            <div className="fm-slider-row-label"><label>Font Size</label><span>{fontSize}px</span></div>
-            <input type="range" min={16} max={280} value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} data-testid="lab-fontsize" />
+        {trackingApplyLastRun && trackingApplyLastRun.units !== 0 && (
+          <div className="fm-kern-complete fm-lab-side-section" role="status" data-testid="apply-tracking-complete">
+            <span className="fm-status-dot" />
+            {trackingApplyLastRun.units > 0 ? "+" : ""}
+            {trackingApplyLastRun.units}u baked into {trackingApplyLastRun.updated} glyph
+            {trackingApplyLastRun.updated === 1 ? "" : "s"}
           </div>
-          <div className="fm-field">
-            <div className="fm-slider-row-label"><label>Line Height</label><span>{lineHeight.toFixed(2)}×</span></div>
-            <input type="range" min={1} max={2.5} step={0.05} value={lineHeight} onChange={(e) => setLineHeight(Number(e.target.value))} data-testid="lab-lineheight" />
-          </div>
-          <div className="fm-field">
-            <div className="fm-slider-row-label"><label>Tracking</label><span>{tracking}u</span></div>
-            <input type="range" min={-60} max={200} value={tracking} onChange={(e) => setTracking(Number(e.target.value))} data-testid="lab-tracking" />
-            <div className="fm-hint">
-              Preview-only until applied — it doesn't affect the exported font on its own.
-            </div>
-            <button
-              className={`fm-action-btn${trackingApplyFlash ? " done" : ""}`}
-              onClick={handleApplyTracking}
-              disabled={tracking === 0}
-              data-testid="apply-tracking-btn"
-              title="Bake this tracking value permanently into every glyph's spacing on the active style, so it's included when exporting"
-            >
-              <MoveHorizontal size={14} />
-              {trackingApplyFlash ? "Applied" : "Apply Tracking to Font"}
-            </button>
-            {trackingApplyLastRun && trackingApplyLastRun.units !== 0 && (
-              <div className="fm-kern-complete" role="status" data-testid="apply-tracking-complete">
-                <span className="fm-status-dot" />
-                {trackingApplyLastRun.units > 0 ? "+" : ""}
-                {trackingApplyLastRun.units}u baked into {trackingApplyLastRun.updated} glyph
-                {trackingApplyLastRun.updated === 1 ? "" : "s"}
-              </div>
-            )}
-          </div>
-          <div className="fm-field">
-            <label>Alignment</label>
-            <div className="fm-tab-select" data-testid="lab-align">
-              <button className={align === "left" ? "active" : ""} onClick={() => setAlign("left")}>Left</button>
-              <button className={align === "center" ? "active" : ""} onClick={() => setAlign("center")}>Center</button>
-              <button className={align === "right" ? "active" : ""} onClick={() => setAlign("right")}>Right</button>
-            </div>
-          </div>
-          <div className="fm-field">
-            <label>Preview Background</label>
-            <div className="fm-tab-select" data-testid="lab-bg">
-              <button className={bg === "dark" ? "active" : ""} onClick={() => setBg("dark")}>Dark</button>
-              <button className={bg === "light" ? "active" : ""} onClick={() => setBg("light")}>Light</button>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
