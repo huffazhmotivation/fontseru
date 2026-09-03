@@ -439,6 +439,9 @@ function FontMetricsSection() {
   // when wordSpacing hasn't been set explicitly (see FontMetrics.wordSpacing),
   // purely so the field shows a sensible starting number instead of blank/0.
   const wordSpacingValue = metrics.wordSpacing ?? Math.round(metrics.unitsPerEm * 0.27);
+  // Unset means "upright" (0°) — matches Auto Spacing's own fallback, so
+  // this field shows 0 rather than blank until the designer dials it in.
+  const italicAngleValue = metrics.italicAngle ?? 0;
 
   return (
     <Section title="Font Metrics" defaultOpen={true}>
@@ -471,12 +474,27 @@ function FontMetricsSection() {
             data-testid="font-metric-wordSpacing"
           />
         </div>
+        <div className="fm-field fm-metric-field" key="italicAngle">
+          <label htmlFor="font-metric-italicAngle">Italic Angle</label>
+          <NumericInput
+            id="font-metric-italicAngle"
+            ref={(el) => { refs.current.italicAngle = el; }}
+            value={italicAngleValue}
+            onChange={(next) => {
+              if (Number.isFinite(next)) setFontMetric("italicAngle", next);
+            }}
+            onFocus={() => setMetricFocus(null)}
+            data-testid="font-metric-italicAngle"
+          />
+        </div>
       </div>
       <div className="fm-hint">
         Drag guides on the canvas for live adjustment · double-click a guide for precise input. Word Spacing is the
         gap typed between words (the keyboard space bar) — separate from any per-letter sidebearing. "Auto" derives a
         width from the letters you've already drawn, so the gap stays proportional to this typeface instead of one
-        flat default.
+        flat default. Italic Angle (0 = tegak, negatif = miring ke kanan, mengikuti konvensi OpenType) membuat Auto
+        Spacing meluruskan sementara tiap glyph sebelum mengukur marginnya — set ini kalau huruf kamu miring, supaya
+        huruf kecil tidak lagi terbaca lebih dempet daripada huruf besar.
       </div>
     </Section>
   );

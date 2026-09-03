@@ -1,7 +1,7 @@
 import type { Contour, GlyphOutline, NodeType, PathNode, Point, VectorObject } from "@/types/geometry";
 import { reflect, reflectDirection, length, subtract, add, scale } from "@/utils/geometry";
 import { shortId } from "@/utils/id";
-import { splitCubic } from "./bezier";
+import { splitCubic, cubicPoint, fitSingleCubic } from "./bezier";
 
 export function cloneContour(c: Contour): Contour {
   return {
@@ -163,6 +163,146 @@ export function retypeNodes(
   return working;
 }
 
+const DELETE_FIT_SAMPLES_PER_EDGE = 8;
+
+function unitTangent(v: Point): Point | null {
+  const len = length(v);
+  return len < 1e-6 ? null : { x: v.x / len, y: v.y / len };
+}
+
+/** Samples points strictly after `from.point` along the original edge to `to`. */
+function sampleEdge(from: PathNode, to: PathNode, steps: number): Point[] {
+  const pts: Point[] = [];
+  if (from.handleOut || to.handleIn) {
+    const c1 = from.handleOut ?? from.point;
+    const c2 = to.handleIn ?? to.point;
+    for (let s = 1; s <= steps; s++) pts.push(cubicPoint(from.point, c1, c2, to.point, s / steps));
+  } else {
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      pts.push({ x: from.point.x + (to.point.x - from.point.x) * t, y: from.point.y + (to.point.y - from.point.y) * t });
+    }
+  }
+  return pts;
+}
+
+/**
+ * Reconnects surviving node `a` to surviving node `b` after everything
+ * between them (`between`, in original walking order) got deleted —
+ * refitting `a.handleOut`/`b.handleIn` (via `fitSingleCubic`) to the shape
+ * of the original A→...→B chain instead of leaving them either untouched
+ * (pointing at now-deleted geometry) or simply gone (collapsing a curved
+ * stretch to a straight line). Mutates `aSurv`/`bSurv` in place.
+ */
+function refitGap(a: PathNode, between: PathNode[], b: PathNode, aSurv: PathNode, bSurv: PathNode): void {
+  const chain = [a, ...between, b];
+  const hadAnyHandle = chain.some(
+    (nd, idx) => (idx < chain.length - 1 && nd.handleOut) || (idx > 0 && nd.handleIn)
+  );
+  if (!hadAnyHandle) {
+    // Fully straight stretch — a straight line between the survivors
+    // reproduces it exactly, no curve to preserve.
+    aSurv.handleOut = null;
+    bSurv.handleIn = null;
+    return;
+  }
+
+  const samples: Point[] = [a.point];
+  for (let i = 0; i < chain.length - 1; i++) samples.push(...sampleEdge(chain[i], chain[i + 1], DELETE_FIT_SAMPLES_PER_EDGE));
+
+  // Prefer each survivor's OWN original tangent direction (from its
+  // existing handle) so the curve leaves/arrives at the same angle it
+  // always did — only the handle LENGTH is being refit to the new, wider
+  // span. Falls back to the direction of the nearest sample when a
+  // survivor had no handle of its own (was a corner) on that side.
+  const t0 =
+    (a.handleOut && unitTangent(subtract(a.handleOut, a.point))) ??
+    unitTangent(subtract(samples[0], a.point)) ??
+    { x: 1, y: 0 };
+  const t1 =
+    (b.handleIn && unitTangent(subtract(b.handleIn, b.point))) ??
+    unitTangent(subtract(samples[samples.length - 2] ?? a.point, b.point)) ??
+    { x: -1, y: 0 };
+
+  const [h1, h2] = fitSingleCubic(samples, t0, t1);
+  aSurv.handleOut = h1;
+  bSurv.handleIn = h2;
+}
+
+/**
+ * Removes `idsToDelete` from a single contour, refitting the curve across
+ * each gap a deletion leaves (see `refitGap`) instead of a bare filter —
+ * so deleting nodes that were doing real curvature work doesn't kink or
+ * flatten the surrounding shape. An open contour's start/end are
+ * truncations (no "far side" to fit against), so a deleted run touching
+ * either end just clears the one dangling handle it leaves behind.
+ */
+function deleteNodesFromContour(contour: Contour, idsToDelete: Set<string>): void {
+  const original = contour.nodes;
+  const n = original.length;
+  const keep = original.map((nd) => !idsToDelete.has(nd.id));
+  const keptTotal = keep.filter(Boolean).length;
+  if (keptTotal === n) return;
+  if (keptTotal === 0) {
+    contour.nodes = [];
+    return;
+  }
+
+  // Rotate a CLOSED contour to start at a kept index so no deleted run
+  // wraps across the array seam — every run then has simple neighbors.
+  // Open contours keep their natural order; a run touching either end
+  // there is a truncation, handled separately below.
+  let order = original.map((_, i) => i);
+  if (contour.closed) {
+    const start = keep.findIndex((k) => k);
+    order = order.slice(start).concat(order.slice(0, start));
+  }
+
+  const survivors = new Map<string, PathNode>();
+  for (const i of order) {
+    if (!keep[i]) continue;
+    const nd = original[i];
+    survivors.set(nd.id, {
+      ...nd,
+      point: { ...nd.point },
+      handleIn: nd.handleIn ? { ...nd.handleIn } : null,
+      handleOut: nd.handleOut ? { ...nd.handleOut } : null,
+    });
+  }
+
+  let k = 0;
+  while (k < order.length) {
+    if (keep[order[k]]) {
+      k++;
+      continue;
+    }
+    let k2 = k;
+    while (k2 < order.length && !keep[order[k2]]) k2++;
+    const runStart = k;
+    const runEnd = k2 - 1;
+    const hasBefore = contour.closed || runStart > 0;
+    const hasAfter = contour.closed || runEnd < order.length - 1;
+
+    if (hasBefore && hasAfter) {
+      const aIdx = order[(runStart - 1 + order.length) % order.length];
+      const bIdx = order[(runEnd + 1) % order.length];
+      const a = original[aIdx];
+      const b = original[bIdx];
+      const between = order.slice(runStart, runEnd + 1).map((i) => original[i]);
+      refitGap(a, between, b, survivors.get(a.id)!, survivors.get(b.id)!);
+    } else if (hasAfter) {
+      const b = original[order[runEnd + 1]];
+      survivors.get(b.id)!.handleIn = null;
+    } else if (hasBefore) {
+      const a = original[order[runStart - 1]];
+      survivors.get(a.id)!.handleOut = null;
+    }
+    k = k2;
+  }
+
+  contour.nodes = order.filter((i) => keep[i]).map((i) => survivors.get(original[i].id)!);
+}
+
 /** Removes several nodes (possibly across multiple contours/objects) in one pass. */
 export function deleteNodes(outline: GlyphOutline, refs: { contourId: string; nodeId: string }[]): GlyphOutline {
   const working = cloneOutline(outline);
@@ -174,7 +314,7 @@ export function deleteNodes(outline: GlyphOutline, refs: { contourId: string; no
   for (const [contourId, nodeIds] of byContour) {
     const contour = findContour(working, contourId);
     if (!contour) continue;
-    contour.nodes = contour.nodes.filter((n) => !nodeIds.has(n.id));
+    deleteNodesFromContour(contour, nodeIds);
   }
   return pruneObjects(working);
 }
