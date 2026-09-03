@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { Layers3, Loader2, MoveHorizontal, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Boxes, Layers3, Loader2, Moon, MoveHorizontal, Redo2, RotateCcw, Sun, Type, Undo2, Wand2, Zap } from "lucide-react";
 import { NumericInput } from "@/components/NumericInput";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -1788,8 +1788,32 @@ export function SpecimenPanel() {
 
   return (
     <div className="fm-lab-grid">
-      <div className="fm-lab-main">
-        <div className="fm-lab-test-row" aria-label="Preview presets">
+      <div className="fm-lab-topbar" aria-label="Test Lab mode" data-testid="lab-topbar">
+        <button
+          className={kerningMode === "single" ? "active" : ""}
+          onClick={() => setKerningMode("single")}
+          data-testid="kern-single-test"
+        >
+          <Type size={14} /> Single Test
+        </button>
+        <button
+          className={kerningMode === "family" ? "active" : ""}
+          onClick={() => setKerningMode("family")}
+          data-testid="kern-family-test"
+        >
+          <Layers3 size={14} /> Family Test
+        </button>
+        <button
+          className={groupsExpanded ? "active" : ""}
+          onClick={() => setGroupsExpanded((v) => !v)}
+          data-testid="kern-groups-toggle-top"
+        >
+          <Boxes size={14} /> Kerning Group
+        </button>
+      </div>
+
+      <div className="fm-lab-body-row">
+        <div className="fm-lab-test-rail" aria-label="Preview presets">
           {TESTS.map((t) => (
             <button
               key={t.id}
@@ -1802,6 +1826,7 @@ export function SpecimenPanel() {
           ))}
         </div>
 
+        <div className="fm-lab-main">
         {test === "feature" ? (
           <div className={`fm-lab-stage fm-lab-feature-stage ${bg}`} data-testid="lab-feature-stage">
             <FeatureSpecimen
@@ -1862,6 +1887,72 @@ export function SpecimenPanel() {
             />
           </div>
         )}
+
+        <div className="fm-lab-floating-bar" data-testid="lab-floating-bar">
+          <div className="fm-lab-floating-cluster">
+            <button
+              className={`fm-action-btn accent fm-auto-kern-btn${autoKernRunning ? " running" : ""}${autoKernProgress === "done" ? " done" : ""}`}
+              style={autoKernRunning ? { "--fm-auto-kern-fill": `${Math.round(autoKernProgress * 100)}%` } as CSSProperties : undefined}
+              onClick={handleAutoKern}
+              disabled={autoKernRunning}
+              data-testid="kern-auto-common"
+            >
+              {autoKernRunning ? (
+                <Loader2 className="fm-auto-kern-icon fm-auto-kern-spin" size={14} strokeWidth={2} aria-hidden="true" />
+              ) : (
+                <Zap className="fm-auto-kern-icon" size={14} strokeWidth={2} aria-hidden="true" />
+              )}
+              {autoKernRunning ? `Kerning… ${Math.round(autoKernProgress * 100)}%` : "Auto Kerning"}
+            </button>
+
+            <div className="fm-tooltip-anchor">
+              <button
+                className={`fm-action-btn accent${wordSpacingFlash !== null ? " done" : ""}`}
+                onClick={(e) => { handleAutoWordSpacing(); e.currentTarget.blur(); }}
+                data-testid="auto-word-spacing-btn"
+              >
+                {wordSpacingFlash !== null ? <Zap size={14} /> : <Wand2 size={14} />}
+                {wordSpacingFlash !== null ? "Applied" : "Auto Word Spacing"}
+              </button>
+              <div className="fm-tooltip-bubble" role="tooltip">
+                Sets the gap typed between words (the keyboard space bar) from the average width of the letters you've
+                already drawn — a bold/wide font gets a wider space, a condensed one gets a tighter space, instead of
+                one flat default.
+                {kerningMode === "family" && (
+                  <>
+                    {" "}In Family Test this only sets the style selected in Kerning Context —{" "}
+                    {familyContext === "shared"
+                      ? "currently the Shared value every style without its own override inherits."
+                      : `currently ${fontStyleLabel(familyContext, customFamilies)}'s own override, leaving other styles untouched.`}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="fm-lab-floating-cluster fm-lab-floating-specimen">
+            <span className="fm-lab-floating-label">Specimen</span>
+            <div className="fm-lab-floating-align" data-testid="lab-align">
+              <button className={align === "left" ? "active" : ""} onClick={() => setAlign("left")} title="Rata Kiri">
+                <AlignLeft size={14} />
+              </button>
+              <button className={align === "center" ? "active" : ""} onClick={() => setAlign("center")} title="Rata Tengah">
+                <AlignCenter size={14} />
+              </button>
+              <button className={align === "right" ? "active" : ""} onClick={() => setAlign("right")} title="Rata Kanan">
+                <AlignRight size={14} />
+              </button>
+            </div>
+            <button
+              className="fm-lab-floating-bg-toggle"
+              onClick={() => setBg(bg === "dark" ? "light" : "dark")}
+              title={bg === "dark" ? "Switch to light preview background" : "Switch to dark preview background"}
+              data-testid="lab-bg"
+            >
+              {bg === "dark" ? <Moon size={14} /> : <Sun size={14} />}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div
@@ -1970,23 +2061,6 @@ export function SpecimenPanel() {
             </div>
           </div>
 
-          <div className="fm-kern-mode-toggle" data-testid="kern-test-mode">
-            <button
-              className={kerningMode === "single" ? "active" : ""}
-              onClick={() => setKerningMode("single")}
-              data-testid="kern-single-test"
-            >
-              <Type size={14} /> Single Test
-            </button>
-            <button
-              className={kerningMode === "family" ? "active" : ""}
-              onClick={() => setKerningMode("family")}
-              data-testid="kern-family-test"
-            >
-              <Layers3 size={14} /> Family Test
-            </button>
-          </div>
-
           {kerningMode === "family" && (
             <div className="fm-field fm-kern-layer-field">
               <label>Kerning Context</label>
@@ -2012,21 +2086,7 @@ export function SpecimenPanel() {
           )}
 
           <div className="fm-kern-block">
-            <div className="fm-kern-side-actions">
-              <button
-                className={`fm-action-btn accent fm-auto-kern-btn${autoKernRunning ? " running" : ""}${autoKernProgress === "done" ? " done" : ""}`}
-                style={autoKernRunning ? { "--fm-auto-kern-fill": `${Math.round(autoKernProgress * 100)}%` } as CSSProperties : undefined}
-                onClick={handleAutoKern}
-                disabled={autoKernRunning}
-                data-testid="kern-auto-common"
-              >
-                {autoKernRunning ? (
-                  <Loader2 className="fm-auto-kern-icon fm-auto-kern-spin" size={14} strokeWidth={2} aria-hidden="true" />
-                ) : (
-                  <Zap className="fm-auto-kern-icon" size={14} strokeWidth={2} aria-hidden="true" />
-                )}
-                {autoKernRunning ? `Kerning… ${Math.round(autoKernProgress * 100)}%` : "Auto Kerning"}
-              </button>
+            <div className="fm-kern-side-actions fm-kern-side-actions-single">
               <button
                 className="fm-action-btn fm-kern-reset-btn"
                 disabled={
@@ -2057,16 +2117,8 @@ export function SpecimenPanel() {
           </div>
 
           <div className="fm-kern-block">
-            <div className="fm-auto-space-row fm-tooltip-anchor">
-              <button
-                className={`fm-action-btn accent${wordSpacingFlash !== null ? " done" : ""}`}
-                onClick={(e) => { handleAutoWordSpacing(); e.currentTarget.blur(); }}
-                data-testid="auto-word-spacing-btn"
-              >
-                {wordSpacingFlash !== null ? <Zap size={14} /> : <Wand2 size={14} />}
-                {wordSpacingFlash !== null ? "Applied" : "Auto Word Spacing"}
-              </button>
-              {kerningMode === "family" && familyContext !== "shared" && wordSpacingOverridesByStyle[familyContext] !== undefined && (
+            {kerningMode === "family" && familyContext !== "shared" && wordSpacingOverridesByStyle[familyContext] !== undefined && (
+              <div className="fm-auto-space-row">
                 <button
                   type="button"
                   className="fm-action-btn fm-kern-reset-btn"
@@ -2077,21 +2129,8 @@ export function SpecimenPanel() {
                   <RotateCcw size={14} />
                   Reset Override
                 </button>
-              )}
-              <div className="fm-tooltip-bubble" role="tooltip">
-                Sets the gap typed between words (the keyboard space bar) from the average width of the letters you've
-                already drawn — a bold/wide font gets a wider space, a condensed one gets a tighter space, instead of
-                one flat default.
-                {kerningMode === "family" && (
-                  <>
-                    {" "}In Family Test this only sets the style selected in Kerning Context —{" "}
-                    {familyContext === "shared"
-                      ? "currently the Shared value every style without its own override inherits."
-                      : `currently ${fontStyleLabel(familyContext, customFamilies)}'s own override, leaving other styles untouched.`}
-                  </>
-                )}
               </div>
-            </div>
+            )}
 
             {wordSpacingFlash !== null && (
               <div className="fm-kern-complete" role="status" data-testid="auto-word-spacing-complete">
@@ -2291,21 +2330,7 @@ export function SpecimenPanel() {
               </div>
             )}
           </div>
-          <div className="fm-field">
-            <label>Alignment</label>
-            <div className="fm-tab-select" data-testid="lab-align">
-              <button className={align === "left" ? "active" : ""} onClick={() => setAlign("left")}>Left</button>
-              <button className={align === "center" ? "active" : ""} onClick={() => setAlign("center")}>Center</button>
-              <button className={align === "right" ? "active" : ""} onClick={() => setAlign("right")}>Right</button>
-            </div>
-          </div>
-          <div className="fm-field">
-            <label>Preview Background</label>
-            <div className="fm-tab-select" data-testid="lab-bg">
-              <button className={bg === "dark" ? "active" : ""} onClick={() => setBg("dark")}>Dark</button>
-              <button className={bg === "light" ? "active" : ""} onClick={() => setBg("light")}>Light</button>
-            </div>
-          </div>
+        </div>
         </div>
       </div>
     </div>
