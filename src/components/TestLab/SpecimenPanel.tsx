@@ -1378,76 +1378,102 @@ function KerningClassColumn({
 }) {
   const [newName, setNewName] = useState("");
   const [addingTo, setAddingTo] = useState<string | null>(null);
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
 
   const availableChars = useMemo(
     () => Object.keys(glyphs).filter((ch) => glyphs[ch].unicode !== 0x20).sort(),
     [glyphs]
   );
 
+  const MEMBER_PREVIEW_COUNT = 18;
+
   return (
     <div className="fm-kern-group-column" data-testid={`kern-group-column-${side}`}>
-      <div className="fm-kern-group-column-title">{title}</div>
+      <div className="fm-kern-group-column-title">
+        {title}
+        <span className="fm-kern-group-column-count">{classes.length}</span>
+      </div>
       <div className="fm-kern-group-list">
-        {classes.length === 0 && <div className="fm-hint">No groups yet.</div>}
-        {classes.map((c) => (
-          <div className="fm-kern-group-card" key={c.id} data-testid={`kern-group-card-${c.id}`}>
-            <div className="fm-kern-group-card-head">
-              <input
-                className="fm-kern-group-name-input"
-                value={c.name}
-                onChange={(e) => onRename(c.id, e.target.value)}
-                data-testid={`kern-group-name-${c.id}`}
-              />
-              <button
-                type="button"
-                className="fm-kern-group-delete"
-                onClick={() => onDelete(c.id)}
-                title="Delete group"
-                data-testid={`kern-group-delete-${c.id}`}
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-            <div className="fm-kern-group-members">
-              {c.members.map((ch) => (
-                <span className="fm-kern-group-chip" key={ch}>
-                  {ch}
-                  <button type="button" onClick={() => onRemoveGlyph(c.id, ch)} aria-label={`Remove ${ch}`}>
-                    <X size={9} />
-                  </button>
-                </span>
-              ))}
-              {addingTo === c.id ? (
-                <select
-                  autoFocus
-                  className="fm-kern-group-add-select"
-                  onChange={(e) => {
-                    if (e.target.value) onAddGlyph(c.id, e.target.value);
-                    setAddingTo(null);
-                  }}
-                  onBlur={() => setAddingTo(null)}
-                  data-testid={`kern-group-add-${c.id}`}
-                >
-                  <option value="">+ letter…</option>
-                  {availableChars
-                    .filter((ch) => !c.members.includes(ch))
-                    .map((ch) => (
-                      <option key={ch} value={ch}>{ch}</option>
-                    ))}
-                </select>
-              ) : (
+        {classes.length === 0 && <div className="fm-hint">No groups yet — create one below or use Auto-Generate Groups above.</div>}
+        {classes.map((c) => {
+          const isExpanded = expandedCards[c.id] ?? false;
+          const overflowCount = c.members.length - MEMBER_PREVIEW_COUNT;
+          const visibleMembers = isExpanded || overflowCount <= 0 ? c.members : c.members.slice(0, MEMBER_PREVIEW_COUNT);
+          const fullNameTitle = c.members.join(" · ");
+          return (
+            <div className="fm-kern-group-card" key={c.id} data-testid={`kern-group-card-${c.id}`}>
+              <div className="fm-kern-group-card-head">
+                <input
+                  className="fm-kern-group-name-input"
+                  value={c.name}
+                  onChange={(e) => onRename(c.id, e.target.value)}
+                  title={fullNameTitle}
+                  data-testid={`kern-group-name-${c.id}`}
+                />
+                <span className="fm-kern-group-member-count">{c.members.length}</span>
                 <button
                   type="button"
-                  className="fm-kern-group-chip fm-kern-group-chip-add"
-                  onClick={() => setAddingTo(c.id)}
-                  title="Add a letter to this group"
+                  className="fm-kern-group-delete"
+                  onClick={() => onDelete(c.id)}
+                  title="Delete group"
+                  aria-label={`Delete group ${c.name}`}
+                  data-testid={`kern-group-delete-${c.id}`}
                 >
-                  <Plus size={10} />
+                  <Trash2 size={13} />
+                </button>
+              </div>
+              <div className="fm-kern-group-members">
+                {visibleMembers.map((ch) => (
+                  <span className="fm-kern-group-chip" key={ch}>
+                    {ch}
+                    <button type="button" onClick={() => onRemoveGlyph(c.id, ch)} aria-label={`Remove ${ch} from ${c.name}`}>
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+                {addingTo === c.id ? (
+                  <select
+                    autoFocus
+                    className="fm-kern-group-add-select"
+                    onChange={(e) => {
+                      if (e.target.value) onAddGlyph(c.id, e.target.value);
+                      setAddingTo(null);
+                    }}
+                    onBlur={() => setAddingTo(null)}
+                    data-testid={`kern-group-add-${c.id}`}
+                  >
+                    <option value="">+ letter…</option>
+                    {availableChars
+                      .filter((ch) => !c.members.includes(ch))
+                      .map((ch) => (
+                        <option key={ch} value={ch}>{ch}</option>
+                      ))}
+                  </select>
+                ) : (
+                  <button
+                    type="button"
+                    className="fm-kern-group-chip fm-kern-group-chip-add"
+                    onClick={() => setAddingTo(c.id)}
+                    title="Add a letter to this group"
+                    aria-label={`Add a letter to ${c.name}`}
+                  >
+                    <Plus size={11} />
+                  </button>
+                )}
+              </div>
+              {overflowCount > 0 && (
+                <button
+                  type="button"
+                  className="fm-kern-group-showmore"
+                  onClick={() => setExpandedCards((prev) => ({ ...prev, [c.id]: !isExpanded }))}
+                  data-testid={`kern-group-showmore-${c.id}`}
+                >
+                  {isExpanded ? "Show fewer letters" : `+${overflowCount} more letter${overflowCount === 1 ? "" : "s"}`}
                 </button>
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <div className="fm-kern-group-create">
         <input
@@ -1465,6 +1491,7 @@ function KerningClassColumn({
         <button
           type="button"
           className="fm-action-btn"
+          title="Create group"
           onClick={() => {
             if (newName.trim()) { onCreate(newName.trim()); setNewName(""); }
           }}
@@ -1592,13 +1619,13 @@ export function SpecimenPanel() {
   // the rail is a fixed-width column, not something that needs the same
   // per-frame coalescing as continuous canvas drawing.
   const [sideWidth, setSideWidth] = useState(() => {
-    if (typeof window === "undefined") return 284;
+    if (typeof window === "undefined") return 360;
     // Match the same narrower defaults the old fixed-width CSS breakpoints
     // used, so small screens don't open with a rail wider than before —
     // dragging still overrides this once the user actually resizes it.
-    if (window.innerWidth <= 820) return 210;
-    if (window.innerWidth <= 960) return 250;
-    return 284;
+    if (window.innerWidth <= 820) return 240;
+    if (window.innerWidth <= 960) return 290;
+    return 360;
   });
   const [isResizingSide, setIsResizingSide] = useState(false);
   const sideResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -1620,7 +1647,7 @@ export function SpecimenPanel() {
       // The rail sits to the right of the stage, so dragging left (negative
       // clientX delta) should widen it.
       const delta = drag.startX - ev.clientX;
-      const next = Math.min(420, Math.max(220, drag.startWidth + delta));
+      const next = Math.min(620, Math.max(260, drag.startWidth + delta));
       setSideWidth(next);
     };
     const onUp = () => {
@@ -2183,29 +2210,38 @@ export function SpecimenPanel() {
 
               <div className="fm-field fm-kern-group-pair">
                 <label>Group-to-Group Kerning</label>
+                <div className="fm-hint fm-kern-group-pair-hint">
+                  Pick one left group and one right group to set the kerning value applied between every letter pair across them.
+                </div>
                 <div className="fm-kern-group-pair-selects">
-                  <select
-                    value={groupPairLeft}
-                    onChange={(e) => setGroupPairLeft(e.target.value)}
-                    disabled={kerningClasses.left.length === 0}
-                    data-testid="kern-group-pair-left"
-                  >
-                    <option value="">Left group…</option>
-                    {kerningClasses.left.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={groupPairRight}
-                    onChange={(e) => setGroupPairRight(e.target.value)}
-                    disabled={kerningClasses.right.length === 0}
-                    data-testid="kern-group-pair-right"
-                  >
-                    <option value="">Right group…</option>
-                    {kerningClasses.right.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                  <div className="fm-kern-group-pair-select-wrap">
+                    <span className="fm-kern-group-pair-select-label">Left group</span>
+                    <select
+                      value={groupPairLeft}
+                      onChange={(e) => setGroupPairLeft(e.target.value)}
+                      disabled={kerningClasses.left.length === 0}
+                      data-testid="kern-group-pair-left"
+                    >
+                      <option value="">Choose…</option>
+                      {kerningClasses.left.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="fm-kern-group-pair-select-wrap">
+                    <span className="fm-kern-group-pair-select-label">Right group</span>
+                    <select
+                      value={groupPairRight}
+                      onChange={(e) => setGroupPairRight(e.target.value)}
+                      disabled={kerningClasses.right.length === 0}
+                      data-testid="kern-group-pair-right"
+                    >
+                      <option value="">Choose…</option>
+                      {kerningClasses.right.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 <div className="fm-kern-value-row">
                   <NumericInput
@@ -2243,10 +2279,11 @@ export function SpecimenPanel() {
                         key={key}
                         className={`fm-kern-group-pair-chip${groupPairLeft === lId && groupPairRight === rId ? " active" : ""}`}
                         onClick={() => { setGroupPairLeft(lId); setGroupPairRight(rId); }}
+                        title={`${l.name} × ${r.name}`}
                         data-testid={`kern-group-pair-chip-${key}`}
                       >
-                        {l.name} × {r.name}
-                        <span>{value > 0 ? `+${value}` : value}</span>
+                        <span className="fm-kern-group-pair-chip-label">{l.name} × {r.name}</span>
+                        <span className="fm-kern-group-pair-chip-value">{value > 0 ? `+${value}` : value}</span>
                       </button>
                     );
                   })}
