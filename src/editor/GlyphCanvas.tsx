@@ -543,9 +543,9 @@ export function GlyphCanvas() {
         <style>{`
           .cursor-pen { cursor: crosshair; } .cursor-node { cursor: default; }
           .cursor-shape { cursor: crosshair; }
-          .cursor-pencil { cursor: crosshair; }
+          .cursor-pencil { cursor: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij4gPGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMGEwYTBhIiBzdHJva2Utd2lkdGg9IjEuNCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj4gPHBhdGggZD0iTTE1LjYgMi42bDUuOCA1LjgtMTEuNCAxMS40LTcuMiAxLjQgMS40LTcuMnoiIGZpbGw9IiNmZmZmZmYiLz4gPHBhdGggZD0iTTEyLjkgNS4zbDUuOCA1LjgiIC8+IDxwYXRoIGQ9Ik0zLjkgMjAuMWwxLjEtNS42IiAvPiA8L2c+IDwvc3ZnPg==') 3 20, crosshair; }
           .cursor-hand { cursor: grab; } .cursor-zoom { cursor: zoom-in; }
-          .cursor-brush { cursor: crosshair; } .cursor-select { cursor: default; }
+          .cursor-brush { cursor: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij4gPGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMGEwYTBhIiBzdHJva2Utd2lkdGg9IjEuNCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj4gPHBhdGggZD0iTTEyIDQuNGMzLjEgMCA1LjQgMi40IDUuNCA1LjYgMCAyLjEtMS4xIDMuNi0yLjggNC44TDEyIDIxLjZsLTIuNi02LjhDNy43IDEzLjYgNi42IDEyLjEgNi42IDEwYzAtMy4yIDIuMy01LjYgNS40LTUuNnoiIGZpbGw9IiNmZmZmZmYiLz4gPGNpcmNsZSBjeD0iMTIiIGN5PSI5LjYiIHI9IjIuNiIgZmlsbD0iIzBhMGEwYSIgc3Ryb2tlPSJub25lIi8+IDwvZz4gPC9zdmc+') 12 21, crosshair; } .cursor-select { cursor: default; }
           .cursor-nwse { cursor: nwse-resize; } .cursor-nesw { cursor: nesw-resize; }
           .cursor-ns { cursor: ns-resize; } .cursor-ew { cursor: ew-resize; } .cursor-rot { cursor: crosshair; }
           .cursor-skew-x { cursor: ew-resize; } .cursor-skew-y { cursor: ns-resize; }
@@ -605,6 +605,8 @@ export function GlyphCanvas() {
           .handle-dot { fill: var(--canvas); stroke: var(--accent); stroke-width: ${1.3 / sc}; opacity: 0.85; }
           .handle-dot.active { opacity: 1; }
           .handle-dot.dim { opacity: 0.3; }
+          .handle-snap-line { stroke: var(--accent); stroke-width: ${1 / sc}; stroke-dasharray: ${4 / sc} ${4 / sc}; opacity: 0.75; }
+          .handle-snap-dot { fill: var(--accent); opacity: 0.9; }
           .node-shape { stroke-width: ${1.3 / sc}; }
           .node-shape.corner { fill: var(--node-corner); stroke: var(--canvas); }
           .node-shape.smooth { fill: var(--node-smooth); stroke: var(--canvas); }
@@ -957,6 +959,29 @@ export function GlyphCanvas() {
           );
         })()}
 
+        {/* Handle alignment guide: while dragging a bezier handle (Node/Pen
+            tool), a soft snap onto another point's x and/or y draws a
+            dashed cross-guide through the snapped axis/axes plus a live
+            coordinate readout — mirrors FontLab's node-handle snap
+            feedback (see snapHandlePoint in useGlyphEditor). */}
+        {tool === "node" && editor.handleSnapGuide && (() => {
+          const { point, x, y } = editor.handleSnapGuide;
+          const svgP = toSvgPoint(point, ascender);
+          const lx = svgP.x + 12 / sc;
+          const ly = svgP.y - 10 / sc;
+          const text = `${Math.round(point.x)}, ${Math.round(point.y)}`;
+          const w = (16 + text.length * 6.6) / sc;
+          return (
+            <g pointerEvents="none" data-testid="handle-snap-guide">
+              {x !== null && <line x1={svgP.x} y1={vbY} x2={svgP.x} y2={vbY + vbH} className="handle-snap-line" />}
+              {y !== null && <line x1={vbX} y1={svgP.y} x2={vbX + vbW} y2={svgP.y} className="handle-snap-line" />}
+              <circle cx={svgP.x} cy={svgP.y} r={2.6 / sc} className="handle-snap-dot" />
+              <rect x={lx} y={ly - 15 / sc} width={w} height={19 / sc} rx={4 / sc} className="metric-guide-value-bg" />
+              <text x={lx + 6 / sc} y={ly - 2 / sc} className="metric-guide-value">{text}</text>
+            </g>
+          );
+        })()}
+
         {/* Selection box + transform handles */}
         {tool === "select" && selBounds && handlePts && (
           <g>
@@ -1261,10 +1286,16 @@ const HandleGlyph = memo(function HandleGlyph({
   if (!handle) return null;
   const from = toSvgPoint(node.point, ascender);
   const to = toSvgPoint(handle, ascender);
+  // Off-curve handle points render as a diamond — two triangles pointing
+  // away from each other along the vertical axis — rather than a circle.
+  // This matches FontLab's off-curve node glyph, and reads more clearly
+  // against the round on-curve smooth/symmetric nodes right next to it.
+  const r = (selected ? 4.2 : 3.6) * hitScale;
+  const diamond = `${to.x} ${to.y - r} L ${to.x + r} ${to.y} L ${to.x} ${to.y + r} L ${to.x - r} ${to.y} Z`;
   return (
     <>
       <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} className={`handle-line ${emphasized ? "" : "dim"}`} />
-      <circle cx={to.x} cy={to.y} r={3 * hitScale} className={`handle-dot ${selected ? "active" : ""} ${emphasized ? "" : "dim"}`} />
+      <path d={diamond} className={`handle-dot ${selected ? "active" : ""} ${emphasized ? "" : "dim"}`} />
     </>
   );
 });

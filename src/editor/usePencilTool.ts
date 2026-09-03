@@ -12,6 +12,12 @@ const MIN_RAW_POINTS = 3;
 /** A fitted contour needs at least a triangle's worth of on-curve nodes to
  * read as a real shape once closed. */
 const MIN_SHAPE_NODES = 3;
+/** Extra RDP tolerance (screen px) applied once, only to the final
+ * committed shape — see the comment above its use in pointerUp. Chosen a
+ * bit above the live pass's own upper bound (13.5px worth of effective
+ * tolerance) so it only ever removes points the live pass left behind for
+ * responsiveness, not ones that were load-bearing for the curve's shape. */
+const FINAL_SIMPLIFY_TOLERANCE_PX = 3.5;
 
 function movingAveragePoints(points: Point[], windowRadius: number): Point[] {
   if (windowRadius <= 0) return points;
@@ -127,7 +133,19 @@ export function usePencilTool(hitScale: number) {
     setPreviewContour(null);
     if (raw.length < MIN_RAW_POINTS || !glyph) return;
 
-    const smoothed = smoothPencilPoints(raw, pencilSmoothing, hitScale);
+    let smoothed = smoothPencilPoints(raw, pencilSmoothing, hitScale);
+    // Second, more aggressive cleanup pass on the COMMITTED shape only
+    // (never on the live preview, so the stroke still tracks the pointer
+    // 1:1 while drawing). The Brush tool gets an equivalent second pass
+    // for free because it simplifies twice — once on the raw centerline,
+    // once again on the offset outline edges (see strokeToOutline.ts) —
+    // but Pencil only ever produces a single centerline-turned-contour, so
+    // without this it kept noticeably more nodes than a Brush stroke of
+    // similar shape for the same `smoothing` setting. Epsilon here is
+    // deliberately independent of `smoothing` (unlike the live pass): a
+    // shape that's just been finished should always get this final
+    // node-count cleanup, even with the smoothing slider low.
+    smoothed = simplifyPolyline(smoothed, FINAL_SIMPLIFY_TOLERANCE_PX * hitScale);
     // Pencil always finishes as a closed, filled shape — standard
     // professional-app Pencil behavior (Illustrator/Affinity): releasing
     // the pointer auto-closes the path even when the stroke's start and
