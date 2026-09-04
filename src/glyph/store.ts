@@ -17,10 +17,9 @@ import { shortId } from "@/utils/id";
 import { expandStrokeObject, normalizeBrushSettings } from "@/brushes/strokeToOutline";
 import { applyBooleanOp, type BooleanOp } from "@/editor/booleanOps";
 import { composeMultilingualGlyphs, type MultilingualResult } from "@/glyph/multilingual";
-import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext, WordSpacingOverridesByStyle, KerningClasses } from "@/types/kerning";
-import { kerningKey, decodeKerningKey, effectiveWordSpacing, classPairKey, EMPTY_KERNING_CLASSES } from "@/types/kerning";
+import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext, WordSpacingOverridesByStyle } from "@/types/kerning";
+import { kerningKey, decodeKerningKey, effectiveWordSpacing } from "@/types/kerning";
 import { suggestKerningPair, autoKernAllAvailablePairs } from "@/kerning/autoKern";
-import { autoGenerateKerningClasses as computeAutoKerningClasses, materializeClassKerning } from "@/kerning/kerningClasses";
 import { autoSpaceAllGlyphs as computeAutoSpaceAllGlyphs, suggestGlyphSidebearings, suggestWordSpacing, applyOpticalSidebearings, type AutoSpaceResult } from "@/kerning/autoSpace";
 import type { FeatureBuilderConfig, LigatureRule, AlternateRule, SwashRule, FeatureGlyphRef } from "@/types/opentypeFeatures";
 import { emptyFeatureConfig, nextFeatureRuleId } from "@/types/opentypeFeatures";
@@ -258,13 +257,6 @@ interface AppState {
    * override layers above; absence means inherit the shared metrics.wordSpacing. */
   wordSpacingOverridesByStyle: WordSpacingOverridesByStyle;
   autoKernLastRun: { processed: number; updated: number; preservedManual: number } | null;
-  /** Kerning Classes ("groups") — a bulk-editing convenience layered over
-   * kerningPairs; see types/kerning.ts for why this never needs its own
-   * rendering/export path. Not part of the undo/redo `past`/`future` stack,
-   * same treatment as featureConfig — only the flat kerningPairs/kerningManual
-   * writes a class produces go through the regular kerning history. */
-  kerningClasses: KerningClasses;
-  classKerningPairs: Record<string, number>;
   /** Last "Auto Spacing" run against the active style's glyphs, for a brief status readout. */
   autoSpaceLastRun: { updated: number; skipped: number; skippedManual: number } | null;
   /** Last "Apply Tracking" bake against the active style's glyphs. */
@@ -389,15 +381,6 @@ interface AppState {
    * right away instead of waiting for their next edit. */
   autoSpacingEnabled: boolean;
   setAutoSpacingEnabled: (enabled: boolean) => void;
-  /** Per-glyph "this glyph's LSB/RSB was hand-dragged" flag. Unlike the old
-   * behavior (a single manual LSB/RSB drag on ANY glyph used to flip
-   * `autoSpacingEnabled` off for the WHOLE FONT, silently freezing every
-   * other glyph — including ones the user never touched — out of every
-   * future Auto Spacing pass, e.g. the italicAngle re-space below), this
-   * tracks manual overrides per character so only the glyph actually
-   * hand-tuned stays protected. Session-only, like `autoSpacingEnabled`
-   * itself (not persisted, not part of undo/redo history). */
-  glyphSpacingManual: Record<string, boolean>;
   commitOutline: (char: string, outline: GlyphOutline) => void;
   setLiveOutline: (outline: GlyphOutline | null) => void;
   updateSelectedObject: (patch: Partial<VectorObject>) => void;
@@ -450,7 +433,7 @@ interface AppState {
   // history / persistence
   undo: () => void;
   redo: () => void;
-  hydrate: (patch: { glyphs?: GlyphMap; glyphsByStyle?: Partial<GlyphFamily>; fontStyle?: FontStyle; customFamilies?: CustomFamily[]; fontName?: string; fontInfo?: Partial<FontInfo>; projectFileName?: string; metrics?: Partial<FontMetrics>; kerningPairs?: KerningPairs; kerningManual?: KerningManualFlags; kerningOverridesByStyle?: KerningOverridesByStyle; kerningOverrideManualByStyle?: KerningOverrideManualByStyle; wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle; kerningClasses?: KerningClasses; classKerningPairs?: Record<string, number>; featureConfig?: FeatureBuilderConfig; activeChar?: string; gridSize?: number; showGrid?: boolean; showGuides?: boolean; snapEnabled?: boolean; ghost?: Partial<GhostSettings>; brush?: BrushSettings }) => void;
+  hydrate: (patch: { glyphs?: GlyphMap; glyphsByStyle?: Partial<GlyphFamily>; fontStyle?: FontStyle; customFamilies?: CustomFamily[]; fontName?: string; fontInfo?: Partial<FontInfo>; projectFileName?: string; metrics?: Partial<FontMetrics>; kerningPairs?: KerningPairs; kerningManual?: KerningManualFlags; kerningOverridesByStyle?: KerningOverridesByStyle; kerningOverrideManualByStyle?: KerningOverrideManualByStyle; wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle; featureConfig?: FeatureBuilderConfig; activeChar?: string; gridSize?: number; showGrid?: boolean; showGuides?: boolean; snapEnabled?: boolean; ghost?: Partial<GhostSettings>; brush?: BrushSettings }) => void;
 
   // kerning
   setKerningPair: (left: string, right: string, value: number) => void;
@@ -471,16 +454,6 @@ interface AppState {
   beginKerningDrag: () => void;
   setKerningPairLive: (left: string, right: string, value: number) => void;
   endKerningDrag: () => void;
-
-  // Kerning Classes ("groups") — see types/kerning.ts + kerning/kerningClasses.ts
-  autoGenerateKerningClasses: () => { leftCount: number; rightCount: number };
-  createKerningClass: (side: "left" | "right", name: string) => string;
-  renameKerningClass: (side: "left" | "right", id: string, name: string) => void;
-  deleteKerningClass: (side: "left" | "right", id: string) => void;
-  addGlyphToKerningClass: (side: "left" | "right", id: string, ch: string) => void;
-  removeGlyphFromKerningClass: (side: "left" | "right", id: string, ch: string) => void;
-  setClassKerningPair: (leftId: string, rightId: string, value: number) => void;
-  resetClassKerningPair: (leftId: string, rightId: string) => void;
 
   // Family kerning — additive layer over the existing Single Test API.
   setFamilyKerningPair: (context: KerningContext, left: string, right: string, value: number) => void;
@@ -605,10 +578,6 @@ export const useAppStore = create<AppState>()((set, get) => {
   } | null = null;
   let metricDragSnapshot: FontMetrics | null = null;
   let glyphMetricDragSnapshot: GlyphMap | null = null;
-  /** Debounce handle for the italicAngle → re-space-all-glyphs pass (see
-   * setFontMetric below) — cleared/reset on every change while the italic
-   * angle field or its stepper is still being adjusted. */
-  let italicRespaceTimeout: ReturnType<typeof setTimeout> | null = null;
   /** True if `contourId` still exists (with at least one node) in `char`'s
    * outline within `glyphs`. Used by undo/redo so that stepping through
    * history while the pen tool is mid-contour only removes/restores the
@@ -844,7 +813,6 @@ export const useAppStore = create<AppState>()((set, get) => {
     // opt-out (Manual) is one click away in Glyph Metrics for anyone who
     // wants full manual control instead.
     autoSpacingEnabled: true,
-    glyphSpacingManual: {},
 
     glyphs: initialRegular,
     glyphsByStyle: initialFamily,
@@ -858,8 +826,6 @@ export const useAppStore = create<AppState>()((set, get) => {
     kerningOverrideManualByStyle: {},
     wordSpacingOverridesByStyle: {},
     autoKernLastRun: null,
-    kerningClasses: EMPTY_KERNING_CLASSES,
-    classKerningPairs: {},
     autoSpaceLastRun: null,
     trackingApplyLastRun: null,
     testLabOpen: false,
@@ -927,8 +893,6 @@ export const useAppStore = create<AppState>()((set, get) => {
         kerningOverrideManualByStyle: {},
         wordSpacingOverridesByStyle: {},
         autoKernLastRun: null,
-        kerningClasses: EMPTY_KERNING_CLASSES,
-        classKerningPairs: {},
         autoSpaceLastRun: null,
         trackingApplyLastRun: null,
         featureConfig: emptyFeatureConfig(),
@@ -942,7 +906,6 @@ export const useAppStore = create<AppState>()((set, get) => {
         glyphMetricScope: "current",
         glyphMetricFocus: null,
         autoSpacingEnabled: true,
-        glyphSpacingManual: {},
         past: [],
         future: [],
       });
@@ -996,36 +959,6 @@ export const useAppStore = create<AppState>()((set, get) => {
         past: [...past, { glyphs, metrics, kerningPairs, kerningManual }].slice(-HISTORY_LIMIT),
         future: [],
       });
-
-      // Auto Metrik promises every glyph's LSB/RSB stays derived from "that
-      // glyph's own outline" using the font's CURRENT settings — but every
-      // existing glyph's stored LSB/RSB was only ever computed against
-      // whatever italicAngle was in effect at the moment it was drawn. The
-      // completely normal workflow is: draw the whole alphabet first, THEN
-      // dial in (or Auto-Detect) the italic angle — at which point every
-      // glyph drawn before that is now spaced against a stale (usually 0°)
-      // angle and reads as cramped/overlapping ("dempet") the instant the
-      // angle changes, even though nothing about the glyphs themselves
-      // changed. Re-running the same bulk Auto Space pass the "Auto Space"
-      // button triggers keeps that promise for italicAngle edits too, not
-      // just for the specific glyph being drawn when this ran live in
-      // commitOutline. autoSpaceAllGlyphs itself skips any glyph flagged in
-      // `glyphSpacingManual` (hand-dragged LSB/RSB on that specific glyph),
-      // so this correctly refreshes every OTHER glyph — including ones
-      // drawn long before this edit, in an older project — without
-      // clobbering deliberate manual work. (Previously a single manual
-      // LSB/RSB drag on any one glyph flipped `autoSpacingEnabled` off for
-      // the whole font, which silently froze this entire pass — including
-      // for every glyph that was never touched — for the rest of the
-      // session.) Debounced so dragging the stepper or the on-canvas guide
-      // doesn't kick off a full-font pass on every intermediate tick.
-      if (key === "italicAngle" && get().autoSpacingEnabled) {
-        if (italicRespaceTimeout !== null) clearTimeout(italicRespaceTimeout);
-        italicRespaceTimeout = setTimeout(() => {
-          italicRespaceTimeout = null;
-          get().autoSpaceAllGlyphs?.();
-        }, 400);
-      }
     },
     autoWordSpacing: () => {
       const { glyphs, metrics } = get();
@@ -1244,31 +1177,22 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     setGlyphMetricLive: (char, key, value, scope) => {
       if (!Number.isFinite(value)) return;
-      const { glyphs, glyphsByStyle, fontStyle, glyphMetricScope, glyphSpacingManual } = get();
-      // Dragging LSB/RSB by hand is the definition of "Manual" for THIS
-      // glyph — flag just this character so this deliberate tweak doesn't
-      // get overwritten by a later Auto Spacing pass. This used to flip a
-      // single font-wide switch off instead, which meant hand-adjusting
-      // even one glyph (very common in an old project drawn before Auto
-      // Metrik existed) silently froze auto-spacing for every OTHER glyph
-      // too, forever, for the rest of the session — including the italic
-      // angle re-space below. (Advance-width-only drags don't move ink
-      // margins, so they don't touch this flag.)
+      const { glyphs, glyphsByStyle, fontStyle, glyphMetricScope, autoSpacingEnabled } = get();
+      // Dragging LSB/RSB by hand is the definition of "Manual" — flip the
+      // font-wide Auto switch off so this deliberate tweak doesn't get
+      // immediately overwritten the next time ANY glyph's outline commits.
+      // (Advance-width-only drags don't move ink margins, so they don't
+      // touch the switch.)
       const nextGlyphs = applyGlyphMetricToMap(glyphs, char, { [key]: value }, scope ?? glyphMetricScope);
       set({
         glyphs: nextGlyphs,
         glyphsByStyle: { ...glyphsByStyle, [fontStyle]: nextGlyphs },
-        glyphSpacingManual:
-          key === "lsb" || key === "rsb" ? { ...glyphSpacingManual, [char]: true } : glyphSpacingManual,
+        autoSpacingEnabled: (key === "lsb" || key === "rsb") && autoSpacingEnabled ? false : autoSpacingEnabled,
       });
     },
 
     setAutoSpacingEnabled: (enabled) => {
-      // Turning Auto back on is a deliberate, explicit "trust the optical
-      // engine again" action, so it also clears every per-glyph manual-
-      // spacing flag — otherwise glyphs hand-tuned while Auto was off would
-      // stay silently excluded from the very re-space pass this triggers.
-      set({ autoSpacingEnabled: enabled, glyphSpacingManual: enabled ? {} : get().glyphSpacingManual });
+      set({ autoSpacingEnabled: enabled });
       // Turning Auto on doesn't just arm it for the *next* edit — it also
       // immediately re-spaces (and, via LSB, re-positions) every glyph
       // that's already drawn, the same pass "Auto Space" runs, so nothing
@@ -1289,7 +1213,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
 
     commitOutline: (char, outline) => {
-      const { glyphs, metrics, autoSpacingEnabled, glyphSpacingManual } = get();
+      const { glyphs, metrics, autoSpacingEnabled } = get();
       const glyph = glyphs[char];
       if (!glyph) return;
       let nextGlyph: Glyph = { ...glyph, outline };
@@ -1304,7 +1228,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       // correctly *positioned* the instant it's drawn — even freehand, off
       // to one side, or a totally different size than whatever this glyph
       // (or the template) last had stored — not just spaced.
-      if (autoSpacingEnabled && !glyphSpacingManual[char]) {
+      if (autoSpacingEnabled) {
         const suggestion = suggestGlyphSidebearings(nextGlyph, metrics);
         if (suggestion) nextGlyph = applyOpticalSidebearings(nextGlyph, suggestion);
       }
@@ -1740,8 +1664,6 @@ export const useAppStore = create<AppState>()((set, get) => {
           kerningOverridesByStyle: patch.kerningOverridesByStyle ?? (incomingRegular ? {} : s.kerningOverridesByStyle),
           kerningOverrideManualByStyle: patch.kerningOverrideManualByStyle ?? (incomingRegular ? {} : s.kerningOverrideManualByStyle),
           wordSpacingOverridesByStyle: patch.wordSpacingOverridesByStyle ?? (incomingRegular ? {} : s.wordSpacingOverridesByStyle),
-          kerningClasses: patch.kerningClasses ?? (incomingRegular ? EMPTY_KERNING_CLASSES : s.kerningClasses),
-          classKerningPairs: patch.classKerningPairs ?? (incomingRegular ? {} : s.classKerningPairs),
           featureConfig: patch.featureConfig ?? (incomingRegular ? emptyFeatureConfig() : s.featureConfig),
           activeChar,
           gridSize: patch.gridSize ?? s.gridSize,
@@ -1809,19 +1731,15 @@ export const useAppStore = create<AppState>()((set, get) => {
     autoSpaceAllGlyphs: async (options, onProgress) => {
       const excludeManuallyKerned = options?.excludeManuallyKerned ?? true;
       const reKernAfter = options?.reKernAfter ?? true;
-      const { glyphs, metrics, kerningPairs, kerningManual, glyphSpacingManual } = get();
+      const { glyphs, metrics, kerningPairs, kerningManual } = get();
 
       // Glyphs that already have a hand-tuned kerning pair are left out of
       // the re-spacing pass by default: moving their LSB/RSB out from under
       // an existing manual kern value is exactly what causes the collisions
       // reported after running Auto Spacing on an already-kerned font.
-      // Glyphs whose LSB/RSB were hand-dragged directly (glyphSpacingManual)
-      // are always protected the same way, regardless of that option — this
-      // is what lets a bulk pass like the italicAngle re-space below refresh
-      // every glyph the user hasn't deliberately hand-positioned, without
-      // clobbering the handful they have.
-      const excludeChars = new Set<string>(Object.keys(glyphSpacingManual).filter((ch) => glyphSpacingManual[ch]));
+      let excludeChars: Set<string> | undefined;
       if (excludeManuallyKerned) {
+        excludeChars = new Set<string>();
         for (const [key, isManual] of Object.entries(kerningManual)) {
           if (!isManual) continue;
           const [left, right] = decodeKerningKey(key);
@@ -1888,17 +1806,16 @@ export const useAppStore = create<AppState>()((set, get) => {
       // just as "manually tuned" as a shared manual pair, and either one
       // moving out from under a hand-set kern value causes the same
       // collisions Auto Spacing's exclude option exists to prevent).
-      const excludeChars = new Set<string>(
-        Object.keys(state.glyphSpacingManual).filter((ch) => state.glyphSpacingManual[ch])
-      );
+      let excludeChars: Set<string> | undefined;
       if (excludeManuallyKerned) {
+        excludeChars = new Set<string>();
         const collect = (manual: KerningManualFlags | undefined) => {
           if (!manual) return;
           for (const [key, isManual] of Object.entries(manual)) {
             if (!isManual) continue;
             const [left, right] = decodeKerningKey(key);
-            excludeChars.add(left);
-            excludeChars.add(right);
+            excludeChars!.add(left);
+            excludeChars!.add(right);
           }
         };
         collect(state.kerningManual);
@@ -1992,104 +1909,6 @@ export const useAppStore = create<AppState>()((set, get) => {
         past: [...past, { glyphs, metrics: get().metrics, kerningPairs: snapshot.kerningPairs, kerningManual: snapshot.kerningManual }].slice(-HISTORY_LIMIT),
         future: [],
       });
-    },
-
-    // ---------------------------- Kerning Classes ("groups") ----------
-    // Class metadata itself (kerningClasses/classKerningPairs) is a plain
-    // `set()`, same treatment as featureConfig — it doesn't touch the
-    // undo/redo `past` stack. But every class-pair value change DOES flow
-    // through `commitKerning`, so the flat glyph pairs it fills in remain
-    // fully undoable exactly like any other kerning edit.
-    autoGenerateKerningClasses: () => {
-      const { glyphs, metrics } = get();
-      const classes = computeAutoKerningClasses(glyphs, metrics);
-      // Re-running clustering replaces the auto-generated groups wholesale
-      // (ids change), so any class-pair values set against the old groups
-      // are cleared too — there's nothing meaningful left for them to
-      // reference. Already-filled glyph pairs in kerningPairs are left
-      // untouched; they simply become ordinary auto-kern pairs.
-      set({ kerningClasses: classes, classKerningPairs: {} });
-      return { leftCount: classes.left.length, rightCount: classes.right.length };
-    },
-
-    createKerningClass: (side, name) => {
-      const id = `custom-${side}-${Date.now().toString(36)}-${Math.round(Math.random() * 1e4)}`;
-      set((s) => ({
-        kerningClasses: {
-          ...s.kerningClasses,
-          [side]: [...s.kerningClasses[side], { id, name: name.trim() || "New Group", side, members: [], auto: false }],
-        },
-      }));
-      return id;
-    },
-
-    renameKerningClass: (side, id, name) => {
-      set((s) => ({
-        kerningClasses: {
-          ...s.kerningClasses,
-          [side]: s.kerningClasses[side].map((c) => (c.id === id ? { ...c, name: name.trim() || c.name, auto: false } : c)),
-        },
-      }));
-    },
-
-    deleteKerningClass: (side, id) => {
-      set((s) => {
-        const remaining = { ...s.classKerningPairs };
-        for (const key of Object.keys(remaining)) {
-          const [l, r] = key.split("::");
-          if ((side === "left" && l === id) || (side === "right" && r === id)) delete remaining[key];
-        }
-        return {
-          kerningClasses: { ...s.kerningClasses, [side]: s.kerningClasses[side].filter((c) => c.id !== id) },
-          classKerningPairs: remaining,
-        };
-      });
-    },
-
-    addGlyphToKerningClass: (side, id, ch) => {
-      const state = get();
-      // A glyph belongs to at most one class per side — pull it out of
-      // whichever class (if any) already claims it first.
-      const withoutCh = state.kerningClasses[side].map((c) => ({ ...c, members: c.members.filter((m) => m !== ch) }));
-      const nextSideClasses = withoutCh.map((c) => (c.id === id ? { ...c, members: [...c.members, ch] } : c));
-      const nextClasses: KerningClasses = { ...state.kerningClasses, [side]: nextSideClasses };
-      set({ kerningClasses: nextClasses });
-      // Re-fill so the newly added glyph immediately gets every class-pair
-      // value already defined for this class, instead of waiting for the
-      // user to re-touch the value.
-      const { kerningPairs, kerningManual } = get();
-      const { pairs, manual } = materializeClassKerning(nextClasses, get().classKerningPairs, kerningPairs, kerningManual);
-      commitKerning(pairs, manual);
-    },
-
-    removeGlyphFromKerningClass: (side, id, ch) => {
-      set((s) => ({
-        kerningClasses: {
-          ...s.kerningClasses,
-          [side]: s.kerningClasses[side].map((c) => (c.id === id ? { ...c, members: c.members.filter((m) => m !== ch) } : c)),
-        },
-      }));
-    },
-
-    setClassKerningPair: (leftId, rightId, value) => {
-      const state = get();
-      const nextClassPairs = { ...state.classKerningPairs, [classPairKey(leftId, rightId)]: Math.round(value) };
-      set({ classKerningPairs: nextClassPairs });
-      const { pairs, manual } = materializeClassKerning(state.kerningClasses, nextClassPairs, state.kerningPairs, state.kerningManual);
-      commitKerning(pairs, manual);
-    },
-
-    resetClassKerningPair: (leftId, rightId) => {
-      const state = get();
-      const key = classPairKey(leftId, rightId);
-      const nextClassPairs = { ...state.classKerningPairs };
-      delete nextClassPairs[key];
-      set({ classKerningPairs: nextClassPairs });
-      // Re-materialize with the value effectively at 0 so previously
-      // class-filled (non-manual) pairs for this combo are cleared too.
-      const zeroed = { ...nextClassPairs, [key]: 0 };
-      const { pairs, manual } = materializeClassKerning(state.kerningClasses, zeroed, state.kerningPairs, state.kerningManual);
-      commitKerning(pairs, manual);
     },
 
     setFamilyKerningPair: (context, left, right, value) => {

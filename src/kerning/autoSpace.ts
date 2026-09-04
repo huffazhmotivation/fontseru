@@ -1,8 +1,7 @@
 import type { Glyph, GlyphMap } from "@/types/glyph";
-import type { GlyphOutline } from "@/types/geometry";
 import { hasOutline } from "@/types/glyph";
 import type { FontMetrics } from "@/types/font";
-import { outlineBounds, translateObject, skewObject } from "@/editor/objectOps";
+import { outlineBounds, translateObject } from "@/editor/objectOps";
 import { inkExtentAtY } from "./autoKern";
 
 /**
@@ -74,51 +73,9 @@ export function applyOpticalSidebearings(glyph: Glyph, suggestion: GlyphSpacingS
   };
 }
 
-/**
- * Shears `outline` by `shearXPerY` around `anchorY` — used to temporarily
- * "un-slant" an italic/oblique glyph before measuring its optical recess.
- *
- * Why this is needed: `suggestGlyphSidebearings` below measures recess by
- * comparing ink at each scanline to the glyph's own *axis-aligned* bounding
- * box. On an upright glyph that recess is purely the letterform's own
- * curvature (a round "o" recedes from its bbox corners; a straight "l"
- * doesn't). On a slanted glyph, the bbox itself is a parallelogram's
- * axis-aligned envelope: the top of the glyph sits shifted sideways from
- * the bottom by the slant, which *adds* an extra, shear-only component to
- * every scanline's apparent recess on top of whatever the letterform's own
- * curvature contributes. Lowercase suffers far more than uppercase because
- * (a) it's shorter (x-height vs cap-height), so the same slant angle reads
- * as a proportionally bigger sideways shift across that height, and (b)
- * lowercase has far more round/diagonal letters (a c e o s ...) whose
- * curvature-recess the shear then compounds. The inflated recess then gets
- * traded back into the margin (`target - recess * OPTICAL_COMPENSATION`),
- * so slanted lowercase ends up with margins squeezed toward `minMargin` —
- * i.e. the cramped, "dempet" lowercase the uppercase never showed.
- *
- * De-slanting first removes the shear-only component before recess is
- * measured, leaving just the letterform's real curvature — the same
- * quantity this function was already designed to compensate for.
- */
-function deslantOutline(outline: GlyphOutline, shearXPerY: number, anchorY: number): GlyphOutline {
-  if (shearXPerY === 0) return outline;
-  const anchor = { x: 0, y: anchorY };
-  return { objects: outline.objects.map((o) => skewObject(o, anchor, shearXPerY, 0)) };
-}
-
 export function suggestGlyphSidebearings(glyph: Glyph, metrics: FontMetrics): GlyphSpacingSuggestion | null {
   if (!hasOutline(glyph)) return null;
-
-  // Measure on a de-slanted copy when the font has a nonzero italic angle,
-  // so recess reflects letterform curvature only, not the slant itself.
-  // `italicAngle` follows the OpenType `post` table sign convention
-  // (negative = leans right); shearXPerY = tan(italicAngle) undoes exactly
-  // that lean when applied as dx = shearXPerY * dy. Zero/undefined angle
-  // makes this a no-op, so already-upright fonts measure exactly as before.
-  const italicAngle = metrics.italicAngle ?? 0;
-  const shearXPerY = Math.tan((italicAngle * Math.PI) / 180);
-  const measureOutline = deslantOutline(glyph.outline, shearXPerY, metrics.baseline);
-
-  const bounds = outlineBounds(measureOutline);
+  const bounds = outlineBounds(glyph.outline);
   if (!bounds) return null;
 
   const target = metrics.unitsPerEm * SIDE_MARGIN_RATIO;
@@ -130,7 +87,7 @@ export function suggestGlyphSidebearings(glyph: Glyph, metrics: FontMetrics): Gl
   for (let i = 0; i < OPTICAL_SAMPLES; i++) {
     const t = OPTICAL_SAMPLES === 1 ? 0.5 : i / (OPTICAL_SAMPLES - 1);
     const y = bounds.minY + t * (bounds.maxY - bounds.minY);
-    const ink = inkExtentAtY(measureOutline, y);
+    const ink = inkExtentAtY(glyph.outline, y);
     if (!ink) continue;
     leftRecessSum += Math.max(0, ink.min - bounds.minX);
     rightRecessSum += Math.max(0, bounds.maxX - ink.max);

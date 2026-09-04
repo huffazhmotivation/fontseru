@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { AlignCenter, AlignLeft, AlignRight, Layers3, Loader2, MoveHorizontal, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
+import { Layers3, Loader2, MoveHorizontal, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
 import { NumericInput } from "@/components/NumericInput";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -17,14 +17,9 @@ import {
   effectiveKerningPairs,
   effectiveWordSpacing,
   kerningKey,
-  getKerningOrigin,
   type KerningContext,
   type KerningPairs,
-  type KerningClass,
-  type KerningOrigin,
 } from "@/types/kerning";
-import { getClassKerningValue } from "@/kerning/kerningClasses";
-import { Plus, X, Sparkles, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 
 type TestId = "type" | "upper" | "lower" | "numbers" | "punctuation" | "symbol" | "multilingual" | "feature" | "kerning" | "pangram" | "paragraph" | "all";
 type ActiveGlyph = {
@@ -74,7 +69,7 @@ const PARAGRAPH_LINES = [
   "using the same glyph geometry the canvas editor works with.",
 ];
 
-function EditableStageImpl({
+function EditableStage({
   text,
   onTextChange,
   fontSize,
@@ -297,6 +292,7 @@ function EditableStageImpl({
       ref={wrapRef}
       className="fm-lab-editable-wrap"
       onPointerUp={onStagePointerUp}
+      style={{ alignItems: align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center" }}
       data-testid="lab-editable-specimen"
       data-kern-dragging={isDragging ? "true" : "false"}
     >
@@ -326,7 +322,6 @@ function EditableStageImpl({
             ? (rowActivePlaced.x + rowActivePlaced.advance) * pxPerUnit
             : 0;
           const rowHeight = totalH * pxPerUnit;
-          const lineWidth = Math.max(1, (layouts[lineIndex]?.totalAdvance ?? 0) * pxPerUnit);
           const selectionSpan =
             !isDragging && hasSelection
               ? selectionSpanForWrappedLine(
@@ -340,16 +335,9 @@ function EditableStageImpl({
           return (
             <div
               key={`${wrappedLine.start}-${lineIndex}`}
-              className="fm-lab-preview-line"
-              style={{
-                justifyContent: align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center",
-                marginBottom: lineIndex < wrappedLines.length - 1 ? fontSize * (lineHeight - 1) : 0,
-              }}
-            >
-            <div
-              className="fm-lab-glyph-row fm-lab-line-inner"
+              className="fm-lab-glyph-row"
               ref={(el) => (lineRefs.current[lineIndex] = el)}
-              style={{ width: lineWidth, height: rowHeight }}
+              style={{ marginBottom: lineIndex < wrappedLines.length - 1 ? fontSize * (lineHeight - 1) : 0 }}
               data-testid={`lab-line-${lineIndex}`}
             >
               <GlyphRun
@@ -357,8 +345,9 @@ function EditableStageImpl({
                 fontSizePx={fontSize}
                 trackingUnits={tracking}
                 ghostEmpty
-                highlightIndex={isDragging ? rowActive : undefined}
-                highlightColor="var(--accent)"
+                colorForIndex={(index) =>
+                  isDragging && rowActive === index ? "var(--accent)" : undefined
+                }
               />
 
               {selectionSpan && (
@@ -435,7 +424,6 @@ function EditableStageImpl({
                 />
               ))}
             </div>
-            </div>
           );
         })}
 
@@ -475,22 +463,6 @@ function EditableStageImpl({
     </div>
   );
 }
-
-/**
- * Memoized: SpecimenPanel re-renders on every store update it reads from —
- * kerning edits (including once per animation frame during a drag),
- * Kerning Groups changes, Auto Kern/Space progress ticks, undo/redo, etc. —
- * even ones that have nothing to do with the currently-typed specimen text.
- * Without this, EVERY one of those re-renders also re-ran and re-diffed
- * EditableStage's own subtree, which for a long specimen (a paragraph, or
- * the "All Glyphs" test) means hundreds of glyph hit-box elements getting
- * reconciled for no reason — a real, measurable contributor to Test Lab
- * feeling heavy even outside an active kerning drag. `onTextChange` above
- * is passed in as a `useCallback`-stabilized handler specifically so this
- * memo can actually take effect instead of being defeated by a fresh
- * function identity every render.
- */
-const EditableStage = memo(EditableStageImpl);
 
 
 type FamilyActiveGlyph = {
@@ -627,7 +599,7 @@ function caretColumnForSourceIndex(line: WrappedFamilyLine, sourceIndex: number)
   return col;
 }
 
-function FamilyStylePreviewImpl({
+function FamilyStylePreview({
   style,
   label,
   text,
@@ -661,6 +633,8 @@ function FamilyStylePreviewImpl({
   editable: boolean;
 }) {
   const metrics = useAppStore((s) => s.metrics);
+  const sharedPairs = useAppStore((s) => s.kerningPairs);
+  const overridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
   const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
   const beginFamilyKerningDrag = useAppStore((s) => s.beginFamilyKerningDrag);
   const setFamilyKerningPairLive = useAppStore((s) => s.setFamilyKerningPairLive);
@@ -769,14 +743,6 @@ function FamilyStylePreviewImpl({
     const targetContext: KerningContext = kerningContext === "shared" ? "shared" : style;
     if (kerningContext !== "shared" && kerningContext !== style) onKerningContextChange(style);
 
-    // Read straight from the store here instead of subscribing to
-    // `kerningPairs`/`kerningOverridesByStyle` for the whole component:
-    // this value is only ever needed at the instant a drag starts, but a
-    // live subscription would re-render THIS row (and, before the cache
-    // above, force a full GlyphRun re-layout) on every kerning edit
-    // anywhere in the font — including every animation frame of a drag
-    // happening in a completely different style row.
-    const { kerningPairs: sharedPairs, kerningOverridesByStyle: overridesByStyle } = useAppStore.getState();
     const targetPairs =
       targetContext === "shared"
         ? sharedPairs
@@ -967,8 +933,9 @@ function FamilyStylePreviewImpl({
                     glyphsOverride={glyphs}
                     kerningPairsOverride={kerningPairs}
                     ghostEmpty
-                    highlightIndex={isDragging ? activeIndex : undefined}
-                    highlightColor="var(--accent)"
+                    colorForIndex={(index) =>
+                      isDragging && activeIndex === index ? "var(--accent)" : undefined
+                    }
                   />
 
                   {selectionSpan && (
@@ -1086,18 +1053,6 @@ function FamilyStylePreviewImpl({
   );
 }
 
-/**
- * Memoized for the same reason as EditableStage: each row now receives a
- * `kerningPairs` reference that only changes when ITS OWN inputs actually
- * changed (see the cache in FamilyPreview below), so this bail-out is
- * finally meaningful instead of being defeated by a fresh object every
- * render. This is the fix for "Test Lab got heavier since Group Kerning" —
- * previously every row recomputed a full spread-copy of the (now larger,
- * once class kerning materializes into it) shared pairs table AND fully
- * re-laid-out its text on every render of ANY row, not just its own.
- */
-const FamilyStylePreview = memo(FamilyStylePreviewImpl);
-
 function FamilyPreview({
   text,
   onTextChange,
@@ -1150,30 +1105,6 @@ function FamilyPreview({
   // every family is visible, or the sole visible style when narrowed down.
   const editableStyleId = kerningContext === "shared" ? "regular" : kerningContext;
 
-  // `effectiveKerningPairs` spreads the ENTIRE shared kerning-pairs object
-  // (now sizeable once Kerning Groups is in use — group edits materialize
-  // into many individual pair entries) to layer a style's overrides on
-  // top. Calling it inline in the .map below reran that full copy, for
-  // EVERY visible style row, on every FamilyPreview render — not just
-  // during a kerning drag, but for any unrelated store update this
-  // component also happens to read. It also handed each `GlyphRun` a
-  // brand-new object reference every time regardless of whether that
-  // row's own pairs had actually changed, which defeated GlyphRun's memo
-  // and forced a full text re-layout for every row too. This cache keeps
-  // the same object reference across renders where a given style's inputs
-  // (the shared table + that style's own override layer) are unchanged —
-  // including, critically, every OTHER row while just one row is being
-  // kerning-dragged.
-  const kerningPairsCacheRef = useRef<Map<FontStyle, { shared: KerningPairs; override?: KerningPairs; result: KerningPairs }>>(new Map());
-  const effectiveKerningPairsFor = (id: FontStyle): KerningPairs => {
-    const override = overridesByStyle[id];
-    const cached = kerningPairsCacheRef.current.get(id);
-    if (cached && cached.shared === sharedPairs && cached.override === override) return cached.result;
-    const result = effectiveKerningPairs(sharedPairs, overridesByStyle, id);
-    kerningPairsCacheRef.current.set(id, { shared: sharedPairs, override, result });
-    return result;
-  };
-
   return (
     <div className="fm-family-preview" data-testid="family-preview">
       {styles.map(({ id, label }) => (
@@ -1188,7 +1119,7 @@ function FamilyPreview({
           tracking={tracking}
           align={align}
           glyphs={glyphsByStyle[id]}
-          kerningPairs={effectiveKerningPairsFor(id)}
+          kerningPairs={effectiveKerningPairs(sharedPairs, overridesByStyle, id)}
           kerningContext={kerningContext}
           onKerningContextChange={onKerningContextChange}
           activeGlyph={activeGlyph}
@@ -1412,162 +1343,6 @@ function FeatureSpecimen({
   );
 }
 
-/**
- * One column of Kerning Classes for a single side ("left" = groups glyphs
- * by how they behave as the FIRST glyph of a pair; "right" = as the
- * SECOND). Each class card shows its members as removable chips, a "+" to
- * add another glyph, an editable name, and a delete button — a compact
- * take on the group editor found in professional kerning tools.
- */
-function KerningClassColumn({
-  side,
-  title,
-  classes,
-  glyphs,
-  onCreate,
-  onRename,
-  onDelete,
-  onAddGlyph,
-  onRemoveGlyph,
-}: {
-  side: "left" | "right";
-  title: string;
-  classes: KerningClass[];
-  glyphs: GlyphMap;
-  onCreate: (name: string) => void;
-  onRename: (id: string, name: string) => void;
-  onDelete: (id: string) => void;
-  onAddGlyph: (id: string, ch: string) => void;
-  onRemoveGlyph: (id: string, ch: string) => void;
-}) {
-  const [newName, setNewName] = useState("");
-  const [addingTo, setAddingTo] = useState<string | null>(null);
-  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
-
-  const availableChars = useMemo(
-    () => Object.keys(glyphs).filter((ch) => glyphs[ch].unicode !== 0x20).sort(),
-    [glyphs]
-  );
-
-  const MEMBER_PREVIEW_COUNT = 18;
-
-  return (
-    <div className="fm-kern-group-column" data-testid={`kern-group-column-${side}`}>
-      <div className="fm-kern-group-column-title">
-        {title}
-        <span className="fm-kern-group-column-count">{classes.length}</span>
-      </div>
-      <div className="fm-kern-group-list">
-        {classes.length === 0 && <div className="fm-hint">No groups yet — create one below or use Auto-Generate Groups above.</div>}
-        {classes.map((c) => {
-          const isExpanded = expandedCards[c.id] ?? false;
-          const overflowCount = c.members.length - MEMBER_PREVIEW_COUNT;
-          const visibleMembers = isExpanded || overflowCount <= 0 ? c.members : c.members.slice(0, MEMBER_PREVIEW_COUNT);
-          const fullNameTitle = c.members.join(" · ");
-          return (
-            <div className="fm-kern-group-card" key={c.id} data-testid={`kern-group-card-${c.id}`}>
-              <div className="fm-kern-group-card-head">
-                <input
-                  className="fm-kern-group-name-input"
-                  value={c.name}
-                  onChange={(e) => onRename(c.id, e.target.value)}
-                  title={fullNameTitle}
-                  data-testid={`kern-group-name-${c.id}`}
-                />
-                <span className="fm-kern-group-member-count">{c.members.length}</span>
-                <button
-                  type="button"
-                  className="fm-kern-group-delete"
-                  onClick={() => onDelete(c.id)}
-                  title="Delete group"
-                  aria-label={`Delete group ${c.name}`}
-                  data-testid={`kern-group-delete-${c.id}`}
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-              <div className="fm-kern-group-members">
-                {visibleMembers.map((ch) => (
-                  <span className="fm-kern-group-chip" key={ch}>
-                    {ch}
-                    <button type="button" onClick={() => onRemoveGlyph(c.id, ch)} aria-label={`Remove ${ch} from ${c.name}`}>
-                      <X size={10} />
-                    </button>
-                  </span>
-                ))}
-                {addingTo === c.id ? (
-                  <select
-                    autoFocus
-                    className="fm-kern-group-add-select"
-                    onChange={(e) => {
-                      if (e.target.value) onAddGlyph(c.id, e.target.value);
-                      setAddingTo(null);
-                    }}
-                    onBlur={() => setAddingTo(null)}
-                    data-testid={`kern-group-add-${c.id}`}
-                  >
-                    <option value="">+ letter…</option>
-                    {availableChars
-                      .filter((ch) => !c.members.includes(ch))
-                      .map((ch) => (
-                        <option key={ch} value={ch}>{ch}</option>
-                      ))}
-                  </select>
-                ) : (
-                  <button
-                    type="button"
-                    className="fm-kern-group-chip fm-kern-group-chip-add"
-                    onClick={() => setAddingTo(c.id)}
-                    title="Add a letter to this group"
-                    aria-label={`Add a letter to ${c.name}`}
-                  >
-                    <Plus size={11} />
-                  </button>
-                )}
-              </div>
-              {overflowCount > 0 && (
-                <button
-                  type="button"
-                  className="fm-kern-group-showmore"
-                  onClick={() => setExpandedCards((prev) => ({ ...prev, [c.id]: !isExpanded }))}
-                  data-testid={`kern-group-showmore-${c.id}`}
-                >
-                  {isExpanded ? "Show fewer letters" : `+${overflowCount} more letter${overflowCount === 1 ? "" : "s"}`}
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div className="fm-kern-group-create">
-        <input
-          placeholder="New group name"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && newName.trim()) {
-              onCreate(newName.trim());
-              setNewName("");
-            }
-          }}
-          data-testid={`kern-group-create-input-${side}`}
-        />
-        <button
-          type="button"
-          className="fm-action-btn"
-          title="Create group"
-          onClick={() => {
-            if (newName.trim()) { onCreate(newName.trim()); setNewName(""); }
-          }}
-          data-testid={`kern-group-create-btn-${side}`}
-        >
-          <Plus size={12} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export function SpecimenPanel() {
   const glyphs = useAppStore((s) => s.glyphs);
   const featureConfig = useAppStore((s) => s.featureConfig);
@@ -1576,7 +1351,6 @@ export function SpecimenPanel() {
   const openFeatureBuilder = useAppStore((s) => s.openFeatureBuilder);
   const customFamilies = useAppStore((s) => s.customFamilies);
   const kerningPairs = useAppStore((s) => s.kerningPairs);
-  const kerningManual = useAppStore((s) => s.kerningManual);
   const kerningOverridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
   const autoKernLastRun = useAppStore((s) => s.autoKernLastRun);
   const setKerningPair = useAppStore((s) => s.setKerningPair);
@@ -1585,16 +1359,6 @@ export function SpecimenPanel() {
   const setFamilyKerningPair = useAppStore((s) => s.setFamilyKerningPair);
   const resetFamilyKerningPair = useAppStore((s) => s.resetFamilyKerningPair);
   const autoKernAllPairsForContext = useAppStore((s) => s.autoKernAllPairsForContext);
-  const kerningClasses = useAppStore((s) => s.kerningClasses);
-  const classKerningPairs = useAppStore((s) => s.classKerningPairs);
-  const autoGenerateKerningClasses = useAppStore((s) => s.autoGenerateKerningClasses);
-  const createKerningClass = useAppStore((s) => s.createKerningClass);
-  const renameKerningClass = useAppStore((s) => s.renameKerningClass);
-  const deleteKerningClass = useAppStore((s) => s.deleteKerningClass);
-  const addGlyphToKerningClass = useAppStore((s) => s.addGlyphToKerningClass);
-  const removeGlyphFromKerningClass = useAppStore((s) => s.removeGlyphFromKerningClass);
-  const setClassKerningPair = useAppStore((s) => s.setClassKerningPair);
-  const resetClassKerningPair = useAppStore((s) => s.resetClassKerningPair);
   const autoWordSpacing = useAppStore((s) => s.autoWordSpacing);
   const autoWordSpacingForContext = useAppStore((s) => s.autoWordSpacingForContext);
   const resetFamilyWordSpacing = useAppStore((s) => s.resetFamilyWordSpacing);
@@ -1636,59 +1400,6 @@ export function SpecimenPanel() {
   const [kerningMode, setKerningMode] = useState<"single" | "family">("single");
   const [familyContext, setFamilyContext] = useState<KerningContext>("shared");
 
-  // ---------------------------- Kerning Groups (Classes) panel state ----
-  const [groupsExpanded, setGroupsExpanded] = useState(false);
-  const [groupAutoRunning, setGroupAutoRunning] = useState(false);
-  const [groupAutoFlash, setGroupAutoFlash] = useState<{ leftCount: number; rightCount: number } | null>(null);
-  const [groupPairLeft, setGroupPairLeft] = useState<string>("");
-  const [groupPairRight, setGroupPairRight] = useState<string>("");
-
-  const handleAutoGenerateGroups = useCallback(() => {
-    if (groupAutoRunning) return;
-    const hasExisting = kerningClasses.left.length > 0 || kerningClasses.right.length > 0;
-    if (hasExisting) {
-      const ok = window.confirm(
-        "Auto-Generate akan mengganti semua Kerning Group yang ada saat ini (nilai per-grup yang sudah diatur akan ikut hilang; pasangan huruf yang sudah terisi tetap tersimpan). Lanjutkan?"
-      );
-      if (!ok) return;
-    }
-    setGroupAutoRunning(true);
-    // Runs synchronously today (class counts are far smaller than the full
-    // n^2 pair auto-kern), but kept on a rAF tick so the button's own
-    // pressed state has a chance to paint first on very large glyph sets.
-    requestAnimationFrame(() => {
-      const result = autoGenerateKerningClasses();
-      setGroupAutoRunning(false);
-      setGroupAutoFlash(result);
-      setGroupPairLeft("");
-      setGroupPairRight("");
-      window.setTimeout(() => setGroupAutoFlash(null), 2600);
-    });
-  }, [groupAutoRunning, kerningClasses, autoGenerateKerningClasses]);
-
-  const groupPairValue = groupPairLeft && groupPairRight ? getClassKerningValue(classKerningPairs, groupPairLeft, groupPairRight) : 0;
-  const groupPairHasValue = !!(groupPairLeft && groupPairRight) && `${groupPairLeft}::${groupPairRight}` in classKerningPairs;
-
-  // Stable identity so `EditableStage` (wrapped in React.memo below) can
-  // actually bail out on unrelated SpecimenPanel re-renders — an inline
-  // arrow function here would get a new identity every render (a timer
-  // tick, a hover state, an unrelated store update the panel also reads)
-  // and defeat that memo just as surely as never memoizing at all.
-  const handleStageTextChange = useCallback((next: string) => {
-    setText(next);
-    setTest("type");
-    // Typing can change soft-wrap boundaries, so discard the old visual
-    // glyph anchor while leaving kerning data untouched.
-    setActiveGlyph(null);
-  }, []);
-
-  // Deselect a group-pair side if that group was just deleted, instead of
-  // silently pointing the picker at a stale id.
-  useEffect(() => {
-    if (groupPairLeft && !kerningClasses.left.some((c) => c.id === groupPairLeft)) setGroupPairLeft("");
-    if (groupPairRight && !kerningClasses.right.some((c) => c.id === groupPairRight)) setGroupPairRight("");
-  }, [kerningClasses, groupPairLeft, groupPairRight]);
-
   // Drag-to-resize for the right settings rail. Dragging the handle moves
   // the boundary between the stage and the rail, widening/narrowing the
   // rail while the stage reflows to fill whatever's left. A plain
@@ -1696,13 +1407,13 @@ export function SpecimenPanel() {
   // the rail is a fixed-width column, not something that needs the same
   // per-frame coalescing as continuous canvas drawing.
   const [sideWidth, setSideWidth] = useState(() => {
-    if (typeof window === "undefined") return 360;
+    if (typeof window === "undefined") return 284;
     // Match the same narrower defaults the old fixed-width CSS breakpoints
     // used, so small screens don't open with a rail wider than before —
     // dragging still overrides this once the user actually resizes it.
-    if (window.innerWidth <= 820) return 240;
-    if (window.innerWidth <= 960) return 290;
-    return 360;
+    if (window.innerWidth <= 820) return 210;
+    if (window.innerWidth <= 960) return 250;
+    return 284;
   });
   const [isResizingSide, setIsResizingSide] = useState(false);
   const sideResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -1718,36 +1429,18 @@ export function SpecimenPanel() {
     const prevCursor = document.body.style.cursor;
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
-    // Pointermove fires far more often than the browser can actually paint
-    // (sometimes 200+/sec). sideWidth lives on this component, so calling
-    // setSideWidth straight from the raw event forced a full re-render/
-    // reconciliation of the entire Test Lab panel -- including the Kerning
-    // Groups list -- on every single one of those events, which is what
-    // made dragging (and the panel generally, while a drag was in flight)
-    // feel laggy. Coalescing to one setSideWidth per animation frame keeps
-    // the drag visually just as responsive while capping the re-render
-    // rate to the screen's actual refresh rate.
-    let pendingWidth: number | null = null;
-    let rafId = 0;
-    const flush = () => {
-      rafId = 0;
-      if (pendingWidth !== null) setSideWidth(pendingWidth);
-    };
     const onMove = (ev: PointerEvent) => {
       const drag = sideResizeRef.current;
       if (!drag) return;
       // The rail sits to the right of the stage, so dragging left (negative
       // clientX delta) should widen it.
       const delta = drag.startX - ev.clientX;
-      pendingWidth = Math.min(620, Math.max(260, drag.startWidth + delta));
-      if (!rafId) rafId = requestAnimationFrame(flush);
+      const next = Math.min(420, Math.max(220, drag.startWidth + delta));
+      setSideWidth(next);
     };
     const onUp = () => {
       sideResizeRef.current = null;
       setIsResizingSide(false);
-      if (rafId) cancelAnimationFrame(rafId);
-      if (pendingWidth !== null) setSideWidth(pendingWidth);
-      pendingWidth = null;
       document.body.style.userSelect = prevUserSelect;
       document.body.style.cursor = prevCursor;
       window.removeEventListener("pointermove", onMove);
@@ -1882,44 +1575,17 @@ export function SpecimenPanel() {
   const panelLeft = kerningMode === "single" ? precisionLeft : familyPrecisionLeft;
   const panelRight = kerningMode === "single" ? precisionRight : familyPrecisionRight;
 
-  // Origin badge: only meaningful in Single mode, since Kerning Classes are
-  // a base/shared-layer concept — a Family Test override is always a
-  // deliberate hand-set value for that style, i.e. always "manual".
-  const panelOrigin: KerningOrigin | null =
-    kerningMode === "single" && panelHasPair && panelLeft && panelRight
-      ? getKerningOrigin(kerningKey(panelLeft, panelRight), kerningPairs, kerningManual, kerningClasses, classKerningPairs)
-      : null;
-  const panelOriginLabel: Record<KerningOrigin, string> = { manual: "Manual", class: "Group", auto: "Auto" };
-  const panelOriginTitle: Record<KerningOrigin, string> = {
-    manual: "Hand-tuned — never overwritten by Auto Kerning or a Kerning Group value.",
-    class: "Filled by this pair's Kerning Group value.",
-    auto: "Filled by geometry-based Auto Kerning.",
-  };
-
   const resetFamilyActivePair = () => {
     if (!familyPrecisionLeft || !familyPrecisionRight) return;
     resetFamilyKerningPair(familyContext, familyPrecisionLeft, familyPrecisionRight);
   };
 
-  // Stable identities for the same reason as `handleStageTextChange` above:
-  // FamilyPreview mounts one `FamilyStylePreview` row per style/family, and
-  // without a stable callback here every row would re-render (and, via
-  // FamilyStylePreview's own GlyphRun, re-layout) on any unrelated
-  // SpecimenPanel re-render — not just the row actually being edited.
-  const onFamilyActiveGlyphChange = useCallback(
-    (next: FamilyActiveGlyph) => {
-      setFamilyActiveGlyph(next);
-      if (next && familyContext !== "shared" && familyContext !== next.style) {
-        setFamilyContext(next.style);
-      }
-    },
-    [familyContext]
-  );
-  const handleFamilyTextChange = useCallback((next: string) => {
-    setText(next);
-    setTest("type");
-    setFamilyActiveGlyph(null);
-  }, []);
+  const onFamilyActiveGlyphChange = (next: FamilyActiveGlyph) => {
+    setFamilyActiveGlyph(next);
+    if (next && familyContext !== "shared" && familyContext !== next.style) {
+      setFamilyContext(next.style);
+    }
+  };
 
   return (
     <div className="fm-lab-grid">
@@ -1958,7 +1624,13 @@ export function SpecimenPanel() {
           <div className={`fm-lab-stage ${bg}`} data-testid="lab-stage">
             <EditableStage
               text={text}
-              onTextChange={handleStageTextChange}
+              onTextChange={(next) => {
+                setText(next);
+                setTest("type");
+                // Typing can change soft-wrap boundaries, so discard the old
+                // visual glyph anchor while leaving kerning data untouched.
+                setActiveGlyph(null);
+              }}
               fontSize={fontSize}
               lineHeight={lineHeight}
               tracking={tracking}
@@ -1975,7 +1647,11 @@ export function SpecimenPanel() {
           >
             <FamilyPreview
               text={text}
-              onTextChange={handleFamilyTextChange}
+              onTextChange={(next) => {
+                setText(next);
+                setTest("type");
+                setFamilyActiveGlyph(null);
+              }}
               fontSize={fontSize}
               lineHeight={lineHeight}
               tracking={tracking}
@@ -1987,101 +1663,6 @@ export function SpecimenPanel() {
             />
           </div>
         )}
-
-        {/* ── Bottom bar: Specimen controls ── */}
-        <div className="fm-lab-bottom-bar" data-testid="lab-bottom-bar">
-          {/* Font Size */}
-          <div className="fm-lab-bottom-control fm-lab-bottom-slider">
-            <div className="fm-lab-bottom-label">
-              <span>Size</span>
-              <span className="fm-lab-bottom-value">{fontSize}px</span>
-            </div>
-            <input
-              type="range"
-              min={16}
-              max={280}
-              value={fontSize}
-              onChange={(e) => setFontSize(Number(e.target.value))}
-              data-testid="lab-fontsize"
-            />
-          </div>
-
-          {/* Line Height */}
-          <div className="fm-lab-bottom-control fm-lab-bottom-slider">
-            <div className="fm-lab-bottom-label">
-              <span>Leading</span>
-              <span className="fm-lab-bottom-value">{lineHeight.toFixed(2)}×</span>
-            </div>
-            <input
-              type="range"
-              min={1}
-              max={2.5}
-              step={0.05}
-              value={lineHeight}
-              onChange={(e) => setLineHeight(Number(e.target.value))}
-              data-testid="lab-lineheight"
-            />
-          </div>
-
-          {/* Tracking */}
-          <div className="fm-lab-bottom-control fm-lab-bottom-slider">
-            <div className="fm-lab-bottom-label">
-              <span>Tracking</span>
-              <span className="fm-lab-bottom-value">{tracking}u</span>
-            </div>
-            <input
-              type="range"
-              min={-60}
-              max={200}
-              value={tracking}
-              onChange={(e) => setTracking(Number(e.target.value))}
-              data-testid="lab-tracking"
-            />
-          </div>
-
-          {/* Divider */}
-          <div className="fm-lab-bottom-divider" aria-hidden="true" />
-
-          {/* Alignment */}
-          <div className="fm-lab-bottom-control">
-            <div className="fm-lab-bottom-label"><span>Align</span></div>
-            <div className="fm-tab-select fm-tab-select-sm fm-tab-select-icon" data-testid="lab-align">
-              <button className={align === "left" ? "active" : ""} onClick={() => setAlign("left")} title="Align left" aria-label="Align left" data-testid="lab-align-left">
-                <AlignLeft size={14} />
-              </button>
-              <button className={align === "center" ? "active" : ""} onClick={() => setAlign("center")} title="Align center" aria-label="Align center" data-testid="lab-align-center">
-                <AlignCenter size={14} />
-              </button>
-              <button className={align === "right" ? "active" : ""} onClick={() => setAlign("right")} title="Align right" aria-label="Align right" data-testid="lab-align-right">
-                <AlignRight size={14} />
-              </button>
-            </div>
-          </div>
-
-          {/* Preview Background */}
-          <div className="fm-lab-bottom-control">
-            <div className="fm-lab-bottom-label"><span>BG</span></div>
-            <div className="fm-tab-select fm-tab-select-sm" data-testid="lab-bg">
-              <button className={bg === "dark" ? "active" : ""} onClick={() => setBg("dark")} title="Dark background">Dark</button>
-              <button className={bg === "light" ? "active" : ""} onClick={() => setBg("light")} title="Light background">Light</button>
-            </div>
-          </div>
-
-          {/* Apply Tracking (shown only when tracking ≠ 0) */}
-          {tracking !== 0 && (
-            <div className="fm-lab-bottom-control">
-              <button
-                className={`fm-action-btn fm-lab-bottom-apply-tracking${trackingApplyFlash ? " done" : ""}`}
-                onClick={handleApplyTracking}
-                data-testid="apply-tracking-btn"
-                title="Bake tracking permanently into every glyph's spacing"
-              >
-                <MoveHorizontal size={13} />
-                {trackingApplyFlash ? "Applied" : "Apply"}
-              </button>
-            </div>
-          )}
-        </div>
       </div>
 
       <div
@@ -2129,15 +1710,6 @@ export function SpecimenPanel() {
                     {familyHasOverride ? "Override" : "Inherited"}
                   </span>
                 )}
-              {panelOrigin && (
-                <span
-                  className={`fm-kern-origin-badge ${panelOrigin}`}
-                  title={panelOriginTitle[panelOrigin]}
-                  data-testid="kern-origin-badge"
-                >
-                  {panelOriginLabel[panelOrigin]}
-                </span>
-              )}
             </label>
             <div className="fm-kern-value-row">
               <NumericInput
@@ -2327,185 +1899,57 @@ export function SpecimenPanel() {
           </div>
         </div>
 
-        <div className="fm-lab-side-section" data-testid="lab-kerning-groups-panel">
-          <button
-            type="button"
-            className="fm-section-title fm-kern-groups-toggle"
-            onClick={() => setGroupsExpanded((v) => !v)}
-            data-testid="kern-groups-toggle"
-          >
-            {groupsExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            Kerning Groups
-            {(kerningClasses.left.length + kerningClasses.right.length) > 0 && (
-              <span className="fm-kern-groups-count">
-                {kerningClasses.left.length + kerningClasses.right.length}
-              </span>
-            )}
-          </button>
-
-          {groupsExpanded && (
-            <>
-              <div className="fm-hint fm-kern-groups-intro">
-                Set one kerning value for a whole group of letters at once — e.g. every round letter
-                (O·Q·C·G) against every diagonal letter (A·V·W·Y) — instead of pair by pair. Groups fill
-                in ordinary kerning pairs; any pair you've hand-tuned stays protected.
-              </div>
-
-              <div className="fm-kern-block">
-                <button
-                  type="button"
-                  className={`fm-action-btn accent fm-kern-groups-auto-btn${groupAutoRunning ? " running" : ""}${groupAutoFlash ? " done" : ""}`}
-                  onClick={handleAutoGenerateGroups}
-                  disabled={groupAutoRunning}
-                  data-testid="kern-groups-auto-generate"
-                >
-                  {groupAutoRunning ? (
-                    <Loader2 className="fm-auto-kern-icon fm-auto-kern-spin" size={14} strokeWidth={2} aria-hidden="true" />
-                  ) : (
-                    <Sparkles size={14} strokeWidth={2} aria-hidden="true" />
-                  )}
-                  {groupAutoRunning ? "Analyzing shapes…" : "Auto-Generate Groups"}
-                </button>
-
-                {groupAutoFlash && (
-                  <div className="fm-kern-complete" role="status" data-testid="kern-groups-auto-complete">
-                    <span className="fm-status-dot" />
-                    {groupAutoFlash.leftCount} left group{groupAutoFlash.leftCount === 1 ? "" : "s"} ·{" "}
-                    {groupAutoFlash.rightCount} right group{groupAutoFlash.rightCount === 1 ? "" : "s"} created
-                  </div>
-                )}
-              </div>
-
-              <div className="fm-kern-group-columns">
-                <KerningClassColumn
-                  side="left"
-                  title="Left-position groups"
-                  classes={kerningClasses.left}
-                  glyphs={glyphs}
-                  onCreate={(name) => createKerningClass("left", name)}
-                  onRename={(id, name) => renameKerningClass("left", id, name)}
-                  onDelete={(id) => deleteKerningClass("left", id)}
-                  onAddGlyph={(id, ch) => addGlyphToKerningClass("left", id, ch)}
-                  onRemoveGlyph={(id, ch) => removeGlyphFromKerningClass("left", id, ch)}
-                />
-                <KerningClassColumn
-                  side="right"
-                  title="Right-position groups"
-                  classes={kerningClasses.right}
-                  glyphs={glyphs}
-                  onCreate={(name) => createKerningClass("right", name)}
-                  onRename={(id, name) => renameKerningClass("right", id, name)}
-                  onDelete={(id) => deleteKerningClass("right", id)}
-                  onAddGlyph={(id, ch) => addGlyphToKerningClass("right", id, ch)}
-                  onRemoveGlyph={(id, ch) => removeGlyphFromKerningClass("right", id, ch)}
-                />
-              </div>
-
-              <div className="fm-field fm-kern-group-pair">
-                <label>Group-to-Group Kerning</label>
-                <div className="fm-hint fm-kern-group-pair-hint">
-                  Pilih satu left group dan satu right group, lalu set nilai kerning-nya — nilai ini berlaku untuk setiap pasangan huruf di antara kedua grup tersebut.
-                </div>
-                <div className="fm-kern-group-pair-row">
-                  <div className="fm-kern-group-pair-selects">
-                    <div className="fm-kern-group-pair-select-wrap">
-                      <span className="fm-kern-group-pair-select-label">LEFT GROUP</span>
-                      <select
-                        value={groupPairLeft}
-                        onChange={(e) => setGroupPairLeft(e.target.value)}
-                        disabled={kerningClasses.left.length === 0}
-                        data-testid="kern-group-pair-left"
-                      >
-                        <option value="">Choose…</option>
-                        {kerningClasses.left.map((c) => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="fm-kern-group-pair-select-wrap">
-                      <span className="fm-kern-group-pair-select-label">RIGHT GROUP</span>
-                      <select
-                        value={groupPairRight}
-                        onChange={(e) => setGroupPairRight(e.target.value)}
-                        disabled={kerningClasses.right.length === 0}
-                        data-testid="kern-group-pair-right"
-                      >
-                        <option value="">Choose…</option>
-                        {kerningClasses.right.map((c) => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  {groupPairLeft && groupPairRight ? (
-                    <div className="fm-kern-group-pair-value-col">
-                      <span className="fm-kern-group-pair-select-label">VALUE</span>
-                      <div className="fm-kern-group-pair-value-row">
-                        <NumericInput
-                          value={groupPairValue}
-                          disabled={false}
-                          onChange={(value) => setClassKerningPair(groupPairLeft, groupPairRight, value)}
-                          data-testid="kern-group-pair-value"
-                        />
-                        <button
-                          type="button"
-                          className="fm-action-btn fm-kern-reset-btn"
-                          disabled={!groupPairHasValue}
-                          onClick={() => resetClassKerningPair(groupPairLeft, groupPairRight)}
-                          title="Clear kerning value for this group pair"
-                          data-testid="kern-group-pair-reset"
-                        >
-                          <RotateCcw size={13} />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="fm-kern-group-pair-value-col fm-kern-group-pair-value-placeholder">
-                      <span className="fm-kern-group-pair-select-label">VALUE</span>
-                      <div className="fm-kern-group-pair-value-empty">—</div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {Object.keys(classKerningPairs).length > 0 && (
-                <div className="fm-kern-group-pair-list" data-testid="kern-group-pair-list">
-                  {Object.entries(classKerningPairs).map(([key, value]) => {
-                    const sep = key.indexOf("::");
-                    if (sep === -1) return null;
-                    const lId = key.slice(0, sep);
-                    const rId = key.slice(sep + 2);
-                    const l = kerningClasses.left.find((c) => c.id === lId);
-                    const r = kerningClasses.right.find((c) => c.id === rId);
-                    if (!l || !r) return null;
-                    return (
-                      <button
-                        type="button"
-                        key={key}
-                        className={`fm-kern-group-pair-chip${groupPairLeft === lId && groupPairRight === rId ? " active" : ""}`}
-                        onClick={() => { setGroupPairLeft(lId); setGroupPairRight(rId); }}
-                        title={`${l.name} × ${r.name}`}
-                        data-testid={`kern-group-pair-chip-${key}`}
-                      >
-                        <span className="fm-kern-group-pair-chip-label">{l.name} × {r.name}</span>
-                        <span className="fm-kern-group-pair-chip-value">{value > 0 ? `+${value}` : value}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        {trackingApplyLastRun && trackingApplyLastRun.units !== 0 && (
-          <div className="fm-kern-complete fm-lab-side-section" role="status" data-testid="apply-tracking-complete">
-            <span className="fm-status-dot" />
-            {trackingApplyLastRun.units > 0 ? "+" : ""}
-            {trackingApplyLastRun.units}u baked into {trackingApplyLastRun.updated} glyph
-            {trackingApplyLastRun.updated === 1 ? "" : "s"}
+        <div className="fm-lab-side-section">
+          <div className="fm-section-title">Specimen</div>
+          <div className="fm-field">
+            <div className="fm-slider-row-label"><label>Font Size</label><span>{fontSize}px</span></div>
+            <input type="range" min={16} max={280} value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} data-testid="lab-fontsize" />
           </div>
-        )}
+          <div className="fm-field">
+            <div className="fm-slider-row-label"><label>Line Height</label><span>{lineHeight.toFixed(2)}×</span></div>
+            <input type="range" min={1} max={2.5} step={0.05} value={lineHeight} onChange={(e) => setLineHeight(Number(e.target.value))} data-testid="lab-lineheight" />
+          </div>
+          <div className="fm-field">
+            <div className="fm-slider-row-label"><label>Tracking</label><span>{tracking}u</span></div>
+            <input type="range" min={-60} max={200} value={tracking} onChange={(e) => setTracking(Number(e.target.value))} data-testid="lab-tracking" />
+            <div className="fm-hint">
+              Preview-only until applied — it doesn't affect the exported font on its own.
+            </div>
+            <button
+              className={`fm-action-btn${trackingApplyFlash ? " done" : ""}`}
+              onClick={handleApplyTracking}
+              disabled={tracking === 0}
+              data-testid="apply-tracking-btn"
+              title="Bake this tracking value permanently into every glyph's spacing on the active style, so it's included when exporting"
+            >
+              <MoveHorizontal size={14} />
+              {trackingApplyFlash ? "Applied" : "Apply Tracking to Font"}
+            </button>
+            {trackingApplyLastRun && trackingApplyLastRun.units !== 0 && (
+              <div className="fm-kern-complete" role="status" data-testid="apply-tracking-complete">
+                <span className="fm-status-dot" />
+                {trackingApplyLastRun.units > 0 ? "+" : ""}
+                {trackingApplyLastRun.units}u baked into {trackingApplyLastRun.updated} glyph
+                {trackingApplyLastRun.updated === 1 ? "" : "s"}
+              </div>
+            )}
+          </div>
+          <div className="fm-field">
+            <label>Alignment</label>
+            <div className="fm-tab-select" data-testid="lab-align">
+              <button className={align === "left" ? "active" : ""} onClick={() => setAlign("left")}>Left</button>
+              <button className={align === "center" ? "active" : ""} onClick={() => setAlign("center")}>Center</button>
+              <button className={align === "right" ? "active" : ""} onClick={() => setAlign("right")}>Right</button>
+            </div>
+          </div>
+          <div className="fm-field">
+            <label>Preview Background</label>
+            <div className="fm-tab-select" data-testid="lab-bg">
+              <button className={bg === "dark" ? "active" : ""} onClick={() => setBg("dark")}>Dark</button>
+              <button className={bg === "light" ? "active" : ""} onClick={() => setBg("light")}>Light</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

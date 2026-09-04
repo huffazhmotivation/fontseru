@@ -190,8 +190,6 @@ function snapshotFromStore() {
     kerningOverridesByStyle: s.kerningOverridesByStyle,
     kerningOverrideManualByStyle: s.kerningOverrideManualByStyle,
     wordSpacingOverridesByStyle: s.wordSpacingOverridesByStyle,
-    kerningClasses: s.kerningClasses,
-    classKerningPairs: s.classKerningPairs,
     featureConfig: s.featureConfig,
     activeChar: s.activeChar,
     gridSize: s.gridSize,
@@ -219,8 +217,6 @@ function hydrateProject(project: ReturnType<typeof parseFontSeruProject>, filena
     kerningOverridesByStyle: project.font.kerningOverridesByStyle,
     kerningOverrideManualByStyle: project.font.kerningOverrideManualByStyle,
     wordSpacingOverridesByStyle: project.font.wordSpacingOverridesByStyle,
-    kerningClasses: project.font.kerningClasses,
-    classKerningPairs: project.font.classKerningPairs,
     featureConfig: project.font.featureConfig,
     activeChar: project.editor.activeChar,
     gridSize: project.editor.gridSize,
@@ -843,13 +839,6 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
             effectiveKerning,
             formats,
             s.featureConfig,
-            // Kerning Classes are a shared/base-layer concept (never
-            // per-style — see types/kerning.ts), so the same set is passed
-            // for every style export. Any pair a style override has since
-            // diverged from its class value is still exported correctly:
-            // buildGposTable falls back to an explicit exception for it.
-            s.kerningClasses,
-            s.classKerningPairs,
           );
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error);

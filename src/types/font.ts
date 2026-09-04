@@ -18,19 +18,6 @@ export interface FontMetrics {
    * exported font consistently.
    */
   wordSpacing?: number;
-  /**
-   * Slant of the typeface, in counter-clockwise degrees from vertical —
-   * same sign convention as the OpenType `post` table's italicAngle (0 for
-   * upright, negative for text that leans to the right, e.g. -12 for a
-   * typical italic). Optional and left unset by default, matching
-   * `wordSpacing`'s pattern: an older/upright project that never sets this
-   * gets exactly the old, un-corrected Auto Spacing math (see
-   * `suggestGlyphSidebearings` in kerning/autoSpace.ts), so this field's
-   * addition can't change how any existing non-italic font already spaces.
-   * Only once a designer dials in a nonzero angle here does Auto Spacing
-   * start de-slanting glyphs before measuring their optical recess.
-   */
-  italicAngle?: number;
 }
 
 export interface FontInfo {

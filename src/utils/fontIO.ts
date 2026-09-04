@@ -3,8 +3,8 @@ import { expandStrokeObject } from "@/brushes/strokeToOutline";
 import type { Contour, PathNode, VectorObject } from "@/types/geometry";
 import type { FontInfo, FontMetrics } from "@/types/font";
 import type { Glyph, GlyphCategory, GlyphMap } from "@/types/glyph";
-import type { KerningPairs, KerningClasses } from "@/types/kerning";
-import { kerningKey, parseKerningKey, classPairKey, decodeClassPairKey, getKerningOrigin, EMPTY_KERNING_CLASSES } from "@/types/kerning";
+import type { KerningPairs } from "@/types/kerning";
+import { kerningKey, parseKerningKey } from "@/types/kerning";
 import { shortId } from "@/utils/id";
 import { buildTrueTypeFont, type TrueTypeGlyphInput } from "@/utils/trueTypeWriter";
 import type { FeatureBuilderConfig } from "@/types/opentypeFeatures";
@@ -1237,21 +1237,11 @@ function buildLigatureSubstFormat1(rules: Array<{ components: number[]; ligature
   return w.toUint8Array();
 }
 
-/** Wraps one or more subtables in a single Lookup table (lookupFlag always
- * 0). When a lookup carries multiple subtables, OpenType Layout applies the
- * first subtable whose Coverage includes the glyph at the current position
- * and stops there — so subtable order encodes priority. `buildGposTable`
- * relies on exactly this to let exact-pair exceptions (subtable 0) win over
- * class-based kerning (subtable 1) without double-applying both. */
-function buildLookup(lookupType: number, subtables: Uint8Array[]): Uint8Array {
-  const headerSize = 6 + 2 * subtables.length; // lookupType + lookupFlag + subTableCount + offsets[]
-  const offsets: number[] = [];
-  let running = headerSize;
-  for (const st of subtables) { offsets.push(running); running += st.length; }
+/** Wraps a single subtable in a Lookup table (lookupFlag always 0). */
+function buildLookup(lookupType: number, subtable: Uint8Array): Uint8Array {
   const w = new GsubByteWriter();
-  w.u16(lookupType).u16(0).u16(subtables.length);
-  for (const off of offsets) w.u16(off);
-  for (const st of subtables) w.raw(st);
+  w.u16(lookupType).u16(0).u16(1).u16(8); // header is 8 bytes; subtable starts right after
+  w.raw(subtable);
   return w.toUint8Array();
 }
 
@@ -1353,15 +1343,15 @@ function buildGsubTable(config: FeatureBuilderConfig, glyphIndexByChar: Map<stri
 
   if (ligatureRules.length) {
     features.push({ tag: "liga", lookupIndex: lookups.length });
-    lookups.push(buildLookup(4, [buildLigatureSubstFormat1(ligatureRules)]));
+    lookups.push(buildLookup(4, buildLigatureSubstFormat1(ligatureRules)));
   }
   if (alternateRules.length) {
     features.push({ tag: "salt", lookupIndex: lookups.length });
-    lookups.push(buildLookup(3, [buildAlternateSubstFormat1(alternateRules)]));
+    lookups.push(buildLookup(3, buildAlternateSubstFormat1(alternateRules)));
   }
   if (swashRules.length) {
     features.push({ tag: "swsh", lookupIndex: lookups.length });
-    lookups.push(buildLookup(1, [buildSingleSubstFormat2(swashRules)]));
+    lookups.push(buildLookup(1, buildSingleSubstFormat2(swashRules)));
   }
 
   const lookupListBytes = buildLookupList(lookups);
@@ -1450,160 +1440,16 @@ function buildPairPosFormat1(pairs: KerningPairs, glyphIndexByChar: Map<string, 
   return w.toUint8Array();
 }
 
-/** ClassDef format 2 — a list of (startGlyph, endGlyph, class) ranges.
- * Glyphs not covered by any range default to class 0. Consecutive glyph
- * IDs that share the same class are merged into one range, which is what
- * keeps this compact for typical kerning-class glyph sets (letters tend to
- * cluster near each other in the glyph ID order font tools assign). */
-function buildClassDefFormat2(gidToClass: Map<number, number>): Uint8Array {
-  const entries = [...gidToClass.entries()].filter(([, cls]) => cls !== 0).sort((a, b) => a[0] - b[0]);
-  const ranges: Array<{ start: number; end: number; cls: number }> = [];
-  for (const [gid, cls] of entries) {
-    const last = ranges[ranges.length - 1];
-    if (last && last.cls === cls && gid === last.end + 1) {
-      last.end = gid;
-    } else {
-      ranges.push({ start: gid, end: gid, cls });
-    }
-  }
-  const w = new GsubByteWriter();
-  w.u16(2).u16(ranges.length);
-  for (const r of ranges) w.u16(r.start).u16(r.end).u16(r.cls);
-  return w.toUint8Array();
-}
-
-/**
- * PairPos format 2 — class-pair kerning, the shape used by Glyphs/FontLab
- * when they export "kerning groups": glyphs are bucketed into Left/Right
- * classes (FontSeru's own Kerning Classes, `kerningClasses.left/right`) and
- * one value covers every member combination, instead of one row per glyph
- * pair. This is what lets a professional-tool user re-open the exported
- * font with the same group structure intact, instead of ten thousand flat
- * pairs.
- *
- * Only classes that carry at least one non-zero `classKerningPairs` value
- * are included — this mirrors exactly what's configured in the Kerning
- * Groups panel (never a re-derived approximation), and keeps the table from
- * ballooning with empty rows for groups the user built but never assigned
- * a value to.
- */
-function buildPairPosFormat2(
-  classKerningPairs: Record<string, number>,
-  classes: KerningClasses,
-  glyphIndexByChar: Map<string, number>
-): Uint8Array | null {
-  const usedLeftIds = new Set<string>();
-  const usedRightIds = new Set<string>();
-  for (const [ckey, value] of Object.entries(classKerningPairs ?? {})) {
-    if (!value) continue;
-    const decoded = decodeClassPairKey(ckey);
-    if (!decoded) continue;
-    usedLeftIds.add(decoded[0]);
-    usedRightIds.add(decoded[1]);
-  }
-  const leftClasses = classes.left.filter((c) => usedLeftIds.has(c.id));
-  const rightClasses = classes.right.filter((c) => usedRightIds.has(c.id));
-  if (!leftClasses.length || !rightClasses.length) return null;
-
-  // 1-based class indices; class 0 is the implicit "not in any kerning
-  // class" default row/column, always zero.
-  const leftIndex = new Map(leftClasses.map((c, i) => [c.id, i + 1]));
-  const rightIndex = new Map(rightClasses.map((c, i) => [c.id, i + 1]));
-
-  const gidToLeftClass = new Map<number, number>();
-  const coverageGids: number[] = [];
-  for (const cls of leftClasses) {
-    const classIdx = leftIndex.get(cls.id)!;
-    for (const ch of cls.members) {
-      const gid = glyphIndexByChar.get(ch);
-      if (gid == null) continue;
-      gidToLeftClass.set(gid, classIdx);
-      coverageGids.push(gid);
-    }
-  }
-  if (!coverageGids.length) return null;
-
-  const gidToRightClass = new Map<number, number>();
-  for (const cls of rightClasses) {
-    const classIdx = rightIndex.get(cls.id)!;
-    for (const ch of cls.members) {
-      const gid = glyphIndexByChar.get(ch);
-      // A glyph belongs to at most one class per side (see the KerningClass
-      // block comment in types/kerning.ts) — first assignment wins either way.
-      if (gid != null && !gidToRightClass.has(gid)) gidToRightClass.set(gid, classIdx);
-    }
-  }
-
-  const coverage = buildCoverageFormat1(coverageGids);
-  const classDef1 = buildClassDefFormat2(gidToLeftClass);
-  const classDef2 = buildClassDefFormat2(gidToRightClass);
-
-  const class1Count = leftClasses.length + 1;
-  const class2Count = rightClasses.length + 1;
-  const matrix: number[][] = Array.from({ length: class1Count }, () => new Array(class2Count).fill(0));
-  for (const cls of leftClasses) {
-    const c1 = leftIndex.get(cls.id)!;
-    for (const rcls of rightClasses) {
-      const c2 = rightIndex.get(rcls.id)!;
-      const raw = classKerningPairs[classPairKey(cls.id, rcls.id)] ?? 0;
-      matrix[c1][c2] = Math.max(-32768, Math.min(32767, Math.round(raw)));
-    }
-  }
-
-  const headerSize = 16; // posFormat,coverageOffset,valueFormat1,valueFormat2,classDef1Offset,classDef2Offset,class1Count,class2Count
-  const matrixSize = class1Count * class2Count * 2; // valueFormat1 = xAdvance only (int16); valueFormat2 = 0 (absent)
-  const coverageOffset = headerSize + matrixSize;
-  const classDef1Offset = coverageOffset + coverage.length;
-  const classDef2Offset = classDef1Offset + classDef1.length;
-
-  const w = new GsubByteWriter();
-  w.u16(2).u16(coverageOffset).u16(0x0004).u16(0x0000);
-  w.u16(classDef1Offset).u16(classDef2Offset).u16(class1Count).u16(class2Count);
-  for (let c1 = 0; c1 < class1Count; c1++) {
-    for (let c2 = 0; c2 < class2Count; c2++) w.u16(matrix[c1][c2]);
-  }
-  w.raw(coverage);
-  w.raw(classDef1);
-  w.raw(classDef2);
-  return w.toUint8Array();
-}
-
 /** Compiles kerning pairs into a standard GPOS table (ScriptList +
  * FeatureList with a single 'kern' feature + LookupList with one
  * PairAdjustment lookup) — same header shape as `buildGsubTable`, since
  * GSUB and GPOS share the same top-level "Common Tables" layout, they
- * just point at different lookup subtable formats.
- *
- * When kerning classes are supplied, the 'kern' lookup carries TWO
- * subtables instead of one: a PairPos format 2 (class-based) subtable for
- * every pair still exactly equal to its class's configured value, and a
- * PairPos format 1 (explicit) subtable for everything else — hand-tuned
- * pairs, geometry-auto-kerned pairs, and any pair that has since diverged
- * from its class (e.g. a per-style override). Subtable order is priority
- * order (see `buildLookup`), so exceptions correctly win over the class
- * rule, exactly mirroring the "manual is never overwritten" guarantee
- * `materializeClassKerning` already provides in the editor. Callers with no
- * classes configured get the previous flat-pairs-only behavior unchanged. */
-function buildGposTable(
-  pairs: KerningPairs,
-  glyphIndexByChar: Map<string, number>,
-  classes: KerningClasses = EMPTY_KERNING_CLASSES,
-  classKerningPairs: Record<string, number> = {}
-): Uint8Array | null {
-  const hasClasses = classes.left.length > 0 && classes.right.length > 0 && Object.keys(classKerningPairs).length > 0;
+ * just point at different lookup subtable formats. */
+function buildGposTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
+  const pairPos = buildPairPosFormat1(pairs, glyphIndexByChar);
+  if (!pairPos) return null;
 
-  const exceptionPairs: KerningPairs = {};
-  for (const [key, value] of Object.entries(pairs ?? {})) {
-    if (hasClasses && getKerningOrigin(key, pairs, {}, classes, classKerningPairs) === "class") continue;
-    exceptionPairs[key] = value;
-  }
-
-  const format1 = buildPairPosFormat1(exceptionPairs, glyphIndexByChar);
-  const format2 = hasClasses ? buildPairPosFormat2(classKerningPairs, classes, glyphIndexByChar) : null;
-  const subtables = [format1, format2].filter((s): s is Uint8Array => s != null);
-  if (!subtables.length) return null;
-
-  const lookupListBytes = buildLookupList([buildLookup(2, subtables)]); // GPOS lookupType 2 = Pair Adjustment Positioning
+  const lookupListBytes = buildLookupList([buildLookup(2, pairPos)]); // GPOS lookupType 2 = Pair Adjustment Positioning
   const featureListBytes = buildFeatureList([{ tag: "kern", lookupIndex: 0 }]);
   const scriptListBytes = buildScriptList(["DFLT", "latn"], [0]);
 
@@ -1624,17 +1470,9 @@ function buildGposTable(
 /** Add/replace a `GPOS` table carrying the same kerning pairs as
  * `injectKernTable`'s legacy table — see the block comment above. Purely
  * additive and independent of the legacy `kern`/`GSUB` injection, so it
- * can be skipped on failure without affecting either. `classes` and
- * `classKerningPairs` are optional — omit them (or pass an empty set) to
- * get the original flat PairPos format 1 table unchanged. */
-export function injectGposTable(
-  buffer: ArrayBuffer,
-  pairs: KerningPairs,
-  glyphIndexByChar: Map<string, number>,
-  classes?: KerningClasses,
-  classKerningPairs?: Record<string, number>
-): ArrayBuffer {
-  const gpos = buildGposTable(pairs, glyphIndexByChar, classes, classKerningPairs);
+ * can be skipped on failure without affecting either. */
+export function injectGposTable(buffer: ArrayBuffer, pairs: KerningPairs, glyphIndexByChar: Map<string, number>): ArrayBuffer {
+  const gpos = buildGposTable(pairs, glyphIndexByChar);
   if (!gpos) return buffer.slice(0);
   return spliceSfntTable(buffer, "GPOS", gpos);
 }
@@ -1709,8 +1547,6 @@ function generateOTF(
   info: NormalizedFontMetadata,
   kerningPairs: KerningPairs,
   featureConfig?: FeatureBuilderConfig,
-  kerningClasses?: KerningClasses,
-  classKerningPairs?: Record<string, number>,
 ): ArrayBuffer {
   const base = generateOTFBase(glyphs, metrics, info);
   let buffer = base.buffer;
@@ -1733,7 +1569,7 @@ function generateOTF(
     // table above: if this fails, the legacy kern table written a moment
     // ago is untouched and the export still has working kerning.
     try {
-      const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar, kerningClasses, classKerningPairs);
+      const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar);
       validateGeneratedFont(withGpos, "otf", {
         familyName: info.familyName,
         hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
@@ -1841,8 +1677,6 @@ function generateTTF(
   info: NormalizedFontMetadata,
   kerningPairs: KerningPairs,
   featureConfig?: FeatureBuilderConfig,
-  kerningClasses?: KerningClasses,
-  classKerningPairs?: Record<string, number>,
 ): ArrayBuffer {
   const base = generateTTFBase(glyphs, metrics, info);
   let buffer = base.buffer;
@@ -1864,7 +1698,7 @@ function generateTTF(
     // Same pairs, also written as a modern GPOS 'kern' feature — see
     // generateOTF above for why both are written.
     try {
-      const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar, kerningClasses, classKerningPairs);
+      const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar);
       validateGeneratedFont(withGpos, "ttf", {
         familyName: info.familyName,
         hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
@@ -1896,30 +1730,14 @@ function technicalMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function exportOTF(
-  glyphs: GlyphMap,
-  metrics: FontMetrics,
-  info: FontInfo,
-  kerningPairs: KerningPairs,
-  featureConfig?: FeatureBuilderConfig,
-  kerningClasses?: KerningClasses,
-  classKerningPairs?: Record<string, number>,
-): ArrayBuffer {
+export function exportOTF(glyphs: GlyphMap, metrics: FontMetrics, info: FontInfo, kerningPairs: KerningPairs, featureConfig?: FeatureBuilderConfig): ArrayBuffer {
   const data = normalizeExportFontData({ glyphs, metrics, info, fontName: info?.familyName, kerningPairs });
-  return generateOTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig, kerningClasses, classKerningPairs);
+  return generateOTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
 }
 
-export async function exportTTF(
-  glyphs: GlyphMap,
-  metrics: FontMetrics,
-  info: FontInfo,
-  kerningPairs: KerningPairs,
-  featureConfig?: FeatureBuilderConfig,
-  kerningClasses?: KerningClasses,
-  classKerningPairs?: Record<string, number>,
-): Promise<ArrayBuffer> {
+export async function exportTTF(glyphs: GlyphMap, metrics: FontMetrics, info: FontInfo, kerningPairs: KerningPairs, featureConfig?: FeatureBuilderConfig): Promise<ArrayBuffer> {
   const data = normalizeExportFontData({ glyphs, metrics, info, fontName: info?.familyName, kerningPairs });
-  return generateTTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig, kerningClasses, classKerningPairs);
+  return generateTTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -1937,8 +1755,6 @@ export async function generateFontFiles(
   kerningPairs: KerningPairs,
   formats: ExportFontFormat[],
   featureConfig?: FeatureBuilderConfig,
-  kerningClasses?: KerningClasses,
-  classKerningPairs?: Record<string, number>,
 ): Promise<GeneratedFontFile[]> {
   const data = normalizeExportFontData({
     glyphs,
@@ -1960,7 +1776,7 @@ export async function generateFontFiles(
   let ttfBuffer: ArrayBuffer | null = null;
   if (wanted.has("ttf") || wanted.has("woff") || wanted.has("woff2")) {
     try {
-      ttfBuffer = generateTTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig, kerningClasses, classKerningPairs);
+      ttfBuffer = generateTTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
     } catch (error) {
       console.error("[FontSeru] TTF generation failed:", error);
       throw new Error(`Unable to generate TTF. ${technicalMessage(error)}`);
@@ -1972,7 +1788,7 @@ export async function generateFontFiles(
 
   if (wanted.has("otf")) {
     try {
-      const otf = generateOTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig, kerningClasses, classKerningPairs);
+      const otf = generateOTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
       files.push({ extension: "otf", mimeType: "font/otf", buffer: otf });
     } catch (error) {
       console.error("[FontSeru] OTF generation failed:", error);
