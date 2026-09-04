@@ -12,6 +12,12 @@ const MIN_RAW_POINTS = 3;
 /** A fitted contour needs at least a triangle's worth of on-curve nodes to
  * read as a real shape once closed. */
 const MIN_SHAPE_NODES = 3;
+/** Extra RDP tolerance (screen px) applied once, only to the final
+ * committed shape — see the comment above its use in pointerUp. Chosen a
+ * bit above the live pass's own upper bound (13.5px worth of effective
+ * tolerance) so it only ever removes points the live pass left behind for
+ * responsiveness, not ones that were load-bearing for the curve's shape. */
+const FINAL_SIMPLIFY_TOLERANCE_PX = 3.5;
 
 function movingAveragePoints(points: Point[], windowRadius: number): Point[] {
   if (windowRadius <= 0) return points;
@@ -76,14 +82,15 @@ export function smoothPencilPoints(rawPoints: Point[], smoothing: number, hitSca
   smoothed = movingAveragePoints(smoothed, Math.max(1, Math.round(windowRadius * 0.6)));
   // Tolerance is in screen-pixel terms (scaled to font units via hitScale)
   // so the same visual crispness holds regardless of zoom level. Raised
-  // from the original 1.1–6px range to 1.6–8.5px: the previous tolerance
-  // kept far more raw polyline points than the cubic-bezier fit below
-  // actually needs to represent the same curve, so simple strokes ended up
-  // with noticeably more on-curve nodes than a hand-drawn curve should
-  // have. Wider tolerance means fewer, better-placed points go into the
-  // fit, i.e. fewer nodes for the same visual smoothness — not a laxer
-  // curve.
-  const epsilon = Math.max(1.6, 1.4 + effective * 7.1) * hitScale;
+  // again (1.6–8.5px -> 2.6–13.5px): even the widened first pass still
+  // left a hand-drawn curve with noticeably more on-curve nodes than the
+  // cubic-bezier fit below actually needs — the same "dense samples become
+  // real nodes 1:1" issue the Brush tool had (see samplesToCenterline /
+  // centerlineToOutline). Wider tolerance means fewer, better-placed points
+  // go into the fit, i.e. fewer nodes for the same visual smoothness — not
+  // a laxer curve, since RDP only ever drops a point that doesn't deviate
+  // from the line between its kept neighbors by more than this tolerance.
+  const epsilon = Math.max(2.6, 2.4 + effective * 11) * hitScale;
   return simplifyPolyline(smoothed, epsilon);
 }
 
@@ -126,7 +133,19 @@ export function usePencilTool(hitScale: number) {
     setPreviewContour(null);
     if (raw.length < MIN_RAW_POINTS || !glyph) return;
 
-    const smoothed = smoothPencilPoints(raw, pencilSmoothing, hitScale);
+    let smoothed = smoothPencilPoints(raw, pencilSmoothing, hitScale);
+    // Second, more aggressive cleanup pass on the COMMITTED shape only
+    // (never on the live preview, so the stroke still tracks the pointer
+    // 1:1 while drawing). The Brush tool gets an equivalent second pass
+    // for free because it simplifies twice — once on the raw centerline,
+    // once again on the offset outline edges (see strokeToOutline.ts) —
+    // but Pencil only ever produces a single centerline-turned-contour, so
+    // without this it kept noticeably more nodes than a Brush stroke of
+    // similar shape for the same `smoothing` setting. Epsilon here is
+    // deliberately independent of `smoothing` (unlike the live pass): a
+    // shape that's just been finished should always get this final
+    // node-count cleanup, even with the smoothing slider low.
+    smoothed = simplifyPolyline(smoothed, FINAL_SIMPLIFY_TOLERANCE_PX * hitScale);
     // Pencil always finishes as a closed, filled shape — standard
     // professional-app Pencil behavior (Illustrator/Affinity): releasing
     // the pointer auto-closes the path even when the stroke's start and

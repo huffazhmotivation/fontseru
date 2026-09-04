@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlignCenter, AlignLeft, AlignRight, Ampersand, CaseLower, CaseUpper, GripHorizontal, Hash, Quote, Wand2, X } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Ampersand, CaseLower, CaseUpper, Hash, Quote, Wand2, X } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { GlyphRun } from "@/editor/GlyphRun";
 import { wrapLines } from "@/editor/textLayout";
 import { sentenceForCategory } from "@/glyph/testSentences";
 import type { GlyphCategory } from "@/types/glyph";
+import { SunIcon, MoonIcon } from "@/components/icons/ThemeIcon";
 
 /** Small icon toggles for the categories that actually have a preset
  * sentence (see sentenceForCategory) — spacing/multilingual/feature glyphs
@@ -48,8 +49,16 @@ export function ProductionPreviewBar() {
   const kerningPairs = useAppStore((s) => s.kerningPairs);
 
   const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const [isResizingPreview, setIsResizingPreview] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageWidth, setStageWidth] = useState(0);
+  // Independent from the app's global theme — same pattern Test Lab uses
+  // for its own "Preview Background" toggle: starts matching whatever the
+  // app looks like right now, but doesn't keep following it afterward, and
+  // flipping it here doesn't touch the app's real theme either. Lets you
+  // check a letter against both a light and dark backdrop without leaving
+  // the canvas or committing to a full app theme switch.
+  const [bg, setBg] = useState<"dark" | "light">(() => useAppStore.getState().theme);
 
   useEffect(() => {
     const el = stageRef.current;
@@ -75,6 +84,14 @@ export function ProductionPreviewBar() {
   function startResize(e: ReactPointerEvent) {
     e.preventDefault();
     resizeRef.current = { startY: e.clientY, startHeight: stageHeight };
+    setIsResizingPreview(true);
+    // Lock the cursor and stop stray text selection for the whole drag,
+    // not just while hovering the thin handle strip — otherwise fast drags
+    // that briefly leave the handle snap the cursor back and forth.
+    const prevUserSelect = document.body.style.userSelect;
+    const prevCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "row-resize";
     const onMove = (ev: PointerEvent) => {
       if (!resizeRef.current) return;
       const delta = ev.clientY - resizeRef.current.startY;
@@ -82,6 +99,9 @@ export function ProductionPreviewBar() {
     };
     const onUp = () => {
       resizeRef.current = null;
+      setIsResizingPreview(false);
+      document.body.style.userSelect = prevUserSelect;
+      document.body.style.cursor = prevCursor;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
@@ -92,15 +112,15 @@ export function ProductionPreviewBar() {
   return (
     <div className="fm-preview-bar" data-testid="production-preview-bar">
       <div
-        className="fm-preview-resize-handle"
+        className={`fm-preview-resize-handle${isResizingPreview ? " active" : ""}`}
         onPointerDown={startResize}
         title="Drag to resize preview"
         data-testid="preview-resize-handle"
       >
-        <GripHorizontal size={12} />
+        <span className="fm-preview-resize-grip" aria-hidden="true" />
       </div>
 
-      <div className="fm-preview-stage" ref={stageRef} style={{ height: stageHeight }}>
+      <div className={`fm-preview-stage ${bg}`} ref={stageRef} style={{ height: stageHeight }}>
         <div
           className="fm-preview-lines"
           style={{
@@ -196,6 +216,15 @@ export function ProductionPreviewBar() {
             <AlignRight size={13} />
           </button>
         </div>
+
+        <button
+          className="fm-icon-btn"
+          onClick={() => setBg(bg === "dark" ? "light" : "dark")}
+          title={bg === "dark" ? "Switch preview to light background" : "Switch preview to dark background"}
+          data-testid="preview-bg-toggle"
+        >
+          {bg === "dark" ? <MoonIcon size={13} /> : <SunIcon size={13} />}
+        </button>
 
         <button className="fm-icon-btn fm-preview-close" onClick={toggle} title="Hide preview" data-testid="preview-close">
           <X size={13} />
