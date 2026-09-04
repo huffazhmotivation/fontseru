@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { Layers3, Loader2, MoveHorizontal, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Layers3, Loader2, MoveHorizontal, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
 import { NumericInput } from "@/components/NumericInput";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -297,7 +297,6 @@ function EditableStage({
       ref={wrapRef}
       className="fm-lab-editable-wrap"
       onPointerUp={onStagePointerUp}
-      style={{ alignItems: align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center" }}
       data-testid="lab-editable-specimen"
       data-kern-dragging={isDragging ? "true" : "false"}
     >
@@ -327,6 +326,7 @@ function EditableStage({
             ? (rowActivePlaced.x + rowActivePlaced.advance) * pxPerUnit
             : 0;
           const rowHeight = totalH * pxPerUnit;
+          const lineWidth = Math.max(1, (layouts[lineIndex]?.totalAdvance ?? 0) * pxPerUnit);
           const selectionSpan =
             !isDragging && hasSelection
               ? selectionSpanForWrappedLine(
@@ -340,9 +340,16 @@ function EditableStage({
           return (
             <div
               key={`${wrappedLine.start}-${lineIndex}`}
-              className="fm-lab-glyph-row"
+              className="fm-lab-preview-line"
+              style={{
+                justifyContent: align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center",
+                marginBottom: lineIndex < wrappedLines.length - 1 ? fontSize * (lineHeight - 1) : 0,
+              }}
+            >
+            <div
+              className="fm-lab-glyph-row fm-lab-line-inner"
               ref={(el) => (lineRefs.current[lineIndex] = el)}
-              style={{ marginBottom: lineIndex < wrappedLines.length - 1 ? fontSize * (lineHeight - 1) : 0 }}
+              style={{ width: lineWidth, height: rowHeight }}
               data-testid={`lab-line-${lineIndex}`}
             >
               <GlyphRun
@@ -428,6 +435,7 @@ function EditableStage({
                   title={`Drag ${p.char} to adjust kerning`}
                 />
               ))}
+            </div>
             </div>
           );
         })}
@@ -1965,10 +1973,16 @@ export function SpecimenPanel() {
           {/* Alignment */}
           <div className="fm-lab-bottom-control">
             <div className="fm-lab-bottom-label"><span>Align</span></div>
-            <div className="fm-tab-select fm-tab-select-sm" data-testid="lab-align">
-              <button className={align === "left" ? "active" : ""} onClick={() => setAlign("left")} title="Align left">L</button>
-              <button className={align === "center" ? "active" : ""} onClick={() => setAlign("center")} title="Align center">C</button>
-              <button className={align === "right" ? "active" : ""} onClick={() => setAlign("right")} title="Align right">R</button>
+            <div className="fm-tab-select fm-tab-select-sm fm-tab-select-icon" data-testid="lab-align">
+              <button className={align === "left" ? "active" : ""} onClick={() => setAlign("left")} title="Align left" aria-label="Align left" data-testid="lab-align-left">
+                <AlignLeft size={14} />
+              </button>
+              <button className={align === "center" ? "active" : ""} onClick={() => setAlign("center")} title="Align center" aria-label="Align center" data-testid="lab-align-center">
+                <AlignCenter size={14} />
+              </button>
+              <button className={align === "right" ? "active" : ""} onClick={() => setAlign("right")} title="Align right" aria-label="Align right" data-testid="lab-align-right">
+                <AlignRight size={14} />
+              </button>
             </div>
           </div>
 

@@ -596,6 +596,10 @@ export const useAppStore = create<AppState>()((set, get) => {
   } | null = null;
   let metricDragSnapshot: FontMetrics | null = null;
   let glyphMetricDragSnapshot: GlyphMap | null = null;
+  /** Debounce handle for the italicAngle → re-space-all-glyphs pass (see
+   * setFontMetric below) — cleared/reset on every change while the italic
+   * angle field or its stepper is still being adjusted. */
+  let italicRespaceTimeout: ReturnType<typeof setTimeout> | null = null;
   /** True if `contourId` still exists (with at least one node) in `char`'s
    * outline within `glyphs`. Used by undo/redo so that stepping through
    * history while the pen tool is mid-contour only removes/restores the
@@ -981,6 +985,28 @@ export const useAppStore = create<AppState>()((set, get) => {
         past: [...past, { glyphs, metrics, kerningPairs, kerningManual }].slice(-HISTORY_LIMIT),
         future: [],
       });
+
+      // Auto Metrik promises every glyph's LSB/RSB stays derived from "that
+      // glyph's own outline" using the font's CURRENT settings — but every
+      // existing glyph's stored LSB/RSB was only ever computed against
+      // whatever italicAngle was in effect at the moment it was drawn. The
+      // completely normal workflow is: draw the whole alphabet first, THEN
+      // dial in (or Auto-Detect) the italic angle — at which point every
+      // glyph drawn before that is now spaced against a stale (usually 0°)
+      // angle and reads as cramped/overlapping ("dempet") the instant the
+      // angle changes, even though nothing about the glyphs themselves
+      // changed. Re-running the same bulk Auto Space pass the "Auto Space"
+      // button triggers keeps that promise for italicAngle edits too, not
+      // just for the specific glyph being drawn when this ran live in
+      // commitOutline. Debounced so dragging the stepper or the on-canvas
+      // guide doesn't kick off a full-font pass on every intermediate tick.
+      if (key === "italicAngle" && get().autoSpacingEnabled) {
+        if (italicRespaceTimeout !== null) clearTimeout(italicRespaceTimeout);
+        italicRespaceTimeout = setTimeout(() => {
+          italicRespaceTimeout = null;
+          get().autoSpaceAllGlyphs?.();
+        }, 400);
+      }
     },
     autoWordSpacing: () => {
       const { glyphs, metrics } = get();

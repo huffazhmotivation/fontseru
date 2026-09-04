@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useAppStore } from "@/glyph/store";
 import { hasOutline, type GlyphMap } from "@/types/glyph";
 import type { KerningPairs } from "@/types/kerning";
@@ -62,7 +63,22 @@ export function GlyphRun({
 
   // Single shared layout engine — also used by the Test Lab / Kerning caret
   // and click hit-testing, so rendering and caret position can never drift.
-  const { placed, totalAdvance: rawAdvance } = layoutLine(text, glyphs, unitsPerEm, kerningPairs, trackingUnits, wordSpacing);
+  //
+  // Memoized on exactly the inputs that can change the result: GlyphRun is
+  // mounted many times over in the Test Lab (once per wrapped line, again
+  // per family-style row), and re-renders there for reasons that have
+  // nothing to do with layout — cursor blink, hover state, another row's
+  // active-glyph highlight — which used to re-run this same kerning-pair
+  // walk from scratch every time. That's on top of the *intentional*
+  // per-frame re-renders during a kerning drag (see useTypingCaret/
+  // SpecimenPanel's rAF-batched drag), which made every visible GlyphRun
+  // redo full-text layout on every animation frame regardless of whether
+  // its own text/kerning actually changed that frame — a real contributor
+  // to Test Lab feeling heavy/stuttery under normal use.
+  const { placed, totalAdvance: rawAdvance } = useMemo(
+    () => layoutLine(text, glyphs, unitsPerEm, kerningPairs, trackingUnits, wordSpacing),
+    [text, glyphs, unitsPerEm, kerningPairs, trackingUnits, wordSpacing]
+  );
   const totalAdvance = Math.max(1, rawAdvance);
 
   const pxPerUnit = fontSizePx / unitsPerEm;
