@@ -389,6 +389,15 @@ interface AppState {
    * right away instead of waiting for their next edit. */
   autoSpacingEnabled: boolean;
   setAutoSpacingEnabled: (enabled: boolean) => void;
+  /** Per-glyph "this glyph's LSB/RSB was hand-dragged" flag. Unlike the old
+   * behavior (a single manual LSB/RSB drag on ANY glyph used to flip
+   * `autoSpacingEnabled` off for the WHOLE FONT, silently freezing every
+   * other glyph — including ones the user never touched — out of every
+   * future Auto Spacing pass, e.g. the italicAngle re-space below), this
+   * tracks manual overrides per character so only the glyph actually
+   * hand-tuned stays protected. Session-only, like `autoSpacingEnabled`
+   * itself (not persisted, not part of undo/redo history). */
+  glyphSpacingManual: Record<string, boolean>;
   commitOutline: (char: string, outline: GlyphOutline) => void;
   setLiveOutline: (outline: GlyphOutline | null) => void;
   updateSelectedObject: (patch: Partial<VectorObject>) => void;
@@ -835,6 +844,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     // opt-out (Manual) is one click away in Glyph Metrics for anyone who
     // wants full manual control instead.
     autoSpacingEnabled: true,
+    glyphSpacingManual: {},
 
     glyphs: initialRegular,
     glyphsByStyle: initialFamily,
@@ -932,6 +942,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         glyphMetricScope: "current",
         glyphMetricFocus: null,
         autoSpacingEnabled: true,
+        glyphSpacingManual: {},
         past: [],
         future: [],
       });
@@ -998,8 +1009,16 @@ export const useAppStore = create<AppState>()((set, get) => {
       // changed. Re-running the same bulk Auto Space pass the "Auto Space"
       // button triggers keeps that promise for italicAngle edits too, not
       // just for the specific glyph being drawn when this ran live in
-      // commitOutline. Debounced so dragging the stepper or the on-canvas
-      // guide doesn't kick off a full-font pass on every intermediate tick.
+      // commitOutline. autoSpaceAllGlyphs itself skips any glyph flagged in
+      // `glyphSpacingManual` (hand-dragged LSB/RSB on that specific glyph),
+      // so this correctly refreshes every OTHER glyph — including ones
+      // drawn long before this edit, in an older project — without
+      // clobbering deliberate manual work. (Previously a single manual
+      // LSB/RSB drag on any one glyph flipped `autoSpacingEnabled` off for
+      // the whole font, which silently froze this entire pass — including
+      // for every glyph that was never touched — for the rest of the
+      // session.) Debounced so dragging the stepper or the on-canvas guide
+      // doesn't kick off a full-font pass on every intermediate tick.
       if (key === "italicAngle" && get().autoSpacingEnabled) {
         if (italicRespaceTimeout !== null) clearTimeout(italicRespaceTimeout);
         italicRespaceTimeout = setTimeout(() => {
@@ -1225,22 +1244,31 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     setGlyphMetricLive: (char, key, value, scope) => {
       if (!Number.isFinite(value)) return;
-      const { glyphs, glyphsByStyle, fontStyle, glyphMetricScope, autoSpacingEnabled } = get();
-      // Dragging LSB/RSB by hand is the definition of "Manual" — flip the
-      // font-wide Auto switch off so this deliberate tweak doesn't get
-      // immediately overwritten the next time ANY glyph's outline commits.
-      // (Advance-width-only drags don't move ink margins, so they don't
-      // touch the switch.)
+      const { glyphs, glyphsByStyle, fontStyle, glyphMetricScope, glyphSpacingManual } = get();
+      // Dragging LSB/RSB by hand is the definition of "Manual" for THIS
+      // glyph — flag just this character so this deliberate tweak doesn't
+      // get overwritten by a later Auto Spacing pass. This used to flip a
+      // single font-wide switch off instead, which meant hand-adjusting
+      // even one glyph (very common in an old project drawn before Auto
+      // Metrik existed) silently froze auto-spacing for every OTHER glyph
+      // too, forever, for the rest of the session — including the italic
+      // angle re-space below. (Advance-width-only drags don't move ink
+      // margins, so they don't touch this flag.)
       const nextGlyphs = applyGlyphMetricToMap(glyphs, char, { [key]: value }, scope ?? glyphMetricScope);
       set({
         glyphs: nextGlyphs,
         glyphsByStyle: { ...glyphsByStyle, [fontStyle]: nextGlyphs },
-        autoSpacingEnabled: (key === "lsb" || key === "rsb") && autoSpacingEnabled ? false : autoSpacingEnabled,
+        glyphSpacingManual:
+          key === "lsb" || key === "rsb" ? { ...glyphSpacingManual, [char]: true } : glyphSpacingManual,
       });
     },
 
     setAutoSpacingEnabled: (enabled) => {
-      set({ autoSpacingEnabled: enabled });
+      // Turning Auto back on is a deliberate, explicit "trust the optical
+      // engine again" action, so it also clears every per-glyph manual-
+      // spacing flag — otherwise glyphs hand-tuned while Auto was off would
+      // stay silently excluded from the very re-space pass this triggers.
+      set({ autoSpacingEnabled: enabled, glyphSpacingManual: enabled ? {} : get().glyphSpacingManual });
       // Turning Auto on doesn't just arm it for the *next* edit — it also
       // immediately re-spaces (and, via LSB, re-positions) every glyph
       // that's already drawn, the same pass "Auto Space" runs, so nothing
@@ -1261,7 +1289,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
 
     commitOutline: (char, outline) => {
-      const { glyphs, metrics, autoSpacingEnabled } = get();
+      const { glyphs, metrics, autoSpacingEnabled, glyphSpacingManual } = get();
       const glyph = glyphs[char];
       if (!glyph) return;
       let nextGlyph: Glyph = { ...glyph, outline };
@@ -1276,7 +1304,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       // correctly *positioned* the instant it's drawn — even freehand, off
       // to one side, or a totally different size than whatever this glyph
       // (or the template) last had stored — not just spaced.
-      if (autoSpacingEnabled) {
+      if (autoSpacingEnabled && !glyphSpacingManual[char]) {
         const suggestion = suggestGlyphSidebearings(nextGlyph, metrics);
         if (suggestion) nextGlyph = applyOpticalSidebearings(nextGlyph, suggestion);
       }
@@ -1781,15 +1809,19 @@ export const useAppStore = create<AppState>()((set, get) => {
     autoSpaceAllGlyphs: async (options, onProgress) => {
       const excludeManuallyKerned = options?.excludeManuallyKerned ?? true;
       const reKernAfter = options?.reKernAfter ?? true;
-      const { glyphs, metrics, kerningPairs, kerningManual } = get();
+      const { glyphs, metrics, kerningPairs, kerningManual, glyphSpacingManual } = get();
 
       // Glyphs that already have a hand-tuned kerning pair are left out of
       // the re-spacing pass by default: moving their LSB/RSB out from under
       // an existing manual kern value is exactly what causes the collisions
       // reported after running Auto Spacing on an already-kerned font.
-      let excludeChars: Set<string> | undefined;
+      // Glyphs whose LSB/RSB were hand-dragged directly (glyphSpacingManual)
+      // are always protected the same way, regardless of that option — this
+      // is what lets a bulk pass like the italicAngle re-space below refresh
+      // every glyph the user hasn't deliberately hand-positioned, without
+      // clobbering the handful they have.
+      const excludeChars = new Set<string>(Object.keys(glyphSpacingManual).filter((ch) => glyphSpacingManual[ch]));
       if (excludeManuallyKerned) {
-        excludeChars = new Set<string>();
         for (const [key, isManual] of Object.entries(kerningManual)) {
           if (!isManual) continue;
           const [left, right] = decodeKerningKey(key);
@@ -1856,16 +1888,17 @@ export const useAppStore = create<AppState>()((set, get) => {
       // just as "manually tuned" as a shared manual pair, and either one
       // moving out from under a hand-set kern value causes the same
       // collisions Auto Spacing's exclude option exists to prevent).
-      let excludeChars: Set<string> | undefined;
+      const excludeChars = new Set<string>(
+        Object.keys(state.glyphSpacingManual).filter((ch) => state.glyphSpacingManual[ch])
+      );
       if (excludeManuallyKerned) {
-        excludeChars = new Set<string>();
         const collect = (manual: KerningManualFlags | undefined) => {
           if (!manual) return;
           for (const [key, isManual] of Object.entries(manual)) {
             if (!isManual) continue;
             const [left, right] = decodeKerningKey(key);
-            excludeChars!.add(left);
-            excludeChars!.add(right);
+            excludeChars.add(left);
+            excludeChars.add(right);
           }
         };
         collect(state.kerningManual);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { AlignCenter, AlignLeft, AlignRight, Layers3, Loader2, MoveHorizontal, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
 import { NumericInput } from "@/components/NumericInput";
@@ -74,7 +74,7 @@ const PARAGRAPH_LINES = [
   "using the same glyph geometry the canvas editor works with.",
 ];
 
-function EditableStage({
+function EditableStageImpl({
   text,
   onTextChange,
   fontSize,
@@ -357,9 +357,8 @@ function EditableStage({
                 fontSizePx={fontSize}
                 trackingUnits={tracking}
                 ghostEmpty
-                colorForIndex={(index) =>
-                  isDragging && rowActive === index ? "var(--accent)" : undefined
-                }
+                highlightIndex={isDragging ? rowActive : undefined}
+                highlightColor="var(--accent)"
               />
 
               {selectionSpan && (
@@ -476,6 +475,22 @@ function EditableStage({
     </div>
   );
 }
+
+/**
+ * Memoized: SpecimenPanel re-renders on every store update it reads from —
+ * kerning edits (including once per animation frame during a drag),
+ * Kerning Groups changes, Auto Kern/Space progress ticks, undo/redo, etc. —
+ * even ones that have nothing to do with the currently-typed specimen text.
+ * Without this, EVERY one of those re-renders also re-ran and re-diffed
+ * EditableStage's own subtree, which for a long specimen (a paragraph, or
+ * the "All Glyphs" test) means hundreds of glyph hit-box elements getting
+ * reconciled for no reason — a real, measurable contributor to Test Lab
+ * feeling heavy even outside an active kerning drag. `onTextChange` above
+ * is passed in as a `useCallback`-stabilized handler specifically so this
+ * memo can actually take effect instead of being defeated by a fresh
+ * function identity every render.
+ */
+const EditableStage = memo(EditableStageImpl);
 
 
 type FamilyActiveGlyph = {
@@ -612,7 +627,7 @@ function caretColumnForSourceIndex(line: WrappedFamilyLine, sourceIndex: number)
   return col;
 }
 
-function FamilyStylePreview({
+function FamilyStylePreviewImpl({
   style,
   label,
   text,
@@ -646,8 +661,6 @@ function FamilyStylePreview({
   editable: boolean;
 }) {
   const metrics = useAppStore((s) => s.metrics);
-  const sharedPairs = useAppStore((s) => s.kerningPairs);
-  const overridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
   const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
   const beginFamilyKerningDrag = useAppStore((s) => s.beginFamilyKerningDrag);
   const setFamilyKerningPairLive = useAppStore((s) => s.setFamilyKerningPairLive);
@@ -756,6 +769,14 @@ function FamilyStylePreview({
     const targetContext: KerningContext = kerningContext === "shared" ? "shared" : style;
     if (kerningContext !== "shared" && kerningContext !== style) onKerningContextChange(style);
 
+    // Read straight from the store here instead of subscribing to
+    // `kerningPairs`/`kerningOverridesByStyle` for the whole component:
+    // this value is only ever needed at the instant a drag starts, but a
+    // live subscription would re-render THIS row (and, before the cache
+    // above, force a full GlyphRun re-layout) on every kerning edit
+    // anywhere in the font — including every animation frame of a drag
+    // happening in a completely different style row.
+    const { kerningPairs: sharedPairs, kerningOverridesByStyle: overridesByStyle } = useAppStore.getState();
     const targetPairs =
       targetContext === "shared"
         ? sharedPairs
@@ -946,9 +967,8 @@ function FamilyStylePreview({
                     glyphsOverride={glyphs}
                     kerningPairsOverride={kerningPairs}
                     ghostEmpty
-                    colorForIndex={(index) =>
-                      isDragging && activeIndex === index ? "var(--accent)" : undefined
-                    }
+                    highlightIndex={isDragging ? activeIndex : undefined}
+                    highlightColor="var(--accent)"
                   />
 
                   {selectionSpan && (
@@ -1066,6 +1086,18 @@ function FamilyStylePreview({
   );
 }
 
+/**
+ * Memoized for the same reason as EditableStage: each row now receives a
+ * `kerningPairs` reference that only changes when ITS OWN inputs actually
+ * changed (see the cache in FamilyPreview below), so this bail-out is
+ * finally meaningful instead of being defeated by a fresh object every
+ * render. This is the fix for "Test Lab got heavier since Group Kerning" —
+ * previously every row recomputed a full spread-copy of the (now larger,
+ * once class kerning materializes into it) shared pairs table AND fully
+ * re-laid-out its text on every render of ANY row, not just its own.
+ */
+const FamilyStylePreview = memo(FamilyStylePreviewImpl);
+
 function FamilyPreview({
   text,
   onTextChange,
@@ -1118,6 +1150,30 @@ function FamilyPreview({
   // every family is visible, or the sole visible style when narrowed down.
   const editableStyleId = kerningContext === "shared" ? "regular" : kerningContext;
 
+  // `effectiveKerningPairs` spreads the ENTIRE shared kerning-pairs object
+  // (now sizeable once Kerning Groups is in use — group edits materialize
+  // into many individual pair entries) to layer a style's overrides on
+  // top. Calling it inline in the .map below reran that full copy, for
+  // EVERY visible style row, on every FamilyPreview render — not just
+  // during a kerning drag, but for any unrelated store update this
+  // component also happens to read. It also handed each `GlyphRun` a
+  // brand-new object reference every time regardless of whether that
+  // row's own pairs had actually changed, which defeated GlyphRun's memo
+  // and forced a full text re-layout for every row too. This cache keeps
+  // the same object reference across renders where a given style's inputs
+  // (the shared table + that style's own override layer) are unchanged —
+  // including, critically, every OTHER row while just one row is being
+  // kerning-dragged.
+  const kerningPairsCacheRef = useRef<Map<FontStyle, { shared: KerningPairs; override?: KerningPairs; result: KerningPairs }>>(new Map());
+  const effectiveKerningPairsFor = (id: FontStyle): KerningPairs => {
+    const override = overridesByStyle[id];
+    const cached = kerningPairsCacheRef.current.get(id);
+    if (cached && cached.shared === sharedPairs && cached.override === override) return cached.result;
+    const result = effectiveKerningPairs(sharedPairs, overridesByStyle, id);
+    kerningPairsCacheRef.current.set(id, { shared: sharedPairs, override, result });
+    return result;
+  };
+
   return (
     <div className="fm-family-preview" data-testid="family-preview">
       {styles.map(({ id, label }) => (
@@ -1132,7 +1188,7 @@ function FamilyPreview({
           tracking={tracking}
           align={align}
           glyphs={glyphsByStyle[id]}
-          kerningPairs={effectiveKerningPairs(sharedPairs, overridesByStyle, id)}
+          kerningPairs={effectiveKerningPairsFor(id)}
           kerningContext={kerningContext}
           onKerningContextChange={onKerningContextChange}
           activeGlyph={activeGlyph}
@@ -1613,6 +1669,19 @@ export function SpecimenPanel() {
   const groupPairValue = groupPairLeft && groupPairRight ? getClassKerningValue(classKerningPairs, groupPairLeft, groupPairRight) : 0;
   const groupPairHasValue = !!(groupPairLeft && groupPairRight) && `${groupPairLeft}::${groupPairRight}` in classKerningPairs;
 
+  // Stable identity so `EditableStage` (wrapped in React.memo below) can
+  // actually bail out on unrelated SpecimenPanel re-renders — an inline
+  // arrow function here would get a new identity every render (a timer
+  // tick, a hover state, an unrelated store update the panel also reads)
+  // and defeat that memo just as surely as never memoizing at all.
+  const handleStageTextChange = useCallback((next: string) => {
+    setText(next);
+    setTest("type");
+    // Typing can change soft-wrap boundaries, so discard the old visual
+    // glyph anchor while leaving kerning data untouched.
+    setActiveGlyph(null);
+  }, []);
+
   // Deselect a group-pair side if that group was just deleted, instead of
   // silently pointing the picker at a stale id.
   useEffect(() => {
@@ -1832,12 +1901,25 @@ export function SpecimenPanel() {
     resetFamilyKerningPair(familyContext, familyPrecisionLeft, familyPrecisionRight);
   };
 
-  const onFamilyActiveGlyphChange = (next: FamilyActiveGlyph) => {
-    setFamilyActiveGlyph(next);
-    if (next && familyContext !== "shared" && familyContext !== next.style) {
-      setFamilyContext(next.style);
-    }
-  };
+  // Stable identities for the same reason as `handleStageTextChange` above:
+  // FamilyPreview mounts one `FamilyStylePreview` row per style/family, and
+  // without a stable callback here every row would re-render (and, via
+  // FamilyStylePreview's own GlyphRun, re-layout) on any unrelated
+  // SpecimenPanel re-render — not just the row actually being edited.
+  const onFamilyActiveGlyphChange = useCallback(
+    (next: FamilyActiveGlyph) => {
+      setFamilyActiveGlyph(next);
+      if (next && familyContext !== "shared" && familyContext !== next.style) {
+        setFamilyContext(next.style);
+      }
+    },
+    [familyContext]
+  );
+  const handleFamilyTextChange = useCallback((next: string) => {
+    setText(next);
+    setTest("type");
+    setFamilyActiveGlyph(null);
+  }, []);
 
   return (
     <div className="fm-lab-grid">
@@ -1876,13 +1958,7 @@ export function SpecimenPanel() {
           <div className={`fm-lab-stage ${bg}`} data-testid="lab-stage">
             <EditableStage
               text={text}
-              onTextChange={(next) => {
-                setText(next);
-                setTest("type");
-                // Typing can change soft-wrap boundaries, so discard the old
-                // visual glyph anchor while leaving kerning data untouched.
-                setActiveGlyph(null);
-              }}
+              onTextChange={handleStageTextChange}
               fontSize={fontSize}
               lineHeight={lineHeight}
               tracking={tracking}
@@ -1899,11 +1975,7 @@ export function SpecimenPanel() {
           >
             <FamilyPreview
               text={text}
-              onTextChange={(next) => {
-                setText(next);
-                setTest("type");
-                setFamilyActiveGlyph(null);
-              }}
+              onTextChange={handleFamilyTextChange}
               fontSize={fontSize}
               lineHeight={lineHeight}
               tracking={tracking}
