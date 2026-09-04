@@ -311,7 +311,20 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const qaKerningPairs = useAppStore((s) => s.kerningPairs);
   const qaKerningOverridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
   const qaFeatureConfig = useAppStore((s) => s.featureConfig);
-  const styleAvailability = detectExportableStyles(glyphsByStyle, customFamilies);
+  // detectExportableStyles walks every outline object/contour/node in every
+  // style (regular, bold, italic, plus any custom families) to figure out
+  // which export tabs have real vector art. That's only actually needed
+  // while the Export dialog is open, but this component re-renders far more
+  // often than that — every glyph edit touches glyphsByStyle, and every
+  // App-level state change (opening Test Lab, Family, Feature Builder, etc.)
+  // re-renders the whole TopBar tree including FileMenu. Without memoizing,
+  // this full-font scan was re-running on every one of those renders, which
+  // is what made every panel-opening button feel laggy. Memoizing it means
+  // it only recomputes when the glyph data actually changes.
+  const styleAvailability = useMemo(
+    () => detectExportableStyles(glyphsByStyle, customFamilies),
+    [glyphsByStyle, customFamilies],
+  );
   const openProModal = useAppStore((s) => s.openProModal);
   const { isPro, isConfigured, user } = useAuth();
 
