@@ -8,6 +8,7 @@ import type { Glyph } from "@/types/glyph";
 import { unicodeHex } from "@/utils/unicode";
 import { findNode, retypeNode, retypeNodes, deleteNodes, moveNodesBy, setHandlePoint } from "@/editor/nodeOps";
 import { objectsBounds, skewObject, scaleObject } from "@/editor/objectOps";
+import { isBooleanEligible, type BooleanOp } from "@/editor/booleanOps";
 import type { NodeType, PathNode, StrokeCap, VectorObject } from "@/types/geometry";
 import { BRUSH_ORDER, BRUSH_PRESETS } from "@/brushes/presets";
 import { taperFactor } from "@/brushes/strokeToOutline";
@@ -17,6 +18,36 @@ import { NumericInput } from "./NumericInput";
 
 const NODE_TYPE_LABEL: Record<NodeType, string> = { corner: "Corner", smooth: "Smooth", symmetric: "Symmetric" };
 
+/** Minimal outline icons for the Boolean Select actions (no text by design —
+ * used icon-only with a `title` tooltip). Hand-drawn rather than pulled from
+ * lucide-react since there's no matching union/subtract/intersect glyph there. */
+function BooleanOpIcon({ op, size = 14 }: { op: BooleanOp; size?: number }) {
+  const common = { viewBox: "0 0 20 20", width: size, height: size, fill: "none" as const };
+  if (op === "union") {
+    return (
+      <svg {...common}>
+        <circle cx="7.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.4" />
+        <circle cx="12.5" cy="11.5" r="5.5" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+    );
+  }
+  if (op === "subtract") {
+    return (
+      <svg {...common}>
+        <circle cx="7.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.4" />
+        <circle cx="12.5" cy="11.5" r="5.5" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2.4 2.2" opacity="0.55" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <circle cx="7.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.1" opacity="0.35" />
+      <circle cx="12.5" cy="11.5" r="5.5" stroke="currentColor" strokeWidth="1.1" opacity="0.35" />
+      {/* Lens formed by the two circles' actual intersection points. */}
+      <path d="M7.6 14 A5.5 5.5 0 0 1 12.4 6 A5.5 5.5 0 0 1 7.6 14 Z" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
 const BRUSH_ICON: Record<BrushType, typeof PenLine> = {
   round: PenLine, monoline: Minus, marker: Highlighter, calligraphic: Feather, pencil: Pencil, pressureTaper: Zap,
   rough: CircleDashed, grunge: Flame, oilBrush: Droplet, pixel: Grid3x3,
@@ -104,10 +135,12 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
   const updateSelectedObject = useAppStore((s) => s.updateSelectedObject);
   const groupSelectedObjects = useAppStore((s) => s.groupSelectedObjects);
   const ungroupSelectedObjects = useAppStore((s) => s.ungroupSelectedObjects);
+  const booleanSelectedObjects = useAppStore((s) => s.booleanSelectedObjects);
   const strokeWidthLocked = useAppStore((s) => s.strokeWidthLocked);
   const toggleStrokeWidthLock = useAppStore((s) => s.toggleStrokeWidthLock);
 
   const objs = glyph.outline.objects.filter((o) => selectedObjectIds.includes(o.id));
+  const booleanEligibleCount = objs.filter(isBooleanEligible).length;
   const strokeObjs = objs.filter((o) => o.kind === "line" || o.kind === "brush");
   const capObjs = objs.filter((o) => o.kind === "line" || (o.kind === "brush" && o.brushType === "monoline"));
   const groupIds = new Set(objs.flatMap((o) => (o.groupId ? [o.groupId] : [])));
@@ -165,6 +198,20 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
         <button className="fm-action-btn" onClick={ungroupSelectedObjects} data-testid="ungroup-btn">
           Ungroup
         </button>
+      )}
+
+      {booleanEligibleCount > 1 && (
+        <div className="fm-btn-row" style={{ marginTop: 10 }}>
+          <button className="fm-action-btn fm-icon-btn" onClick={() => booleanSelectedObjects("union")} title="Add / Union" data-testid="boolean-union-btn">
+            <BooleanOpIcon op="union" />
+          </button>
+          <button className="fm-action-btn fm-icon-btn" onClick={() => booleanSelectedObjects("subtract")} title="Subtract" data-testid="boolean-subtract-btn">
+            <BooleanOpIcon op="subtract" />
+          </button>
+          <button className="fm-action-btn fm-icon-btn" onClick={() => booleanSelectedObjects("intersect")} title="Intersect" data-testid="boolean-intersect-btn">
+            <BooleanOpIcon op="intersect" />
+          </button>
+        </div>
       )}
 
       {strokeObjs.length > 0 && (

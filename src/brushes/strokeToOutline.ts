@@ -390,20 +390,13 @@ export function samplesToCenterline(rawSamples: StrokeSample[], settings: BrushS
   if (windowRadius > 0) {
     smoothed = movingAverage(smoothed, Math.max(1, Math.round(windowRadius * 0.6)));
   }
-  // Raised again (0.05x -> 0.18x of brush size, floor 0.6 -> 3): the old
-  // tolerance scaled only with stroke *width*, not with the size of the
-  // curve being drawn. A thin brush tracing a large, simple round shape
-  // (an "o"/"q" bowl, say) still produced a dense, near-collinear cluster
-  // of on-curve nodes all the way around — visually fine but heavy to
-  // edit and exactly what made a simple round gesture come out with far
-  // more nodes than it needed. The downstream Bezier fit in
-  // centerlineToOutline/centerlineToContour already carries the curve's
-  // roundness from just a handful of smooth nodes, so thinning harder here
-  // loses editing precision, not curve accuracy. Corners are unaffected —
-  // simplifyPolyline (Ramer-Douglas-Peucker) only drops points that don't
-  // deviate from their neighbors' chord by more than epsilon, so a real
-  // corner point (which deviates a lot) is always kept regardless.
-  const epsilon = Math.max(3, settings.size * 0.18);
+  // Raised from 0.03x to 0.05x of brush size: the old tolerance kept more
+  // centerline points than the downstream smooth-handle fit in
+  // centerlineToOutline/centerlineToContour needs, so ordinary strokes
+  // carried more on-curve nodes than the resulting curve actually
+  // required. A wider tolerance thins the point set going into the fit —
+  // fewer nodes for the same visual curve, not a less accurate one.
+  const epsilon = Math.max(0.6, settings.size * 0.05);
   return simplifyPolyline(smoothed, epsilon);
 }
 
@@ -763,25 +756,7 @@ export function centerlineToOutline(
   const cleanedLeft = SELF_CLEAN_SKIP.includes(settings.type) ? left : removeSelfIntersectionLoops(left);
   const cleanedRight = SELF_CLEAN_SKIP.includes(settings.type) ? right : removeSelfIntersectionLoops(right);
 
-  // The edges above are built from the DENSE catmullRomResample points
-  // (spaced every ~0.06x brush size) so the nib's width tracks the gesture
-  // accurately — but every one of those points becomes a real, editable
-  // "corner" node below. On a simple, gently-curving letterform that's
-  // hundreds of near-collinear nodes doing the job three or four could do.
-  // Thin each edge back down with the same Ramer-Douglas-Peucker pass used
-  // elsewhere, at a tolerance tied to the nib's own half-width so it stays
-  // invisible at the letter's actual size — corners and genuine texture
-  // survive (RDP only drops points that don't deviate from the line
-  // between their kept neighbors), only the redundant in-between points
-  // along straight/near-straight runs go. Brushes with deliberate
-  // per-sample edge noise (grunge/oil/rough) keep every sample, same as
-  // the self-intersection cleanup above, since thinning would iron their
-  // texture back out.
-  const edgeSimplifyEpsilon = Math.max(0.6, Math.min(4, semiMajor * 0.09));
-  const simplifiedLeft = SELF_CLEAN_SKIP.includes(settings.type) ? cleanedLeft : simplifyPolyline(cleanedLeft, edgeSimplifyEpsilon);
-  const simplifiedRight = SELF_CLEAN_SKIP.includes(settings.type) ? cleanedRight : simplifyPolyline(cleanedRight, edgeSimplifyEpsilon);
-
-  const polygon = [...simplifiedLeft, ...endCapPts, ...simplifiedRight.reverse(), ...startCapPts];
+  const polygon = [...cleanedLeft, ...endCapPts, ...cleanedRight.reverse(), ...startCapPts];
   if (polygon.length < 3) return null;
   return {
     id: shortId("contour"),

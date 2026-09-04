@@ -37,44 +37,6 @@ function refKey(r: NodeRef) { return `${r.contourId}:${r.nodeId}`; }
 function axisLock(delta: Point): Point {
   return Math.abs(delta.x) >= Math.abs(delta.y) ? { x: delta.x, y: 0 } : { x: 0, y: delta.y };
 }
-
-/** Soft-snap tolerance for handle dragging, in screen pixels — matches the
- * Select tool's feel (see useSelectTool's SNAP_TOLERANCE_PX) so alignment
- * behaves consistently across tools; converted to font units via hitScale
- * at call time. */
-const HANDLE_SNAP_TOLERANCE_PX = 7;
-
-/**
- * Snaps a dragged handle's x/y independently toward the nearest alignment
- * target on each axis (its own anchor node, plus every other on-curve
- * node's coordinates currently visible), FontLab/Glyphs-style. Returns the
- * corrected point AND which target(s) it actually snapped to, so the
- * caller can draw a dashed guide line + coordinate readout exactly at the
- * point of alignment — soft/non-forcing: nothing snaps unless it's already
- * within tolerance.
- */
-function snapHandlePoint(
-  p: Point,
-  xTargets: number[],
-  yTargets: number[],
-  tolerance: number
-): { point: Point; snappedX: number | null; snappedY: null | number } {
-  let x = p.x;
-  let y = p.y;
-  let snappedX: number | null = null;
-  let bestDx = tolerance;
-  for (const t of xTargets) {
-    const d = Math.abs(t - x);
-    if (d < bestDx) { bestDx = d; x = t; snappedX = t; }
-  }
-  let snappedY: number | null = null;
-  let bestDy = tolerance;
-  for (const t of yTargets) {
-    const d = Math.abs(t - y);
-    if (d < bestDy) { bestDy = d; y = t; snappedY = t; }
-  }
-  return { point: { x, y }, snappedX, snappedY };
-}
 function rectFrom(a: Point, b: Point): Rect {
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
 }
@@ -98,7 +60,6 @@ export function useGlyphEditor(hitScale: number) {
   const drawingContourId = useAppStore((s) => s.drawingContourId);
   const showGrid = useAppStore((s) => s.showGrid);
   const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
-  const snapEnabled = useAppStore((s) => s.snapEnabled);
 
   const commitOutline = useAppStore((s) => s.commitOutline);
   const setLiveOutline = useAppStore((s) => s.setLiveOutline);
@@ -117,12 +78,6 @@ export function useGlyphEditor(hitScale: number) {
   // be read off and reused (e.g. typed into another corner-round elsewhere)
   // instead of eyeballing the drag distance. Cleared on release.
   const [roundCornerLabel, setRoundCornerLabel] = useState<{ point: Point; radius: number } | null>(null);
-  /** Live alignment feedback while dragging a bezier handle — mirrors
-   * FontLab's dashed cross-guides with a coordinate readout. `x`/`y` are
-   * set only on the axis actually snapped, so the drawn guide only shows
-   * the line(s) that are real (a handle can snap on one axis, both, or
-   * neither). Cleared as soon as the drag ends. */
-  const [handleSnapGuide, setHandleSnapGuide] = useState<{ point: Point; x: number | null; y: number | null } | null>(null);
 
   const outline: GlyphOutline = liveOutline ?? glyph?.outline ?? { objects: [] };
   const hitRadius = 12 * hitScale;
@@ -408,36 +363,7 @@ export function useGlyphEditor(hitScale: number) {
         const working = cloneOutline(base);
         const node = findNode(working, drag.contourId, drag.nodeId);
         if (!node) return;
-        let draggedPoint = shiftKey ? snapAngle(node.point, p, 45) : p;
-        // Soft alignment snap (skipped once Shift's 45°-angle snap is
-        // already driving the handle, so the two don't fight each other):
-        // pull the handle onto its own anchor's x/y, or onto any other
-        // on-curve node's x/y, whenever it's already within a few screen
-        // pixels — same feel as the Select tool's guide snapping, applied
-        // here to handles specifically per FontLab-style node editing.
-        if (snapEnabled && !shiftKey) {
-          const xTargets: number[] = [node.point.x];
-          const yTargets: number[] = [node.point.y];
-          for (const obj of nodeableOutline.objects) {
-            for (const contour of obj.contours) {
-              for (const other of contour.nodes) {
-                if (other.id === node.id) continue;
-                xTargets.push(other.point.x);
-                yTargets.push(other.point.y);
-              }
-            }
-          }
-          const tolerance = HANDLE_SNAP_TOLERANCE_PX * hitScale;
-          const snapped = snapHandlePoint(draggedPoint, xTargets, yTargets, tolerance);
-          draggedPoint = snapped.point;
-          setHandleSnapGuide(
-            snapped.snappedX !== null || snapped.snappedY !== null
-              ? { point: draggedPoint, x: snapped.snappedX, y: snapped.snappedY }
-              : null
-          );
-        } else {
-          setHandleSnapGuide(null);
-        }
+        const draggedPoint = shiftKey ? snapAngle(node.point, p, 45) : p;
         const breakConstraint = altKey;
         if (drag.part === "handleOut") {
           node.handleOut = draggedPoint;
@@ -455,7 +381,7 @@ export function useGlyphEditor(hitScale: number) {
         setLiveOutline(working);
       }
     },
-    [setLiveOutline, snapEnabled, hitScale, nodeableOutline]
+    [setLiveOutline]
   );
 
   const finishMarquee = useCallback((drag: Extract<NonNullable<DragState>, { mode: "marquee" }>) => {
@@ -524,7 +450,6 @@ export function useGlyphEditor(hitScale: number) {
     const drag = dragRef.current;
     if (!drag) return;
     setRoundCornerLabel(null);
-    setHandleSnapGuide(null);
     if (drag.mode === "marquee") {
       finishMarquee(drag);
       dragRef.current = null;
@@ -607,7 +532,7 @@ export function useGlyphEditor(hitScale: number) {
   }, [drawingContourId, outline, hitRadius]);
 
   return {
-    outline, nodeableOutline, selectedNodes, selectedHandle, drawingContourId, marqueeRect, roundCornerLabel, handleSnapGuide,
+    outline, nodeableOutline, selectedNodes, selectedHandle, drawingContourId, marqueeRect, roundCornerLabel,
     pointerDown, pointerMove, pointerUp, cycleNodeType, insertNodeAt,
     deleteSelectedNodes, nudgeNodes, finishOpenContour, isCurrentEndpoint,
     findObjectOfContour: (cid: string) => findObjectOfContour(outline, cid),

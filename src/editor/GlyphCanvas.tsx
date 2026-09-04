@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useAppStore, type GlyphMetricKey } from "@/glyph/store";
 import { useGlyphEditor } from "./useGlyphEditor";
 import { useBrushTool } from "./useBrushTool";
@@ -543,9 +543,9 @@ export function GlyphCanvas() {
         <style>{`
           .cursor-pen { cursor: crosshair; } .cursor-node { cursor: default; }
           .cursor-shape { cursor: crosshair; }
-          .cursor-pencil { cursor: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij4gPGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMGEwYTBhIiBzdHJva2Utd2lkdGg9IjEuNCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj4gPHBhdGggZD0iTTE1LjYgMi42bDUuOCA1LjgtMTEuNCAxMS40LTcuMiAxLjQgMS40LTcuMnoiIGZpbGw9IiNmZmZmZmYiLz4gPHBhdGggZD0iTTEyLjkgNS4zbDUuOCA1LjgiIC8+IDxwYXRoIGQ9Ik0zLjkgMjAuMWwxLjEtNS42IiAvPiA8L2c+IDwvc3ZnPg==') 3 20, crosshair; }
+          .cursor-pencil { cursor: crosshair; }
           .cursor-hand { cursor: grab; } .cursor-zoom { cursor: zoom-in; }
-          .cursor-brush { cursor: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij4gPGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMGEwYTBhIiBzdHJva2Utd2lkdGg9IjEuNCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj4gPHBhdGggZD0iTTEyIDQuNGMzLjEgMCA1LjQgMi40IDUuNCA1LjYgMCAyLjEtMS4xIDMuNi0yLjggNC44TDEyIDIxLjZsLTIuNi02LjhDNy43IDEzLjYgNi42IDEyLjEgNi42IDEwYzAtMy4yIDIuMy01LjYgNS40LTUuNnoiIGZpbGw9IiNmZmZmZmYiLz4gPGNpcmNsZSBjeD0iMTIiIGN5PSI5LjYiIHI9IjIuNiIgZmlsbD0iIzBhMGEwYSIgc3Ryb2tlPSJub25lIi8+IDwvZz4gPC9zdmc+') 12 21, crosshair; } .cursor-select { cursor: default; }
+          .cursor-brush { cursor: crosshair; } .cursor-select { cursor: default; }
           .cursor-nwse { cursor: nwse-resize; } .cursor-nesw { cursor: nesw-resize; }
           .cursor-ns { cursor: ns-resize; } .cursor-ew { cursor: ew-resize; } .cursor-rot { cursor: crosshair; }
           .cursor-skew-x { cursor: ew-resize; } .cursor-skew-y { cursor: ns-resize; }
@@ -591,12 +591,6 @@ export function GlyphCanvas() {
           .origin-flag-bg { fill: var(--origin-soft); stroke: var(--origin); stroke-width: ${1 / sc}; }
           .origin-flag-label { fill: var(--origin); font-size: ${10 / sc}px; font-family: var(--mono); font-weight: 700; pointer-events: none; }
           .obj-fill { fill: var(--ink); fill-rule: nonzero; stroke: none; }
-          /* FontLab/Glyphs-style "semi-fill": in Node mode the shape being
-             actively edited renders at reduced opacity by default — their
-             True Fill toggle is what gives the solid/opaque version — so
-             nodes and handles read clearly against it instead of vanishing
-             into a solid dark silhouette. */
-          .obj-fill.semi-fill { opacity: 0.62; }
           .obj-fill-overlap { fill: var(--overlap); opacity: 0.88; }
           .obj-fill-preview-outline { fill: none; stroke: var(--ink); stroke-width: ${1.25 / sc}; opacity: 0.85; }
           .obj-stroke { fill: none; stroke: var(--ink); }
@@ -606,18 +600,16 @@ export function GlyphCanvas() {
           .pencil-preview { fill: none; stroke: var(--accent); opacity: 0.9; }
           .pencil-preview-fill { fill: var(--accent); opacity: 0.16; }
           .rubber-line { stroke: var(--accent); stroke-width: ${1.2 / sc}; stroke-dasharray: ${4 / sc} ${3 / sc}; }
-          .handle-line { stroke: var(--handle-line); stroke-width: ${1.5 / sc}; }
+          .handle-line { stroke: var(--handle-line); stroke-width: ${1 / sc}; }
           .handle-line.dim { opacity: 0.4; }
-          .handle-dot { fill: var(--canvas); stroke: var(--accent); stroke-width: ${1.3 / sc}; opacity: 0.85; }
-          .handle-dot.active { opacity: 1; }
-          .handle-dot.dim { opacity: 0.3; }
-          .handle-snap-line { stroke: var(--accent); stroke-width: ${1 / sc}; stroke-dasharray: ${4 / sc} ${4 / sc}; opacity: 0.75; }
-          .handle-snap-dot { fill: var(--accent); opacity: 0.9; }
-          .node-shape { stroke-width: ${1.3 / sc}; }
-          .node-shape.corner { fill: var(--node-corner); stroke: var(--canvas); }
-          .node-shape.smooth { fill: var(--node-smooth); stroke: var(--canvas); }
-          .node-shape.symmetric { fill: var(--node-symmetric); stroke: var(--canvas); }
-          .node-shape.selected { fill: var(--accent); stroke: var(--canvas); }
+          .handle-dot { fill: var(--canvas); stroke: var(--accent); stroke-width: ${1.4 / sc}; }
+          .handle-dot.active { fill: var(--accent); }
+          .handle-dot.dim { opacity: 0.55; }
+          .node-shape { stroke-width: ${1.6 / sc}; }
+          .node-shape.corner { fill: var(--canvas); stroke: var(--node-corner); }
+          .node-shape.smooth { fill: var(--canvas); stroke: var(--node-smooth); }
+          .node-shape.symmetric { fill: var(--canvas); stroke: var(--node-symmetric); }
+          .node-shape.selected { fill: var(--accent); stroke: var(--accent); }
           .node-shape.guide { opacity: 0.6; }
           .skeleton-guide-path { fill: none; stroke: var(--accent); stroke-width: ${1 / sc}; stroke-dasharray: ${3 / sc} ${3 / sc}; opacity: 0.4; }
           .skeleton-guide-path.active { stroke: #000; stroke-dasharray: none; stroke-width: ${1.25 / sc}; opacity: 0.85; }
@@ -965,29 +957,6 @@ export function GlyphCanvas() {
           );
         })()}
 
-        {/* Handle alignment guide: while dragging a bezier handle (Node/Pen
-            tool), a soft snap onto another point's x and/or y draws a
-            dashed cross-guide through the snapped axis/axes plus a live
-            coordinate readout — mirrors FontLab's node-handle snap
-            feedback (see snapHandlePoint in useGlyphEditor). */}
-        {tool === "node" && editor.handleSnapGuide && (() => {
-          const { point, x, y } = editor.handleSnapGuide;
-          const svgP = toSvgPoint(point, ascender);
-          const lx = svgP.x + 12 / sc;
-          const ly = svgP.y - 10 / sc;
-          const text = `${Math.round(point.x)}, ${Math.round(point.y)}`;
-          const w = (16 + text.length * 6.6) / sc;
-          return (
-            <g pointerEvents="none" data-testid="handle-snap-guide">
-              {x !== null && <line x1={svgP.x} y1={vbY} x2={svgP.x} y2={vbY + vbH} className="handle-snap-line" />}
-              {y !== null && <line x1={vbX} y1={svgP.y} x2={vbX + vbW} y2={svgP.y} className="handle-snap-line" />}
-              <circle cx={svgP.x} cy={svgP.y} r={2.6 / sc} className="handle-snap-dot" />
-              <rect x={lx} y={ly - 15 / sc} width={w} height={19 / sc} rx={4 / sc} className="metric-guide-value-bg" />
-              <text x={lx + 6 / sc} y={ly - 2 / sc} className="metric-guide-value">{text}</text>
-            </g>
-          );
-        })()}
-
         {/* Selection box + transform handles */}
         {tool === "select" && selBounds && handlePts && (
           <g>
@@ -1082,32 +1051,14 @@ const ObjectsLayer = memo(function ObjectsLayer({
           !penAutoCloseShape &&
           drawingContourId != null &&
           obj.contours.some((c) => c.id === drawingContourId && !c.closed);
-        const isSelected = selectedObjectIds.includes(obj.id);
-        // Node tool: dim every object except the one being edited. The
-        // active object stays fully solid (opacity here would blur exactly
-        // the outline you're trying to read while dragging nodes/handles),
-        // but everything else recedes — this is what keeps a dense, mostly-
-        // black glyph canvas from reading as one flat pekat mass while you
-        // work, without touching fill color/opacity itself.
-        const dimmed = tool === "node" && selectedObjectIds.length > 0 && !isSelected;
-        // FontLab/Glyphs default to a semi-transparent "working" fill in
-        // Node mode (their True Fill toggle is what gives the opaque
-        // version) — nodes/handles read clearly against the shape instead
-        // of a solid dark silhouette swallowing them. Only applies to the
-        // object(s) actually being edited; a dimmed object is already
-        // faded by its wrapper opacity, so it skips this to avoid stacking
-        // two separate transparency effects into an almost-invisible shape.
-        const semiFill = tool === "node" && !dimmed;
         return (
           <ObjectShape
             key={obj.id}
             obj={obj}
             ascender={ascender}
-            selected={isSelected}
+            selected={selectedObjectIds.includes(obj.id)}
             outlineOnly={isLiveDrawPreview}
             overlapping={overlappingIds.has(obj.id)}
-            dimmed={dimmed}
-            semiFill={semiFill}
           />
         );
       })}
@@ -1227,8 +1178,8 @@ const SkeletonGuideLayer = memo(function SkeletonGuideLayer({
 });
 
 const ObjectShape = memo(function ObjectShape({
-  obj, ascender, selected, outlineOnly, overlapping, dimmed, semiFill,
-}: { obj: VectorObject; ascender: number; selected: boolean; outlineOnly?: boolean; overlapping?: boolean; dimmed?: boolean; semiFill?: boolean }) {
+  obj, ascender, selected, outlineOnly, overlapping,
+}: { obj: VectorObject; ascender: number; selected: boolean; outlineOnly?: boolean; overlapping?: boolean }) {
   const isFillKind = obj.kind === "shape" || obj.kind === "expanded";
   const isMonolineBrush = obj.kind === "brush" && obj.brushType === "monoline";
   const isVariableBrush = obj.kind === "brush" && !isMonolineBrush;
@@ -1243,26 +1194,14 @@ const ObjectShape = memo(function ObjectShape({
     return brushOutlineContours(obj).map((c) => contourToPath(c, ascender)).join(" ");
   }, [obj, ascender, isVariableBrush]);
 
-  // Node tool dimming wraps whichever branch below fires in a <g> with
-  // reduced opacity. Deliberately opacity on the group, not a fill-color
-  // change — the shape's own ink stays --ink at full strength, so if this
-  // object gets selected next the color doesn't "pop" or shift, only the
-  // surrounding recede/return.
-  const wrap = (node: ReactNode) =>
-    dimmed ? <g opacity={0.42}>{node}</g> : <>{node}</>;
-
-  // obj-fill + optional overlap/semi-fill modifiers, joined conditionally.
-  const fillClass = () =>
-    ["obj-fill", overlapping && "obj-fill-overlap", semiFill && "semi-fill"].filter(Boolean).join(" ");
-
   if (isFillKind) {
     const d = fillOrStrokeD;
     if (outlineOnly) {
       return <path d={d} className="obj-fill-preview-outline" vectorEffect="non-scaling-stroke" />;
     }
-    return wrap(
+    return (
       <>
-        <path d={d} className={fillClass()} />
+        <path d={d} className={overlapping ? "obj-fill obj-fill-overlap" : "obj-fill"} />
         {selected && <path d={d} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
       </>
     );
@@ -1270,7 +1209,7 @@ const ObjectShape = memo(function ObjectShape({
   if (obj.kind === "brush") {
     if (isMonolineBrush) {
       const d = fillOrStrokeD;
-      return wrap(
+      return (
         <>
           <path d={d} className={overlapping ? "obj-stroke obj-stroke-overlap" : "obj-stroke"} strokeWidth={obj.strokeWidth ?? 20} strokeLinecap={obj.cap ?? "round"} strokeLinejoin={obj.join ?? "round"} />
           {selected && <path d={d} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
@@ -1280,15 +1219,15 @@ const ObjectShape = memo(function ObjectShape({
     // Variable-profile brushes render a derived silhouette while retaining the
     // editable centerline as their stored geometry.
     const d = variableBrushD;
-    return wrap(
+    return (
       <>
-        <path d={d} className={fillClass()} />
+        <path d={d} className={overlapping ? "obj-fill obj-fill-overlap" : "obj-fill"} />
         {selected && <path d={d} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
       </>
     );
   }
   const d = fillOrStrokeD;
-  return wrap(
+  return (
     <>
       <path d={d} className={overlapping ? "obj-stroke obj-stroke-overlap" : "obj-stroke"} strokeWidth={obj.strokeWidth ?? 20} strokeLinecap={obj.cap ?? "round"} strokeLinejoin={obj.join ?? "round"} />
       {selected && <path d={d} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
@@ -1299,11 +1238,10 @@ const ObjectShape = memo(function ObjectShape({
 const NodeShape = memo(function NodeShape({ point, type, hitScale, selected, guide }: { point: Point; type: NodeType; hitScale: number; selected: boolean; guide?: boolean }) {
   const cls = `node-shape ${type} ${selected ? "selected" : ""} ${guide ? "guide" : ""}`;
   if (type === "corner") {
-    const s = (selected ? 7.5 : 6.5) * hitScale;
-    const rx = 1.5 * hitScale;
-    return <rect x={point.x - s / 2} y={point.y - s / 2} width={s} height={s} rx={rx} ry={rx} className={cls} />;
+    const s = 7 * hitScale;
+    return <rect x={point.x - s / 2} y={point.y - s / 2} width={s} height={s} className={cls} />;
   }
-  const r = (selected ? 4.5 : type === "symmetric" ? 4 : 3.6) * hitScale;
+  const r = (type === "symmetric" ? 4.6 : 4.2) * hitScale;
   return <circle cx={point.x} cy={point.y} r={r} className={cls} />;
 });
 
@@ -1322,16 +1260,10 @@ const HandleGlyph = memo(function HandleGlyph({
   if (!handle) return null;
   const from = toSvgPoint(node.point, ascender);
   const to = toSvgPoint(handle, ascender);
-  // Off-curve handle points render as a diamond — two triangles pointing
-  // away from each other along the vertical axis — rather than a circle.
-  // This matches FontLab's off-curve node glyph, and reads more clearly
-  // against the round on-curve smooth/symmetric nodes right next to it.
-  const r = (selected ? 4.2 : 3.6) * hitScale;
-  const diamond = `M ${to.x} ${to.y - r} L ${to.x + r} ${to.y} L ${to.x} ${to.y + r} L ${to.x - r} ${to.y} Z`;
   return (
     <>
       <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} className={`handle-line ${emphasized ? "" : "dim"}`} />
-      <path d={diamond} className={`handle-dot ${selected ? "active" : ""} ${emphasized ? "" : "dim"}`} />
+      <circle cx={to.x} cy={to.y} r={3.4 * hitScale} className={`handle-dot ${selected ? "active" : ""} ${emphasized ? "" : "dim"}`} />
     </>
   );
 });

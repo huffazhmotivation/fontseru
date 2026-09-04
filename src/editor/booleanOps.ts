@@ -34,47 +34,8 @@ function pointInPolygon(p: Point, poly: Point[]): boolean {
 // stay smooth through the boolean op instead of faceting.
 const CLIP_SAMPLE_STEPS = 48;
 
-// Coordinates get snapped to this many font-unit decimal places before
-// they're handed to the exact clipper. `polygon-clipping` uses exact
-// rational arithmetic internally, which means it's very literal about what
-// counts as "the same point" or "a straight edge": two samples that differ
-// by 1e-10 due to float rounding are treated as genuinely distinct, and a
-// hand-drawn curve flattened at CLIP_SAMPLE_STEPS density is exactly the
-// kind of input that produces long runs of nearly (but not exactly)
-// collinear points. That's a well-known source of degenerate/wrong output
-// from exact polygon clippers. Snapping first turns "nearly the same" into
-// "exactly the same" so dedup below actually catches it.
-const COORD_SNAP = 100; // 0.01 font-unit precision
-
-function snap(v: number): number {
-  return Math.round(v * COORD_SNAP) / COORD_SNAP;
-}
-
-// Drops consecutive duplicate points (after snapping) and any point that's
-// essentially sitting on top of its neighbor, which otherwise hands the
-// clipper a zero-length edge — another common trigger for topology errors
-// in exact boolean ops. Keeps the ring's own closing edge intact (doesn't
-// dedupe first-vs-last; toRing/ringToPoints already handle that).
-function dedupePoints(pts: Point[]): Point[] {
-  const out: Point[] = [];
-  for (const p of pts) {
-    const s = { x: snap(p.x), y: snap(p.y) };
-    const prev = out[out.length - 1];
-    if (!prev || Math.abs(prev.x - s.x) > 1e-9 || Math.abs(prev.y - s.y) > 1e-9) out.push(s);
-  }
-  // Drop a duplicate closing point (ring wraps back onto its own start).
-  if (out.length > 1) {
-    const first = out[0];
-    const last = out[out.length - 1];
-    if (Math.abs(first.x - last.x) < 1e-9 && Math.abs(first.y - last.y) < 1e-9) out.pop();
-  }
-  return out;
-}
-
 function objectPolys(obj: VectorObject): Point[][] {
-  return obj.contours
-    .map((c) => dedupePoints(flattenContour(c, CLIP_SAMPLE_STEPS)))
-    .filter((poly) => poly.length >= 3);
+  return obj.contours.map((c) => flattenContour(c, CLIP_SAMPLE_STEPS)).filter((poly) => poly.length >= 3);
 }
 
 function toRing(pts: Point[]): [number, number][] {
@@ -100,26 +61,14 @@ function ringToPoints(ring: [number, number][]): Point[] {
  * even-odd fill rule the rest of the app already uses for a single object's
  * overlapping contours (e.g. the counter of an "O"), while handing back
  * correctly paired, hole-aware polygons for the exact clip below.
- *
- * Bug this fixes: a single hand-drawn contour that self-intersects — very
- * common for a one-stroke freehand letter where the path crosses back over
- * itself (e.g. near the neck of a "g" or "e") — used to skip normalization
- * entirely (the XOR pass only ran when an object had 2+ *separate*
- * contours) and get handed straight to the exact clipper as-is. A
- * self-intersecting ring is not a valid simple polygon, and exact clippers
- * can resolve it into unexpected/degenerate geometry — including a
- * Subtract silently collapsing to just the front (cutting) shape. Running
- * every object's rings through `clipUnion` first — even a single ring on
- * its own — forces the same self-intersection resolution multi-contour
- * objects already got, so Subtract/Union/Intersect always start from
- * clean, simple polygons regardless of how the shape was drawn.
  */
 function objectToMultiPolygon(obj: VectorObject): ClipMultiPolygon {
   const polys = objectPolys(obj);
   if (polys.length === 0) return [];
   const rings: ClipPolygon[] = polys.map((p) => [toRing(p)]);
+  if (rings.length === 1) return rings;
   try {
-    return rings.length === 1 ? clipUnion(rings[0]) : clipXor(rings[0], ...rings.slice(1));
+    return clipXor(rings[0], ...rings.slice(1));
   } catch {
     return rings;
   }

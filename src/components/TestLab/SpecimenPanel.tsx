@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { Layers3, Loader2, MoveHorizontal, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
+import { AlignHorizontalSpaceAround, Layers3, Loader2, MoveHorizontal, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
 import { NumericInput } from "@/components/NumericInput";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -1359,6 +1359,9 @@ export function SpecimenPanel() {
   const setFamilyKerningPair = useAppStore((s) => s.setFamilyKerningPair);
   const resetFamilyKerningPair = useAppStore((s) => s.resetFamilyKerningPair);
   const autoKernAllPairsForContext = useAppStore((s) => s.autoKernAllPairsForContext);
+  const autoSpaceAllGlyphs = useAppStore((s) => s.autoSpaceAllGlyphs);
+  const autoSpaceAllGlyphsForContext = useAppStore((s) => s.autoSpaceAllGlyphsForContext);
+  const autoSpaceLastRun = useAppStore((s) => s.autoSpaceLastRun);
   const autoWordSpacing = useAppStore((s) => s.autoWordSpacing);
   const autoWordSpacingForContext = useAppStore((s) => s.autoWordSpacingForContext);
   const resetFamilyWordSpacing = useAppStore((s) => s.resetFamilyWordSpacing);
@@ -1400,56 +1403,6 @@ export function SpecimenPanel() {
   const [kerningMode, setKerningMode] = useState<"single" | "family">("single");
   const [familyContext, setFamilyContext] = useState<KerningContext>("shared");
 
-  // Drag-to-resize for the right settings rail. Dragging the handle moves
-  // the boundary between the stage and the rail, widening/narrowing the
-  // rail while the stage reflows to fill whatever's left. A plain
-  // pointermove listener (no rAF batching) keeps this feeling immediate —
-  // the rail is a fixed-width column, not something that needs the same
-  // per-frame coalescing as continuous canvas drawing.
-  const [sideWidth, setSideWidth] = useState(() => {
-    if (typeof window === "undefined") return 284;
-    // Match the same narrower defaults the old fixed-width CSS breakpoints
-    // used, so small screens don't open with a rail wider than before —
-    // dragging still overrides this once the user actually resizes it.
-    if (window.innerWidth <= 820) return 210;
-    if (window.innerWidth <= 960) return 250;
-    return 284;
-  });
-  const [isResizingSide, setIsResizingSide] = useState(false);
-  const sideResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
-
-  const startSideResize = (e: ReactPointerEvent) => {
-    e.preventDefault();
-    sideResizeRef.current = { startX: e.clientX, startWidth: sideWidth };
-    setIsResizingSide(true);
-    // Keep the drag responsive even if the pointer strays over text or
-    // other elements mid-move, and stop the cursor flickering back to
-    // default between handle pixels.
-    const prevUserSelect = document.body.style.userSelect;
-    const prevCursor = document.body.style.cursor;
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
-    const onMove = (ev: PointerEvent) => {
-      const drag = sideResizeRef.current;
-      if (!drag) return;
-      // The rail sits to the right of the stage, so dragging left (negative
-      // clientX delta) should widen it.
-      const delta = drag.startX - ev.clientX;
-      const next = Math.min(420, Math.max(220, drag.startWidth + delta));
-      setSideWidth(next);
-    };
-    const onUp = () => {
-      sideResizeRef.current = null;
-      setIsResizingSide(false);
-      document.body.style.userSelect = prevUserSelect;
-      document.body.style.cursor = prevCursor;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  };
-
   const handleAutoKern = useCallback(async () => {
     if (autoKernRunning) return;
     setAutoKernProgress(0);
@@ -1467,6 +1420,14 @@ export function SpecimenPanel() {
     }
   }, [autoKernRunning, autoKernAllPairs, autoKernAllPairsForContext, kerningMode, familyContext]);
 
+  const [excludeManualKerning, setExcludeManualKerning] = useState(true);
+  const [reKernAfterSpacing, setReKernAfterSpacing] = useState(true);
+  // Same "idle" | 0..1 | "done" pattern as autoKernProgress above, so Auto
+  // Spacing's button fills with real progress instead of a static "Spacing…"
+  // label — and so it can be driven by whichever of the two store actions
+  // below actually ran (single style, or a Family Test context).
+  const [autoSpaceProgress, setAutoSpaceProgress] = useState<"idle" | "done" | number>("idle");
+  const autoSpaceRunning = typeof autoSpaceProgress === "number";
   const [wordSpacingFlash, setWordSpacingFlash] = useState<number | null>(null);
 
   const handleAutoWordSpacing = useCallback(() => {
@@ -1479,6 +1440,27 @@ export function SpecimenPanel() {
     setWordSpacingFlash(value);
     window.setTimeout(() => setWordSpacingFlash(null), 1800);
   }, [autoWordSpacing, autoWordSpacingForContext, kerningMode, familyContext]);
+
+  const handleAutoSpace = useCallback(async () => {
+    if (autoSpaceRunning) return;
+    setAutoSpaceProgress(0);
+    try {
+      const options = { excludeManuallyKerned: excludeManualKerning, reKernAfter: reKernAfterSpacing };
+      // Family Test must re-space the style selected in "Kerning Context",
+      // not whatever style happens to be open in the main editor — that's
+      // what autoSpaceAllGlyphsForContext is for (see store.ts).
+      if (kerningMode === "family") {
+        await autoSpaceAllGlyphsForContext(familyContext, options, setAutoSpaceProgress);
+      } else {
+        await autoSpaceAllGlyphs(options, setAutoSpaceProgress);
+      }
+      setAutoSpaceProgress("done");
+      window.setTimeout(() => setAutoSpaceProgress("idle"), 550);
+    } catch (error) {
+      console.error("[FontSeru] Auto Spacing failed.", error);
+      setAutoSpaceProgress("idle");
+    }
+  }, [autoSpaceRunning, autoSpaceAllGlyphs, autoSpaceAllGlyphsForContext, kerningMode, familyContext, excludeManualKerning, reKernAfterSpacing]);
 
   const handleApplyTracking = useCallback(() => {
     if (tracking === 0) return;
@@ -1665,16 +1647,7 @@ export function SpecimenPanel() {
         )}
       </div>
 
-      <div
-        className={`fm-lab-resize-handle${isResizingSide ? " active" : ""}`}
-        onPointerDown={startSideResize}
-        title="Drag to resize panel"
-        data-testid="lab-side-resize-handle"
-      >
-        <span className="fm-lab-resize-grip" aria-hidden="true" />
-      </div>
-
-      <div className="fm-lab-side" style={{ width: sideWidth }} data-testid="lab-right-panel">
+      <div className="fm-lab-side" data-testid="lab-right-panel">
         <div className="fm-lab-side-section" data-testid="lab-kerning-panel">
           <div className="fm-section-title">Kerning</div>
 
@@ -1851,6 +1824,63 @@ export function SpecimenPanel() {
           <div className="fm-kern-block">
             <div className="fm-auto-space-row fm-tooltip-anchor">
               <button
+                className={`fm-action-btn accent fm-auto-space-btn${autoSpaceRunning ? " running" : ""}${autoSpaceProgress === "done" ? " done" : ""}`}
+                style={autoSpaceRunning ? { "--fm-auto-space-fill": `${Math.round((autoSpaceProgress as number) * 100)}%` } as CSSProperties : undefined}
+                onClick={(e) => { handleAutoSpace(); e.currentTarget.blur(); }}
+                disabled={autoSpaceRunning}
+                data-testid="auto-space-btn"
+              >
+                {autoSpaceRunning ? (
+                  <Loader2 className="fm-auto-kern-icon fm-auto-kern-spin" size={14} strokeWidth={2} aria-hidden="true" />
+                ) : (
+                  <AlignHorizontalSpaceAround size={14} />
+                )}
+                {autoSpaceRunning ? `Spacing… ${Math.round((autoSpaceProgress as number) * 100)}%` : "Auto Spacing"}
+              </button>
+              <div className="fm-tooltip-bubble" role="tooltip">
+                Normalize every glyph's left/right sidebearing to one consistent optical margin, on the currently
+                active style. Fixes inconsistent left/right margins across glyphs (e.g. from freehand drawing) before
+                Auto Kerning fine-tunes specific pairs on top. Applies to the active style only — switch tabs to run it
+                on Bold, Italic, or a custom family too.
+              </div>
+            </div>
+
+            <div className="fm-flag-toggle-group">
+              <label className={`fm-flag-toggle${excludeManualKerning ? " active" : ""}`} data-testid="auto-space-exclude-manual">
+                <input
+                  type="checkbox"
+                  className="fm-flag-toggle-input"
+                  checked={excludeManualKerning}
+                  onChange={(e) => setExcludeManualKerning(e.target.checked)}
+                />
+                <span className="fm-flag-toggle-box" aria-hidden="true" />
+                Lewati glyph yang sudah punya kerning manual
+              </label>
+              <label className={`fm-flag-toggle${reKernAfterSpacing ? " active" : ""}`} data-testid="auto-space-rekern">
+                <input
+                  type="checkbox"
+                  className="fm-flag-toggle-input"
+                  checked={reKernAfterSpacing}
+                  onChange={(e) => setReKernAfterSpacing(e.target.checked)}
+                />
+                <span className="fm-flag-toggle-box" aria-hidden="true" />
+                Kerning ulang otomatis (pair non-manual) setelah spacing
+              </label>
+            </div>
+
+            {autoSpaceLastRun && (
+              <div className="fm-kern-complete" role="status" data-testid="auto-space-complete">
+                <span className="fm-status-dot" />
+                {autoSpaceLastRun.updated} glyph{autoSpaceLastRun.updated === 1 ? "" : "s"} re-spaced
+                {autoSpaceLastRun.skipped > 0 ? ` · ${autoSpaceLastRun.skipped} empty skipped` : ""}
+                {autoSpaceLastRun.skippedManual > 0 ? ` · ${autoSpaceLastRun.skippedManual} manual-kerned kept` : ""}
+              </div>
+            )}
+          </div>
+
+          <div className="fm-kern-block">
+            <div className="fm-auto-space-row fm-tooltip-anchor">
+              <button
                 className={`fm-action-btn accent${wordSpacingFlash !== null ? " done" : ""}`}
                 onClick={(e) => { handleAutoWordSpacing(); e.currentTarget.blur(); }}
                 data-testid="auto-word-spacing-btn"
@@ -1873,7 +1903,7 @@ export function SpecimenPanel() {
               <div className="fm-tooltip-bubble" role="tooltip">
                 Sets the gap typed between words (the keyboard space bar) from the average width of the letters you've
                 already drawn — a bold/wide font gets a wider space, a condensed one gets a tighter space, instead of
-                one flat default.
+                one flat default. Separate from Auto Spacing above, which only touches per-letter margins.
                 {kerningMode === "family" && (
                   <>
                     {" "}In Family Test this only sets the style selected in Kerning Context —{" "}
