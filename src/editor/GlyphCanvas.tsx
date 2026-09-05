@@ -14,7 +14,7 @@ import { hitTestSegments } from "./segmentHitTest";
 import { findOverlappingObjectIds } from "./overlapDetect";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { GhostGlyph } from "./GhostGlyph";
-import { CanvasRuler, RulerGuideLines } from "./CanvasRuler";
+import { CanvasRuler, RulerGuideLines, RULER_SIZE } from "./CanvasRuler";
 import { isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { GlyphOutline, NodeType, Point, VectorObject } from "@/types/geometry";
 import type { FontStyle, Glyph, GlyphMap } from "@/types/glyph";
@@ -144,16 +144,25 @@ export function GlyphCanvas() {
   const pencilTool = usePencilTool(hitScale);
   const selectTool = useSelectTool(hitScale);
 
-  // Track container size for the viewBox math.
+  // Track the SVG canvas size for viewBox math — must use the SVG element
+  // directly so ruler inset (RULER_SIZE px) is already excluded.
+  // We run a second observer below for canvasRect (ruler coord math), so this
+  // one only needs w/h.
   useLayoutEffect(() => {
+    // svgRef isn't set yet on first render; use a small timeout to let React
+    // commit then observe. Alternatively, fall back to frameRef-based size
+    // and subtract RULER_SIZE when ruler is on — simpler and synchronous.
     const el = frameRef.current;
     if (!el) return;
-    const update = () => setViewSize({ w: el.clientWidth, h: el.clientHeight });
+    const update = () => {
+      const rulerOffset = showRuler ? RULER_SIZE : 0;
+      setViewSize({ w: el.clientWidth - rulerOffset, h: el.clientHeight - rulerOffset });
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [showRuler]);
 
   const getFontPoint = useCallback(
     (e: { clientX: number; clientY: number }): Point | null =>
@@ -163,7 +172,8 @@ export function GlyphCanvas() {
 
   const applyZoomAt = useCallback(
     (newZoom: number, clientX: number, clientY: number) => {
-      const rect = frameRef.current?.getBoundingClientRect();
+      // Use svgRef rect (not frameRef) so the ruler inset is already excluded.
+      const rect = svgRef.current?.getBoundingClientRect() ?? frameRef.current?.getBoundingClientRect();
       if (!rect || !rect.width || !rect.height) return setZoom(newZoom);
       const fx = (clientX - rect.left) / rect.width;
       const fy = (clientY - rect.top) / rect.height;
@@ -703,20 +713,32 @@ export function GlyphCanvas() {
     : tool === "select" && selectTool.hoverHandle ? handleCursor(selectTool.hoverHandle)
     : "cursor-select";
 
+  // Track the SVG canvas bounding rect for ruler coordinate math.
+  const [canvasRect, setCanvasRect] = useState<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const update = () => setCanvasRect(el.getBoundingClientRect());
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Grid and metrics belong only to the editable center canvas. Ghost lanes
   // intentionally contain glyph shapes only.
   const gridMinX = 0;
   const gridMaxX = upm;
 
   return (
-    <div className={`fm-canvas-frame${showRuler ? " fm-canvas-frame--ruler" : ""}`} ref={frameRef}>
+    <div className="fm-canvas-frame" ref={frameRef}>
       {showRuler && (
         <CanvasRuler
           scale={sc}
           vbX={vbX} vbY={vbY}
           vbW={vbW} vbH={vbH}
           ascender={ascender}
-          svgRef={svgRef}
+          canvasRect={canvasRect}
         />
       )}
       <svg
@@ -729,7 +751,10 @@ export function GlyphCanvas() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onDoubleClick={onDoubleClick}
-        style={{ touchAction: "none" }}
+        style={{
+          touchAction: "none",
+          ...(showRuler ? { position: "absolute", top: RULER_SIZE, left: RULER_SIZE, width: `calc(100% - ${RULER_SIZE}px)`, height: `calc(100% - ${RULER_SIZE}px)` } : {}),
+        }}
       >
         <style>{`
           .cursor-pen { cursor: crosshair; } .cursor-node { cursor: default; }

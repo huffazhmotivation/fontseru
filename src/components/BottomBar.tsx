@@ -1,4 +1,4 @@
-import { Grid3x3, Ruler, Ghost, Magnet, Wand2, Maximize2, RotateCcw, Minus, Plus, Eye } from "lucide-react";
+import { Grid3x3, Ruler, Ghost, Magnet, Wand2, Maximize2, RotateCcw, Minus, Plus, Eye, AlignCenter } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { NumericInput } from "./NumericInput";
 
@@ -49,7 +49,7 @@ export function BottomBar() {
         </div>
       )}
       <button className={showRuler ? "on" : ""} onClick={toggleRuler} data-testid="toggle-ruler" title="Tampilkan/sembunyikan ruler. Drag dari ruler untuk bikin guide garis putus-putus."><Ruler size={13} /> Ruler</button>
-      <button className={showGuides ? "on" : ""} onClick={toggleGuides} data-testid="toggle-guides"><Ruler size={13} /> Guides</button>
+      <button className={showGuides ? "on" : ""} onClick={toggleGuides} data-testid="toggle-guides"><AlignCenter size={13} /> Guides</button>
       <button className={ghost.enabled ? "on" : ""} onClick={() => setGhost({ enabled: !ghost.enabled })} data-testid="toggle-ghost"><Ghost size={13} /> Ghost</button>
       <button className={snapEnabled ? "on" : ""} onClick={toggleSnap} title="Snap objects to guide lines" data-testid="toggle-snap"><Magnet size={13} /> Snap</button>
       {/* Same "Auto" toggle as Glyph Metrics' Spacing mode, mirrored here so

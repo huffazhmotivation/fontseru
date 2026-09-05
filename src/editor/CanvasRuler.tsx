@@ -1,113 +1,63 @@
 /**
- * CanvasRuler – top (horizontal) and left (vertical) ruler strips for GlyphCanvas.
+ * CanvasRuler – top and left ruler strips overlaid on GlyphCanvas.
  *
- * Coordinate mapping mirrors GlyphCanvas:
- *   SVG viewBox X = font-unit X  (Y-down, but ruler shows Y-up font values)
- *   SVG viewBox Y = ascender - fontY  (Y-down SVG, Y-up font)
+ * Rendered as absolutely-positioned <svg> strips inside fm-canvas-frame.
+ * The main canvas SVG has CSS margin-top/left = RULER_SIZE so ruler strips
+ * sit flush at the frame edge without any gap.
  *
- * Dragging from the top ruler creates a horizontal guide line (constant Y).
- * Dragging from the left ruler creates a vertical guide line (constant X).
- *
- * Guide lines are dashed and use a high-contrast cyan accent so they stand
- * out from the metric guides (purple/blue/green/orange) already on canvas.
- * The color is defined via the CSS variable --ruler-guide so both themes
- * get the right value automatically.
+ * Drag from top ruler  → horizontal guide line (dashed cyan)
+ * Drag from left ruler → vertical guide line (dashed cyan)
+ * Drag guide back into ruler strip → delete it
+ * Double-click guide line on canvas → delete it
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore, type RulerGuide } from "@/glyph/store";
 import { shortId } from "@/utils/id";
 
-const RULER_SIZE = 18; // px – width of left ruler / height of top ruler
+export const RULER_SIZE = 18; // px
 
-interface Props {
-  /** Current scale: screen px per font unit (sc from GlyphCanvas). */
-  scale: number;
-  /** Viewbox origin in font-unit space (vbX, vbY from GlyphCanvas). */
-  vbX: number;
-  vbY: number;
-  /** Viewbox size in font-unit space. */
-  vbW: number;
-  vbH: number;
-  /** Font ascender (Y-up). Used to convert SVG-Y ↔ font-Y. */
-  ascender: number;
-  /** Ref to the SVG element — used to read getBoundingClientRect. */
-  svgRef: React.RefObject<SVGSVGElement | null>;
-}
-
-// ─── tick helpers ───────────────────────────────────────────────────────────
-
-/** Choose a readable tick interval given the current scale (px/unit). */
+// ─── tick interval ───────────────────────────────────────────────────────────
 function tickInterval(scale: number): number {
-  const targets = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
-  const minPx = 28; // minimum px between ticks for readability
-  for (const t of targets) if (t * scale >= minPx) return t;
+  const candidates = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+  for (const t of candidates) if (t * scale >= 30) return t;
   return 1000;
 }
-
 function majorEvery(interval: number): number {
   if (interval <= 2) return 10;
   if (interval <= 10) return 5;
   return 2;
 }
 
-// ─── component ──────────────────────────────────────────────────────────────
+// ─── props ───────────────────────────────────────────────────────────────────
+interface Props {
+  scale: number;      // screen px per font-unit
+  vbX: number;        // viewBox origin X in font-unit space
+  vbY: number;        // viewBox origin Y in font-unit space (SVG Y-down)
+  vbW: number;        // viewBox width  in font-unit space
+  vbH: number;        // viewBox height in font-unit space
+  ascender: number;   // font ascender (Y-up)
+  /** Bounding rect of the SVG canvas element (not the frame). */
+  canvasRect: DOMRect | null;
+}
 
-export function CanvasRuler({ scale, vbX, vbY, vbW, vbH, ascender, svgRef }: Props) {
-  const addGuide = useAppStore((s) => s.addRulerGuide);
+// ─── CanvasRuler ─────────────────────────────────────────────────────────────
+export function CanvasRuler({ scale, vbX, vbY, vbW, vbH, ascender, canvasRect }: Props) {
+  const addGuide    = useAppStore((s) => s.addRulerGuide);
   const updateGuide = useAppStore((s) => s.updateRulerGuide);
   const removeGuide = useAppStore((s) => s.removeRulerGuide);
   const rulerGuides = useAppStore((s) => s.rulerGuides);
 
-  // Live drag state for a guide being created/moved from the ruler
-  const [dragging, setDragging] = useState<{
-    id: string;
-    axis: "h" | "v";
-    // screen px positions of the canvas SVG rect, cached on drag start
-    rect: DOMRect;
-  } | null>(null);
-
-  const draggingRef = useRef(dragging);
+  // ── drag state ─────────────────────────────────────────────────────────────
+  type DragState = { id: string; axis: "h" | "v"; rect: DOMRect } | null;
+  const [dragging, setDragging] = useState<DragState>(null);
+  const draggingRef = useRef<DragState>(null);
   draggingRef.current = dragging;
 
-  // ── start drag from top ruler → horizontal guide ──────────────────────────
-  const onTopRulerPointerDown = useCallback(
-    (e: React.PointerEvent<SVGSVGElement>) => {
-      e.preventDefault();
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const id = shortId("rg");
-      const svgY = vbY + (e.clientY - rect.top) / scale;
-      const fontY = ascender - svgY;
-      addGuide({ id, axis: "h", position: fontY });
-      (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId);
-      const d = { id, axis: "h" as const, rect };
-      setDragging(d);
-      draggingRef.current = d;
-    },
-    [addGuide, ascender, scale, svgRef, vbY]
-  );
-
-  // ── start drag from left ruler → vertical guide ───────────────────────────
-  const onLeftRulerPointerDown = useCallback(
-    (e: React.PointerEvent<SVGSVGElement>) => {
-      e.preventDefault();
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const id = shortId("rg");
-      const fontX = vbX + (e.clientX - rect.left) / scale;
-      addGuide({ id, axis: "v", position: fontX });
-      (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId);
-      const d = { id, axis: "v" as const, rect };
-      setDragging(d);
-      draggingRef.current = d;
-    },
-    [addGuide, scale, svgRef, vbX]
-  );
-
-  // ── move (common for both axes) ───────────────────────────────────────────
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent<SVGSVGElement>) => {
+  // Global pointermove/up during drag (ruler pointer capture is per-element)
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: PointerEvent) => {
       const d = draggingRef.current;
       if (!d) return;
       if (d.axis === "h") {
@@ -116,114 +66,157 @@ export function CanvasRuler({ scale, vbX, vbY, vbW, vbH, ascender, svgRef }: Pro
       } else {
         updateGuide(d.id, vbX + (e.clientX - d.rect.left) / scale);
       }
-    },
-    [ascender, scale, updateGuide, vbX, vbY]
-  );
-
-  // ── release ───────────────────────────────────────────────────────────────
-  const onPointerUp = useCallback(
-    (e: React.PointerEvent<SVGSVGElement>) => {
+    };
+    const onUp = (e: PointerEvent) => {
       const d = draggingRef.current;
       if (!d) return;
       setDragging(null);
       draggingRef.current = null;
-      // If the guide is dragged back into the ruler strip → delete it
+      // Dragged back into the ruler strip → delete
       if (d.axis === "h" && e.clientY < d.rect.top + RULER_SIZE) {
         removeGuide(d.id);
       } else if (d.axis === "v" && e.clientX < d.rect.left + RULER_SIZE) {
         removeGuide(d.id);
       }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [dragging, ascender, scale, updateGuide, removeGuide, vbX, vbY]);
+
+  // ── drag start: top ruler (horizontal guide) ───────────────────────────────
+  const onTopDown = useCallback(
+    (e: React.PointerEvent<SVGSVGElement>) => {
+      if (!canvasRect) return;
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      const id = shortId("rg");
+      const svgY = vbY + (e.clientY - canvasRect.top) / scale;
+      addGuide({ id, axis: "h", position: ascender - svgY });
+      const d: DragState = { id, axis: "h", rect: canvasRect };
+      setDragging(d);
+      draggingRef.current = d;
     },
-    [removeGuide]
+    [addGuide, ascender, canvasRect, scale, vbY]
   );
 
-  const interval = tickInterval(scale);
-  const majorN = majorEvery(interval);
+  // ── drag start: left ruler (vertical guide) ────────────────────────────────
+  const onLeftDown = useCallback(
+    (e: React.PointerEvent<SVGSVGElement>) => {
+      if (!canvasRect) return;
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      const id = shortId("rg");
+      addGuide({ id, axis: "v", position: vbX + (e.clientX - canvasRect.left) / scale });
+      const d: DragState = { id, axis: "v", rect: canvasRect };
+      setDragging(d);
+      draggingRef.current = d;
+    },
+    [addGuide, canvasRect, scale, vbX]
+  );
 
-  // ── top ruler ticks ───────────────────────────────────────────────────────
-  const firstTickX = Math.ceil(vbX / interval) * interval;
+  // ── ticks ─────────────────────────────────────────────────────────────────
+  const interval = tickInterval(scale);
+  const majorN   = majorEvery(interval);
+  const svgW = canvasRect?.width  ?? 0;
+  const svgH = canvasRect?.height ?? 0;
+
+  // Top ruler ticks (X axis, font-unit)
+  const firstX = Math.ceil(vbX / interval) * interval;
   const topTicks: { x: number; major: boolean }[] = [];
-  for (let x = firstTickX; x < vbX + vbW; x += interval) {
+  for (let x = firstX; x < vbX + vbW; x += interval) {
+    const px = (x - vbX) * scale;
+    if (px < 0 || px > svgW) continue;
     topTicks.push({ x, major: Math.round(x / interval) % majorN === 0 });
   }
 
-  // ── left ruler ticks ──────────────────────────────────────────────────────
-  const firstTickY = Math.floor((vbY + vbH) / interval) * interval; // font Y is Y-up
-  const leftTicks: { fontY: number; svgY: number; major: boolean }[] = [];
-  for (let fontY = firstTickY; fontY >= vbY - vbH; fontY -= interval) {
+  // Left ruler ticks (Y axis, font-unit Y-up)
+  const firstFontY = Math.floor((ascender - vbY) / interval) * interval;
+  const leftTicks: { fontY: number; py: number; major: boolean }[] = [];
+  for (let fontY = firstFontY; ; fontY -= interval) {
     const svgY = ascender - fontY;
-    if (svgY < vbY || svgY > vbY + vbH) continue;
-    leftTicks.push({ fontY, svgY, major: Math.round(fontY / interval) % majorN === 0 });
+    const py = (svgY - vbY) * scale;
+    if (py > svgH + 40) break;
+    if (py >= -40) leftTicks.push({ fontY, py, major: Math.round(fontY / interval) % majorN === 0 });
+    if (leftTicks.length > 200) break;
   }
-
-  // Layout: rulers live OUTSIDE the SVG canvas, as two thin HTML/SVG strips
-  // positioned with CSS. We render them as SVG elements for crisp sub-pixel
-  // rendering and easy coordinate math.
 
   return (
     <>
+      {/* ── corner ── */}
+      <div
+        className="fm-ruler-corner"
+        style={{ position: "absolute", top: 0, left: 0, width: RULER_SIZE, height: RULER_SIZE, zIndex: 10 }}
+      />
+
       {/* ── top ruler ── */}
       <svg
         className="fm-ruler fm-ruler-top"
-        style={{ height: RULER_SIZE, cursor: "s-resize" }}
-        onPointerDown={onTopRulerPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: RULER_SIZE,
+          width: `calc(100% - ${RULER_SIZE}px)`,
+          height: RULER_SIZE,
+          cursor: "s-resize",
+          zIndex: 9,
+          touchAction: "none",
+        }}
+        onPointerDown={onTopDown}
       >
         <rect width="100%" height="100%" className="fm-ruler-bg" />
+        <line x1={0} y1={RULER_SIZE - 1} x2={svgW} y2={RULER_SIZE - 1} className="fm-ruler-border" />
         {topTicks.map(({ x, major }) => {
-          // Convert font-X to pixel position within the ruler strip
           const px = (x - vbX) * scale;
-          const tickH = major ? 8 : 5;
+          const tickH = major ? 9 : 5;
           return (
             <g key={x}>
-              <line
-                x1={px} y1={RULER_SIZE - tickH} x2={px} y2={RULER_SIZE}
-                className={major ? "fm-ruler-tick-major" : "fm-ruler-tick"}
-              />
+              <line x1={px} y1={RULER_SIZE - tickH} x2={px} y2={RULER_SIZE} className={major ? "fm-ruler-tick-major" : "fm-ruler-tick"} />
               {major && (
-                <text x={px + 3} y={RULER_SIZE - 10} className="fm-ruler-label">
-                  {Math.round(x)}
-                </text>
+                <text x={px + 3} y={RULER_SIZE - 9} className="fm-ruler-label">{Math.round(x)}</text>
               )}
             </g>
           );
         })}
-        {/* Guide position markers on top ruler */}
+        {/* vertical guide markers */}
         {rulerGuides.filter((g) => g.axis === "v").map((g) => {
           const px = (g.position - vbX) * scale;
-          return (
-            <line key={g.id} x1={px} y1={0} x2={px} y2={RULER_SIZE}
-              className="fm-ruler-guide-marker" />
-          );
+          if (px < 0 || px > svgW) return null;
+          return <line key={g.id} x1={px} y1={0} x2={px} y2={RULER_SIZE} className="fm-ruler-guide-marker" />;
         })}
       </svg>
 
       {/* ── left ruler ── */}
       <svg
         className="fm-ruler fm-ruler-left"
-        style={{ width: RULER_SIZE, cursor: "e-resize" }}
-        onPointerDown={onLeftRulerPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        style={{
+          position: "absolute",
+          top: RULER_SIZE,
+          left: 0,
+          width: RULER_SIZE,
+          height: `calc(100% - ${RULER_SIZE}px)`,
+          cursor: "e-resize",
+          zIndex: 9,
+          touchAction: "none",
+        }}
+        onPointerDown={onLeftDown}
       >
         <rect width="100%" height="100%" className="fm-ruler-bg" />
-        {leftTicks.map(({ fontY, svgY, major }) => {
-          // Convert SVG-Y (font-unit, Y-down) to pixel within ruler
-          const py = (svgY - vbY) * scale;
-          const tickW = major ? 8 : 5;
+        <line x1={RULER_SIZE - 1} y1={0} x2={RULER_SIZE - 1} y2={svgH} className="fm-ruler-border" />
+        {leftTicks.map(({ fontY, py, major }) => {
+          const tickW = major ? 9 : 5;
           return (
             <g key={fontY}>
-              <line
-                x1={RULER_SIZE - tickW} y1={py} x2={RULER_SIZE} y2={py}
-                className={major ? "fm-ruler-tick-major" : "fm-ruler-tick"}
-              />
+              <line x1={RULER_SIZE - tickW} y1={py} x2={RULER_SIZE} y2={py} className={major ? "fm-ruler-tick-major" : "fm-ruler-tick"} />
               {major && (
                 <text
-                  x={RULER_SIZE - 10} y={py - 2}
-                  transform={`rotate(-90, ${RULER_SIZE - 10}, ${py - 2})`}
+                  x={RULER_SIZE - 2}
+                  y={py - 2}
+                  transform={`rotate(-90, ${RULER_SIZE - 2}, ${py - 2})`}
+                  textAnchor="end"
                   className="fm-ruler-label"
                 >
                   {Math.round(fontY)}
@@ -232,29 +225,21 @@ export function CanvasRuler({ scale, vbX, vbY, vbW, vbH, ascender, svgRef }: Pro
             </g>
           );
         })}
-        {/* Guide position markers on left ruler */}
+        {/* horizontal guide markers */}
         {rulerGuides.filter((g) => g.axis === "h").map((g) => {
           const py = (ascender - g.position - vbY) * scale;
-          return (
-            <line key={g.id} x1={0} y1={py} x2={RULER_SIZE} y2={py}
-              className="fm-ruler-guide-marker" />
-          );
+          if (py < 0 || py > svgH) return null;
+          return <line key={g.id} x1={0} y1={py} x2={RULER_SIZE} y2={py} className="fm-ruler-guide-marker" />;
         })}
       </svg>
-
-      {/* ── corner square where rulers meet ── */}
-      <div className="fm-ruler-corner" style={{ width: RULER_SIZE, height: RULER_SIZE }} />
     </>
   );
 }
 
-/** Overlay that renders ruler guide lines on the canvas SVG (called inside SVG). */
+// ─── RulerGuideLines ─────────────────────────────────────────────────────────
+/** Rendered inside the canvas SVG — draws the dashed guide lines. */
 export function RulerGuideLines({
-  rulerGuides,
-  sc,
-  vbX, vbY, vbW, vbH,
-  ascender,
-  onRemove,
+  rulerGuides, sc, vbX, vbY, vbW, vbH, ascender, onRemove,
 }: {
   rulerGuides: RulerGuide[];
   sc: number;
@@ -267,18 +252,14 @@ export function RulerGuideLines({
       {rulerGuides.map((g) => {
         if (g.axis === "h") {
           const y = ascender - g.position;
-          if (y < vbY || y > vbY + vbH) return null;
+          if (y < vbY - 50 / sc || y > vbY + vbH + 50 / sc) return null;
           return (
             <g key={g.id}>
+              <line x1={vbX} y1={y} x2={vbX + vbW} y2={y} className="ruler-guide-line" pointerEvents="none" />
+              {/* Wide invisible hit area for double-click delete */}
               <line
                 x1={vbX} y1={y} x2={vbX + vbW} y2={y}
-                className="ruler-guide-line"
-                pointerEvents="none"
-              />
-              {/* invisible wider hit line for double-click to delete */}
-              <line
-                x1={vbX} y1={y} x2={vbX + vbW} y2={y}
-                stroke="transparent" strokeWidth={10 / sc}
+                stroke="transparent" strokeWidth={12 / sc}
                 style={{ cursor: "pointer" }}
                 onDoubleClick={() => onRemove(g.id)}
               />
@@ -286,17 +267,13 @@ export function RulerGuideLines({
           );
         } else {
           const x = g.position;
-          if (x < vbX || x > vbX + vbW) return null;
+          if (x < vbX - 50 / sc || x > vbX + vbW + 50 / sc) return null;
           return (
             <g key={g.id}>
+              <line x1={x} y1={vbY} x2={x} y2={vbY + vbH} className="ruler-guide-line" pointerEvents="none" />
               <line
                 x1={x} y1={vbY} x2={x} y2={vbY + vbH}
-                className="ruler-guide-line"
-                pointerEvents="none"
-              />
-              <line
-                x1={x} y1={vbY} x2={x} y2={vbY + vbH}
-                stroke="transparent" strokeWidth={10 / sc}
+                stroke="transparent" strokeWidth={12 / sc}
                 style={{ cursor: "pointer" }}
                 onDoubleClick={() => onRemove(g.id)}
               />
