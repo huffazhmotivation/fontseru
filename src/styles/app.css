@@ -1924,6 +1924,115 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-floating-toolbar { max-width: calc(100% - 20px); }
 }
 
+/* ------------------------------------------------------------------
+   MOBILE / TABLET-PORTRAIT DRAWERS (iPad portrait & phones, up to 900px)
+
+   Below 900px the two side panels above still take a combined ~370px of
+   *permanent* layout width (165px glyph list + 205px inspector), which on
+   an iPad in portrait (roughly 768-820px wide) or any phone (roughly
+   375-430px wide) left the canvas and its floating controls squeezed into
+   too little space - the parts that looked "cut off". Rather than
+   shrinking the panels further (they're already close to unusable at
+   165/205px), they become on-demand drawers here, opened with the two new
+   buttons in the TopBar (glyph list / inspector) and closed by tapping the
+   scrim or the same button again. This only changes layout at 900px and
+   below - everything above stays exactly as defined earlier in this file.
+   Sketch Mode is excluded everywhere below because it already has its own
+   equivalent drawer handling for the right panel. */
+.fm-mobile-nav-toggle, .fm-mobile-panel-toggle { display: none; }
+.fm-mobile-backdrop { display: none; }
+
+@media (max-width: 900px) {
+  .fm-mobile-nav-toggle, .fm-mobile-panel-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .fm-mobile-nav-toggle:hover, .fm-mobile-panel-toggle:hover { color: var(--text); background: var(--panel); }
+  .fm-mobile-panel-toggle { margin-left: auto; }
+
+  .fm-root:not([data-sketch-mode="true"]) .fm-body { position: relative; overflow: hidden; }
+
+  .fm-root:not([data-sketch-mode="true"]) .fm-glyphnav {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(82vw, 280px);
+    min-width: 0;
+    z-index: 30;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: 14px 0 34px var(--shadow);
+  }
+  .fm-root[data-mobile-nav-open="true"]:not([data-sketch-mode="true"]) .fm-glyphnav {
+    transform: translateX(0);
+  }
+
+  .fm-root:not([data-sketch-mode="true"]) .fm-rightpanel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(82vw, 300px);
+    min-width: 0;
+    z-index: 30;
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+    box-shadow: -14px 0 34px var(--shadow);
+  }
+  .fm-root[data-mobile-panel-open="true"]:not([data-sketch-mode="true"]) .fm-rightpanel {
+    transform: translateX(0);
+  }
+
+  /* Tap-outside scrim, only shown while a drawer is open. */
+  .fm-root[data-mobile-nav-open="true"] .fm-mobile-backdrop,
+  .fm-root[data-mobile-panel-open="true"] .fm-mobile-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 29;
+    background: rgba(0, 0, 0, 0.38);
+  }
+
+  /* Canvas now gets the full body width since the panels above are no
+     longer part of the flex flow (position: absolute). */
+  .fm-canvas-wrap { min-width: 0; width: 100%; }
+}
+
+/* Phones specifically (up to 560px): the top/bottom bars still have more
+   controls than fit in one row even icon-only, so let each scroll
+   horizontally within its own strip instead of clipping - same safety net
+   already used for the bottom bar at 900px, extended to the top bar. */
+@media (max-width: 560px) {
+  .fm-topbar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .fm-topbar > * { flex: 0 0 auto; }
+  .fm-topbar .fm-fontname { min-width: 90px; width: 30vw; }
+  .fm-align-group, .fm-align-divider, .fm-topbtn-group { flex: 0 0 auto; }
+}
+
+/* iPhone notch / home-indicator safe areas: without this, the top and
+   bottom bars can render partly under the rounded corners / gesture bar
+   in Safari when the site is added to the Home Screen or viewed
+   full-bleed. Pure addition - falls back to the existing padding on any
+   browser that doesn't support env(). */
+.fm-topbar { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); padding-top: env(safe-area-inset-top); }
+.fm-bottombar { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); padding-bottom: env(safe-area-inset-bottom); }
+
 /* ================================================================
    Font Test Lab / Kerning Editor overlay (Phase 6) â€” additive only,
    does not modify any existing selector above.

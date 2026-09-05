@@ -193,6 +193,12 @@ interface AppState {
    * the canvas. Ignored outside Sketch Mode (the right panel is always
    * visible there, unaffected by this flag). */
   sketchRightPanelOpen: boolean;
+  /** Narrow-viewport (tablet portrait / phone) only: the glyph list and
+   * right inspector become on-demand drawers instead of permanently
+   * reserving layout width, exactly like Sketch Mode's right drawer above.
+   * Ignored at desktop widths, where both panels are always visible. */
+  mobileNavOpen: boolean;
+  mobilePanelOpen: boolean;
   tool: ToolId;
   penMode: PenMode;
   /** Shape tool only: which primitive the next click-drag draws. Chosen
@@ -332,6 +338,9 @@ interface AppState {
   toggleTheme: () => void;
   toggleSketchMode: () => void;
   toggleSketchRightPanel: () => void;
+  toggleMobileNav: () => void;
+  toggleMobilePanel: () => void;
+  closeMobilePanels: () => void;
   setFontName: (name: string) => void;
   setFontInfo: (patch: Partial<FontInfo>) => void;
   setProjectFileName: (name: string) => void;
@@ -834,6 +843,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     projectFileName: "Untitled Font.fs",
     sketchMode: false,
     sketchRightPanelOpen: false,
+    mobileNavOpen: false,
+    mobilePanelOpen: false,
     tool: "select",
     penMode: "shape",
     shapeKind: "rectangle",
@@ -927,6 +938,11 @@ export const useAppStore = create<AppState>()((set, get) => {
     // re-entry into Sketch Mode starting from the same clean, canvas-first
     // state rather than remembering a stale open drawer.
     toggleSketchRightPanel: () => set((s) => ({ sketchRightPanelOpen: !s.sketchRightPanelOpen })),
+    // Opening one mobile drawer closes the other so they never overlap on
+    // narrow screens; toggling the same one again just closes it.
+    toggleMobileNav: () => set((s) => ({ mobileNavOpen: !s.mobileNavOpen, mobilePanelOpen: false })),
+    toggleMobilePanel: () => set((s) => ({ mobilePanelOpen: !s.mobilePanelOpen, mobileNavOpen: false })),
+    closeMobilePanels: () => set({ mobileNavOpen: false, mobilePanelOpen: false }),
     setFontName: (name) => set((s) => ({
       fontName: name,
       fontInfo: s.fontInfo.familyName === s.fontName ? { ...s.fontInfo, familyName: name, fullName: `${name} ${s.fontInfo.styleName}` } : s.fontInfo,

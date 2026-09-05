@@ -3,7 +3,7 @@ import {
   Download, FlaskConical, Layers, Maximize, Minimize, Redo2, Undo2, Wand2,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
-  Copy, Trash2, Film,
+  Copy, Trash2, Film, Menu, PanelRight,
 } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
@@ -57,6 +57,8 @@ export function TopBar() {
   const copySelection = useAppStore((s) => s.copySelection);
   const pasteClipboard = useAppStore((s) => s.pasteClipboard);
   const deleteSelectedObjects = useAppStore((s) => s.deleteSelectedObjects);
+  const toggleMobileNav = useAppStore((s) => s.toggleMobileNav);
+  const toggleMobilePanel = useAppStore((s) => s.toggleMobilePanel);
   const activeGlyphObjects = useAppStore((s) => s.glyphs[s.activeChar]?.outline.objects);
   const openTimelapse = useTimelapseUiStore((s) => s.openPanel);
 
@@ -80,6 +82,20 @@ export function TopBar() {
 
   return (
     <div className="fm-topbar">
+      {/* Only visible below the mobile breakpoint (see app.css): opens the
+          glyph list as a drawer over the canvas instead of it permanently
+          eating layout width, which is what was clipping the UI on
+          iPad/phone widths. */}
+      <button
+        type="button"
+        className="fm-mobile-nav-toggle"
+        onClick={toggleMobileNav}
+        title="Glyph list"
+        aria-label="Toggle glyph list"
+        data-testid="mobile-nav-toggle"
+      >
+        <Menu size={18} />
+      </button>
       <FontSeruLogo />
       <div className="fm-divider" />
       <FileMenu onExportButtonReady={handleExportReady} />
@@ -241,6 +257,18 @@ export function TopBar() {
       </button>
       <button className="fm-theme-toggle fm-theme-toggle-bare" onClick={toggleTheme} title="Toggle theme" data-testid="theme-toggle">
         {theme === "light" ? <MoonIcon size={16} /> : <SunIcon size={16} />}
+      </button>
+      {/* Mobile-only counterpart to the nav toggle above, opening the right
+          inspector drawer (glyph metrics/tools/brush settings, etc). */}
+      <button
+        type="button"
+        className="fm-mobile-panel-toggle"
+        onClick={toggleMobilePanel}
+        title="Inspector panel"
+        aria-label="Toggle inspector panel"
+        data-testid="mobile-panel-toggle"
+      >
+        <PanelRight size={18} />
       </button>
       <AuthWidget />
     </div>

@@ -27,6 +27,7 @@ export function GlyphNav() {
   const generateFromRegular = useAppStore((s) => s.generateFromRegular);
   const openProModal = useAppStore((s) => s.openProModal);
   const addMultilingualGlyphs = useAppStore((s) => s.addMultilingualGlyphs);
+  const closeMobilePanels = useAppStore((s) => s.closeMobilePanels);
   const { isPro } = useAuth();
   const [multilingualStatus, setMultilingualStatus] = useState<string | null>(null);
   const [addingFamily, setAddingFamily] = useState(false);
@@ -256,7 +257,7 @@ export function GlyphNav() {
                   <button
                     key={ch}
                     className={`fm-tile ${activeChar === ch ? "active" : ""} ${done ? "done" : ""}`}
-                    onClick={() => setActiveChar(ch)}
+                    onClick={() => { setActiveChar(ch); closeMobilePanels(); }}
                     title={`${ch === " " ? "Space" : ch} — ${unicodeHex(info.unicode)}`}
                     data-testid={`glyph-tile-${ch}`}
                   >

@@ -54,6 +54,9 @@ export default function App() {
   const theme = useAppStore((s) => s.theme);
   const sketchMode = useAppStore((s) => s.sketchMode);
   const sketchRightPanelOpen = useAppStore((s) => s.sketchRightPanelOpen);
+  const mobileNavOpen = useAppStore((s) => s.mobileNavOpen);
+  const mobilePanelOpen = useAppStore((s) => s.mobilePanelOpen);
+  const closeMobilePanels = useAppStore((s) => s.closeMobilePanels);
   const testLabOpen = useAppStore((s) => s.testLabOpen);
   const familyOpen = useAppStore((s) => s.familyOpen);
   const traceOpen = useAppStore((s) => s.traceOpen);
@@ -160,6 +163,8 @@ export default function App() {
       data-browser={isChromiumBrowser ? "chromium" : "other"}
       data-sketch-mode={sketchMode ? "true" : "false"}
       data-sketch-panel-open={sketchRightPanelOpen ? "true" : "false"}
+      data-mobile-nav-open={mobileNavOpen ? "true" : "false"}
+      data-mobile-panel-open={mobilePanelOpen ? "true" : "false"}
     >
       <TopBar />
       <div className="fm-body">
@@ -178,6 +183,13 @@ export default function App() {
           <BottomBar />
         </div>
         <RightPanel />
+        {/* Tap-outside-to-close scrim for the mobile drawer versions of
+            GlyphNav/RightPanel (see .fm-mobile-backdrop in app.css). Only
+            ever visible below the mobile breakpoint when a drawer is open;
+            harmless and invisible otherwise. */}
+        {(mobileNavOpen || mobilePanelOpen) && (
+          <div className="fm-mobile-backdrop" onClick={closeMobilePanels} aria-hidden="true" />
+        )}
       </div>
       <Suspense fallback={null}>
         {testLabEverOpened.current && <TestLabOverlay />}
