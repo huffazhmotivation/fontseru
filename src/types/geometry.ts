@@ -24,6 +24,14 @@ export interface PathNode {
   handleIn: Point | null;
   handleOut: Point | null;
   type: NodeType;
+  /** Set on both nodes of a corner-round fillet pair (see nodeOps.roundCorner)
+   *  so the Node tool's corner-round handle can always find its way back to
+   *  a real rounded corner, regardless of what other tools have since done
+   *  to that node's handles. Never set by anything except roundCorner —
+   *  absence means "not a tracked fillet", which findFilletPair then falls
+   *  back to inferring from handle shape alone (for projects saved before
+   *  this field existed). */
+  filletTag?: string;
 }
 
 export interface Contour {

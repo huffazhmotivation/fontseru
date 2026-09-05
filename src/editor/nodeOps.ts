@@ -516,8 +516,18 @@ export function roundCorner(
   const c1 = { x: a.x + (corner.point.x - a.x) * CORNER_KAPPA, y: a.y + (corner.point.y - a.y) * CORNER_KAPPA };
   const c2 = { x: b.x + (corner.point.x - b.x) * CORNER_KAPPA, y: b.y + (corner.point.y - b.y) * CORNER_KAPPA };
 
-  const nodeA: PathNode = { id: shortId("node"), point: a, handleIn: null, handleOut: c1, type: "smooth" };
-  const nodeB: PathNode = { id: shortId("node"), point: b, handleIn: c2, handleOut: null, type: "smooth" };
+  // Tag both halves of the fillet with a shared id so the corner-round
+  // handle can always be found and re-grabbed for this exact corner later
+  // — see findFilletPair, which trusts this tag over inferring a fillet
+  // from handle shape alone. Without it, an ordinary smooth node that
+  // happens to carry only one handle (extremely common on hand-drawn
+  // curves — e.g. most of a Pen-drawn stem) could be misread as "half of a
+  // rounded corner", reconstructing a bogus, often far-off corner point and
+  // producing a handle icon that renders somewhere nonsensical and doesn't
+  // drag predictably.
+  const tag = shortId("fillet");
+  const nodeA: PathNode = { id: shortId("node"), point: a, handleIn: null, handleOut: c1, type: "smooth", filletTag: tag };
+  const nodeB: PathNode = { id: shortId("node"), point: b, handleIn: c2, handleOut: null, type: "smooth", filletTag: tag };
 
   contour.nodes.splice(idx, 1, nodeA, nodeB);
   return working;
@@ -549,6 +559,21 @@ export function isFilletEnd(n: PathNode): boolean {
   return !!n.handleIn && !n.handleOut;
 }
 
+/** Rejects a reconstructed corner that's implausibly far from the fillet
+ *  pair that supposedly produced it. A genuine `roundCorner` fillet always
+ *  puts the corner within a small multiple of the pair's own edge lengths;
+ *  a much larger distance means the two "edges" are nearly parallel and
+ *  the line-intersection math just found where two almost-parallel lines
+ *  eventually cross, far outside the shape — the classic false-positive
+ *  that made an ordinary smooth curve node (which also happens to carry
+ *  only one handle) look like half of a rounded corner. */
+function cornerReconstructionIsPlausible(pair: FilletPair, corner: Point): boolean {
+  const scaleRef = Math.max(length(subtract(pair.a, pair.prevOfA)), length(subtract(pair.b, pair.nextOfB)), 1);
+  const dA = length(subtract(corner, pair.a));
+  const dB = length(subtract(corner, pair.b));
+  return dA < scaleRef * 8 && dB < scaleRef * 8;
+}
+
 export function findFilletPair(outline: GlyphOutline, ref: { contourId: string; nodeId: string }): FilletPair | null {
   const contour = findContour(outline, ref.contourId);
   if (!contour) return null;
@@ -578,7 +603,7 @@ export function findFilletPair(outline: GlyphOutline, ref: { contourId: string; 
   const nextIdx = contour.closed ? (bIdx + 1) % n : bIdx + 1;
   if (prevIdx < 0 || prevIdx >= n || nextIdx < 0 || nextIdx >= n || prevIdx === bIdx || nextIdx === aIdx) return null;
 
-  return {
+  const pair: FilletPair = {
     contourId: ref.contourId,
     aId: a.id,
     bId: b.id,
@@ -587,6 +612,19 @@ export function findFilletPair(outline: GlyphOutline, ref: { contourId: string; 
     prevOfA: contour.nodes[prevIdx].point,
     nextOfB: contour.nodes[nextIdx].point,
   };
+
+  // A tag written by roundCorner is authoritative — this really is a
+  // tracked fillet, no matter how far apart the geometry looks (a very
+  // flat/extreme radius on a tiny glyph can legitimately look "far").
+  // Without a matching tag (older saved project, or an ordinary curve
+  // node that coincidentally fits the handle-shape pattern), fall back to
+  // the geometric plausibility check before trusting the match.
+  if (a.filletTag && a.filletTag === b.filletTag) return pair;
+
+  const corner = lineIntersection(pair.prevOfA, subtract(pair.a, pair.prevOfA), pair.nextOfB, subtract(pair.b, pair.nextOfB));
+  if (!corner || !cornerReconstructionIsPlausible(pair, corner)) return null;
+
+  return pair;
 }
 
 function lineIntersection(p1: Point, d1: Point, p2: Point, d2: Point): Point | null {
