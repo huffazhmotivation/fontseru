@@ -459,9 +459,13 @@ const CORNER_KAPPA = 0.5522847498;
  * Node tool, Cmd/Ctrl+drag a corner node: replaces a sharp corner with a
  * rounded one. `radius` (font units) is how far the fillet eats into each
  * adjoining edge; it's clamped so the two new points never cross the
- * corner's neighbors (or each other, on very short edges). Works on any
- * corner — the Shape tool's rectangles/polygons as well as a corner made
- * by hand with the Pen — as long as it has a node on each side.
+ * corner's neighbors (or each other, on very short edges). `minRadius`
+ * (also font units) is the "close enough to zero, keep it sharp" cutoff —
+ * pass it scaled to the current zoom (e.g. a couple of screen pixels'
+ * worth of font units) so a drag back near the vertex reliably restores a
+ * sharp corner instead of requiring literal sub-pixel precision. Works on
+ * any corner — the Shape tool's rectangles/polygons as well as a corner
+ * made by hand with the Pen — as long as it has a node on each side.
  *
  * The single corner node is replaced by two new on-curve nodes sitting
  * `radius` back along each edge, joined by a cubic curve whose handles
@@ -469,7 +473,12 @@ const CORNER_KAPPA = 0.5522847498;
  * construction used for the Shape tool's own circle/ellipse curves, so a
  * fully-rounded square corner reproduces a true quarter-circle.
  */
-export function roundCorner(outline: GlyphOutline, ref: { contourId: string; nodeId: string }, radius: number): GlyphOutline {
+export function roundCorner(
+  outline: GlyphOutline,
+  ref: { contourId: string; nodeId: string },
+  radius: number,
+  minRadius = 0.5
+): GlyphOutline {
   const working = cloneOutline(outline);
   const contour = findContour(working, ref.contourId);
   if (!contour) return working;
@@ -494,7 +503,11 @@ export function roundCorner(outline: GlyphOutline, ref: { contourId: string; nod
   // Leave room so a chain of rounded corners on a small shape never overlaps.
   const maxRadius = Math.min(distPrev, distNext) * 0.98;
   const r = Math.max(0, Math.min(radius, maxRadius));
-  if (r < 0.5) return working; // negligible drag — keep the corner sharp
+  // `minRadius` should be passed in screen-pixel-equivalent font units (see
+  // useGlyphEditor's cornerRoundMinRadius) rather than a fixed font-unit
+  // constant — a flat "0.5 font units" is sub-pixel at most zoom levels,
+  // which made dragging a corner back to fully sharp all but impossible.
+  if (r < minRadius) return working; // negligible drag — keep the corner sharp
 
   const unitPrev = scale(toPrev, 1 / distPrev);
   const unitNext = scale(toNext, 1 / distNext);
@@ -667,7 +680,10 @@ export interface CornerHandle {
   radius: number;
 }
 
-function cornerHandleGeometry(corner: Point, toA: Point, toB: Point, inset: number): { point: Point; dirA: Point; dirB: Point } | null {
+/** Unit vector along the interior angle bisector of two edges leaving a
+ *  corner (each given as a corner->neighbor vector), or null for a
+ *  degenerate/straight (180°/0°) corner with no meaningful bisector. */
+function bisectorDirection(toA: Point, toB: Point): Point | null {
   const la = length(toA);
   const lb = length(toB);
   if (la < 0.001 || lb < 0.001) return null;
@@ -675,10 +691,56 @@ function cornerHandleGeometry(corner: Point, toA: Point, toB: Point, inset: numb
   const dirB = scale(toB, 1 / lb);
   const sum = add(dirA, dirB);
   const sl = length(sum);
-  if (sl < 0.001) return null; // 180°/0° edges — no meaningful interior bisector
-  const bis = scale(sum, 1 / sl);
+  if (sl < 0.001) return null;
+  return scale(sum, 1 / sl);
+}
+
+function cornerHandleGeometry(corner: Point, toA: Point, toB: Point, inset: number): { point: Point; dirA: Point; dirB: Point } | null {
+  const la = length(toA);
+  const lb = length(toB);
+  if (la < 0.001 || lb < 0.001) return null;
+  const dirA = scale(toA, 1 / la);
+  const dirB = scale(toB, 1 / lb);
+  const bis = bisectorDirection(toA, toB);
+  if (!bis) return null; // 180°/0° edges — no meaningful interior bisector
   const d = Math.min(inset, la * 0.6, lb * 0.6);
   return { point: add(corner, scale(bis, d)), dirA, dirB };
+}
+
+/**
+ * Unit vector along the axis a corner-round drag should be constrained to
+ * — the same interior bisector the handle icon is drawn on. Used to turn a
+ * raw pointer position into a *signed, directional* radius (via a dot
+ * product against this axis) instead of the corner's plain on-screen
+ * distance from the cursor. Plain distance let a drag that wandered off
+ * the bisector inflate the radius unpredictably, and made landing back on
+ * the exact sharp-corner pixel (to fully un-round) essentially impossible
+ * at typical zoom levels; projecting onto this fixed axis fixes both.
+ *
+ * Works whether `ref` currently points at a still-sharp corner (uses its
+ * immediate neighbors) or at one half of an already-rounded fillet pair
+ * (reconstructs the original corner and its true neighbors first), since
+ * `nodePointerDown` can start a round-corner drag from either.
+ */
+export function cornerHandleDirection(outline: GlyphOutline, ref: { contourId: string; nodeId: string }): Point | null {
+  const contour = findContour(outline, ref.contourId);
+  if (!contour) return null;
+  const idx = contour.nodes.findIndex((n) => n.id === ref.nodeId);
+  if (idx === -1) return null;
+  const node = contour.nodes[idx];
+
+  if (node.type === "corner" && !node.handleIn && !node.handleOut) {
+    const n = contour.nodes.length;
+    const prevIdx = contour.closed ? (idx - 1 + n) % n : idx - 1;
+    const nextIdx = contour.closed ? (idx + 1) % n : idx + 1;
+    if (prevIdx < 0 || nextIdx >= n || prevIdx === idx || nextIdx === idx) return null;
+    return bisectorDirection(subtract(contour.nodes[prevIdx].point, node.point), subtract(contour.nodes[nextIdx].point, node.point));
+  }
+
+  const rec = reconstructCorner(outline, ref);
+  if (!rec) return null;
+  const { pair, corner } = rec;
+  return bisectorDirection(subtract(pair.prevOfA, corner), subtract(pair.nextOfB, corner));
 }
 
 function sharpCornerHandle(contour: Contour, idx: number, inset: number): CornerHandle | null {

@@ -4,7 +4,7 @@ import { useAppStore, type NodeRef, type HandleRef } from "@/glyph/store";
 import { shortId } from "@/utils/id";
 import { hitTestOutline } from "./hitTest";
 import { hitTestSegments } from "./segmentHitTest";
-import { add, reflect, reflectDirection, snapAngle, subtract, length } from "@/utils/geometry";
+import { add, reflect, reflectDirection, snapAngle, subtract, length, dot } from "@/utils/geometry";
 import {
   cloneOutline,
   findNode,
@@ -17,6 +17,7 @@ import {
   roundCorner,
   unroundCorner,
   findCornerHandleAt,
+  cornerHandleDirection,
   NODE_TYPE_ORDER,
 } from "./nodeOps";
 import { findObjectOfContour } from "@/types/geometry";
@@ -39,7 +40,7 @@ type DragState =
   | { mode: "curve"; contourId: string; fromIndex: number; t: number }
   | { mode: "marquee"; origin: Point; additive: boolean }
   | { mode: "shape-draw"; start: Point; objectId: string }
-  | { mode: "round-corner"; contourId: string; nodeId: string; cornerPoint: Point }
+  | { mode: "round-corner"; contourId: string; nodeId: string; cornerPoint: Point; dir: Point }
   | null;
 
 function refKey(r: NodeRef) { return `${r.contourId}:${r.nodeId}`; }
@@ -142,6 +143,12 @@ export function useGlyphEditor(hitScale: number) {
   // in GlyphCanvas.tsx so the drawn icon and the clickable spot line up.
   const cornerHandleInset = 16 * hitScale;
   const cornerHandleHitRadius = 8 * hitScale;
+  // "Close enough to zero, snap back to a sharp corner" cutoff for a
+  // round-corner drag, in font units. A flat font-unit constant is
+  // sub-pixel at most zoom levels (making it nearly impossible to drag a
+  // corner back to fully sharp); a couple of screen pixels' worth of font
+  // units, via hitScale, keeps the cutoff easy to hit at any zoom.
+  const cornerRoundMinRadius = 2 * hitScale;
 
   // Node tool should only "see" nodes belonging to the currently selected
   // object(s) — with 2+ objects on the canvas, an unselected object's nodes
@@ -315,22 +322,29 @@ export function useGlyphEditor(hitScale: number) {
         if (!handleHit.rounded) {
           const cornerNode = findNode(outline, handleHit.contourId, handleHit.nodeId);
           if (cornerNode) {
-            baseOutlineRef.current = cloneOutline(outline);
-            dragRef.current = { mode: "round-corner", contourId: handleHit.contourId, nodeId: handleHit.nodeId, cornerPoint: { ...cornerNode.point } };
-            return;
+            const dir = cornerHandleDirection(outline, { contourId: handleHit.contourId, nodeId: handleHit.nodeId });
+            if (dir) {
+              baseOutlineRef.current = cloneOutline(outline);
+              dragRef.current = { mode: "round-corner", contourId: handleHit.contourId, nodeId: handleHit.nodeId, cornerPoint: { ...cornerNode.point }, dir };
+              return;
+            }
           }
         } else {
           const unrounded = unroundCorner(outline, { contourId: handleHit.contourId, nodeId: handleHit.nodeId });
           if (unrounded) {
-            baseOutlineRef.current = unrounded.outline;
-            dragRef.current = {
-              mode: "round-corner",
-              contourId: unrounded.contourId,
-              nodeId: unrounded.nodeId,
-              cornerPoint: unrounded.cornerPoint,
-            };
-            setLiveOutline(unrounded.outline);
-            return;
+            const dir = cornerHandleDirection(unrounded.outline, { contourId: unrounded.contourId, nodeId: unrounded.nodeId });
+            if (dir) {
+              baseOutlineRef.current = unrounded.outline;
+              dragRef.current = {
+                mode: "round-corner",
+                contourId: unrounded.contourId,
+                nodeId: unrounded.nodeId,
+                cornerPoint: unrounded.cornerPoint,
+                dir,
+              };
+              setLiveOutline(unrounded.outline);
+              return;
+            }
           }
         }
       }
@@ -347,9 +361,12 @@ export function useGlyphEditor(hitScale: number) {
         // shift-click multi-select behavior below.
         const hitNode = findNode(outline, hit.contourId, hit.nodeId);
         if (cmdKey && hitNode && hitNode.type === "corner" && !hitNode.handleIn && !hitNode.handleOut) {
-          baseOutlineRef.current = cloneOutline(outline);
-          dragRef.current = { mode: "round-corner", contourId: hit.contourId, nodeId: hit.nodeId, cornerPoint: { ...hitNode.point } };
-          return;
+          const dir = cornerHandleDirection(outline, { contourId: hit.contourId, nodeId: hit.nodeId });
+          if (dir) {
+            baseOutlineRef.current = cloneOutline(outline);
+            dragRef.current = { mode: "round-corner", contourId: hit.contourId, nodeId: hit.nodeId, cornerPoint: { ...hitNode.point }, dir };
+            return;
+          }
         }
 
         // Cmd/Ctrl+drag one of an already-rounded corner's two fillet nodes
@@ -360,15 +377,19 @@ export function useGlyphEditor(hitScale: number) {
         if (cmdKey && hitNode) {
           const unrounded = unroundCorner(outline, { contourId: hit.contourId, nodeId: hit.nodeId });
           if (unrounded) {
-            baseOutlineRef.current = unrounded.outline;
-            dragRef.current = {
-              mode: "round-corner",
-              contourId: unrounded.contourId,
-              nodeId: unrounded.nodeId,
-              cornerPoint: unrounded.cornerPoint,
-            };
-            setLiveOutline(unrounded.outline);
-            return;
+            const dir = cornerHandleDirection(unrounded.outline, { contourId: unrounded.contourId, nodeId: unrounded.nodeId });
+            if (dir) {
+              baseOutlineRef.current = unrounded.outline;
+              dragRef.current = {
+                mode: "round-corner",
+                contourId: unrounded.contourId,
+                nodeId: unrounded.nodeId,
+                cornerPoint: unrounded.cornerPoint,
+                dir,
+              };
+              setLiveOutline(unrounded.outline);
+              return;
+            }
           }
         }
 
@@ -462,9 +483,18 @@ export function useGlyphEditor(hitScale: number) {
         return;
       }
       if (drag.mode === "round-corner") {
-        const radius = length(subtract(p, drag.cornerPoint));
+        // Project the raw pointer delta onto the corner's fixed bisector
+        // axis (drag.dir, captured at drag-start) instead of using the
+        // cursor's plain distance from the corner. Plain distance grew the
+        // radius even when the drag wandered off-axis (turning the corner
+        // into an unrelated shape) and made a full 0-radius revert require
+        // landing the cursor on the exact corner pixel. A signed projection
+        // fixes both: only movement along the handle's real axis counts,
+        // and dragging back past the corner clamps cleanly to 0 via
+        // roundCorner's minRadius cutoff below.
+        const radius = Math.max(0, dot(subtract(p, drag.cornerPoint), drag.dir));
         setRoundCornerLabel({ point: p, radius });
-        setLiveOutline(roundCorner(base, { contourId: drag.contourId, nodeId: drag.nodeId }, radius));
+        setLiveOutline(roundCorner(base, { contourId: drag.contourId, nodeId: drag.nodeId }, radius, cornerRoundMinRadius));
         return;
       }
       if (drag.mode === "move-handle") {
@@ -507,7 +537,7 @@ export function useGlyphEditor(hitScale: number) {
         setLiveOutline(working);
       }
     },
-    [setLiveOutline, snapEnabled, hitScale]
+    [setLiveOutline, snapEnabled, hitScale, cornerRoundMinRadius]
   );
 
   const finishMarquee = useCallback((drag: Extract<NonNullable<DragState>, { mode: "marquee" }>) => {

@@ -20,6 +20,12 @@ export function length(a: Point): number {
   return Math.hypot(a.x, a.y);
 }
 
+/** Scalar (dot) product — used to project one vector onto another, e.g. to
+ *  turn a raw pointer-drag delta into signed movement along a fixed axis. */
+export function dot(a: Point, b: Point): number {
+  return a.x * b.x + a.y * b.y;
+}
+
 /** Mirror `p` through `center` — used to keep symmetric handles opposite. */
 export function reflect(p: Point, center: Point): Point {
   return { x: center.x * 2 - p.x, y: center.y * 2 - p.y };
