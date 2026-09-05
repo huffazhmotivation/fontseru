@@ -387,7 +387,7 @@ interface AppState {
    * right away instead of waiting for their next edit. */
   autoSpacingEnabled: boolean;
   setAutoSpacingEnabled: (enabled: boolean) => void;
-  commitOutline: (char: string, outline: GlyphOutline) => void;
+  commitOutline: (char: string, outline: GlyphOutline, opts?: { skipAutoSpacing?: boolean }) => void;
   setLiveOutline: (outline: GlyphOutline | null) => void;
   updateSelectedObject: (patch: Partial<VectorObject>) => void;
 
@@ -1248,23 +1248,40 @@ export const useAppStore = create<AppState>()((set, get) => {
       });
     },
 
-    commitOutline: (char, outline) => {
+    commitOutline: (char, outline, opts) => {
       const { glyphs, metrics, autoSpacingEnabled } = get();
       const glyph = glyphs[char];
       if (!glyph) return;
       let nextGlyph: Glyph = { ...glyph, outline };
       // Live Auto Spacing (font-wide): whenever the master switch is on,
-      // every committed outline edit for ANY glyph — finishing a stroke,
-      // dragging a node, moving/scaling a shape, pasting a vector, etc. —
-      // immediately re-derives LSB/RSB from the freshly-edited ink using
-      // the same optical standard as "Auto Space". `applyOpticalSidebearings`
+      // finishing a brand-new stroke/shape (pen, shape tool, brush, pencil,
+      // paste) immediately re-derives LSB/RSB from the freshly-drawn ink
+      // using the same optical standard as "Auto Space". `applyOpticalSidebearings`
       // (unlike `applyGlyphMetricPatch`) anchors the translation to the
       // outline's ACTUAL current bounding box rather than the glyph's
       // previously stored lsb/rsb fields, which is what keeps a glyph
       // correctly *positioned* the instant it's drawn — even freehand, off
       // to one side, or a totally different size than whatever this glyph
       // (or the template) last had stored — not just spaced.
-      if (autoSpacingEnabled) {
+      //
+      // `opts.skipAutoSpacing` is set by in-place refinements of ink that
+      // already exists — dragging/nudging a node, moving a bezier handle,
+      // retyping a node, deleting a node, and (notably) the Node tool's
+      // corner-round handle. Those edits routinely nudge the outline's
+      // bounding box by a few font units (rounding a corner pulls it in
+      // slightly; nudging a node shifts it directly), which at typical
+      // editing zoom levels is a tiny, invisible sub-pixel adjustment — but
+      // re-centering the WHOLE glyph to match shows up as the entire shape
+      // visibly jumping sideways the instant the mouse is released. Because
+      // hit-testing always reads the post-commit outline, the corner-round
+      // handle itself never goes stale or unclickable — but the handle (and
+      // the whole glyph) has physically moved out from under the cursor, so
+      // grabbing it again where it was a moment ago does nothing, which
+      // reads as "the handle stopped responding" even though nothing is
+      // actually broken. Skipping the re-center for these edits keeps the
+      // glyph visually anchored while it's being fine-tuned; the one-time
+      // repositioning still happens the moment a shape is first drawn.
+      if (autoSpacingEnabled && !opts?.skipAutoSpacing) {
         const suggestion = suggestGlyphSidebearings(nextGlyph, metrics);
         if (suggestion) nextGlyph = applyOpticalSidebearings(nextGlyph, suggestion);
       }
@@ -1381,7 +1398,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const glyph = activeGlyph();
       const { activeChar, selectedNodes } = get();
       if (!glyph || selectedNodes.length === 0) return;
-      get().commitOutline(activeChar, deleteNodes(glyph.outline, selectedNodes));
+      get().commitOutline(activeChar, deleteNodes(glyph.outline, selectedNodes), { skipAutoSpacing: true });
       set({ selectedNodes: [], selectedHandle: null });
     },
 

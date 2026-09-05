@@ -447,7 +447,9 @@ export function useGlyphEditor(hitScale: number) {
       }
       // Alt+click a segment -> insert a node.
       if (altKey && segHit) {
-        commitOutline(activeChar, insertNodeOnSegment(outline, { contourId: segHit.contourId, fromIndex: segHit.fromIndex }, segHit.t));
+        // In-place refinement of existing ink, not new ink — skip the live
+        // Auto Spacing re-center (see commitOutline's skipAutoSpacing doc).
+        commitOutline(activeChar, insertNodeOnSegment(outline, { contourId: segHit.contourId, fromIndex: segHit.fromIndex }, segHit.t), { skipAutoSpacing: true });
         return;
       }
 
@@ -558,7 +560,9 @@ export function useGlyphEditor(hitScale: number) {
       const node = findNode(outline, contourId, nodeId);
       if (!node) return;
       const next = NODE_TYPE_ORDER[(NODE_TYPE_ORDER.indexOf(node.type) + 1) % NODE_TYPE_ORDER.length];
-      commitOutline(activeChar, retypeNode(outline, contourId, nodeId, next));
+      // In-place refinement of existing ink — skip the live Auto Spacing
+      // re-center (see commitOutline's skipAutoSpacing doc).
+      commitOutline(activeChar, retypeNode(outline, contourId, nodeId, next), { skipAutoSpacing: true });
     },
     [outline, activeChar, commitOutline]
   );
@@ -566,21 +570,21 @@ export function useGlyphEditor(hitScale: number) {
   const insertNodeAt = useCallback(
     (p: Point) => {
       const segHit = hitTestSegments(nodeableOutline, p, segmentRadius * 1.8);
-      if (segHit) commitOutline(activeChar, insertNodeOnSegment(outline, { contourId: segHit.contourId, fromIndex: segHit.fromIndex }, segHit.t));
+      if (segHit) commitOutline(activeChar, insertNodeOnSegment(outline, { contourId: segHit.contourId, fromIndex: segHit.fromIndex }, segHit.t), { skipAutoSpacing: true });
     },
     [outline, nodeableOutline, segmentRadius, activeChar, commitOutline]
   );
 
   const deleteSelectedNodes = useCallback(() => {
     if (selectedNodes.length === 0) return;
-    commitOutline(activeChar, deleteNodes(outline, selectedNodes));
+    commitOutline(activeChar, deleteNodes(outline, selectedNodes), { skipAutoSpacing: true });
     clearSelection();
   }, [selectedNodes, outline, activeChar, commitOutline, clearSelection]);
 
   const nudgeNodes = useCallback(
     (dx: number, dy: number) => {
       if (selectedNodes.length === 0) return;
-      commitOutline(activeChar, moveNodesBy(outline, selectedNodes, { x: dx, y: dy }));
+      commitOutline(activeChar, moveNodesBy(outline, selectedNodes, { x: dx, y: dy }), { skipAutoSpacing: true });
     },
     [selectedNodes, outline, activeChar, commitOutline]
   );
@@ -643,7 +647,16 @@ export function useGlyphEditor(hitScale: number) {
       baseOutlineRef.current = null;
       return;
     }
-    if (liveOutline) commitOutline(activeChar, liveOutline);
+    // Reached for move-selection, curve/segment-bend, round-corner, and
+    // move-handle drags — all in-place refinements of ink that's already on
+    // the canvas. Skip the live Auto Spacing re-center here (see
+    // commitOutline's skipAutoSpacing doc): without this, finishing e.g. a
+    // corner-round drag nudges the outline's bounding box just enough to
+    // re-trigger sidebearing centering, which visibly shifts the whole
+    // glyph sideways the instant the mouse is released — moving the
+    // corner-round handle out from under the cursor and making it look like
+    // it can no longer be grabbed to fine-tune the radius further.
+    if (liveOutline) commitOutline(activeChar, liveOutline, { skipAutoSpacing: true });
     baseOutlineRef.current = null;
   }, [liveOutline, activeChar, commitOutline, finishMarquee, setLiveOutline]);
 

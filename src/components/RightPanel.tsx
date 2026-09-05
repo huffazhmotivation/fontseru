@@ -498,7 +498,7 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
               <button
                 key={type}
                 className={`fm-node-type-btn ${commonType === type ? "active" : ""}`}
-                onClick={() => commitOutline(char, retypeNodes(glyph.outline, selectedNodes, type))}
+                onClick={() => commitOutline(char, retypeNodes(glyph.outline, selectedNodes, type), { skipAutoSpacing: true })}
                 data-testid={`nodes-type-${type}`}
               >
                 {NODE_TYPE_LABEL[type]}
@@ -508,7 +508,7 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
         </div>
         <InfoTip>Drag any selected node to move the group. Shift-click to add/remove. Arrow keys nudge (Shift = ×10).</InfoTip>
         <button className="fm-action-btn danger" style={{ marginTop: 10 }}
-          onClick={() => { commitOutline(char, deleteNodes(glyph.outline, selectedNodes)); clearSelection(); }} data-testid="delete-nodes-btn">
+          onClick={() => { commitOutline(char, deleteNodes(glyph.outline, selectedNodes), { skipAutoSpacing: true }); clearSelection(); }} data-testid="delete-nodes-btn">
           <Trash2 size={14} /> Delete {selectedNodes.length} Nodes
         </button>
       </Section>
@@ -524,7 +524,7 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
     const dx = x - node.point.x;
     const dy = y - node.point.y;
     if (dx === 0 && dy === 0) return;
-    commitOutline(char, moveNodesBy(glyph.outline, [ref], { x: dx, y: dy }));
+    commitOutline(char, moveNodesBy(glyph.outline, [ref], { x: dx, y: dy }), { skipAutoSpacing: true });
   };
 
   // Handle length/angle: the numeric complement to dragging the handle dot
@@ -547,7 +547,7 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
     const rad = (angleDeg * Math.PI) / 180;
     const nx = node.point.x + Math.cos(rad) * Math.max(0, len);
     const ny = node.point.y + Math.sin(rad) * Math.max(0, len);
-    commitOutline(char, setHandlePoint(glyph.outline, ref.contourId, ref.nodeId, part, { x: nx, y: ny }, node.type));
+    commitOutline(char, setHandlePoint(glyph.outline, ref.contourId, ref.nodeId, part, { x: nx, y: ny }, node.type), { skipAutoSpacing: true });
   };
 
   const handleIn = handleReadout("handleIn");
@@ -577,7 +577,7 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
         <div className="fm-node-type-row">
           {(Object.keys(NODE_TYPE_LABEL) as NodeType[]).map((t) => (
             <button key={t} className={`fm-node-type-btn ${node.type === t ? "active" : ""}`}
-              onClick={() => commitOutline(char, retypeNode(glyph.outline, ref.contourId, ref.nodeId, t))} data-testid={`node-type-${t}`}>
+              onClick={() => commitOutline(char, retypeNode(glyph.outline, ref.contourId, ref.nodeId, t), { skipAutoSpacing: true })} data-testid={`node-type-${t}`}>
               {NODE_TYPE_LABEL[t]}
             </button>
           ))}
@@ -624,7 +624,7 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
           )}
         </div>
       )}
-      <button className="fm-action-btn danger" onClick={() => { commitOutline(char, deleteNodes(glyph.outline, [ref])); clearSelection(); }} data-testid="delete-node-btn">
+      <button className="fm-action-btn danger" onClick={() => { commitOutline(char, deleteNodes(glyph.outline, [ref]), { skipAutoSpacing: true }); clearSelection(); }} data-testid="delete-node-btn">
         <Trash2 size={14} /> Delete Node
       </button>
       <InfoTip>
