@@ -812,16 +812,17 @@ function roundedCornerHandle(outline: GlyphOutline, contour: Contour, node: Path
   if (!rec) return null;
   const { pair, corner } = rec;
   const radius = length(subtract(pair.a, corner));
-  // Once a corner is rounded, the grabbable icon sits at the fillet's own
-  // radius out from the corner — not squeezed back to the small fixed
-  // `inset` used for a still-sharp corner — so it visually rides along with
-  // the curve as you drag it out (instead of hanging back near the vertex
-  // while the shape rounds out from under it), and so clicking it again
-  // afterwards hits the same spot it was last left at, rather than a point
-  // back near the vertex that no longer has anything to grab. `inset` is
-  // still used as a floor so a just-barely-rounded corner keeps a visible,
-  // clickable icon instead of one squashed against the curve's tiny radius.
-  const geo = cornerHandleGeometry(corner, subtract(pair.prevOfA, corner), subtract(pair.nextOfB, corner), Math.max(inset, radius));
+  // Fixed distance from the corner — same `inset` a still-sharp corner
+  // uses — regardless of how large the fillet's own radius has grown.
+  // Earlier this rode OUT to the fillet's live radius instead, which made
+  // sense for a bracket icon meant to visually trace the growing curve,
+  // but for a small square handle it just means a big rounding pushes the
+  // grabbable icon far from the corner — sometimes onto empty canvas well
+  // outside the shape, sometimes swallowed inside dense ink — making it
+  // hard to find and easy to miss-click. Staying at a constant, modest
+  // distance keeps it exactly where you'd expect (right by the corner,
+  // Figma-style) no matter how far the corner has already been rounded.
+  const geo = cornerHandleGeometry(corner, subtract(pair.prevOfA, corner), subtract(pair.nextOfB, corner), inset);
   if (!geo) return null;
   return { contourId: contour.id, nodeId: node.id, point: geo.point, dirA: geo.dirA, dirB: geo.dirB, rounded: true, radius };
 }

@@ -142,7 +142,10 @@ export function useGlyphEditor(hitScale: number) {
   // converted to font units) — must match the renderer's CORNER_HANDLE_INSET
   // in GlyphCanvas.tsx so the drawn icon and the clickable spot line up.
   const cornerHandleInset = 16 * hitScale;
-  const cornerHandleHitRadius = 8 * hitScale;
+  // A little more generous than the handle's own ~7.8px half-diagonal so
+  // clicking just outside the drawn square still grabs it — matching the
+  // forgiving hit area every other node/handle dot in this file gets.
+  const cornerHandleHitRadius = 10 * hitScale;
   // "Close enough to zero, snap back to a sharp corner" cutoff for a
   // round-corner drag, in font units. A flat font-unit constant is
   // sub-pixel at most zoom levels (making it nearly impossible to drag a

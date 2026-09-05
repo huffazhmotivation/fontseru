@@ -806,8 +806,8 @@ export function GlyphCanvas() {
           .sel-skew-handle { fill: var(--accent-soft); stroke: var(--accent); stroke-width: ${1.25 / sc}; }
           .sel-skew-guide { stroke: color-mix(in srgb, var(--accent) 55%, transparent); stroke-width: ${1 / sc}; stroke-dasharray: ${2 / sc} ${3 / sc}; }
           .sel-rot-line { stroke: var(--accent); stroke-width: ${1.2 / sc}; }
-          .corner-radius-handle { fill: none; stroke: var(--accent); stroke-width: ${2.2 / sc}; stroke-linecap: round; stroke-linejoin: round; opacity: 0.95; }
-          .corner-radius-handle.rounded { opacity: 0.8; }
+          .corner-radius-handle { fill: var(--accent); stroke: var(--panel-bg, #1e1e1e); stroke-width: ${1.4 / sc}; opacity: 0.95; }
+          .corner-radius-handle.rounded { fill: var(--accent); opacity: 1; }
         `}</style>
 
         <defs>
@@ -1358,41 +1358,31 @@ const NodesAndHandlesLayer = memo(function NodesAndHandlesLayer({
               );
             })
           )}
-          {/* Figma-style corner-round handles: a small curved-line icon
-              sitting in from each sharp corner (drag it out to round) and
-              from each already-rounded corner (drag it back to un-round, or
-              further to re-radius) — never a plain dot. Rendered once per
+          {/* Figma-style corner-round handle: a small rounded square sitting
+              a fixed distance in from each sharp corner (drag it out to
+              round) or from each already-rounded corner (drag it further to
+              re-radius, or back to the vertex to un-round) — never a plain
+              dot, and never sized or positioned off the live radius, so
+              it's always the same easy target to find and grab no matter
+              how far a corner has already been rounded. Rendered once per
               object, in font-space, from the same getCornerHandles() the
               pointer-down hit test uses, so the drawn icon and the
               clickable spot can't drift apart. */}
           {tool === "node" &&
             getCornerHandles({ objects: [obj] } as GlyphOutline, 16 * hitScale).map((h) => {
-              // Frame-corner bracket: two straight legs along the shape's
-              // actual edges, joined by a rounded corner sized to the
-              // corner's real radius. `h.radius` comes straight off the
-              // live outline, so while a drag is in progress (the corner
-              // has already been filleted in liveOutline for this frame)
-              // this reads the in-progress radius and the bracket opens up
-              // in step with the drag instead of staying a fixed size.
-              const rPx = Math.min(Math.max(h.radius / hitScale, 3), 22);
-              const legPx = Math.min(10 + rPx * 0.35, 26);
-              const rFont = rPx * hitScale;
-              const legFont = legPx * hitScale;
-              const v = h.point;
-              const pa = { x: v.x + h.dirA.x * legFont, y: v.y + h.dirA.y * legFont };
-              const pb = { x: v.x + h.dirB.x * legFont, y: v.y + h.dirB.y * legFont };
-              const qa = { x: v.x + h.dirA.x * rFont, y: v.y + h.dirA.y * rFont };
-              const qb = { x: v.x + h.dirB.x * rFont, y: v.y + h.dirB.y * rFont };
-              const svgPa = toSvgPoint(pa, ascender);
-              const svgPb = toSvgPoint(pb, ascender);
-              const svgQa = toSvgPoint(qa, ascender);
-              const svgQb = toSvgPoint(qb, ascender);
-              const cross = h.dirA.x * h.dirB.y - h.dirA.y * h.dirB.x;
-              const sweep = cross > 0 ? 0 : 1;
+              const halfPx = 5.5;
+              const halfFont = halfPx * hitScale;
+              const rxFont = 2.5 * hitScale;
+              const svgP = toSvgPoint(h.point, ascender);
               return (
-                <path
+                <rect
                   key={`ch-${h.nodeId}`}
-                  d={`M ${svgPa.x} ${svgPa.y} L ${svgQa.x} ${svgQa.y} A ${rFont} ${rFont} 0 0 ${sweep} ${svgQb.x} ${svgQb.y} L ${svgPb.x} ${svgPb.y}`}
+                  x={svgP.x - halfFont}
+                  y={svgP.y - halfFont}
+                  width={halfFont * 2}
+                  height={halfFont * 2}
+                  rx={rxFont}
+                  ry={rxFont}
                   className={`corner-radius-handle ${h.rounded ? "rounded" : ""}`}
                   pointerEvents="none"
                 />
