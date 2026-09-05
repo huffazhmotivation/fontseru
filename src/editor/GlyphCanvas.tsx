@@ -806,8 +806,8 @@ export function GlyphCanvas() {
           .sel-skew-handle { fill: var(--accent-soft); stroke: var(--accent); stroke-width: ${1.25 / sc}; }
           .sel-skew-guide { stroke: color-mix(in srgb, var(--accent) 55%, transparent); stroke-width: ${1 / sc}; stroke-dasharray: ${2 / sc} ${3 / sc}; }
           .sel-rot-line { stroke: var(--accent); stroke-width: ${1.2 / sc}; }
-          .corner-radius-handle { fill: none; stroke: var(--accent); stroke-width: ${1.6 / sc}; stroke-linecap: round; opacity: 0.9; }
-          .corner-radius-handle.rounded { opacity: 0.65; }
+          .corner-radius-handle { fill: none; stroke: var(--accent); stroke-width: ${2.2 / sc}; stroke-linecap: round; stroke-linejoin: round; opacity: 0.95; }
+          .corner-radius-handle.rounded { opacity: 0.8; }
         `}</style>
 
         <defs>
@@ -1367,15 +1367,32 @@ const NodesAndHandlesLayer = memo(function NodesAndHandlesLayer({
               clickable spot can't drift apart. */}
           {tool === "node" &&
             getCornerHandles({ objects: [obj] } as GlyphOutline, 16 * hitScale).map((h) => {
-              const svgP = toSvgPoint(h.point, ascender);
-              // Tiny fixed-size hook: two short strokes meeting in a curve,
-              // oriented so it visually points back at its corner. Simple
-              // and legible at any zoom, independent of the corner's angle.
-              const s = 4.5 * hitScale;
+              // Frame-corner bracket: two straight legs along the shape's
+              // actual edges, joined by a rounded corner sized to the
+              // corner's real radius. `h.radius` comes straight off the
+              // live outline, so while a drag is in progress (the corner
+              // has already been filleted in liveOutline for this frame)
+              // this reads the in-progress radius and the bracket opens up
+              // in step with the drag instead of staying a fixed size.
+              const rPx = Math.min(Math.max(h.radius / hitScale, 3), 22);
+              const legPx = Math.min(10 + rPx * 0.35, 26);
+              const rFont = rPx * hitScale;
+              const legFont = legPx * hitScale;
+              const v = h.point;
+              const pa = { x: v.x + h.dirA.x * legFont, y: v.y + h.dirA.y * legFont };
+              const pb = { x: v.x + h.dirB.x * legFont, y: v.y + h.dirB.y * legFont };
+              const qa = { x: v.x + h.dirA.x * rFont, y: v.y + h.dirA.y * rFont };
+              const qb = { x: v.x + h.dirB.x * rFont, y: v.y + h.dirB.y * rFont };
+              const svgPa = toSvgPoint(pa, ascender);
+              const svgPb = toSvgPoint(pb, ascender);
+              const svgQa = toSvgPoint(qa, ascender);
+              const svgQb = toSvgPoint(qb, ascender);
+              const cross = h.dirA.x * h.dirB.y - h.dirA.y * h.dirB.x;
+              const sweep = cross > 0 ? 0 : 1;
               return (
                 <path
                   key={`ch-${h.nodeId}`}
-                  d={`M ${svgP.x - s} ${svgP.y} Q ${svgP.x} ${svgP.y} ${svgP.x} ${svgP.y - s}`}
+                  d={`M ${svgPa.x} ${svgPa.y} L ${svgQa.x} ${svgQa.y} A ${rFont} ${rFont} 0 0 ${sweep} ${svgQb.x} ${svgQb.y} L ${svgPb.x} ${svgPb.y}`}
                   className={`corner-radius-handle ${h.rounded ? "rounded" : ""}`}
                   pointerEvents="none"
                 />

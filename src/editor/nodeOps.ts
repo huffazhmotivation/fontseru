@@ -654,20 +654,31 @@ export interface CornerHandle {
   nodeId: string;
   point: Point;
   rounded: boolean;
+  /** Unit vectors (font-space) along the two edges meeting at this corner —
+   *  lets the renderer draw an L-bracket that actually follows the shape's
+   *  real edges instead of a generic blob. */
+  dirA: Point;
+  dirB: Point;
+  /** Current fillet radius in font units — 0 for a still-sharp corner,
+   *  the live radius for one already (or currently being) rounded. Since
+   *  this reads off the live outline, it updates every pointer-move during
+   *  a drag, which is what makes the drawn bracket grow/round in step with
+   *  the drag instead of sitting there as a static icon. */
+  radius: number;
 }
 
-function bisectorInset(corner: Point, toA: Point, toB: Point, inset: number): Point | null {
+function cornerHandleGeometry(corner: Point, toA: Point, toB: Point, inset: number): { point: Point; dirA: Point; dirB: Point } | null {
   const la = length(toA);
   const lb = length(toB);
   if (la < 0.001 || lb < 0.001) return null;
-  const ua = scale(toA, 1 / la);
-  const ub = scale(toB, 1 / lb);
-  const sum = add(ua, ub);
+  const dirA = scale(toA, 1 / la);
+  const dirB = scale(toB, 1 / lb);
+  const sum = add(dirA, dirB);
   const sl = length(sum);
   if (sl < 0.001) return null; // 180°/0° edges — no meaningful interior bisector
   const bis = scale(sum, 1 / sl);
   const d = Math.min(inset, la * 0.6, lb * 0.6);
-  return add(corner, scale(bis, d));
+  return { point: add(corner, scale(bis, d)), dirA, dirB };
 }
 
 function sharpCornerHandle(contour: Contour, idx: number, inset: number): CornerHandle | null {
@@ -679,9 +690,9 @@ function sharpCornerHandle(contour: Contour, idx: number, inset: number): Corner
   if (prevIdx < 0 || nextIdx >= n || prevIdx === idx || nextIdx === idx) return null;
   const prev = contour.nodes[prevIdx];
   const next = contour.nodes[nextIdx];
-  const point = bisectorInset(node.point, subtract(prev.point, node.point), subtract(next.point, node.point), inset);
-  if (!point) return null;
-  return { contourId: contour.id, nodeId: node.id, point, rounded: false };
+  const geo = cornerHandleGeometry(node.point, subtract(prev.point, node.point), subtract(next.point, node.point), inset);
+  if (!geo) return null;
+  return { contourId: contour.id, nodeId: node.id, point: geo.point, dirA: geo.dirA, dirB: geo.dirB, rounded: false, radius: 0 };
 }
 
 function roundedCornerHandle(outline: GlyphOutline, contour: Contour, node: PathNode, inset: number): CornerHandle | null {
@@ -689,9 +700,10 @@ function roundedCornerHandle(outline: GlyphOutline, contour: Contour, node: Path
   const rec = reconstructCorner(outline, { contourId: contour.id, nodeId: node.id });
   if (!rec) return null;
   const { pair, corner } = rec;
-  const point = bisectorInset(corner, subtract(pair.prevOfA, corner), subtract(pair.nextOfB, corner), inset);
-  if (!point) return null;
-  return { contourId: contour.id, nodeId: node.id, point, rounded: true };
+  const geo = cornerHandleGeometry(corner, subtract(pair.prevOfA, corner), subtract(pair.nextOfB, corner), inset);
+  if (!geo) return null;
+  const radius = length(subtract(pair.a, corner));
+  return { contourId: contour.id, nodeId: node.id, point: geo.point, dirA: geo.dirA, dirB: geo.dirB, rounded: true, radius };
 }
 
 /** All corner-round handles across the outline, in font-space, for the
