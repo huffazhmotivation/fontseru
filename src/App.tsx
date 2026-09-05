@@ -18,6 +18,7 @@ import { LoginModal } from "@/components/LoginModal";
 import { EmailConfirmedWelcome } from "@/components/EmailConfirmedWelcome";
 import { ProUpsellModal } from "@/components/ProUpsellModal";
 import { ProductTour } from "@/components/ProductTour/ProductTour";
+import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
 
 // Chromium currently has a much more expensive compositing path for
 // backdrop-filter over a large, live SVG surface than Safari/Firefox. Keep
@@ -45,6 +46,9 @@ const TraceImageOverlay = lazy(() =>
 const FeatureBuilderOverlay = lazy(() =>
   import("@/components/FeatureBuilder/FeatureBuilderOverlay").then((m) => ({ default: m.FeatureBuilderOverlay }))
 );
+const TimelapseOverlay = lazy(() =>
+  import("@/timelapse/TimelapseOverlay").then((m) => ({ default: m.TimelapseOverlay }))
+);
 
 export default function App() {
   const theme = useAppStore((s) => s.theme);
@@ -54,6 +58,7 @@ export default function App() {
   const familyOpen = useAppStore((s) => s.familyOpen);
   const traceOpen = useAppStore((s) => s.traceOpen);
   const featureBuilderOpen = useAppStore((s) => s.featureBuilderOpen);
+  const timelapseOpen = useTimelapseUiStore((s) => s.open);
   useKeyboardShortcuts();
 
   // Once a heavy overlay has been opened for the first time, keep mounting
@@ -65,10 +70,12 @@ export default function App() {
   const familyEverOpened = useRef(false);
   const traceEverOpened = useRef(false);
   const featureBuilderEverOpened = useRef(false);
+  const timelapseEverOpened = useRef(false);
   if (testLabOpen) testLabEverOpened.current = true;
   if (familyOpen) familyEverOpened.current = true;
   if (traceOpen) traceEverOpened.current = true;
   if (featureBuilderOpen) featureBuilderEverOpened.current = true;
+  if (timelapseOpen) timelapseEverOpened.current = true;
 
   const hydratedRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -177,6 +184,7 @@ export default function App() {
         {familyEverOpened.current && <FamilyAutoGenerateOverlay />}
         {traceEverOpened.current && <TraceImageOverlay />}
         {featureBuilderEverOpened.current && <FeatureBuilderOverlay />}
+        {timelapseEverOpened.current && <TimelapseOverlay />}
       </Suspense>
       <LoginModal />
       <ProductTour />

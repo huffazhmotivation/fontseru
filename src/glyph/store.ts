@@ -380,8 +380,10 @@ interface AppState {
    * capped at MAX_CUSTOM_FAMILIES. Returns the new style id, or null if it
    * couldn't be created (locked, cap reached, or an empty name). */
   addCustomFamily: (name: string) => FontStyle | null;
-  /** Removes a custom family tab and its glyph data. Falls back to Regular
-   * if the removed tab was active. No-op for built-in styles. */
+  /** Removes a Glyph tab (Bold, Italic, or any other custom family) and
+   * its glyph data. Falls back to Regular if the removed tab was active.
+   * Bold/Italic are ordinary entries here too, so this is also how they
+   * get deleted — re-add either later from "+ Add Family". */
   removeCustomFamily: (id: FontStyle) => void;
   setGhost: (patch: Partial<GhostSettings>) => void;
   setBrushType: (type: BrushType) => void;
@@ -794,6 +796,32 @@ export const useAppStore = create<AppState>()((set, get) => {
     return glyphs[activeChar];
   }
 
+  // Bold and Italic are pre-seeded as ordinary custom families (reserved
+  // ids "bold"/"italic" so style-linking/export/generate shortcuts keep
+  // working) rather than permanent built-ins — this is what lets either
+  // be deleted (X on its tab, like any other family) and re-created later
+  // from "+ Add Family" exactly the same way.
+  function defaultCustomFamilies(): CustomFamily[] {
+    return [
+      { id: "bold", name: "Bold" },
+      { id: "italic", name: "Italic" },
+    ];
+  }
+
+  // Backward-compat for autosaves/.fs files/imported fonts saved before
+  // Bold/Italic moved into `customFamilies`: they'll have real glyph data
+  // in `glyphsByStyle.bold`/`.italic` but no matching customFamilies entry
+  // (that concept didn't exist yet), which would otherwise make those
+  // tabs silently vanish on load even though the glyphs are still there.
+  // Backfills them at the front, ahead of any real custom families, to
+  // match the old fixed Regular → Bold → Italic → custom display order.
+  function ensureBuiltinFamilyEntries(customFamilies: CustomFamily[], family: GlyphFamily): CustomFamily[] {
+    const missing: CustomFamily[] = [];
+    if (family.bold && !customFamilies.some((f) => f.id === "bold")) missing.push({ id: "bold", name: "Bold" });
+    if (family.italic && !customFamilies.some((f) => f.id === "italic")) missing.push({ id: "italic", name: "Italic" });
+    return missing.length ? [...missing, ...customFamilies] : customFamilies;
+  }
+
   const initialRegular = buildDefaultGlyphs();
   const initialFamily = familyFromRegular(initialRegular);
 
@@ -849,7 +877,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     glyphs: initialRegular,
     glyphsByStyle: initialFamily,
     fontStyle: "regular",
-    customFamilies: [],
+    customFamilies: defaultCustomFamilies(),
     activeChar: "A",
 
     kerningPairs: {},
@@ -917,7 +945,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         glyphs: regular,
         glyphsByStyle: family,
         fontStyle: "regular",
-        customFamilies: [],
+        customFamilies: defaultCustomFamilies(),
         activeChar: "A",
         kerningPairs: {},
         kerningManual: {},
@@ -1751,7 +1779,10 @@ export const useAppStore = create<AppState>()((set, get) => {
           bold: explicitStyles.bold ?? fallbackFamily.bold,
           italic: explicitStyles.italic ?? fallbackFamily.italic,
         };
-        const customFamilies = patch.customFamilies ?? (incomingRegular ? [] : s.customFamilies);
+        const customFamilies = ensureBuiltinFamilyEntries(
+          patch.customFamilies ?? (incomingRegular ? [] : s.customFamilies),
+          family
+        );
         const style: FontStyle = patch.fontStyle ?? (incomingRegular ? "regular" : s.fontStyle);
         // Migration: older autosaves/.fs files/imported fonts may predate
         // the default space glyph (or a genuinely space-less imported

@@ -44,15 +44,21 @@ export interface CustomFamily {
   name: string;
 }
 
-/** Regular, Bold, Italic + at most this many user-created families. */
-export const MAX_CUSTOM_FAMILIES = 3;
-/** Total Glyph tabs allowed at once (3 built-in + MAX_CUSTOM_FAMILIES). */
-export const MAX_GLYPH_TABS = 3 + MAX_CUSTOM_FAMILIES;
+/** Regular is the only permanent style; Bold, Italic, and any further
+ * custom families are all interchangeable entries in `customFamilies` —
+ * addable via "+ Add Family" and removable the same way. Bold/Italic are
+ * pre-seeded by default (see the store's initial state) and keep the
+ * reserved ids "bold"/"italic" so existing style-linking, generate
+ * shortcuts, and exported font metadata keep working unchanged, but
+ * structurally they're just regular family entries now: delete one and
+ * it's gone (glyph data included) until re-added from "+ Add Family". */
+export const MAX_CUSTOM_FAMILIES = 5;
+/** Total Glyph tabs allowed at once (Regular + MAX_CUSTOM_FAMILIES, which
+ * Bold/Italic count against like any other family). */
+export const MAX_GLYPH_TABS = 1 + MAX_CUSTOM_FAMILIES;
 
-export const FONT_STYLES: ReadonlyArray<{ id: BuiltInFontStyle; label: "Regular" | "Bold" | "Italic" }> = [
+export const FONT_STYLES: ReadonlyArray<{ id: BuiltInFontStyle; label: "Regular" }> = [
   { id: "regular", label: "Regular" },
-  { id: "bold", label: "Bold" },
-  { id: "italic", label: "Italic" },
 ];
 
 export function fontStyleLabel(style: FontStyle, customFamilies?: ReadonlyArray<CustomFamily>): string {

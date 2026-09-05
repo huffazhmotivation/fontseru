@@ -7,6 +7,13 @@ import { FONT_STYLES, MAX_CUSTOM_FAMILIES, hasOutline } from "@/types/glyph";
 import { unicodeHex } from "@/utils/unicode";
 import { GlyphThumbnail } from "./GlyphThumbnail";
 
+// Bold/Italic keep these reserved ids (see the store's defaultCustomFamilies)
+// so they can stay PRO-gated like before, even though they're now ordinary
+// entries in `customFamilies` rather than permanent built-ins.
+function isReservedStyleId(id: string): id is "bold" | "italic" {
+  return id === "bold" || id === "italic";
+}
+
 export function GlyphNav() {
   const [query, setQuery] = useState("");
   const glyphs = useAppStore((s) => s.glyphs);
@@ -45,6 +52,11 @@ export function GlyphNav() {
     event.preventDefault();
     const created = addCustomFamily(newFamilyName);
     if (created) cancelAddFamily();
+  };
+
+  const deleteFamily = (id: string, name: string) => {
+    if (!window.confirm(`Delete "${name}"? This removes its tab and all drawn glyphs, and cannot be undone.`)) return;
+    removeCustomFamily(id);
   };
 
   const runAddMultilingual = () => {
@@ -109,60 +121,64 @@ export function GlyphNav() {
         </div>
 
         <div className="fm-family-tabs" role="tablist" aria-label="Font family style" data-testid="family-tabs">
-          {FONT_STYLES.map((style) => {
-            // Regular is free for everyone; Bold/Italic are PRO-only. Locked
-            // tabs stay visible (dimmed + lock icon) and open the existing
-            // ProUpsellModal instead of switching styles — the actual switch
-            // is also blocked at the store level (setFontStyle) so this is
-            // UI polish, not the only line of defense.
-            const locked = style.id !== "regular" && !isPro;
+          {/* Regular is the only permanent tab — always free, never removable. */}
+          {FONT_STYLES.map((style) => (
+            <button
+              key={style.id}
+              type="button"
+              role="tab"
+              aria-selected={fontStyle === style.id}
+              className={fontStyle === style.id ? "active" : ""}
+              onClick={() => setFontStyle(style.id)}
+              data-testid={`family-tab-${style.id}`}
+            >
+              {style.label}
+            </button>
+          ))}
+          {customFamilies.map((family) => {
+            // Bold/Italic keep their PRO gate even though they're just
+            // regular family entries now: locked tabs stay visible (dimmed
+            // + lock icon) and tapping opens the ProUpsellModal instead of
+            // switching styles — the actual switch is also blocked at the
+            // store level (setFontStyle) so this is UI polish, not the
+            // only line of defense. Any other custom family was already
+            // PRO-gated at creation time, so it never needs this here.
+            const locked = isReservedStyleId(family.id) && !isPro;
             return (
               <button
-                key={style.id}
+                key={family.id}
                 type="button"
                 role="tab"
-                aria-selected={fontStyle === style.id}
-                className={`${fontStyle === style.id ? "active" : ""} ${locked ? "fm-family-tab-locked" : ""}`}
-                onClick={() => (locked ? openProModal("family") : setFontStyle(style.id))}
-                title={locked ? `${style.label} (PRO)` : undefined}
-                data-testid={`family-tab-${style.id}`}
+                aria-selected={fontStyle === family.id}
+                className={`fm-family-tab-custom ${fontStyle === family.id ? "active" : ""} ${locked ? "fm-family-tab-locked" : ""}`}
+                onClick={() => (locked ? openProModal("family") : setFontStyle(family.id))}
+                title={locked ? `${family.name} (PRO)` : family.name}
+                data-testid={`family-tab-${family.id}`}
               >
-                {style.label}
+                <span className="fm-family-tab-custom-label">{family.name}</span>
                 {locked && <Lock size={10} className="fm-lock-badge-inline" />}
+                {!locked && (
+                  <span
+                    className="fm-family-tab-remove"
+                    role="button"
+                    tabIndex={0}
+                    title={`Remove ${family.name}`}
+                    onClick={(event) => { event.stopPropagation(); deleteFamily(family.id, family.name); }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.stopPropagation();
+                        event.preventDefault();
+                        deleteFamily(family.id, family.name);
+                      }
+                    }}
+                    data-testid={`family-tab-remove-${family.id}`}
+                  >
+                    <X size={10} />
+                  </span>
+                )}
               </button>
             );
           })}
-          {customFamilies.map((family) => (
-            <button
-              key={family.id}
-              type="button"
-              role="tab"
-              aria-selected={fontStyle === family.id}
-              className={`fm-family-tab-custom ${fontStyle === family.id ? "active" : ""}`}
-              onClick={() => setFontStyle(family.id)}
-              title={family.name}
-              data-testid={`family-tab-${family.id}`}
-            >
-              <span className="fm-family-tab-custom-label">{family.name}</span>
-              <span
-                className="fm-family-tab-remove"
-                role="button"
-                tabIndex={0}
-                title={`Remove ${family.name}`}
-                onClick={(event) => { event.stopPropagation(); removeCustomFamily(family.id); }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.stopPropagation();
-                    event.preventDefault();
-                    removeCustomFamily(family.id);
-                  }
-                }}
-                data-testid={`family-tab-remove-${family.id}`}
-              >
-                <X size={10} />
-              </span>
-            </button>
-          ))}
         </div>
 
         {addingFamily ? (

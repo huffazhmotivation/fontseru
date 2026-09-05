@@ -3,12 +3,14 @@ import {
   Download, FlaskConical, Layers, Maximize, Minimize, Redo2, Undo2, Wand2,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
-  Copy, FlipHorizontal, FlipVertical, Trash2,
+  Copy, Trash2, Film,
 } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
+import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
 import type { AlignMode } from "@/editor/objectOps";
 import { isBooleanEligible, type BooleanOp } from "@/editor/booleanOps";
 import { BooleanOpIcon } from "@/components/icons/BooleanOpIcon";
+import { FlipIcon } from "@/components/icons/FlipIcon";
 import { SunIcon, MoonIcon } from "@/components/icons/ThemeIcon";
 import { FileMenu } from "@/components/FileMenu";
 import { FontSeruLogo } from "@/components/FontSeruLogo";
@@ -56,6 +58,7 @@ export function TopBar() {
   const pasteClipboard = useAppStore((s) => s.pasteClipboard);
   const deleteSelectedObjects = useAppStore((s) => s.deleteSelectedObjects);
   const activeGlyphObjects = useAppStore((s) => s.glyphs[s.activeChar]?.outline.objects);
+  const openTimelapse = useTimelapseUiStore((s) => s.openPanel);
 
   const booleanEligibleCount = (activeGlyphObjects ?? [])
     .filter((o) => selectedObjectIds.includes(o.id))
@@ -160,7 +163,7 @@ export function TopBar() {
           aria-label="Flip Horizontal"
           data-testid="flip-horizontal-btn"
         >
-          <FlipHorizontal size={15} strokeWidth={1.7} />
+          <FlipIcon direction="horizontal" size={15} />
         </button>
         <button
           type="button"
@@ -171,7 +174,7 @@ export function TopBar() {
           aria-label="Flip Vertical"
           data-testid="flip-vertical-btn"
         >
-          <FlipVertical size={15} strokeWidth={1.7} />
+          <FlipIcon direction="vertical" size={15} />
         </button>
         <div className="fm-align-divider" />
         <button
@@ -193,6 +196,14 @@ export function TopBar() {
           Bold/Italic/custom generation actions inside it are PRO-gated
           (enforced in the store, right where each action happens), so this
           button no longer shows a locked state. */}
+      <button
+        className="fm-topbtn fm-testlab-nav"
+        onClick={openTimelapse}
+        title="Open Timelapse Recording"
+        data-testid="timelapse-btn"
+      >
+        <Film size={15} /> Timelapse
+      </button>
       <button
         className="fm-topbtn fm-testlab-nav"
         onClick={openFamily}

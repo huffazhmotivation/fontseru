@@ -15,6 +15,7 @@ import { findOverlappingObjectIds } from "./overlapDetect";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { GhostGlyph } from "./GhostGlyph";
 import { CanvasRuler, RulerGuideLines, RULER_SIZE } from "./CanvasRuler";
+import { RecordingBadge } from "@/timelapse/RecordingBadge";
 import { isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { GlyphOutline, NodeType, Point, VectorObject } from "@/types/geometry";
 import type { FontStyle, Glyph, GlyphMap } from "@/types/glyph";
@@ -32,7 +33,8 @@ function familyGhostOrder(style: FontStyle): readonly [FontStyle, FontStyle] {
   return FAMILY_GHOST_ORDER[style] ?? ["regular", "bold"];
 }
 
-function matchingFamilyGlyph(map: GlyphMap, activeGlyph: Glyph, activeChar: string): Glyph | undefined {
+function matchingFamilyGlyph(map: GlyphMap | undefined, activeGlyph: Glyph, activeChar: string): Glyph | undefined {
+  if (!map) return undefined;
   const exact = map[activeChar];
   if (exact) return exact;
 
@@ -1287,6 +1289,7 @@ export function GlyphCanvas() {
           />
         )}
       </svg>
+      <RecordingBadge />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useAppStore } from "@/glyph/store";
 import { samplesToCenterline, centerlineToContour, centerlineToOutlineContours } from "@/brushes/strokeToOutline";
 import { appendStabilizedSample } from "@/brushes/strokeSmoothing";
 import { shortId } from "@/utils/id";
+import { detectQuickShape, quickShapePolyline, QUICK_SHAPE_HOLD_MS, type QuickShapeResult } from "./quickShape";
 
 interface PointerLike { pressure?: number; pointerType?: string; }
 
@@ -78,6 +79,22 @@ export function useBrushTool(hitScale: number) {
   const [isDrawing, setIsDrawing] = useState(false);
   const pixelSnap = brush.type === "pixel" && brush.gridSnap === true;
 
+  // QuickShape (Procreate-style "hold at the end to snap") state — see
+  // quickShape.ts. Skipped entirely for Pixel Brush: a blocky grid-snapped
+  // stroke has no "wobbly line/circle" to straighten. Brush allows line
+  // recognition (unlike Pencil) since its committed geometry is an open
+  // centerline stroke, where a straight line is a meaningful result.
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const quickShapeRef = useRef<QuickShapeResult | null>(null);
+
+  const clearQuickShapeHold = useCallback(() => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    quickShapeRef.current = null;
+  }, []);
+
   // Real stylus pressure drives width when present. Mouse, trackpad, and
   // touch never get a simulated substitute — they always report a
   // constant "full pressure" sample here, so stroke width comes purely
@@ -109,7 +126,8 @@ export function useBrushTool(hitScale: number) {
     setIsDrawing(true);
     setPreviewOutline([]);
     setPreviewCenterline(null);
-  }, [pressureFor, pixelSnap, gridSize]);
+    clearQuickShapeHold();
+  }, [pressureFor, pixelSnap, gridSize, clearQuickShapeHold]);
 
   const pointerMove = useCallback(
     (p: Point, e: PointerLike) => {
@@ -135,6 +153,34 @@ export function useBrushTool(hitScale: number) {
       const minRawMove = Math.max(0.8, 1.2 * hitScale);
       if (Math.hypot(snapped.x - lastRaw.x, snapped.y - lastRaw.y) < minRawMove) return;
       raw.push({ x: snapped.x, y: snapped.y, pressure: pressureFor(snapped, e) });
+      // Real movement happened: any shape recognized while previously
+      // holding still no longer applies, and the wait for the next hold
+      // starts over from here.
+      if (quickShapeRef.current) {
+        // Re-derive the live preview stream from the real raw buffer
+        // (instead of leaving it pointed at the just-cancelled snapped
+        // shape's points) so the preview resumes smoothly, not from a
+        // discontinuous jump.
+        samplesRef.current = samplesToCenterline(raw, brush, hitScale);
+      }
+      quickShapeRef.current = null;
+      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = setTimeout(() => {
+        const shape = detectQuickShape(
+          rawSamplesRef.current.map((s) => ({ x: s.x, y: s.y })),
+          hitScale,
+          true
+        );
+        if (!shape) return;
+        quickShapeRef.current = shape;
+        let sumP = 0;
+        for (const s of rawSamplesRef.current) sumP += s.pressure;
+        const avgPressure = rawSamplesRef.current.length ? sumP / rawSamplesRef.current.length : 1;
+        samplesRef.current = quickShapePolyline(shape).map((p) => ({ ...p, pressure: avgPressure }));
+        const preview = buildPreview();
+        setPreviewCenterline(preview.centerline);
+        setPreviewOutline(preview.outline);
+      }, QUICK_SHAPE_HOLD_MS);
       // Live preview only: append ONE new stabilized point from a small
       // trailing window, instead of re-running the full smoothing+RDP
       // engine over the whole growing raw buffer on every move (that was
@@ -147,24 +193,35 @@ export function useBrushTool(hitScale: number) {
       setPreviewCenterline(preview.centerline);
       setPreviewOutline(preview.outline);
     },
-    [isDrawing, brush.stabilizer, buildPreview, pressureFor, gridSize, pixelSnap, hitScale]
+    [isDrawing, brush, buildPreview, pressureFor, gridSize, pixelSnap, hitScale]
   );
 
   const pointerUp = useCallback(() => {
     if (!isDrawing) return;
     setIsDrawing(false);
+    const heldShape = quickShapeRef.current;
+    // Held still at the end and it read as a clean line/circle — use that
+    // exact geometry as the centerline instead of the raw wobbly one, no
+    // further smoothing needed since it's already perfect.
+    const centerlineSamples = heldShape
+      ? quickShapePolyline(heldShape).map((p) => ({ ...p, pressure: 1 }))
+      : samplesToCenterline(rawSamplesRef.current, brush, hitScale);
     // Build the FINAL geometry from the full, exact engine over the raw
     // pointer buffer — not from the cheap incremental live-preview stream
     // in samplesRef (see appendStabilizedSample's doc comment). This is
     // the one point per stroke where the more expensive full
     // smoothing+RDP pass is worth paying for, since it only runs once.
-    const centerlineSamples = samplesToCenterline(rawSamplesRef.current, brush, hitScale);
-    const centerline = centerlineToContour(centerlineSamples, !pixelSnap);
+    // Preserve the tool's normal default (open centerline, closeSmoothly
+    // false) unless a held circle/ellipse QuickShape calls for a closed
+    // loop; a held line stays open, same as any other Brush stroke.
+    const closeSmoothly = heldShape ? heldShape.kind !== "line" : false;
+    const centerline = centerlineToContour(centerlineSamples, !pixelSnap, closeSmoothly);
     const rawSamples = centerlineSamples.map((s) => ({ ...s }));
     rawSamplesRef.current = [];
     samplesRef.current = [];
     setPreviewOutline([]);
     setPreviewCenterline(null);
+    clearQuickShapeHold();
     if (!centerline || !glyph) return;
     const obj: VectorObject = {
       id: shortId("obj"),
@@ -181,7 +238,7 @@ export function useBrushTool(hitScale: number) {
       samples: rawSamples,
     };
     commitOutline(activeChar, { objects: [...glyph.outline.objects, obj] });
-  }, [isDrawing, brush, brushCap, glyph, activeChar, commitOutline, gridSize, pixelSnap, hitScale]);
+  }, [isDrawing, brush, brushCap, glyph, activeChar, commitOutline, gridSize, pixelSnap, hitScale, clearQuickShapeHold]);
 
   const cancel = useCallback(() => {
     rawSamplesRef.current = [];
@@ -189,7 +246,8 @@ export function useBrushTool(hitScale: number) {
     setIsDrawing(false);
     setPreviewOutline([]);
     setPreviewCenterline(null);
-  }, []);
+    clearQuickShapeHold();
+  }, [clearQuickShapeHold]);
 
   return { pointerDown, pointerMove, pointerUp, cancel, previewOutline, previewCenterline, isDrawing };
 }

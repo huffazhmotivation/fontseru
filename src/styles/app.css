@@ -94,31 +94,35 @@ input[type="range"]:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ------------------------------------------------------------------ TOKENS */
 .fm-root[data-theme="dark"] {
-  --bg: #0a0c0b;
-  --panel: #101312;
-  --panel-2: #171b19;
-  --panel-3: #1e2320;
-  --border: #23282500;
-  --line: #262b28;
-  --line-soft: #1c211e;
-  --text: #eef2ef;
-  --text-dim: #8a938d;
-  --text-faint: #5c635e;
-  --ink: #f2f5f2;
+  /* Neutral UI chrome: true gray (R=G=B), no green cast. Only these
+     structural/neutral tokens were de-tinted — --accent and every other
+     intentionally-green token below (accent-2, accent-soft, overlap,
+     auto*, m-xheight) are untouched on purpose. */
+  --bg: #0b0b0b;
+  --panel: #121212;
+  --panel-2: #191919;
+  --panel-3: #202020;
+  --border: #25252500;
+  --line: #282828;
+  --line-soft: #1e1e1e;
+  --text: #f0f0f0;
+  --text-dim: #8e8e8e;
+  --text-faint: #5f5f5f;
+  --ink: #f3f3f3;
   --accent: #c6f24e;
   --accent-2: #a6e034;
   --accent-ink: #0c0f08;
   --accent-soft: #1f2a10;
-  --node-corner: #9aa39c;
+  --node-corner: #9e9e9e;
   --node-smooth: #6fd3ff;
   --node-symmetric: #c69bff;
-  --guide: #454f47;
+  --guide: #494949;
   --guide-2: #6b5a2e;
-  --grid: #232a25;
-  --grid-major: #363f38;
-  --handle-line: #4a534d;
-  --canvas: #151916;
-  --thumb-ink: #d6ddd7;
+  --grid: #262626;
+  --grid-major: #3a3a3a;
+  --handle-line: #4e4e4e;
+  --canvas: #171717;
+  --thumb-ink: #d9d9d9;
   --danger: #ff6b57;
   --overlap: #a6e034;
   --shadow: rgba(0, 0, 0, 0.5);
@@ -147,31 +151,34 @@ input[type="range"]:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 
 .fm-root[data-theme="light"] {
-  --bg: #f7f8f9;
+  /* Neutral UI chrome: true gray/white (R=G=B), no blue cast. Only
+     these structural/neutral tokens were de-tinted; --accent and the
+     rest of the color-coded tokens below are untouched on purpose. */
+  --bg: #f8f8f8;
   --panel: #ffffff;
-  --panel-2: #f3f4f6;
-  --panel-3: #ebedf0;
+  --panel-2: #f4f4f4;
+  --panel-3: #ededed;
   --border: #00000000;
-  --line: #e3e6e9;
-  --line-soft: #eef0f2;
-  --text: #14181c;
-  --text-dim: #62686f;
-  --text-faint: #9aa1a8;
-  --ink: #171b1f;
+  --line: #e6e6e6;
+  --line-soft: #f0f0f0;
+  --text: #181818;
+  --text-dim: #686868;
+  --text-faint: #a1a1a1;
+  --ink: #1b1b1b;
   --accent: #4a5a68;
   --accent-2: #384754;
   --accent-ink: #ffffff;
   --accent-soft: #eaedf0;
-  --node-corner: #6d747b;
+  --node-corner: #747474;
   --node-smooth: #1f8fce;
   --node-symmetric: #7b45d6;
-  --guide: #aab0b6;
+  --guide: #b0b0b0;
   --guide-2: #b79a4e;
-  --grid: #dee2e5;
-  --grid-major: #c6cbcf;
-  --handle-line: #a9aeb4;
-  --canvas: #fbfcfc;
-  --thumb-ink: #1b1f23;
+  --grid: #e2e2e2;
+  --grid-major: #cbcbcb;
+  --handle-line: #aeaeae;
+  --canvas: #fcfcfc;
+  --thumb-ink: #1f1f1f;
   --danger: #d1402d;
   --overlap: #6ea11a;
   --shadow: rgba(20, 22, 24, 0.08);
@@ -253,20 +260,20 @@ html[data-theme="light"] { color-scheme: light; }
    dark-gray "box" the full size of the track instead of a slim rounded
    bar. */
 html[data-theme="dark"] ::-webkit-scrollbar-thumb {
-  background: #262b28;
+  background: #282828;
   border-radius: 999px;
 }
 html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
-  background: #5c635e;
+  background: #5f5f5f;
 }
 
 /* Light theme scrollbars */
 html[data-theme="light"] ::-webkit-scrollbar-thumb {
-  background: #c8cdc9;
+  background: #cacaca;
   border-radius: 999px;
 }
 html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
-  background: #9aa1a8;
+  background: #a1a1a1;
 }
 
 /* ------------------------------------------------------------------ TOP BAR */
@@ -1240,19 +1247,19 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 /* ------------------------------------------------------------------ RULER */
 .fm-root[data-theme="dark"]  {
   --ruler-guide: #ff2ec4;
-  --ruler-bg: #0d110f;
-  --ruler-tick: #2e3430;
-  --ruler-tick-major: #4a514d;
-  --ruler-label: #5a625e;
-  --ruler-border: #1e2320;
+  --ruler-bg: #0f0f0f;
+  --ruler-tick: #313131;
+  --ruler-tick-major: #4d4d4d;
+  --ruler-label: #5e5e5e;
+  --ruler-border: #202020;
 }
 .fm-root[data-theme="light"] {
   --ruler-guide: #d6007a;
-  --ruler-bg: #f0f2f3;
-  --ruler-tick: #d0d4d7;
-  --ruler-tick-major: #9aa1a8;
-  --ruler-label: #9aa1a8;
-  --ruler-border: #e0e3e6;
+  --ruler-bg: #f2f2f2;
+  --ruler-tick: #d4d4d4;
+  --ruler-tick-major: #a1a1a1;
+  --ruler-label: #a1a1a1;
+  --ruler-border: #e3e3e3;
 }
 
 /* fm-canvas-frame must be position:relative (already is) for absolute rulers */
@@ -1355,8 +1362,8 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
   margin: 0 -10px;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.fm-preview-stage.dark { background: #0a0c0b; color: #f2f5f2; }
-.fm-preview-stage.light { background: #ffffff; color: #14160f; }
+.fm-preview-stage.dark { background: #0b0b0b; color: #f3f3f3; }
+.fm-preview-stage.light { background: #ffffff; color: #181818; }
 .fm-preview-lines {
   display: flex; flex-direction: column; justify-content: center;
   min-height: 100%; width: 100%;
@@ -2042,8 +2049,8 @@ input[type="number"]::-webkit-outer-spin-button {
   padding: 28px;
   overflow: auto;
 }
-.fm-lab-stage.dark { background: #0a0c0b; color: #f2f5f2; }
-.fm-lab-stage.light { background: #ffffff; color: #14160f; }
+.fm-lab-stage.dark { background: #0b0b0b; color: #f3f3f3; }
+.fm-lab-stage.light { background: #ffffff; color: #181818; }
 .fm-lab-stage:not(.fm-family-stage) {
   overflow-x: hidden;
   overflow-y: auto;
@@ -5100,4 +5107,211 @@ input[type="number"]::-webkit-outer-spin-button {
 [data-browser="chromium"] .fm-family-auto-row {
   content-visibility: auto;
   contain-intrinsic-size: 132px;
+}
+
+/* ================================================================
+   Timelapse Recording overlay + REC badge — additive only, does not
+   modify any existing selector above.
+   ================================================================ */
+
+.fm-timelapse-badge {
+  position: absolute;
+  top: 14px;
+  /* Right side, not left: .fm-sketch-toggle floats at top-left (top:14px;
+     left:14px too), so anchoring the REC badge there as well made it get
+     covered by/overlap that button whenever Sketch Mode is available. */
+  right: 14px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 6px 18px var(--shadow);
+}
+.fm-timelapse-badge-dot {
+  color: var(--danger);
+  animation: fm-timelapse-pulse 1.4s ease-in-out infinite;
+}
+.fm-timelapse-badge-count {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+@keyframes fm-timelapse-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.fm-timelapse-modal { width: min(720px, 100%); height: min(720px, 100%); }
+
+.fm-timelapse-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+}
+
+.fm-timelapse-record-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fm-timelapse-record-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.fm-timelapse-record-btn:hover:not(:disabled) { border-color: var(--text-faint); }
+.fm-timelapse-record-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.fm-timelapse-record-btn.is-recording {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.fm-timelapse-record-btn.is-recording svg { animation: fm-timelapse-pulse 1.4s ease-in-out infinite; }
+
+.fm-timelapse-icon-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-dim);
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.fm-timelapse-icon-btn:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+.fm-timelapse-icon-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.fm-timelapse-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.fm-timelapse-limit { color: var(--danger); font-weight: 700; }
+
+.fm-timelapse-stage {
+  flex: 1;
+  min-height: 220px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background:
+    radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--panel-2) 55%, var(--canvas)) 0%, var(--canvas) 65%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  overflow: hidden;
+}
+.fm-timelapse-video-stage { padding: 0; overflow: hidden; background: #000; }
+.fm-timelapse-video {
+  width: 100%;
+  height: 100%;
+  max-height: 420px;
+  display: block;
+  background: #000;
+  border-radius: 12px;
+}
+.fm-timelapse-empty {
+  max-width: 360px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+.fm-timelapse-empty strong { color: var(--text); }
+
+.fm-timelapse-frame-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.fm-timelapse-action-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--accent-2);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.fm-timelapse-scrub-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fm-timelapse-play-btn { color: var(--text); }
+.fm-timelapse-scrubber { flex: 1; }
+.fm-timelapse-scrubber:disabled { opacity: 0.35; }
+
+.fm-timelapse-speed-row,
+.fm-timelapse-export-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fm-timelapse-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 52px;
+}
+.fm-timelapse-speed-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.fm-timelapse-speed-btn:hover { background: var(--panel-2); color: var(--text); }
+.fm-timelapse-speed-btn.is-active { background: var(--accent); color: var(--accent-ink); }
+
+.fm-timelapse-export-btn { margin-left: auto; }
+.fm-timelapse-export-note {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .fm-timelapse-modal { height: calc(100vh - 20px); height: calc(100dvh - 20px); }
+  .fm-timelapse-speed-row, .fm-timelapse-export-row { flex-wrap: wrap; }
 }
