@@ -425,7 +425,17 @@ export function GlyphCanvas() {
         return;
       }
 
-      if (tool !== "node") return;
+      // Double-click on empty canvas (outside any vector object) in any other
+      // tool mode → switch to Select. Lets the user quickly exit brush/pencil/
+      // zoom/hand/shape mode without reaching for the toolbar.
+      if (tool !== "node") {
+        const tol = 6 * hitScale;
+        const hitAny = editor.outline.objects.some((obj) => pointHitsObject(obj, p, tol));
+        if (!hitAny) {
+          setTool("select");
+        }
+        return;
+      }
       const hitR = 12 * hitScale;
       // Only the active (selected) object's nodes/segments are live in Node
       // mode — editor.nodeableOutline is already filtered to that, so a
