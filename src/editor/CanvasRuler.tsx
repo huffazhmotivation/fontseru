@@ -76,8 +76,7 @@ export function CanvasRuler({ scale, vbX, vbY, vbW, vbH, ascender, svgRef }: Pro
       e.preventDefault();
       const rect = svgRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const id = shortId();
-      // Initial font-unit Y: convert clientY to SVG-Y, then to font-Y
+      const id = shortId("rg");
       const svgY = vbY + (e.clientY - rect.top) / scale;
       const fontY = ascender - svgY;
       addGuide({ id, axis: "h", position: fontY });
@@ -95,7 +94,7 @@ export function CanvasRuler({ scale, vbX, vbY, vbW, vbH, ascender, svgRef }: Pro
       e.preventDefault();
       const rect = svgRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const id = shortId();
+      const id = shortId("rg");
       const fontX = vbX + (e.clientX - rect.left) / scale;
       addGuide({ id, axis: "v", position: fontX });
       (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId);
