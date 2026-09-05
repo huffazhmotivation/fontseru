@@ -278,7 +278,7 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
 
 /* ------------------------------------------------------------------ TOP BAR */
 .fm-topbar {
-  height: 54px;
+  min-height: 54px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -287,7 +287,21 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   min-width: 0;
+  /* Universal safety net: whenever the row of controls doesn't fit the
+     viewport (tablet portrait widths especially - 768-834px is exactly
+     where iPad portrait falls, between the 560px phone breakpoint and the
+     900px drawer breakpoint), scroll horizontally within the bar itself
+     instead of silently overflowing past `.fm-root`'s `overflow: hidden`
+     and having the right-most controls (incl. the panel toggle button)
+     clipped and unreachable. This applies at every width - on desktop the
+     bar simply never needs to scroll, so it's a no-op there. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  flex-wrap: nowrap;
+  scrollbar-width: none; /* Firefox: hide the scrollbar, keep the scroll */
 }
+.fm-topbar::-webkit-scrollbar { display: none; } /* Safari/Chrome: same */
+.fm-topbar > * { flex: 0 0 auto; }
 .fm-topbar .fm-topbtn { white-space: nowrap; }
 .fm-logo { display: flex; align-items: center; gap: 10px; }
 .fm-logo-image {
@@ -1010,6 +1024,7 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
   width: 244px; flex: 0 0 auto;
   background: var(--panel); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; min-height: 0;
+  overflow-x: hidden;
 }
 .fm-glyphnav-head { padding: 14px 14px 10px; border-bottom: 1px solid var(--line-soft); }
 .fm-glyphnav-eyebrow-row {
@@ -1477,7 +1492,19 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 }
 
 /* ------------------------------------------------------------------ RIGHT PANEL */
-.fm-rightpanel { width: 288px; flex: 0 0 auto; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
+.fm-rightpanel {
+  width: 288px; flex: 0 0 auto; background: var(--panel); border-left: 1px solid var(--line);
+  overflow-y: auto;
+  /* Safety net for tablet-landscape widths (900-1180px) where this panel
+     shrinks to 250/205px: if any row inside is a touch wider than that,
+     it now scrolls horizontally within the panel instead of spilling past
+     the panel's right edge and being silently clipped by `.fm-root`'s
+     `overflow: hidden` (this was the "panel kanan agak kepotong" bug in
+     landscape). */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.fm-rightpanel > * { min-width: 0; }
 .fm-panel-header {
   padding: 16px 18px; border-bottom: 1px solid var(--line);
   display: flex; align-items: center; gap: 14px;
@@ -1955,7 +1982,16 @@ input[type="number"]::-webkit-outer-spin-button {
     background: var(--panel-2);
     color: var(--text-dim);
     cursor: pointer;
+    /* Pin both drawer toggles to the edges of the now-scrollable topbar
+       (see .fm-topbar overflow-x above) so they stay reachable and
+       tappable no matter how far the bar has been scrolled - this is what
+       was making the right-panel button effectively unreachable/unusable
+       on phones, since it used to sit at the very end of a ~25-button row. */
+    position: sticky;
+    z-index: 6;
   }
+  .fm-mobile-nav-toggle { left: 0; }
+  .fm-mobile-panel-toggle { right: 0; }
   .fm-mobile-nav-toggle:hover, .fm-mobile-panel-toggle:hover { color: var(--text); background: var(--panel); }
   .fm-mobile-panel-toggle { margin-left: auto; }
 
@@ -2008,21 +2044,13 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-canvas-wrap { min-width: 0; width: 100%; }
 }
 
-/* Phones specifically (up to 560px): the top/bottom bars still have more
-   controls than fit in one row even icon-only, so let each scroll
-   horizontally within its own strip instead of clipping - same safety net
-   already used for the bottom bar at 900px, extended to the top bar. */
+/* Phones specifically (up to 560px): tighter side padding and a narrower
+   font-name field so more of the scrollable bar (see the base .fm-topbar
+   rule above, which now handles the horizontal-scroll safety net at every
+   width) is used for actual controls. */
 @media (max-width: 560px) {
-  .fm-topbar {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    flex-wrap: nowrap;
-    padding-left: 8px;
-    padding-right: 8px;
-  }
-  .fm-topbar > * { flex: 0 0 auto; }
+  .fm-topbar { padding-left: 8px; padding-right: 8px; }
   .fm-topbar .fm-fontname { min-width: 90px; width: 30vw; }
-  .fm-align-group, .fm-align-divider, .fm-topbtn-group { flex: 0 0 auto; }
 }
 
 /* iPhone notch / home-indicator safe areas: without this, the top and
@@ -2032,6 +2060,11 @@ input[type="number"]::-webkit-outer-spin-button {
    browser that doesn't support env(). */
 .fm-topbar { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); padding-top: env(safe-area-inset-top); }
 .fm-bottombar { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); padding-bottom: env(safe-area-inset-bottom); }
+/* Same treatment for the two side panels in landscape, where a device's
+   rounded corners / home-indicator area can eat into the left/right edges
+   instead of the top/bottom. */
+.fm-glyphnav { padding-left: env(safe-area-inset-left); }
+.fm-rightpanel { padding-right: env(safe-area-inset-right); }
 
 /* ================================================================
    Font Test Lab / Kerning Editor overlay (Phase 6) â€” additive only,
