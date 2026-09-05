@@ -778,7 +778,9 @@ export function cornerHandleDirection(outline: GlyphOutline, ref: { contourId: s
   if (idx === -1) return null;
   const node = contour.nodes[idx];
 
-  if (node.type === "corner" && !node.handleIn && !node.handleOut) {
+  // Same relaxed test as sharpCornerHandle: a handle-less anchor is a
+  // sharp corner regardless of its `type` label.
+  if (!node.handleIn && !node.handleOut) {
     const n = contour.nodes.length;
     const prevIdx = contour.closed ? (idx - 1 + n) % n : idx - 1;
     const nextIdx = contour.closed ? (idx + 1) % n : idx + 1;
@@ -794,7 +796,16 @@ export function cornerHandleDirection(outline: GlyphOutline, ref: { contourId: s
 
 function sharpCornerHandle(contour: Contour, idx: number, inset: number): CornerHandle | null {
   const node = contour.nodes[idx];
-  if (node.type !== "corner" || node.handleIn || node.handleOut) return null;
+  // Any anchor with no bezier handles on either side is geometrically a
+  // straight corner and can be rounded — regardless of its declared
+  // `type` label. `type` ("corner"/"smooth"/"symmetric") only governs how
+  // a node behaves once it *has* handles; a handle-less "symmetric" point
+  // (e.g. the very first node of a freshly-drawn Pen path, which starts
+  // out Symmetric before any handle is ever dragged from it) is just as
+  // much a sharp corner as one explicitly typed "corner". Restricting to
+  // `type === "corner"` here used to silently exclude those points from
+  // the corner-round feature.
+  if (node.handleIn || node.handleOut) return null;
   const n = contour.nodes.length;
   const prevIdx = contour.closed ? (idx - 1 + n) % n : idx - 1;
   const nextIdx = contour.closed ? (idx + 1) % n : idx + 1;
@@ -806,23 +817,27 @@ function sharpCornerHandle(contour: Contour, idx: number, inset: number): Corner
   return { contourId: contour.id, nodeId: node.id, point: geo.point, dirA: geo.dirA, dirB: geo.dirB, rounded: false, radius: 0 };
 }
 
-function roundedCornerHandle(outline: GlyphOutline, contour: Contour, node: PathNode, inset: number): CornerHandle | null {
+function roundedCornerHandle(
+  outline: GlyphOutline,
+  contour: Contour,
+  node: PathNode,
+  inset: number,
+  activeCorner?: { contourId: string; cornerPoint: Point }
+): CornerHandle | null {
   if (!isFilletStart(node)) return null;
   const rec = reconstructCorner(outline, { contourId: contour.id, nodeId: node.id });
   if (!rec) return null;
   const { pair, corner } = rec;
   const radius = length(subtract(pair.a, corner));
-  // Fixed distance from the corner — same `inset` a still-sharp corner
-  // uses — regardless of how large the fillet's own radius has grown.
-  // Earlier this rode OUT to the fillet's live radius instead, which made
-  // sense for a bracket icon meant to visually trace the growing curve,
-  // but for a small square handle it just means a big rounding pushes the
-  // grabbable icon far from the corner — sometimes onto empty canvas well
-  // outside the shape, sometimes swallowed inside dense ink — making it
-  // hard to find and easy to miss-click. Staying at a constant, modest
-  // distance keeps it exactly where you'd expect (right by the corner,
-  // Figma-style) no matter how far the corner has already been rounded.
-  const geo = cornerHandleGeometry(corner, subtract(pair.prevOfA, corner), subtract(pair.nextOfB, corner), inset);
+  // The handle always sits out at the fillet's actual live radius (never
+  // less than `inset`, so a freshly-rounded, near-zero-radius corner still
+  // has something grabbable). This makes the icon travel with the curve
+  // while dragging *and* stay exactly where the drag left it once released
+  // — no snap back toward the vertex — so its position always reflects how
+  // far that corner is currently rounded.
+  void activeCorner; // kept for API compatibility; position no longer depends on drag activity
+  const targetDist = Math.max(inset, radius);
+  const geo = cornerHandleGeometry(corner, subtract(pair.prevOfA, corner), subtract(pair.nextOfB, corner), targetDist);
   if (!geo) return null;
   return { contourId: contour.id, nodeId: node.id, point: geo.point, dirA: geo.dirA, dirB: geo.dirB, rounded: true, radius };
 }
@@ -830,13 +845,19 @@ function roundedCornerHandle(outline: GlyphOutline, contour: Contour, node: Path
 /** All corner-round handles across the outline, in font-space, for the
  *  Node tool overlay. `inset` should already be scaled to font units
  *  (screen-pixel inset × hitScale) so the handle sits a constant distance
- *  in from the vertex regardless of zoom. */
-export function getCornerHandles(outline: GlyphOutline, inset: number): CornerHandle[] {
+ *  in from the vertex regardless of zoom. `activeCorner`, when given,
+ *  identifies the one corner currently mid-drag (see roundedCornerHandle)
+ *  so only its icon tracks the live radius instead of every corner. */
+export function getCornerHandles(
+  outline: GlyphOutline,
+  inset: number,
+  activeCorner?: { contourId: string; cornerPoint: Point }
+): CornerHandle[] {
   const handles: CornerHandle[] = [];
   for (const obj of outline.objects) {
     for (const contour of obj.contours) {
       contour.nodes.forEach((node, idx) => {
-        const h = sharpCornerHandle(contour, idx, inset) ?? roundedCornerHandle(outline, contour, node, inset);
+        const h = sharpCornerHandle(contour, idx, inset) ?? roundedCornerHandle(outline, contour, node, inset, activeCorner);
         if (h) handles.push(h);
       });
     }

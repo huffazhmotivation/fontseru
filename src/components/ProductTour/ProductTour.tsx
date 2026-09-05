@@ -7,7 +7,6 @@ import { TOUR_SCENES } from "./tourScenes";
 import "./productTour.css";
 
 const SCENE_DURATION_MS = 6500;
-const TICK_MS = 50;
 
 /**
  * Pre-login automated product tour.
@@ -95,19 +94,39 @@ export function ProductTour() {
     setCaption(null);
   }, [sceneIdx]);
 
+  // Drive playback off real elapsed time via requestAnimationFrame instead
+  // of a fixed-period setInterval. A 50ms setInterval only *requests* a
+  // tick every 50ms — it doesn't guarantee one arrives on time. The moment
+  // the main thread is briefly busy (a paint, a GC pause, a Chromium
+  // backdrop-filter/filter repaint — see the CSS fallbacks below), queued
+  // interval callbacks pile up and then fire in a burst, which is exactly
+  // what reads as "patah-patah" (stutter/jump) rather than a smooth glide.
+  // rAF instead asks the browser "call me right before the next paint",
+  // so it naturally coalesces to whatever the real frame rate is, never
+  // queues up backlog, and automatically pauses when the tab is
+  // backgrounded/throttled. Progress is computed from a timestamp delta
+  // each frame rather than accumulated tick counts, so a slow frame just
+  // produces one bigger (still correct) jump instead of a cascade of
+  // stale, bunched-up updates.
   useEffect(() => {
     if (!tourOpen || finished || paused) return;
-    const id = window.setInterval(() => {
+    let raf = 0;
+    let last = performance.now();
+    const loop = (now: number) => {
+      const dt = now - last;
+      last = now;
       setElapsed((prev) => {
-        const next = prev + TICK_MS;
+        const next = prev + dt;
         if (next >= SCENE_DURATION_MS) {
           setSceneIdx((s) => s + 1);
           return 0;
         }
         return next;
       });
-    }, TICK_MS);
-    return () => window.clearInterval(id);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
   }, [tourOpen, finished, paused]);
 
   // Pause the automated playback (not visible/interactive time shouldn't

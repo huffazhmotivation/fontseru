@@ -125,8 +125,14 @@ export function useGlyphEditor(hitScale: number) {
   // Live readout for a Cmd/Ctrl-drag corner-round: shows the fillet radius
   // (font units) next to the cursor while dragging, so the exact number can
   // be read off and reused (e.g. typed into another corner-round elsewhere)
-  // instead of eyeballing the drag distance. Cleared on release.
-  const [roundCornerLabel, setRoundCornerLabel] = useState<{ point: Point; radius: number } | null>(null);
+  // instead of eyeballing the drag distance. Cleared on release. Also
+  // doubles as the "which corner is actively being dragged" signal for the
+  // handle-icon renderer: `contourId`/`cornerPoint` identify the corner
+  // being rounded (cornerPoint is fixed for the whole gesture, captured at
+  // drag-start) so only THAT handle rides out live with the growing
+  // radius — every other corner's icon stays put at its normal resting
+  // spot, unaffected by an unrelated drag elsewhere in the glyph.
+  const [roundCornerLabel, setRoundCornerLabel] = useState<{ point: Point; radius: number; contourId: string; cornerPoint: Point } | null>(null);
   /** Live alignment feedback while dragging a bezier handle — mirrors
    * FontLab's dashed cross-guides with a coordinate readout. `x`/`y` are
    * set only on the axis actually snapped, so the drawn guide only shows
@@ -359,11 +365,13 @@ export function useGlyphEditor(hitScale: number) {
         // moving/multi-selecting — the corner's neighbors stay put and two
         // new nodes appear, joined by a bezier fillet whose radius tracks
         // the drag distance (see nodePointerMove and nodeOps.roundCorner).
-        // Only applies to true corners (no handles yet); a node that's
-        // already smooth/symmetric, or already rounded, keeps the normal
-        // shift-click multi-select behavior below.
+        // Applies to any node with no bezier handles on either side — the
+        // `type` label ("corner"/"smooth"/"symmetric") doesn't matter for
+        // a handle-less point, it's a sharp corner either way. A node with
+        // a handle already (or one that's already rounded) keeps the
+        // normal shift-click multi-select behavior below.
         const hitNode = findNode(outline, hit.contourId, hit.nodeId);
-        if (cmdKey && hitNode && hitNode.type === "corner" && !hitNode.handleIn && !hitNode.handleOut) {
+        if (cmdKey && hitNode && !hitNode.handleIn && !hitNode.handleOut) {
           const dir = cornerHandleDirection(outline, { contourId: hit.contourId, nodeId: hit.nodeId });
           if (dir) {
             baseOutlineRef.current = cloneOutline(outline);
@@ -498,7 +506,7 @@ export function useGlyphEditor(hitScale: number) {
         // and dragging back past the corner clamps cleanly to 0 via
         // roundCorner's minRadius cutoff below.
         const radius = Math.max(0, dot(subtract(p, drag.cornerPoint), drag.dir));
-        setRoundCornerLabel({ point: p, radius });
+        setRoundCornerLabel({ point: p, radius, contourId: drag.contourId, cornerPoint: drag.cornerPoint });
         setLiveOutline(roundCorner(base, { contourId: drag.contourId, nodeId: drag.nodeId }, radius, cornerRoundMinRadius));
         return;
       }

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import {
   MousePointer2,
   PenTool,
@@ -135,7 +135,14 @@ export function TourCursorLayer({ motion }: { motion: TourMotionState }) {
       {rippleAt > 0 && (
         <span key={rippleAt} className="pt-click-ripple" style={{ left: `${cx}%`, top: `${cy}%` }} />
       )}
-      <div className="pt-cursor-wrap" style={{ left: `${cx}%`, top: `${cy}%` }}>
+      <div
+        className="pt-cursor-wrap"
+        // Position is driven by --cx/--cy (consumed via cqw/cqh in a
+        // `transform`, see productTour.css) rather than left/top, so the
+        // ~60 updates/sec this receives while gliding between waypoints
+        // never touch layout — see the CSS comment for why that matters.
+        style={{ "--cx": cx, "--cy": cy } as CSSProperties}
+      >
         <MousePointer2 className="pt-cursor-icon" size={22} strokeWidth={2.25} />
       </div>
     </>

@@ -1216,6 +1216,11 @@ export function GlyphCanvas() {
             tool={tool}
             selectedNodes={editor.selectedNodes}
             selectedHandle={editor.selectedHandle}
+            activeRoundCorner={
+              editor.roundCornerLabel
+                ? { contourId: editor.roundCornerLabel.contourId, cornerPoint: editor.roundCornerLabel.cornerPoint }
+                : undefined
+            }
           />
         ) : (
           /* Outside Node/Pen: line + brush objects are built from a skeleton
@@ -1303,7 +1308,7 @@ const ObjectsLayer = memo(function ObjectsLayer({
  * "stuck" canvas during ordinary mouse movement.
  */
 const NodesAndHandlesLayer = memo(function NodesAndHandlesLayer({
-  objects, ascender, hitScale, tool, selectedNodes, selectedHandle,
+  objects, ascender, hitScale, tool, selectedNodes, selectedHandle, activeRoundCorner,
 }: {
   objects: VectorObject[];
   ascender: number;
@@ -1311,6 +1316,7 @@ const NodesAndHandlesLayer = memo(function NodesAndHandlesLayer({
   tool: string;
   selectedNodes: { contourId: string; nodeId: string }[];
   selectedHandle: { contourId: string; nodeId: string; part: "handleIn" | "handleOut" } | null;
+  activeRoundCorner?: { contourId: string; cornerPoint: Point };
 }) {
   return (
     <>
@@ -1369,10 +1375,14 @@ const NodesAndHandlesLayer = memo(function NodesAndHandlesLayer({
               pointer-down hit test uses, so the drawn icon and the
               clickable spot can't drift apart. */}
           {tool === "node" &&
-            getCornerHandles({ objects: [obj] } as GlyphOutline, 16 * hitScale).map((h) => {
-              const halfPx = 5.5;
+            getCornerHandles(
+              { objects: [obj] } as GlyphOutline,
+              16 * hitScale,
+              activeRoundCorner
+            ).map((h) => {
+              const halfPx = 4;
               const halfFont = halfPx * hitScale;
-              const rxFont = 2.5 * hitScale;
+              const rxFont = 1.8 * hitScale;
               const svgP = toSvgPoint(h.point, ascender);
               return (
                 <rect
