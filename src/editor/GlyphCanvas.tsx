@@ -399,9 +399,12 @@ export function GlyphCanvas() {
       if (!p) return;
 
       if (tool === "pen") {
-        // The two underlying single-clicks are harmless because endpoint clicks
-        // never add a duplicate node. The double-click then commits the path.
-        if (editor.isCurrentEndpoint(p)) editor.finishOpenContour();
+        // Double-click on the current endpoint commits the open path.
+        if (editor.isCurrentEndpoint(p)) { editor.finishOpenContour(); return; }
+        // Double-click outside any vector object → escape to Select.
+        const tol = 6 * hitScale;
+        const hitAny = editor.outline.objects.some((obj) => pointHitsObject(obj, p, tol));
+        if (!hitAny) setTool("select");
         return;
       }
 
@@ -425,9 +428,9 @@ export function GlyphCanvas() {
         return;
       }
 
-      // Double-click outside any vector object in brush/pen/pencil/node tool
+      // Double-click outside any vector object in brush/pencil/node tool
       // → switch to Select. Quick escape without touching the toolbar.
-      if (tool === "brush" || tool === "pencil" || tool === "pen" || tool === "node") {
+      if (tool === "brush" || tool === "pencil" || tool === "node") {
         const tol = 6 * hitScale;
         const hitAny = editor.outline.objects.some((obj) => pointHitsObject(obj, p, tol));
         if (!hitAny) {
