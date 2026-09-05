@@ -1239,7 +1239,7 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 
 /* ------------------------------------------------------------------ RULER */
 .fm-root[data-theme="dark"]  {
-  --ruler-guide: #00e5ff;
+  --ruler-guide: #ff2ec4;
   --ruler-bg: #0d110f;
   --ruler-tick: #2e3430;
   --ruler-tick-major: #4a514d;
@@ -1247,7 +1247,7 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
   --ruler-border: #1e2320;
 }
 .fm-root[data-theme="light"] {
-  --ruler-guide: #0088aa;
+  --ruler-guide: #d6007a;
   --ruler-bg: #f0f2f3;
   --ruler-tick: #d0d4d7;
   --ruler-tick-major: #9aa1a8;
@@ -1276,7 +1276,7 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
   user-select: none;
   -webkit-user-select: none;
 }
-.fm-ruler-guide-marker { stroke: var(--ruler-guide); stroke-width: 1.5; opacity: 0.9; }
+.fm-ruler-guide-marker { stroke: var(--ruler-guide); stroke-width: 2.5; opacity: 1; }
 
 /* ------------------------------------------------------------------ BOTTOM BAR */
 .fm-bottombar {

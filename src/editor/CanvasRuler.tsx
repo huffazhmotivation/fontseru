@@ -253,9 +253,14 @@ export function RulerGuideLines({
         if (g.axis === "h") {
           const y = ascender - g.position;
           if (y < vbY - 50 / sc || y > vbY + vbH + 50 / sc) return null;
+          const r = 3.5 / sc;
           return (
             <g key={g.id}>
               <line x1={vbX} y1={y} x2={vbX + vbW} y2={y} className="ruler-guide-line" pointerEvents="none" />
+              {/* End-cap diamonds: an extra shape cue (not just color/dash)
+                  so the ruler guide reads as distinct at a glance. */}
+              <rect x={vbX - r} y={y - r} width={r * 2} height={r * 2} transform={`rotate(45, ${vbX}, ${y})`} className="ruler-guide-endcap" pointerEvents="none" />
+              <rect x={vbX + vbW - r} y={y - r} width={r * 2} height={r * 2} transform={`rotate(45, ${vbX + vbW}, ${y})`} className="ruler-guide-endcap" pointerEvents="none" />
               {/* Wide invisible hit area for double-click delete */}
               <line
                 x1={vbX} y1={y} x2={vbX + vbW} y2={y}
@@ -268,9 +273,12 @@ export function RulerGuideLines({
         } else {
           const x = g.position;
           if (x < vbX - 50 / sc || x > vbX + vbW + 50 / sc) return null;
+          const r = 3.5 / sc;
           return (
             <g key={g.id}>
               <line x1={x} y1={vbY} x2={x} y2={vbY + vbH} className="ruler-guide-line" pointerEvents="none" />
+              <rect x={x - r} y={vbY - r} width={r * 2} height={r * 2} transform={`rotate(45, ${x}, ${vbY})`} className="ruler-guide-endcap" pointerEvents="none" />
+              <rect x={x - r} y={vbY + vbH - r} width={r * 2} height={r * 2} transform={`rotate(45, ${x}, ${vbY + vbH})`} className="ruler-guide-endcap" pointerEvents="none" />
               <line
                 x1={x} y1={vbY} x2={x} y2={vbY + vbH}
                 stroke="transparent" strokeWidth={12 / sc}

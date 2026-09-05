@@ -838,9 +838,12 @@ export function GlyphCanvas() {
           .skeleton-guide-path { fill: none; stroke: var(--accent); stroke-width: ${1 / sc}; stroke-dasharray: ${3 / sc} ${3 / sc}; opacity: 0.4; }
           .skeleton-guide-path.active { stroke: #000; stroke-dasharray: none; stroke-width: ${1.25 / sc}; opacity: 0.85; }
           .close-ring { fill: none; stroke: var(--accent); stroke-width: ${1.8 / sc}; }
-          /* Ruler-dragged guides: high-contrast cyan so they read clearly
+          /* Ruler-dragged guides: high-contrast magenta, thicker, and a
+             long-dash/short-gap pattern (not the 5:5 or 6:4 rhythm used by
+             metric guides) so they read as clearly distinct at a glance
              against the existing metric guides (purple/blue/green/orange). */
-          .ruler-guide-line { stroke: var(--ruler-guide); stroke-width: ${1.1 / sc}; stroke-dasharray: ${6 / sc} ${4 / sc}; opacity: 0.9; }
+          .ruler-guide-line { stroke: var(--ruler-guide); stroke-width: ${1.8 / sc}; stroke-dasharray: ${11 / sc} ${3 / sc}; opacity: 1; }
+          .ruler-guide-endcap { fill: var(--ruler-guide); opacity: 1; }
           .marquee-rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: ${1 / sc}; opacity: 0.5; }
           .sel-box { fill: none; stroke: var(--accent); stroke-width: ${1.2 / sc}; stroke-dasharray: ${5 / sc} ${4 / sc}; }
           .sel-handle { fill: var(--canvas); stroke: var(--accent); stroke-width: ${1.5 / sc}; }
