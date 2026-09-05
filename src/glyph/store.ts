@@ -28,6 +28,15 @@ import type { GlyphCategory } from "@/types/glyph";
 
 export type Theme = "light" | "dark";
 export type PenMode = "shape" | "line";
+
+/** A user-dragged guide line created from the ruler strip. */
+export interface RulerGuide {
+  id: string;
+  /** "h" = horizontal line (dragged from top ruler), "v" = vertical (left ruler). */
+  axis: "h" | "v";
+  /** Position in font-unit space: Y font-unit for "h", X font-unit for "v". */
+  position: number;
+}
 export type GlyphMetricKey = "advanceWidth" | "lsb" | "rsb";
 export type GlyphMetricScope = "current" | "all";
 export type SelectionSkewHandle = "skew-x-top" | "skew-x-bottom" | "skew-y-left" | "skew-y-right";
@@ -218,6 +227,10 @@ interface AppState {
   showGrid: boolean;
   gridSize: number;
   showGuides: boolean;
+  /** Whether the ruler strips along the top and left of the canvas are visible. */
+  showRuler: boolean;
+  /** User-dragged guide lines from the ruler. Each has a direction and position in font-unit space. */
+  rulerGuides: RulerGuide[];
   /** Soft-snap vector objects (move/transform/scale) to metric & sidebearing
    * guide lines — never grid. Off by default; toggled from BottomBar. */
   snapEnabled: boolean;
@@ -340,6 +353,10 @@ interface AppState {
   toggleGrid: () => void;
   setGridSize: (n: number) => void;
   toggleGuides: () => void;
+  toggleRuler: () => void;
+  addRulerGuide: (guide: RulerGuide) => void;
+  removeRulerGuide: (id: string) => void;
+  updateRulerGuide: (id: string, position: number) => void;
   toggleSnap: () => void;
   toggleProductionPreview: () => void;
   setProductionPreviewScale: (n: number) => void;
@@ -805,6 +822,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     showGrid: true,
     gridSize: 50,
     showGuides: true,
+    showRuler: true,
+    rulerGuides: [],
     snapEnabled: false,
     metrics: { ...DEFAULT_METRICS },
     metricFocus: null,
@@ -957,6 +976,12 @@ export const useAppStore = create<AppState>()((set, get) => {
     toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
     setGridSize: (n) => set({ gridSize: Math.min(200, Math.max(2, Math.round(n))) }),
     toggleGuides: () => set((s) => ({ showGuides: !s.showGuides })),
+    toggleRuler: () => set((s) => ({ showRuler: !s.showRuler })),
+    addRulerGuide: (guide) => set((s) => ({ rulerGuides: [...s.rulerGuides, guide] })),
+    removeRulerGuide: (id) => set((s) => ({ rulerGuides: s.rulerGuides.filter((g) => g.id !== id) })),
+    updateRulerGuide: (id, position) => set((s) => ({
+      rulerGuides: s.rulerGuides.map((g) => g.id === id ? { ...g, position } : g),
+    })),
     toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
     toggleProductionPreview: () => set((s) => ({ productionPreviewOpen: !s.productionPreviewOpen })),
     setProductionPreviewScale: (n) => set({ productionPreviewScale: Math.min(120, Math.max(10, Math.round(n))) }),

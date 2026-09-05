@@ -14,6 +14,7 @@ import { hitTestSegments } from "./segmentHitTest";
 import { findOverlappingObjectIds } from "./overlapDetect";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { GhostGlyph } from "./GhostGlyph";
+import { CanvasRuler, RulerGuideLines } from "./CanvasRuler";
 import { isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { GlyphOutline, NodeType, Point, VectorObject } from "@/types/geometry";
 import type { FontStyle, Glyph, GlyphMap } from "@/types/glyph";
@@ -66,6 +67,9 @@ export function GlyphCanvas() {
   const showGrid = useAppStore((s) => s.showGrid);
   const gridSize = useAppStore((s) => s.gridSize);
   const showGuides = useAppStore((s) => s.showGuides);
+  const showRuler = useAppStore((s) => s.showRuler);
+  const rulerGuides = useAppStore((s) => s.rulerGuides);
+  const removeRulerGuide = useAppStore((s) => s.removeRulerGuide);
   const metrics = useAppStore((s) => s.metrics);
   const beginMetricDrag = useAppStore((s) => s.beginMetricDrag);
   const setFontMetricLive = useAppStore((s) => s.setFontMetricLive);
@@ -705,7 +709,16 @@ export function GlyphCanvas() {
   const gridMaxX = upm;
 
   return (
-    <div className="fm-canvas-frame" ref={frameRef}>
+    <div className={`fm-canvas-frame${showRuler ? " fm-canvas-frame--ruler" : ""}`} ref={frameRef}>
+      {showRuler && (
+        <CanvasRuler
+          scale={sc}
+          vbX={vbX} vbY={vbY}
+          vbW={vbW} vbH={vbH}
+          ascender={ascender}
+          svgRef={svgRef}
+        />
+      )}
       <svg
         ref={svgRef}
         width="100%"
@@ -800,6 +813,9 @@ export function GlyphCanvas() {
           .skeleton-guide-path { fill: none; stroke: var(--accent); stroke-width: ${1 / sc}; stroke-dasharray: ${3 / sc} ${3 / sc}; opacity: 0.4; }
           .skeleton-guide-path.active { stroke: #000; stroke-dasharray: none; stroke-width: ${1.25 / sc}; opacity: 0.85; }
           .close-ring { fill: none; stroke: var(--accent); stroke-width: ${1.8 / sc}; }
+          /* Ruler-dragged guides: high-contrast cyan so they read clearly
+             against the existing metric guides (purple/blue/green/orange). */
+          .ruler-guide-line { stroke: var(--ruler-guide); stroke-width: ${1.1 / sc}; stroke-dasharray: ${6 / sc} ${4 / sc}; opacity: 0.9; }
           .marquee-rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: ${1 / sc}; opacity: 0.5; }
           .sel-box { fill: none; stroke: var(--accent); stroke-width: ${1.2 / sc}; stroke-dasharray: ${5 / sc} ${4 / sc}; }
           .sel-handle { fill: var(--canvas); stroke: var(--accent); stroke-width: ${1.5 / sc}; }
@@ -1230,6 +1246,17 @@ export function GlyphCanvas() {
              other tools. Purely visual: no pointer events, so it never
              competes with whatever the active tool is doing. */
           <SkeletonGuideLayer objects={objects} ascender={ascender} />
+        )}
+
+        {/* Ruler guides: user-dragged dashed lines from ruler strips */}
+        {rulerGuides.length > 0 && (
+          <RulerGuideLines
+            rulerGuides={rulerGuides}
+            sc={sc}
+            vbX={vbX} vbY={vbY} vbW={vbW} vbH={vbH}
+            ascender={ascender}
+            onRemove={removeRulerGuide}
+          />
         )}
       </svg>
     </div>

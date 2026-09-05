@@ -124,8 +124,31 @@ export function FloatingToolbar() {
   const openProModal = useAppStore((s) => s.openProModal);
   const { isPro } = useAuth();
 
+  // Bug: after clicking a tool button, that button keeps DOM focus. If the
+  // active tool then changes some other way — a keyboard shortcut (see
+  // useKeyboardShortcuts), or the editor auto-switching back to Select
+  // after finishing a shape/path — nothing ever moves that stale focus
+  // away. The old button still shows its `:focus-visible` accent ring
+  // *and* the real active tool shows its own filled `.active` state, so
+  // two icons look "lit up" at once even though only one tool is active.
+  // Whenever the active tool changes, drop focus from any floating-toolbar
+  // button that isn't the one for that tool, so only the truly active
+  // tool is ever highlighted.
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const active = document.activeElement;
+    if (
+      toolbarRef.current &&
+      active instanceof HTMLElement &&
+      toolbarRef.current.contains(active) &&
+      active.getAttribute("data-testid") !== `tool-${tool}`
+    ) {
+      active.blur();
+    }
+  }, [tool]);
+
   return (
-    <div className="fm-floating-toolbar" data-testid="floating-toolbar">
+    <div className="fm-floating-toolbar" data-testid="floating-toolbar" ref={toolbarRef}>
       {GROUPS.map((group, gi) => (
         <div className="fm-tool-group" key={gi}>
           {group.map((t) => {

@@ -11,6 +11,8 @@ export function BottomBar() {
   const setGridSize = useAppStore((s) => s.setGridSize);
   const showGuides = useAppStore((s) => s.showGuides);
   const toggleGuides = useAppStore((s) => s.toggleGuides);
+  const showRuler = useAppStore((s) => s.showRuler);
+  const toggleRuler = useAppStore((s) => s.toggleRuler);
   const upm = useAppStore((s) => s.metrics.unitsPerEm);
   const tool = useAppStore((s) => s.tool);
   const penMode = useAppStore((s) => s.penMode);
@@ -46,6 +48,7 @@ export function BottomBar() {
           <button className="fm-icon-btn" onClick={() => setGridSize(gridSize + 5)} title="Larger grid" data-testid="grid-size-up"><Plus size={12} /></button>
         </div>
       )}
+      <button className={showRuler ? "on" : ""} onClick={toggleRuler} data-testid="toggle-ruler" title="Tampilkan/sembunyikan ruler. Drag dari ruler untuk bikin guide garis putus-putus."><Ruler size={13} /> Ruler</button>
       <button className={showGuides ? "on" : ""} onClick={toggleGuides} data-testid="toggle-guides"><Ruler size={13} /> Guides</button>
       <button className={ghost.enabled ? "on" : ""} onClick={() => setGhost({ enabled: !ghost.enabled })} data-testid="toggle-ghost"><Ghost size={13} /> Ghost</button>
       <button className={snapEnabled ? "on" : ""} onClick={toggleSnap} title="Snap objects to guide lines" data-testid="toggle-snap"><Magnet size={13} /> Snap</button>

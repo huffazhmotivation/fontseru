@@ -1237,6 +1237,68 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
   will-change: transform;
 }
 
+/* ------------------------------------------------------------------ RULER */
+/* Ruler guide line color — high-contrast cyan so ruler guides read clearly
+   against the purple/blue/green/orange metric guides already on canvas.
+   Defined here (not inside .fm-root[data-theme]) so the CSS variable is
+   available to both the SVG style block and HTML ruler strips. */
+.fm-root[data-theme="dark"]  { --ruler-guide: #00e5ff; --ruler-bg: #101312; --ruler-tick: #3a403c; --ruler-tick-major: #5c635e; --ruler-label: #636b67; }
+.fm-root[data-theme="light"] { --ruler-guide: #0088aa; --ruler-bg: #f0f2f3; --ruler-tick: #c8cdd0; --ruler-tick-major: #8c9499; --ruler-label: #8c9499; }
+
+/* When ruler is active, the canvas frame uses a grid layout so the ruler
+   strips sit flush against the top and left edges of the SVG surface.    */
+.fm-canvas-frame--ruler {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  grid-template-rows: 18px 1fr;
+}
+/* The SVG canvas occupies the bottom-right cell */
+.fm-canvas-frame--ruler > svg {
+  grid-column: 2;
+  grid-row: 2;
+}
+/* Top ruler strip */
+.fm-ruler-top {
+  grid-column: 2;
+  grid-row: 1;
+  display: block;
+  width: 100%;
+  border-bottom: 1px solid var(--line);
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+}
+/* Left ruler strip */
+.fm-ruler-left {
+  grid-column: 1;
+  grid-row: 2;
+  display: block;
+  height: 100%;
+  border-right: 1px solid var(--line);
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+}
+/* Corner square */
+.fm-ruler-corner {
+  grid-column: 1;
+  grid-row: 1;
+  background: var(--ruler-bg);
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+/* SVG elements inside ruler strips */
+.fm-ruler-bg   { fill: var(--ruler-bg); }
+.fm-ruler-tick { stroke: var(--ruler-tick); stroke-width: 1; }
+.fm-ruler-tick-major { stroke: var(--ruler-tick-major); stroke-width: 1; }
+.fm-ruler-label {
+  fill: var(--ruler-label);
+  font-size: 8px;
+  font-family: var(--mono);
+  dominant-baseline: hanging;
+}
+.fm-ruler-guide-marker { stroke: var(--ruler-guide); stroke-width: 1.5; opacity: 0.85; }
+
 /* ------------------------------------------------------------------ BOTTOM BAR */
 .fm-bottombar {
   height: 44px; flex: 0 0 auto;
