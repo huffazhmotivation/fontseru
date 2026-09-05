@@ -1347,6 +1347,26 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 .fm-preview-align-group button.on { color: var(--accent); background: var(--accent-soft); }
 .fm-preview-close { color: var(--text-dim); background: transparent; border: none; cursor: pointer; border-radius: 7px; transition: background 0.14s ease, color 0.14s ease; }
 .fm-preview-close:hover { background: var(--panel-2); color: var(--text); }
+.fm-preview-custom-text {
+  position: relative; display: flex; align-items: center;
+  flex: 1 1 160px; min-width: 120px; max-width: 280px;
+}
+.fm-preview-text-input {
+  width: 100%; padding: 4px 26px 4px 8px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 7px; color: var(--text); font-size: 12px;
+  outline: none; transition: border-color 0.15s ease;
+}
+.fm-preview-text-input::placeholder { color: var(--text-faint); }
+.fm-preview-text-input:focus { border-color: var(--accent); }
+.fm-preview-text-clear {
+  position: absolute; right: 5px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-faint); font-size: 14px; line-height: 1;
+  padding: 2px 4px; border-radius: 4px;
+  transition: color 0.12s ease;
+}
+.fm-preview-text-clear:hover { color: var(--text); }
 
 .fm-segmented { display: flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
 .fm-segmented button { padding: 5px 12px; border-radius: 0; font-size: 11.5px; }

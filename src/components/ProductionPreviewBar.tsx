@@ -50,6 +50,7 @@ export function ProductionPreviewBar() {
 
   const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const [isResizingPreview, setIsResizingPreview] = useState(false);
+  const [customText, setCustomText] = useState("");
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageWidth, setStageWidth] = useState(0);
   // Independent from the app's global theme — same pattern Test Lab uses
@@ -73,7 +74,7 @@ export function ProductionPreviewBar() {
   if (!open) return null;
 
   const activeCategory = category === "auto" ? glyphs[activeChar]?.category : category;
-  const text = sentenceForCategory(activeCategory);
+  const text = customText.trim() ? customText : sentenceForCategory(activeCategory);
 
   // Wrap to the box's own width so enlarging the glyph scale grows the
   // preview downward (more lines) instead of forcing sideways scrolling.
@@ -140,6 +141,27 @@ export function ProductionPreviewBar() {
       </div>
 
       <div className="fm-preview-controls">
+        {/* Custom text input — when non-empty overrides the auto/category sentence */}
+        <div className="fm-preview-custom-text">
+          <input
+            type="text"
+            className="fm-preview-text-input"
+            placeholder="Custom text…"
+            value={customText}
+            onChange={(e) => setCustomText(e.target.value)}
+            data-testid="preview-custom-text"
+            aria-label="Custom preview text"
+          />
+          {customText && (
+            <button
+              className="fm-preview-text-clear"
+              onClick={() => setCustomText("")}
+              title="Clear custom text"
+              aria-label="Clear"
+            >×</button>
+          )}
+        </div>
+
         <div className="fm-inline-field" title="Letter scale">
           <span>Scale</span>
           <input

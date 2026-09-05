@@ -9,12 +9,13 @@ import { useSketchGestures } from "./useSketchGestures";
 import { clientToFontPoint } from "./coords";
 import { objectFillPath, objectStrokePath, toSvgPoint, contourToPath } from "./pathBuilder";
 import { outlineBounds, pointHitsObject } from "./objectOps";
+import { findFilletPair } from "./nodeOps";
 import { hitTestSegments } from "./segmentHitTest";
 import { findOverlappingObjectIds } from "./overlapDetect";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { GhostGlyph } from "./GhostGlyph";
 import { isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
-import type { NodeType, Point, VectorObject } from "@/types/geometry";
+import type { GlyphOutline, NodeType, Point, VectorObject } from "@/types/geometry";
 import type { FontStyle, Glyph, GlyphMap } from "@/types/glyph";
 
 const FAMILY_GHOST_ORDER: Record<string, readonly [FontStyle, FontStyle]> = {
@@ -805,6 +806,8 @@ export function GlyphCanvas() {
           .sel-skew-handle { fill: var(--accent-soft); stroke: var(--accent); stroke-width: ${1.25 / sc}; }
           .sel-skew-guide { stroke: color-mix(in srgb, var(--accent) 55%, transparent); stroke-width: ${1 / sc}; stroke-dasharray: ${2 / sc} ${3 / sc}; }
           .sel-rot-line { stroke: var(--accent); stroke-width: ${1.2 / sc}; }
+          .corner-radius-indicator { fill: none; stroke: var(--accent); stroke-width: ${1.1 / sc}; opacity: 0.5; }
+          .corner-radius-dot { fill: var(--accent); opacity: 0.55; }
         `}</style>
 
         <defs>
@@ -1350,6 +1353,35 @@ const NodesAndHandlesLayer = memo(function NodesAndHandlesLayer({
                     <HandleGlyph node={node} part="handleOut" ascender={ascender} hitScale={hitScale} emphasized={isSel}
                       selected={selectedHandle?.contourId === contour.id && selectedHandle?.nodeId === node.id && selectedHandle?.part === "handleOut"} />
                   )}
+                  {/* Figma-style corner indicator: arc on sharp corners shows Cmd+drag to round */}
+                  {tool === "node" && node.type === "corner" && (() => {
+                    const fillet = findFilletPair({ objects: [obj] } as GlyphOutline, { contourId: contour.id, nodeId: node.id });
+                    const r = 5.5 * hitScale;
+                    if (fillet) {
+                      return <circle cx={svgP.x} cy={svgP.y} r={2 * hitScale} className="corner-radius-dot" pointerEvents="none" />;
+                    }
+                    const idx = contour.nodes.findIndex((n) => n.id === node.id);
+                    if (idx === -1) return null;
+                    const nc = contour.nodes.length;
+                    const prev = contour.nodes[(idx - 1 + nc) % nc];
+                    const next = contour.nodes[(idx + 1) % nc];
+                    const toPrev = { x: prev.point.x - node.point.x, y: prev.point.y - node.point.y };
+                    const toNext = { x: next.point.x - node.point.x, y: next.point.y - node.point.y };
+                    const lp = Math.hypot(toPrev.x, toPrev.y) || 1;
+                    const ln = Math.hypot(toNext.x, toNext.y) || 1;
+                    const up = { x: toPrev.x / lp, y: toPrev.y / lp };
+                    const un = { x: toNext.x / ln, y: toNext.y / ln };
+                    const arc = r;
+                    // SVG y is flipped relative to font coords
+                    const ax = svgP.x + up.x * arc, ay = svgP.y - up.y * arc;
+                    const bx = svgP.x + un.x * arc, by = svgP.y - un.y * arc;
+                    const cross = up.x * un.y - up.y * un.x;
+                    const sweep = cross > 0 ? 0 : 1;
+                    return (
+                      <path d={`M ${ax} ${ay} A ${arc} ${arc} 0 0 ${sweep} ${bx} ${by}`}
+                        className="corner-radius-indicator" pointerEvents="none" />
+                    );
+                  })()}
                   <NodeShape point={svgP} type={node.type} hitScale={hitScale} selected={isSel} />
                 </g>
               );
