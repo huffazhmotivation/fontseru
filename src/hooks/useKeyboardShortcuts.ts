@@ -42,12 +42,53 @@ export function useKeyboardShortcuts() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
-      const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-      if (typing) return;
+      const tagName = target?.tagName;
+      const inputType = tagName === "INPUT"
+        ? ((target as HTMLInputElement).type || "text").toLowerCase()
+        : "";
+      // NumericInput (Stroke Width, Brush Size, Stabilizer's "direct input"
+      // box, etc.) renders `<input type="number">` and keeps focus after
+      // you drag or type a value. It was being treated the same as a real
+      // text field here, so — since `textEditing` short-circuits the
+      // handler below — every single-key tool shortcut (B/P/V/…) silently
+      // did nothing right after touching any numeric field, until you
+      // clicked the canvas to steal focus back. That's the reported
+      // "kayak ngebug, kaya terhalang" behavior. A number input can't even
+      // accept a letter keystroke in the first place (the browser blocks
+      // it), so there's no real text-editing conflict — it belongs in the
+      // same bucket as "range" below, not with free-text fields.
+      const textEditing = Boolean(
+        target?.isContentEditable ||
+        tagName === "TEXTAREA" ||
+        (tagName === "INPUT" && !["range", "number", "checkbox", "radio", "button", "submit", "reset", "file"].includes(inputType))
+      );
+      const formControl = tagName === "SELECT" || tagName === "INPUT" || tagName === "TEXTAREA";
+
+      // Range/select controls in the right panel retain focus after a
+      // setting is changed. They are not text editors, so Cmd/Ctrl+Z must
+      // still reach FontSeru's document history without requiring a tool
+      // switch first. Real text fields keep the browser's native undo.
+      if (textEditing) return;
 
       const s = useAppStore.getState();
       if (s.testLabOpen) return; // Test Lab / Kerning overlay owns keyboard input while open
       const mod = e.metaKey || e.ctrlKey;
+
+      // Arrow-key nudge and Delete/Backspace have real native meaning
+      // inside a focused form control (moving a range slider, deleting a
+      // digit in a number field), so THOSE must stay blocked while one is
+      // focused — but that's a different concern from the letter-key tool
+      // shortcuts (B/P/V/N/H/Z/Y) below, which no form control does
+      // anything with. The old code returned early for ANY plain key
+      // whenever a form control had focus, which is what actually broke
+      // "klik B/P/V gak ganti tool": switching tools stopped working the
+      // moment you'd touched a slider/stepper, until you clicked back on
+      // the canvas to steal focus away first. Only guard the keys that
+      // genuinely collide with a form control's own behavior.
+      const formControlNativeKey =
+        formControl && !mod &&
+        ["Delete", "Backspace", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key);
+      if (formControlNativeKey) return;
 
       // Next/Prev glyph — Tab / Shift+Tab, matching the Prev/Next chevrons
       // in GlyphSideNav & GlyphStepper. Works regardless of tool so it never
@@ -69,6 +110,7 @@ export function useKeyboardShortcuts() {
           if (s.selectedObjectIds.length > 0) { e.preventDefault(); s.copySelection(); s.pasteClipboard(); }
           return;
         }
+        if (k === "a") { e.preventDefault(); s.selectAllObjects(); return; }
         if (k === "g") { e.preventDefault(); s.groupSelectedObjects(); return; }
         if (k === "u") { e.preventDefault(); s.ungroupSelectedObjects(); return; }
         return;

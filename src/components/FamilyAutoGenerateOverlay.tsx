@@ -4,6 +4,7 @@ import { useAppStore } from "@/glyph/store";
 import { FONT_STYLES, hasOutline, type FontStyle, type Glyph, type GlyphCategory, type GlyphMap } from "@/types/glyph";
 import { GlyphThumbnail } from "@/components/GlyphThumbnail";
 import { Slider } from "@/components/RightPanel";
+import { InfoTip } from "@/components/InfoTip";
 import { autoBoldOutline, autoItalicOutline, type FamilyGenerationResult } from "@/glyph/autoGenerate";
 
 
@@ -309,10 +310,10 @@ export function FamilyAutoGenerateOverlay() {
 
             {activeTab?.id === "regular" && (
               <div className="fm-family-generate-panel">
-                <div className="fm-hint">
+                <InfoTip>
                   Regular is the source family — draw it directly on the canvas. Select Bold, Italic, or a
                   custom family above to auto-generate it from Regular.
-                </div>
+                </InfoTip>
               </div>
             )}
 
@@ -336,7 +337,7 @@ export function FamilyAutoGenerateOverlay() {
                   />
                   <span>Replace existing Bold glyphs</span>
                 </label>
-                <div className="fm-hint">Off by default, so existing Bold vectors are preserved.</div>
+                <InfoTip>Off by default, so existing Bold vectors are preserved.</InfoTip>
                 <button className="fm-action-btn accent" onClick={runBold} data-testid="auto-bold-btn">
                   <Sparkles size={14} />
                   Auto Bold
@@ -364,7 +365,7 @@ export function FamilyAutoGenerateOverlay() {
                   />
                   <span>Replace existing Italic glyphs</span>
                 </label>
-                <div className="fm-hint">Uses the same X-skew direction and degree convention as Transform → Skew.</div>
+                <InfoTip>Uses the same X-skew direction and degree convention as Transform → Skew.</InfoTip>
                 <button className="fm-action-btn accent" onClick={runItalic} data-testid="auto-italic-btn">
                   <Italic size={14} />
                   Auto Italic
@@ -401,10 +402,10 @@ export function FamilyAutoGenerateOverlay() {
                   />
                   <span>Replace existing {activeTab.label} glyphs</span>
                 </label>
-                <div className="fm-hint">
+                <InfoTip>
                   Weight: 0 keeps Regular's thickness, negative values thin it (Light/Thin), positive values bold
                   it. Set either slider to 0 to skip that part of the transform.
-                </div>
+                </InfoTip>
                 <button
                   className="fm-action-btn accent"
                   onClick={() => runCustom(activeTab.id, activeTab.label)}

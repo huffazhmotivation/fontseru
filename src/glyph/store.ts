@@ -193,12 +193,17 @@ interface AppState {
    * double-click the last point) auto-closes it into a filled shape instead
    * of leaving it open. Default false preserves the pre-existing behavior. */
   penAutoClose: boolean;
-  /** Pencil tool only: 0..1 curve-fit smoothing strength. Boosted further,
-   * automatically, on any given stroke that measures as rough/zigzaggy —
-   * see usePencilTool's estimateRoughness — so this is a baseline, not a
-   * hard ceiling. Defaults fairly high since freehand mouse/touch input is
-   * rarely steady enough to want it low. */
+  /** Pencil tool only: 0..1 live smoothing applied WHILE drawing (during
+   * pointerMove). Kept deliberately low so the preview follows the pointer
+   * naturally without steering itself. The auto-roughness boost in
+   * estimateRoughness still runs on this value, but the baseline is now
+   * intentionally minimal so the stroke feels direct while drawing. */
   pencilSmoothing: number;
+  /** Pencil tool only: 0..1 post-process smoothing applied AFTER the stroke
+   * is committed (pointerUp). This is the slider the user normally adjusts —
+   * higher values clean up the final shape more aggressively without making
+   * the drawing process feel laggy or self-steering. */
+  pencilPostSmoothing: number;
   lineWidth: number;
   lineCap: StrokeCap;
   brushCap: StrokeCap;
@@ -323,6 +328,7 @@ interface AppState {
   setShapeKind: (kind: ShapeKind) => void;
   setPenAutoClose: (on: boolean) => void;
   setPencilSmoothing: (v: number) => void;
+  setPencilPostSmoothing: (v: number) => void;
   setLineWidth: (w: number) => void;
   setLineCap: (cap: StrokeCap) => void;
   setBrushCap: (cap: StrokeCap) => void;
@@ -387,6 +393,8 @@ interface AppState {
 
   // object selection / clipboard / transforms
   selectObjects: (ids: string[], additive?: boolean) => void;
+  /** Select every top-level object on the active glyph's canvas (Cmd/Ctrl+A), switching to the Select tool so the selection is immediately visible/actionable. */
+  selectAllObjects: () => void;
   clearObjectSelection: () => void;
   setSelectionSkewState: (angle: number, handle?: SelectionSkewHandle) => void;
   nudgeSelectedObjects: (dx: number, dy: number) => void;
@@ -578,6 +586,10 @@ export const useAppStore = create<AppState>()((set, get) => {
   } | null = null;
   let metricDragSnapshot: FontMetrics | null = null;
   let glyphMetricDragSnapshot: GlyphMap | null = null;
+  /** Debounce handle for the italicAngle → re-space-all-glyphs pass (see
+   * setFontMetric below) — cleared/reset on every change while the italic
+   * angle field or its stepper is still being adjusted. */
+  let italicRespaceTimeout: ReturnType<typeof setTimeout> | null = null;
   /** True if `contourId` still exists (with at least one node) in `char`'s
    * outline within `glyphs`. Used by undo/redo so that stepping through
    * history while the pen tool is mid-contour only removes/restores the
@@ -781,7 +793,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     penMode: "shape",
     shapeKind: "rectangle",
     penAutoClose: false,
-    pencilSmoothing: 0.6,
+    pencilSmoothing: 0.15,
+    pencilPostSmoothing: 0.6,
     lineWidth: 24,
     lineCap: "round",
     brushCap: "round",
@@ -929,6 +942,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     setPenAutoClose: (on) => set({ penAutoClose: on }),
     togglePenAutoClose: () => set((s) => ({ penAutoClose: !s.penAutoClose })),
     setPencilSmoothing: (v) => set({ pencilSmoothing: Math.max(0, Math.min(1, v)) }),
+    setPencilPostSmoothing: (v) => set({ pencilPostSmoothing: Math.max(0, Math.min(1, v)) }),
     setLineWidth: (w) => set({ lineWidth: Math.max(1, Math.round(w)) }),
     setLineCap: (cap) => set({ lineCap: cap }),
     setBrushCap: (cap) => set({ brushCap: cap }),
@@ -959,6 +973,28 @@ export const useAppStore = create<AppState>()((set, get) => {
         past: [...past, { glyphs, metrics, kerningPairs, kerningManual }].slice(-HISTORY_LIMIT),
         future: [],
       });
+
+      // Auto Metrik promises every glyph's LSB/RSB stays derived from "that
+      // glyph's own outline" using the font's CURRENT settings — but every
+      // existing glyph's stored LSB/RSB was only ever computed against
+      // whatever italicAngle was in effect at the moment it was drawn. The
+      // completely normal workflow is: draw the whole alphabet first, THEN
+      // dial in (or Auto-Detect) the italic angle — at which point every
+      // glyph drawn before that is now spaced against a stale (usually 0°)
+      // angle and reads as cramped/overlapping ("dempet") the instant the
+      // angle changes, even though nothing about the glyphs themselves
+      // changed. Re-running the same bulk Auto Space pass the "Auto Space"
+      // button triggers keeps that promise for italicAngle edits too, not
+      // just for the specific glyph being drawn when this ran live in
+      // commitOutline. Debounced so dragging the stepper or the on-canvas
+      // guide doesn't kick off a full-font pass on every intermediate tick.
+      if (key === "italicAngle" && get().autoSpacingEnabled) {
+        if (italicRespaceTimeout !== null) clearTimeout(italicRespaceTimeout);
+        italicRespaceTimeout = setTimeout(() => {
+          italicRespaceTimeout = null;
+          get().autoSpaceAllGlyphs?.();
+        }, 400);
+      }
     },
     autoWordSpacing: () => {
       const { glyphs, metrics } = get();
@@ -1254,9 +1290,26 @@ export const useAppStore = create<AppState>()((set, get) => {
         ) {
           next.cap = patch.cap;
         }
+        // Switching the brush preset on an already-drawn brush stroke (from
+        // the Select-tool right panel) re-nibs the SAME centerline with a
+        // different preset's settings — like clicking a different brush in
+        // Affinity Designer's stroke panel — rather than just relabeling it.
+        // Current stroke width is preserved; every other setting (taper,
+        // roundness, angle, jitter, etc.) resets to that preset's defaults
+        // so the new brush type actually looks like itself.
+        if (patch.brushType !== undefined && o.kind === "brush") {
+          const presetId = patch.brushType as BrushType;
+          const preset = BRUSH_PRESETS[presetId];
+          const width = patch.strokeWidth ?? next.strokeWidth ?? preset?.settings.size ?? 20;
+          next.brushType = presetId;
+          next.brushSettings = preset ? { ...preset.settings, type: presetId, size: width } : undefined;
+          next.cap = presetId === "monoline" ? (next.cap ?? "round") : "round";
+        }
         const rest = { ...patch };
         delete rest.strokeWidth;
         delete rest.cap;
+        delete rest.brushType;
+        delete rest.brushSettings;
         return { ...next, ...rest };
       });
       commit({ ...glyphs, [activeChar]: { ...glyph, outline: { objects } } });
@@ -1277,6 +1330,19 @@ export const useAppStore = create<AppState>()((set, get) => {
         for (const id of ids) merged.has(id) ? merged.delete(id) : merged.add(id);
         return {
           selectedObjectIds: [...merged],
+          selectionSkewAngle: 0,
+          selectionSkewHandle: "skew-x-top",
+        };
+      }),
+    selectAllObjects: () =>
+      set((s) => {
+        const glyph = s.glyphs[s.activeChar];
+        const ids = glyph ? glyph.outline.objects.map((o) => o.id) : [];
+        return {
+          tool: "select",
+          selectedObjectIds: ids,
+          selectedNodes: [],
+          selectedHandle: null,
           selectionSkewAngle: 0,
           selectionSkewHandle: "skew-x-top",
         };
@@ -1546,6 +1612,12 @@ export const useAppStore = create<AppState>()((set, get) => {
     setDrawingContourId: (id) => set({ drawingContourId: id }),
 
     undo: () => {
+      // Pen, Shape and Node editing keep their latest geometry in
+      // `liveOutline` until the gesture/tool is finalized. Undo must finalize
+      // that pending edit itself; otherwise the first undo appears to do
+      // nothing until the user changes to Select (which calls setTool and
+      // happened to finalize it as a side effect).
+      finalizeLive();
       const {
         past, future, glyphs, glyphsByStyle, fontStyle, metrics, kerningPairs, kerningManual,
         kerningOverridesByStyle, kerningOverrideManualByStyle, wordSpacingOverridesByStyle, activeChar, drawingContourId,
@@ -1582,6 +1654,10 @@ export const useAppStore = create<AppState>()((set, get) => {
       });
     },
     redo: () => {
+      // Keep redo consistent if a user presses it while a live gesture is
+      // still present. Finalizing first makes the history stack represent
+      // the visible canvas rather than a stale pre-gesture snapshot.
+      finalizeLive();
       const {
         past, future, glyphs, glyphsByStyle, fontStyle, metrics, kerningPairs, kerningManual,
         kerningOverridesByStyle, kerningOverrideManualByStyle, wordSpacingOverridesByStyle, activeChar, drawingContourId,

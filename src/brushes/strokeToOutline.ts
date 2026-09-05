@@ -2,21 +2,9 @@ import type { Contour, PathNode, Point, VectorObject, StrokeCap, StrokeSample } 
 import type { BrushSettings, BrushType } from "@/types/brush";
 import { shortId } from "@/utils/id";
 import { simplifyPolyline } from "@/utils/simplify";
+import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor } from "./strokeSmoothing";
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
-
-function movingAverage(samples: StrokeSample[], windowRadius: number): StrokeSample[] {
-  if (windowRadius <= 0) return samples;
-  const out: StrokeSample[] = [];
-  for (let i = 0; i < samples.length; i++) {
-    let sx = 0, sy = 0, sp = 0, n = 0;
-    for (let j = Math.max(0, i - windowRadius); j <= Math.min(samples.length - 1, i + windowRadius); j++) {
-      sx += samples[j].x; sy += samples[j].y; sp += samples[j].pressure; n++;
-    }
-    out.push({ x: sx / n, y: sy / n, pressure: sp / n });
-  }
-  return out;
-}
 
 /**
  * Correct offset vector for sweeping a fixed-orientation elliptical nib
@@ -329,11 +317,38 @@ function catmullRomPoint(p0: StrokeSample, p1: StrokeSample, p2: StrokeSample, p
  * Turns sharper than this are treated as intentional hard corners rather
  * than a curve Catmull-Rom should smooth through — see the corner-clamping
  * note in catmullRomResample() below.
+ *
+ * BUG FIX: was 55°, which caused many natural freehand bends (especially
+ * in curved letterforms like O, B, C) to be classified as hard corners and
+ * rendered as straight segments instead of smooth arcs — the root cause of
+ * the "bersusdut" (angular/faceted) look reported on every brush type.
+ * Raised to 80° so only genuinely sharp cusps stay hard; anything that reads
+ * as a rounded bend gets spline-interpolated smoothly through.
  */
-const HARD_CORNER_ANGLE = (55 * Math.PI) / 180;
+const HARD_CORNER_ANGLE = (80 * Math.PI) / 180;
 
 export function catmullRomResample(points: StrokeSample[], spacing: number): StrokeSample[] {
-  if (points.length < 3 || spacing <= 0) return points;
+  if (points.length < 2 || spacing <= 0) return points;
+  // A straight gesture is commonly reduced to exactly two centerline
+  // samples. Returning those two points made Rough's coherent edge texture
+  // disappear until the user introduced a bend, because the roughness was
+  // only sampled at the endpoints. Densify the two-point case linearly so
+  // every brush profile gets the same continuous rendering path.
+  if (points.length === 2) {
+    const [start, end] = points;
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    const steps = Math.max(1, Math.ceil(length / spacing));
+    const out: StrokeSample[] = [start];
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      out.push({
+        x: start.x + (end.x - start.x) * t,
+        y: start.y + (end.y - start.y) * t,
+        pressure: start.pressure + (end.pressure - start.pressure) * t,
+      });
+    }
+    return out;
+  }
 
   // A plain Catmull-Rom pass blends each point's tangent from BOTH of its
   // neighbours. At a genuinely sharp corner that blend pulls the curve past
@@ -374,37 +389,31 @@ export function catmullRomResample(points: StrokeSample[], spacing: number): Str
   return out;
 }
 
-/** Clean, simplified centerline (font units) from raw samples. */
-export function samplesToCenterline(rawSamples: StrokeSample[], settings: BrushSettings): StrokeSample[] {
+/** Clean, simplified centerline (font units) from raw samples.
+ *
+ * Runs through the same shared engine the Pencil tool uses for its
+ * Stabilizer/Smoothing sliders (see `brushes/strokeSmoothing.ts`) so both
+ * tools' smoothing behaves identically — roughness-boosted double moving
+ * average, then RDP simplification with a tolerance that holds steady
+ * across zoom levels via `hitScale` (defaults to 1 for the rare caller
+ * that isn't in screen-space, e.g. a stored preset re-processed offline). */
+export function samplesToCenterline(rawSamples: StrokeSample[], settings: BrushSettings, hitScale = 1): StrokeSample[] {
   if (rawSamples.length < 2) return rawSamples;
-  const windowRadius = Math.round(settings.smoothing * 6);
-  let smoothed = movingAverage(rawSamples, windowRadius);
-  // Grunge needs dense edge events all along the stroke; simplifying a
-  // straight gesture down to two endpoints would erase the jagged profile.
-  if (settings.type === "grunge") return smoothed;
-  // A second, lighter pass approximates a Gaussian kernel far better than a
-  // single box-average pass alone — it noticeably rounds out curved
-  // gestures (fewer visible facets through bends) without flattening
-  // intentional corners, since simplifyPolyline below still preserves
-  // sharp turns regardless of how much this smooths the curve itself.
-  if (windowRadius > 0) {
-    smoothed = movingAverage(smoothed, Math.max(1, Math.round(windowRadius * 0.6)));
+  if (settings.type === "grunge") {
+    // Grunge needs dense edge events all along the stroke; a second
+    // smoothing pass or RDP simplification would erase the jagged profile
+    // that IS the brush, so it only ever gets the shared engine's first,
+    // roughness-boosted moving-average pass — never the full smoothStroke.
+    if (settings.smoothing <= 0) return rawSamples;
+    const roughness = estimateRoughness(rawSamples);
+    const effective = Math.max(0, Math.min(1, settings.smoothing + roughness * 0.5));
+    // Same length-aware cap as smoothStroke() — see windowRadiusFor()'s doc
+    // comment. Without it, a short/jittery Grunge stroke collapsed to a
+    // single point the same way every other brush did.
+    const windowRadius = windowRadiusFor(effective, rawSamples.length);
+    return movingAverageSamples(rawSamples, windowRadius);
   }
-  // Raised again (0.05x -> 0.18x of brush size, floor 0.6 -> 3): the old
-  // tolerance scaled only with stroke *width*, not with the size of the
-  // curve being drawn. A thin brush tracing a large, simple round shape
-  // (an "o"/"q" bowl, say) still produced a dense, near-collinear cluster
-  // of on-curve nodes all the way around — visually fine but heavy to
-  // edit and exactly what made a simple round gesture come out with far
-  // more nodes than it needed. The downstream Bezier fit in
-  // centerlineToOutline/centerlineToContour already carries the curve's
-  // roundness from just a handful of smooth nodes, so thinning harder here
-  // loses editing precision, not curve accuracy. Corners are unaffected —
-  // simplifyPolyline (Ramer-Douglas-Peucker) only drops points that don't
-  // deviate from their neighbors' chord by more than epsilon, so a real
-  // corner point (which deviates a lot) is always kept regardless.
-  const epsilon = Math.max(3, settings.size * 0.18);
-  return simplifyPolyline(smoothed, epsilon);
+  return smoothStroke(rawSamples, settings.smoothing, hitScale);
 }
 
 /**
@@ -777,16 +786,98 @@ export function centerlineToOutline(
   // per-sample edge noise (grunge/oil/rough) keep every sample, same as
   // the self-intersection cleanup above, since thinning would iron their
   // texture back out.
-  const edgeSimplifyEpsilon = Math.max(0.6, Math.min(4, semiMajor * 0.09));
+  // BUG FIX: was `semiMajor * 0.09` which over-simplified curved edges —
+  // too many points got dropped from the offset polygon, leaving too few
+  // nodes for the Bezier handle fitter below to reconstruct a truly smooth
+  // arc. The fitter needs reasonably dense samples around each bend to
+  // compute accurate handle lengths. Lowered to 0.055x so gentle curves
+  // retain enough geometry for the smooth fit to match the actual nib sweep,
+  // without keeping so many near-collinear points that the node count
+  // becomes unworkable. Sharp corners still survive (RDP never drops a
+  // point that IS the corner between two segments).
+  const edgeSimplifyEpsilon = Math.max(0.5, Math.min(3, semiMajor * 0.055));
   const simplifiedLeft = SELF_CLEAN_SKIP.includes(settings.type) ? cleanedLeft : simplifyPolyline(cleanedLeft, edgeSimplifyEpsilon);
   const simplifiedRight = SELF_CLEAN_SKIP.includes(settings.type) ? cleanedRight : simplifyPolyline(cleanedRight, edgeSimplifyEpsilon);
 
   const polygon = [...simplifiedLeft, ...endCapPts, ...simplifiedRight.reverse(), ...startCapPts];
   if (polygon.length < 3) return null;
+  // BUG FIX: "strong" was missing from this list, so its polygon edges were
+  // built from raw corner nodes even though its body is a clean, round-nib
+  // stroke — exactly the same faceted look as the other brushes before that
+  // fix. Added here so Strong Brush gets the same Catmull-Rom-to-Bezier
+  // handle fitting as every other round/constant-width preset.
+  const SMOOTH_EDGE_TYPES: BrushType[] = [
+    "round", "monoline", "marker", "calligraphic", "pencil", "pressureTaper", "outline", "strong",
+  ];
+  const smoothEdges = SMOOTH_EDGE_TYPES.includes(settings.type);
+  const polygonNodes = smoothEdges
+    ? polygon.map((point, i) => {
+        const prev = polygon[(i - 1 + polygon.length) % polygon.length];
+        const next = polygon[(i + 1) % polygon.length];
+        const inLen = Math.hypot(point.x - prev.x, point.y - prev.y) || 1;
+        const outLen = Math.hypot(next.x - point.x, next.y - point.y) || 1;
+        const inUx = (point.x - prev.x) / inLen, inUy = (point.y - prev.y) / inLen;
+        const outUx = (next.x - point.x) / outLen, outUy = (next.y - point.y) / outLen;
+        const dot = Math.max(-1, Math.min(1, inUx * outUx + inUy * outUy));
+        // Preserve genuine cusps (for example a sharp calligraphic turn)
+        // while rounding the many tiny polygon facets along a curve.
+        // Acos(dot) is the actual turn angle at this vertex — only a real,
+        // sharp reversal (~90°+) stays a hard corner; anything gentler
+        // gets a fitted curve below.
+        if (Math.acos(dot) > (100 * Math.PI) / 180) {
+          return { id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const };
+        }
+        // BUG FIX: handle length used to be a flat `min(inLen, outLen) * 0.22`
+        // — a constant fraction of whichever adjacent segment happened to be
+        // shorter, from a tangent that only looked at the immediate
+        // neighbors' DIRECTION (not how far apart they actually are). Once
+        // the offset edge was Ramer-Douglas-Peucker-simplified down to a
+        // sparse polygon, that constant under-curved every real bend: the
+        // node's OWN type/handles were genuinely "smooth", but the handles
+        // were too short to bulge the curve out to where the original swept
+        // nib actually was, so the rendered edge still looked faceted/
+        // polygonal despite the nodes being curved (exactly the reported
+        // bug — visible on nearly every brush that reaches this smoothing
+        // path). Using the standard Catmull-Rom-to-Bezier control-point
+        // formula instead — (next - prev) / 6, NOT normalized — scales the
+        // handle length with the actual local chord distance on both
+        // sides, so it tracks real curvature rather than a fixed fraction,
+        // and matches the same conversion already used for the centerline
+        // itself (see catmullRomPoint above).
+        const tx = (next.x - prev.x) / 6;
+        const ty = (next.y - prev.y) / 6;
+        const rawLen = Math.hypot(tx, ty);
+        // BUG FIX: was `Math.min(inLen, outLen) * 0.5` which capped handles
+        // too short after RDP simplification (sparse polygon segments are
+        // long, so the shorter side still undershoot the actual arc). The
+        // rendered edge was technically "smooth" type but visually still flat
+        // between nodes. Raised to 0.65x — still safe against Catmull-Rom
+        // overshoot on evenly-spaced points, but gives enough reach to
+        // accurately follow the nib's actual swept arc on the sparser polygon
+        // that comes out of the now-tighter RDP pass above.
+        const maxLen = Math.min(inLen, outLen) * 0.65;
+        const scale = rawLen > maxLen && rawLen > 0 ? maxLen / rawLen : 1;
+        const hx = tx * scale;
+        const hy = ty * scale;
+        return {
+          id: shortId("node"),
+          point,
+          handleIn: { x: point.x - hx, y: point.y - hy },
+          handleOut: { x: point.x + hx, y: point.y + hy },
+          type: "smooth" as const,
+        };
+      })
+    : polygon.map((point) => ({
+        id: shortId("node"),
+        point,
+        handleIn: null,
+        handleOut: null,
+        type: "corner" as const,
+      }));
   return {
     id: shortId("contour"),
     closed: true,
-    nodes: polygon.map((p) => ({ id: shortId("node"), point: p, handleIn: null, handleOut: null, type: "corner" as const })),
+    nodes: polygonNodes,
   };
 }
 
@@ -1212,7 +1303,17 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
 
   const innerSign = Math.sign(signedArea(inner.nodes.map((n) => n.point))) || 1;
   const desiredInnerSign = -outerSign;
-  const innerNodes = innerSign !== desiredInnerSign ? [...inner.nodes].reverse() : inner.nodes;
+  // Reversing a smoothed contour also has to exchange each node's incoming
+  // and outgoing handles. Reversing only the array leaves the handles
+  // attached to the wrong side of the path and can reintroduce angular
+  // corners or small folds in Outline Brush's inner counter.
+  const innerNodes = innerSign !== desiredInnerSign
+    ? [...inner.nodes].reverse().map((node) => ({
+        ...node,
+        handleIn: node.handleOut,
+        handleOut: node.handleIn,
+      }))
+    : inner.nodes;
 
   return [main, { ...inner, nodes: innerNodes }];
 }
@@ -1244,8 +1345,8 @@ export function centerlineToOutlineContours(centerline: StrokeSample[], settings
 }
 
 /** Live/committed brush outline (kept for the immediate preview during drawing). */
-export function strokeToContour(rawSamples: StrokeSample[], settings: BrushSettings): Contour | null {
-  const centerline = samplesToCenterline(rawSamples, settings);
+export function strokeToContour(rawSamples: StrokeSample[], settings: BrushSettings, hitScale = 1): Contour | null {
+  const centerline = samplesToCenterline(rawSamples, settings, hitScale);
   return centerlineToOutline(centerline, settings);
 }
 

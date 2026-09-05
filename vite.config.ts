@@ -19,7 +19,6 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 3000,
     strictPort: false,
-    allowedHosts: true,
   },
   preview: {
     host: "0.0.0.0",
@@ -45,7 +44,6 @@ export default defineConfig({
           "vendor-imagetrace": ["imagetracerjs"],
           "vendor-pdf": ["jspdf"],
           "vendor-supabase": ["@supabase/supabase-js"],
-          "vendor-dexie": ["dexie"],
         },
       },
     },

@@ -3,6 +3,7 @@ import {
   Download, FlaskConical, Layers, Maximize, Minimize, Redo2, Undo2, Wand2,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
+  Copy, FlipHorizontal, FlipVertical, Trash2,
 } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import type { AlignMode } from "@/editor/objectOps";
@@ -41,6 +42,7 @@ export function TopBar() {
   const setFontName = useAppStore((s) => s.setFontName);
   const past = useAppStore((s) => s.past);
   const future = useAppStore((s) => s.future);
+  const liveOutline = useAppStore((s) => s.liveOutline);
   const undo = useAppStore((s) => s.undo);
   const redo = useAppStore((s) => s.redo);
   const openTestLab = useAppStore((s) => s.openTestLab);
@@ -49,6 +51,10 @@ export function TopBar() {
   const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
   const alignSelectedObjects = useAppStore((s) => s.alignSelectedObjects);
   const booleanSelectedObjects = useAppStore((s) => s.booleanSelectedObjects);
+  const flipSelectedObjects = useAppStore((s) => s.flipSelectedObjects);
+  const copySelection = useAppStore((s) => s.copySelection);
+  const pasteClipboard = useAppStore((s) => s.pasteClipboard);
+  const deleteSelectedObjects = useAppStore((s) => s.deleteSelectedObjects);
   const activeGlyphObjects = useAppStore((s) => s.glyphs[s.activeChar]?.outline.objects);
 
   const booleanEligibleCount = (activeGlyphObjects ?? [])
@@ -83,13 +89,15 @@ export function TopBar() {
         data-testid="font-name-input"
       />
       <div className="fm-topbtn-group">
-        <button className="fm-topbtn" disabled={past.length === 0} onClick={undo} title="Undo (Cmd/Ctrl+Z)" data-testid="undo-btn">
+        <button className="fm-topbtn" disabled={past.length === 0 && !liveOutline} onClick={undo} title="Undo (Cmd/Ctrl+Z)" data-testid="undo-btn">
           <Undo2 size={15} /> Undo
         </button>
         <button className="fm-topbtn" disabled={future.length === 0} onClick={redo} title="Redo (Cmd/Ctrl+Shift+Z)" data-testid="redo-btn">
           <Redo2 size={15} /> Redo
         </button>
       </div>
+
+      <div className="fm-align-divider" />
 
       <div className="fm-align-group" role="group" aria-label="Align selected objects">
         {ALIGN_BUTTONS.map(({ mode, label, icon: Icon }, i) => (
@@ -110,6 +118,8 @@ export function TopBar() {
         ))}
       </div>
 
+      <div className="fm-align-divider" />
+
       <div className="fm-align-group" role="group" aria-label="Boolean shape actions">
         {BOOLEAN_BUTTONS.map(({ op, label }) => (
           <button
@@ -125,6 +135,56 @@ export function TopBar() {
             <BooleanOpIcon op={op} size={15} />
           </button>
         ))}
+      </div>
+
+      <div className="fm-align-divider" />
+
+      <div className="fm-align-group" role="group" aria-label="Object actions">
+        <button
+          type="button"
+          className="fm-align-btn"
+          disabled={selectedObjectIds.length === 0}
+          onClick={() => { copySelection(); pasteClipboard(); }}
+          title="Duplicate"
+          aria-label="Duplicate"
+          data-testid="duplicate-btn"
+        >
+          <Copy size={15} strokeWidth={1.7} />
+        </button>
+        <button
+          type="button"
+          className="fm-align-btn"
+          disabled={selectedObjectIds.length === 0}
+          onClick={() => flipSelectedObjects("horizontal")}
+          title="Flip Horizontal"
+          aria-label="Flip Horizontal"
+          data-testid="flip-horizontal-btn"
+        >
+          <FlipHorizontal size={15} strokeWidth={1.7} />
+        </button>
+        <button
+          type="button"
+          className="fm-align-btn"
+          disabled={selectedObjectIds.length === 0}
+          onClick={() => flipSelectedObjects("vertical")}
+          title="Flip Vertical"
+          aria-label="Flip Vertical"
+          data-testid="flip-vertical-btn"
+        >
+          <FlipVertical size={15} strokeWidth={1.7} />
+        </button>
+        <div className="fm-align-divider" />
+        <button
+          type="button"
+          className="fm-align-btn danger"
+          disabled={selectedObjectIds.length === 0}
+          onClick={deleteSelectedObjects}
+          title="Delete"
+          aria-label="Delete"
+          data-testid="delete-object-btn"
+        >
+          <Trash2 size={15} strokeWidth={1.7} />
+        </button>
       </div>
 
       <div className="fm-spacer" />
@@ -168,7 +228,7 @@ export function TopBar() {
       >
         {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
       </button>
-      <button className="fm-theme-toggle" onClick={toggleTheme} title="Toggle theme" data-testid="theme-toggle">
+      <button className="fm-theme-toggle fm-theme-toggle-bare" onClick={toggleTheme} title="Toggle theme" data-testid="theme-toggle">
         {theme === "light" ? <MoonIcon size={16} /> : <SunIcon size={16} />}
       </button>
       <AuthWidget />

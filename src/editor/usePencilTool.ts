@@ -3,6 +3,7 @@ import type { Contour, Point, VectorObject } from "@/types/geometry";
 import { useAppStore } from "@/glyph/store";
 import { shortId } from "@/utils/id";
 import { simplifyPolyline } from "@/utils/simplify";
+import { smoothStroke } from "@/brushes/strokeSmoothing";
 import { centerlineToContour } from "@/brushes/strokeToOutline";
 
 /** Below this many captured points, a gesture is a stray tap/jitter, not a
@@ -19,79 +20,17 @@ const MIN_SHAPE_NODES = 3;
  * responsiveness, not ones that were load-bearing for the curve's shape. */
 const FINAL_SIMPLIFY_TOLERANCE_PX = 3.5;
 
-function movingAveragePoints(points: Point[], windowRadius: number): Point[] {
-  if (windowRadius <= 0) return points;
-  const out: Point[] = [];
-  for (let i = 0; i < points.length; i++) {
-    let sx = 0, sy = 0, n = 0;
-    for (let j = Math.max(0, i - windowRadius); j <= Math.min(points.length - 1, i + windowRadius); j++) {
-      sx += points[j].x; sy += points[j].y; n++;
-    }
-    out.push({ x: sx / n, y: sy / n });
-  }
-  return out;
-}
-
 /**
- * Roughness score in [0, 1]: the fraction of interior samples where the
- * RAW (unsmoothed) hand-drawn gesture reverses direction sharply from one
- * sample to the next. Real hand tremor shows up as many small, high-
- * frequency direction flips; a deliberate curve turns gradually over many
- * samples and barely trips this at all. Used to boost smoothing
- * automatically on a shaky stroke instead of requiring the smoothing
- * slider to be cranked up globally — which would also flatten intentional
- * curvature on every OTHER stroke.
- */
-function estimateRoughness(points: Point[]): number {
-  if (points.length < 5) return 0;
-  const JITTER_ANGLE = (16 * Math.PI) / 180;
-  let jittery = 0;
-  let counted = 0;
-  for (let i = 1; i < points.length - 1; i++) {
-    const a = points[i - 1], b = points[i], c = points[i + 1];
-    const u0x = b.x - a.x, u0y = b.y - a.y;
-    const u1x = c.x - b.x, u1y = c.y - b.y;
-    const l0 = Math.hypot(u0x, u0y);
-    const l1 = Math.hypot(u1x, u1y);
-    if (l0 < 1e-6 || l1 < 1e-6) continue;
-    const dot = Math.max(-1, Math.min(1, (u0x * u1x + u0y * u1y) / (l0 * l1)));
-    counted++;
-    if (Math.acos(dot) > JITTER_ANGLE) jittery++;
-  }
-  return counted === 0 ? 0 : jittery / counted;
-}
-
-/**
- * Cleans a raw freehand polyline (font units) into the sparse, editable
- * point set that gets bezier-fit below. Two passes of moving-average
- * smoothing round out hand tremor without flattening the gesture's real
- * shape, then Ramer-Douglas-Peucker collapses the dense pointer samples
- * down to just the points needed to keep the curve's silhouette. Both the
- * smoothing window and the simplification tolerance scale with
- * `smoothing` (the Pencil tool's own setting, defaulted fairly high) AND
- * with the stroke's own measured roughness — a shaky gesture gets extra
- * smoothing passes automatically so it never comes out as a jagged
- * zigzag, without needing the user to preemptively max out the setting.
+ * Thin, Pencil-flavored wrapper around the shared `smoothStroke` engine
+ * (see `brushes/strokeSmoothing.ts`) — kept as its own export so the rest
+ * of this file (and its comments below) can keep talking about "Pencil
+ * points" specifically, and so existing call sites don't need to change.
+ * The Brush tool calls `smoothStroke` directly for the same reason: both
+ * tools now run through the exact same algorithm, just with their own
+ * setting value and epsilon scale.
  */
 export function smoothPencilPoints(rawPoints: Point[], smoothing: number, hitScale: number): Point[] {
-  if (rawPoints.length < 3) return rawPoints;
-  const roughness = estimateRoughness(rawPoints);
-  const effective = Math.max(0, Math.min(1, smoothing + roughness * 0.5));
-  const windowRadius = Math.max(1, Math.round(effective * 8));
-  let smoothed = movingAveragePoints(rawPoints, windowRadius);
-  smoothed = movingAveragePoints(smoothed, Math.max(1, Math.round(windowRadius * 0.6)));
-  // Tolerance is in screen-pixel terms (scaled to font units via hitScale)
-  // so the same visual crispness holds regardless of zoom level. Raised
-  // again (1.6–8.5px -> 2.6–13.5px): even the widened first pass still
-  // left a hand-drawn curve with noticeably more on-curve nodes than the
-  // cubic-bezier fit below actually needs — the same "dense samples become
-  // real nodes 1:1" issue the Brush tool had (see samplesToCenterline /
-  // centerlineToOutline). Wider tolerance means fewer, better-placed points
-  // go into the fit, i.e. fewer nodes for the same visual smoothness — not
-  // a laxer curve, since RDP only ever drops a point that doesn't deviate
-  // from the line between its kept neighbors by more than this tolerance.
-  const epsilon = Math.max(2.6, 2.4 + effective * 11) * hitScale;
-  return simplifyPolyline(smoothed, epsilon);
+  return smoothStroke(rawPoints, smoothing, hitScale);
 }
 
 export function usePencilTool(hitScale: number) {
@@ -99,6 +38,7 @@ export function usePencilTool(hitScale: number) {
   const glyph = useAppStore((s) => s.glyphs[s.activeChar]);
   const commitOutline = useAppStore((s) => s.commitOutline);
   const pencilSmoothing = useAppStore((s) => s.pencilSmoothing);
+  const pencilPostSmoothing = useAppStore((s) => s.pencilPostSmoothing);
 
   const rawPointsRef = useRef<Point[]>([]);
   const [previewContour, setPreviewContour] = useState<Contour | null>(null);
@@ -113,6 +53,11 @@ export function usePencilTool(hitScale: number) {
   const pointerMove = useCallback(
     (p: Point) => {
       if (!isDrawing) return;
+      // Guard against a stray non-finite pointer sample (seen occasionally
+      // on Safari during fast/jittery input) ever entering the point
+      // stream that gets curve-fit below — one bad sample there can
+      // otherwise cascade into a NaN in the fitted path's geometry.
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
       const pts = rawPointsRef.current;
       const last = pts[pts.length - 1];
       const minMove = Math.max(0.8, 1.2 * hitScale);
@@ -133,7 +78,10 @@ export function usePencilTool(hitScale: number) {
     setPreviewContour(null);
     if (raw.length < MIN_RAW_POINTS || !glyph) return;
 
-    let smoothed = smoothPencilPoints(raw, pencilSmoothing, hitScale);
+    // pointerUp uses pencilPostSmoothing (user-controlled "result" slider)
+    // not the live pencilSmoothing baseline — so drawing never self-steers
+    // but the committed shape gets as much cleanup as the user asked for.
+    let smoothed = smoothPencilPoints(raw, pencilPostSmoothing, hitScale);
     // Second, more aggressive cleanup pass on the COMMITTED shape only
     // (never on the live preview, so the stroke still tracks the pointer
     // 1:1 while drawing). The Brush tool gets an equivalent second pass
@@ -162,7 +110,7 @@ export function usePencilTool(hitScale: number) {
     // Deliberately stays on the Pencil tool (matching Brush) rather than
     // hopping to Select — freehand sketching is almost always several
     // strokes in a row (e.g. an outer contour, then an inner counter).
-  }, [isDrawing, glyph, activeChar, commitOutline, pencilSmoothing, hitScale]);
+  }, [isDrawing, glyph, activeChar, commitOutline, pencilSmoothing, pencilPostSmoothing, hitScale]);
 
   const cancel = useCallback(() => {
     rawPointsRef.current = [];

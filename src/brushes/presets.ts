@@ -27,7 +27,8 @@ export const BRUSH_PRESETS: Record<BrushType, BrushPreset> = {
       // Brush Stabilizer defaults on, moderate strength: smooths live
       // pointer position (mouse/stylus/pen, Normal + Sketch Mode alike)
       // without adding perceptible lag, and never touches pressure — see
-      // stabilizeBrushPoint()/pressureFor() in useBrushTool.ts.
+      // smoothStroke()/pressureFor() in useBrushTool.ts and
+      // brushes/strokeSmoothing.ts.
       stabilizer: 0.35,
       roundness: 1,
       angle: 0,
@@ -245,8 +246,8 @@ export const BRUSH_PRESETS: Record<BrushType, BrushPreset> = {
       spacing: 1,
       smoothing: 0,
       // No stabilizer here on purpose: useBrushTool's pixelSnap path grid-
-      // snaps every point directly and skips stabilizeBrushPoint() entirely,
-      // so a value here would be inert anyway (see pointerDown/pointerMove).
+      // snaps every point directly and skips the Stabilizer smoothing engine
+      // entirely, so a value here would be inert anyway (see pointerDown/pointerMove).
       roundness: 1,
       angle: 0,
       taperStart: 0,

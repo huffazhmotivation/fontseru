@@ -19,6 +19,14 @@ import { EmailConfirmedWelcome } from "@/components/EmailConfirmedWelcome";
 import { ProUpsellModal } from "@/components/ProUpsellModal";
 import { ProductTour } from "@/components/ProductTour/ProductTour";
 
+// Chromium currently has a much more expensive compositing path for
+// backdrop-filter over a large, live SVG surface than Safari/Firefox. Keep
+// the visual treatment for the other browsers, but let the CSS select a
+// cheaper opaque-surface fallback for Chrome/Edge/Opera.
+const isChromiumBrowser =
+  typeof navigator !== "undefined" &&
+  /Chrome|Chromium|Edg\/|OPR\//.test(navigator.userAgent);
+
 // These three overlays are heavy (Test Lab pulls in the whole specimen
 // renderer, Trace Image pulls in imagetracerjs, Family Auto-Generate pulls
 // in the bold/italic synthesis engine) but are only used occasionally.
@@ -130,12 +138,19 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+    // Safari (macOS) renders its native overlay scrollbar's colour from the
+    // `color-scheme` CSS property, not from ::-webkit-scrollbar-thumb — that
+    // custom styling only kicks in when the system is set to "always show
+    // scrollbars". Without this, the overlay scrollbar stays light/white in
+    // dark mode no matter how the webkit pseudo-elements are styled.
+    document.documentElement.style.colorScheme = theme === "dark" ? "dark" : "light";
   }, [theme]);
 
   return (
     <div
       className="fm-root"
       data-theme={theme}
+      data-browser={isChromiumBrowser ? "chromium" : "other"}
       data-sketch-mode={sketchMode ? "true" : "false"}
       data-sketch-panel-open={sketchRightPanelOpen ? "true" : "false"}
     >

@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import type { Contour, Point, StrokeSample, VectorObject } from "@/types/geometry";
 import { useAppStore } from "@/glyph/store";
 import { samplesToCenterline, centerlineToContour, centerlineToOutlineContours } from "@/brushes/strokeToOutline";
+import { appendStabilizedSample } from "@/brushes/strokeSmoothing";
 import { shortId } from "@/utils/id";
 
 interface PointerLike { pressure?: number; pointerType?: string; }
@@ -30,41 +31,26 @@ export function snapToGridCell(p: Point, size: number): Point {
   };
 }
 
-
 /**
- * Lightweight live pointer filter for Brush Stabilizer.
- * 0 preserves the legacy direct capture path exactly; 1 uses the strongest
- * filtering while still advancing on every accepted pointer sample.
- *
- * A low-pass ("catch up slowly") filter, the same family of technique
- * Procreate's StreamLine uses: the live point eases toward the raw pointer
- * by a strength-scaled fraction each sample instead of jumping straight to
- * it. This is deliberately NOT a "pulled string" leash that only starts
- * moving once the pointer strays past a fixed radius — that model always
- * advances in a straight line to wherever the raw pointer currently is,
- * which cuts a deliberate curve into visible corner-like facets. A low-pass
- * filter instead rounds bends smoothly while still suppressing hand tremor,
- * because tremor is high-frequency (filtered out almost entirely) while a
- * deliberate stroke is low-frequency (passes through, just slightly lagged).
- * A tiny dead zone on top catches truly static jitter that a pure low-pass
- * would otherwise let drift by a sub-unit amount on every sample.
+ * Brush Stabilizer shares the same underlying engine as the Pencil tool's
+ * Stabilizer (see `brushes/strokeSmoothing.ts`), but the two moments in a
+ * stroke's life use it differently:
+ *  - WHILE DRAWING (pointerMove), only a cheap, append-only approximation
+ *    runs (`appendStabilizedSample`) — one new point per move, from a
+ *    small trailing window, never revisiting earlier points. Running the
+ *    full roughness-boosted double moving average + RDP simplify pass over
+ *    the ENTIRE raw buffer on every move used to be the actual engine here,
+ *    and once Stabilizer was above 0 that caused visible lag on longer
+ *    strokes (the pass gets more expensive the longer you draw) and a
+ *    broken/discontinuous look (RDP's kept points can reshuffle completely
+ *    frame to frame, since its output depends on the whole buffer).
+ *  - ON COMMIT (pointerUp), the exact, full engine runs exactly once over
+ *    the complete raw buffer, so the saved geometry is fully accurate
+ *    regardless of how the live preview approximated it.
+ * `hitScale` is passed through so a low Stabilizer value stays crisp at any
+ * zoom level, matching Pencil.
  */
-export function stabilizeBrushPoint(p: Point, previous: Point | null, amount: number): Point {
-  if (!previous) return p;
-  const strength = Math.max(0, Math.min(1, amount));
-  if (strength === 0) return p;
-  const dx = p.x - previous.x;
-  const dy = p.y - previous.y;
-  const dist = Math.hypot(dx, dy);
-  const deadzone = 0.6 * strength;
-  if (dist <= deadzone) return previous;
-  // strength 0 -> alpha ~1 (no lag, continuous with the early-return above);
-  // strength 1 -> alpha 0.18 (heavy smoothing/lag, rounds curves smoothly).
-  const alpha = 1 - strength * 0.82;
-  return { x: previous.x + dx * alpha, y: previous.y + dy * alpha };
-}
-
-export function useBrushTool() {
+export function useBrushTool(hitScale: number) {
   const brush = useAppStore((s) => s.brush);
   const brushCap = useAppStore((s) => s.brushCap);
   const gridSize = useAppStore((s) => s.gridSize);
@@ -72,8 +58,17 @@ export function useBrushTool() {
   const glyph = useAppStore((s) => s.glyphs[s.activeChar]);
   const commitOutline = useAppStore((s) => s.commitOutline);
 
+  // Raw captured pointer stream (font units), deduped the same way Pencil
+  // dedupes its own raw stream — see usePencilTool.ts pointerMove. This is
+  // what the full smoothing engine reprocesses exactly once, on pointerUp,
+  // to build the committed geometry.
+  const rawSamplesRef = useRef<StrokeSample[]>([]);
+  // Cheap, incrementally-grown approximation of the stabilized stream,
+  // used ONLY for the live preview while still drawing (see
+  // appendStabilizedSample). The committed object's `obj.samples` (for
+  // non-destructive Expand) is built separately, from the full engine, in
+  // pointerUp — it does not reuse this ref.
   const samplesRef = useRef<StrokeSample[]>([]);
-  const stabilizedPtRef = useRef<Point | null>(null);
   // Pixel Brush's live preview is many square contours (one per grid cell),
   // not one nib-shaped contour, so this is always an array — empty for "no
   // preview" rather than null, which keeps the pixel and non-pixel paths
@@ -93,7 +88,7 @@ export function useBrushTool() {
   }, []);
 
   const buildPreview = useCallback(() => {
-    const cl = samplesToCenterline(samplesRef.current, brush);
+    const cl = samplesToCenterline(samplesRef.current, brush, hitScale);
     if (brush.type === "monoline") {
       return { centerline: centerlineToContour(cl, true), outline: [] as Contour[] };
     }
@@ -102,48 +97,72 @@ export function useBrushTool() {
     // matches exactly what gets committed.
     const settings = pixelSnap ? { ...brush, cellSize: gridSize } : brush;
     return { centerline: null as Contour | null, outline: centerlineToOutlineContours(cl, settings) };
-  }, [brush, gridSize, pixelSnap]);
+  }, [brush, gridSize, pixelSnap, hitScale]);
 
   const pointerDown = useCallback((p: Point, e: PointerLike) => {
     // Pixel brush: snap captured points to the centers of canvas grid cells as you draw, for
     // a genuine blocky/pixel-font-friendly stroke rather than a smoothed curve.
     const snapped = pixelSnap ? snapToGridCell(p, gridSize) : p;
-    const stabilized = pixelSnap ? snapped : stabilizeBrushPoint(snapped, null, brush.stabilizer ?? 0);
-    samplesRef.current = [{ x: stabilized.x, y: stabilized.y, pressure: pressureFor(snapped, e) }];
-    stabilizedPtRef.current = stabilized;
+    const sample: StrokeSample = { x: snapped.x, y: snapped.y, pressure: pressureFor(snapped, e) };
+    rawSamplesRef.current = [sample];
+    samplesRef.current = [sample];
     setIsDrawing(true);
     setPreviewOutline([]);
     setPreviewCenterline(null);
-  }, [pressureFor, pixelSnap, gridSize, brush.stabilizer]);
+  }, [pressureFor, pixelSnap, gridSize]);
 
   const pointerMove = useCallback(
     (p: Point, e: PointerLike) => {
       if (!isDrawing) return;
       const snapped = pixelSnap ? snapToGridCell(p, gridSize) : p;
-      const stabilized = pixelSnap
-        ? snapped
-        : stabilizeBrushPoint(snapped, stabilizedPtRef.current, brush.stabilizer ?? 0);
-      const samples = samplesRef.current;
-      const last = samples[samples.length - 1];
-      const minMove = pixelSnap ? gridSize * 0.5 : Math.max(1, brush.spacing * 0.5);
-      if (Math.hypot(stabilized.x - last.x, stabilized.y - last.y) < minMove) return;
-      samples.push({ x: stabilized.x, y: stabilized.y, pressure: pressureFor(snapped, e) });
-      stabilizedPtRef.current = stabilized;
+      if (pixelSnap) {
+        // Pixel Brush stays on its own grid-snapped path, unaffected by
+        // Stabilizer — a blocky brush has nothing to stabilize.
+        const samples = samplesRef.current;
+        const last = samples[samples.length - 1];
+        const minMove = gridSize * 0.5;
+        if (Math.hypot(snapped.x - last.x, snapped.y - last.y) < minMove) return;
+        const sample: StrokeSample = { x: snapped.x, y: snapped.y, pressure: pressureFor(snapped, e) };
+        rawSamplesRef.current.push(sample);
+        samples.push(sample);
+        const preview = buildPreview();
+        setPreviewCenterline(preview.centerline);
+        setPreviewOutline(preview.outline);
+        return;
+      }
+      const raw = rawSamplesRef.current;
+      const lastRaw = raw[raw.length - 1];
+      const minRawMove = Math.max(0.8, 1.2 * hitScale);
+      if (Math.hypot(snapped.x - lastRaw.x, snapped.y - lastRaw.y) < minRawMove) return;
+      raw.push({ x: snapped.x, y: snapped.y, pressure: pressureFor(snapped, e) });
+      // Live preview only: append ONE new stabilized point from a small
+      // trailing window, instead of re-running the full smoothing+RDP
+      // engine over the whole growing raw buffer on every move (that was
+      // the source of the "Stabilizer > 0 lags and draws a broken line"
+      // bug — see appendStabilizedSample's doc comment). The exact, full
+      // engine still runs once on pointerUp for the actual committed
+      // geometry, so this only affects what you see while still drawing.
+      samplesRef.current = appendStabilizedSample(raw, samplesRef.current, brush.stabilizer ?? 0);
       const preview = buildPreview();
       setPreviewCenterline(preview.centerline);
       setPreviewOutline(preview.outline);
     },
-    [isDrawing, brush, buildPreview, pressureFor, gridSize, pixelSnap]
+    [isDrawing, brush.stabilizer, buildPreview, pressureFor, gridSize, pixelSnap, hitScale]
   );
 
   const pointerUp = useCallback(() => {
     if (!isDrawing) return;
     setIsDrawing(false);
-    const centerlineSamples = samplesToCenterline(samplesRef.current, brush);
+    // Build the FINAL geometry from the full, exact engine over the raw
+    // pointer buffer — not from the cheap incremental live-preview stream
+    // in samplesRef (see appendStabilizedSample's doc comment). This is
+    // the one point per stroke where the more expensive full
+    // smoothing+RDP pass is worth paying for, since it only runs once.
+    const centerlineSamples = samplesToCenterline(rawSamplesRef.current, brush, hitScale);
     const centerline = centerlineToContour(centerlineSamples, !pixelSnap);
-    const rawSamples = samplesRef.current.map((s) => ({ ...s }));
+    const rawSamples = centerlineSamples.map((s) => ({ ...s }));
+    rawSamplesRef.current = [];
     samplesRef.current = [];
-    stabilizedPtRef.current = null;
     setPreviewOutline([]);
     setPreviewCenterline(null);
     if (!centerline || !glyph) return;
@@ -162,11 +181,11 @@ export function useBrushTool() {
       samples: rawSamples,
     };
     commitOutline(activeChar, { objects: [...glyph.outline.objects, obj] });
-  }, [isDrawing, brush, brushCap, glyph, activeChar, commitOutline, gridSize, pixelSnap]);
+  }, [isDrawing, brush, brushCap, glyph, activeChar, commitOutline, gridSize, pixelSnap, hitScale]);
 
   const cancel = useCallback(() => {
+    rawSamplesRef.current = [];
     samplesRef.current = [];
-    stabilizedPtRef.current = null;
     setIsDrawing(false);
     setPreviewOutline([]);
     setPreviewCenterline(null);

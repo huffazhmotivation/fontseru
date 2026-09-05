@@ -166,6 +166,16 @@ export function useSelectTool(hitScale: number) {
   const baseRef = useRef<GlyphOutline | null>(null);
   const [marqueeRect, setMarqueeRect] = useState<Rect | null>(null);
   const [hoverHandle, setHoverHandle] = useState<HandleId | null>(null);
+  const hoverHandleRef = useRef<HandleId | null>(null);
+
+  const updateHoverHandle = useCallback((next: HandleId | null) => {
+    // Chrome can deliver pointermove considerably faster than React can paint.
+    // Avoid turning every hover sample into a React render when the cursor is
+    // still over the same handle (the common case over dense artwork).
+    if (hoverHandleRef.current === next) return;
+    hoverHandleRef.current = next;
+    setHoverHandle(next);
+  }, []);
 
   const outline: GlyphOutline = liveOutline ?? glyph?.outline ?? { objects: [] };
   const bounds = objectsBounds(outline, selectedObjectIds);
@@ -299,7 +309,7 @@ export function useSelectTool(hitScale: number) {
     (p: Point, shiftKey: boolean, pointerType?: string) => {
       const drag = dragRef.current;
       if (!drag) {
-        setHoverHandle(findHandle(p));
+        updateHoverHandle(findHandle(p));
         return;
       }
       if (drag.mode === "marquee") {
@@ -387,7 +397,7 @@ export function useSelectTool(hitScale: number) {
         setLiveOutline({ objects });
       }
     },
-    [findHandle, selectedObjectIds, setLiveOutline, setSelectionSkewState, strokeWidthLocked, sketchMode, horizontalSnapTargets, verticalSnapTargets, snapTolerance]
+    [findHandle, selectedObjectIds, setLiveOutline, setSelectionSkewState, strokeWidthLocked, sketchMode, horizontalSnapTargets, verticalSnapTargets, snapTolerance, updateHoverHandle]
   );
 
   const pointerUp = useCallback(() => {

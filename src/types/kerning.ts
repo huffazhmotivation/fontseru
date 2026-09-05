@@ -82,6 +82,19 @@ export function parseKerningKey(key: string): { left: string; right: string } | 
   }
 }
 
+/**
+ * Where a single flat `kerningPairs` entry currently "comes from", for the
+ * small origin badge in the Kerning panel:
+ *  - "manual" — hand-tuned by the user (kerningManual[key] === true).
+ *  - "auto"   — filled by the geometry-based Auto Kerning pass (global run
+ *               or a single accepted suggestion), or simply unset.
+ */
+export type KerningOrigin = "manual" | "auto";
+
+export function getKerningOrigin(key: string, manual: KerningManualFlags): KerningOrigin {
+  return manual[key] ? "manual" : "auto";
+}
+
 /** Useful pair shortcuts for the Kerning panel. Global auto-kerning is not limited to this list. */
 export const AUTO_KERN_PRIORITY_PAIRS: [string, string][] = [
   ["A", "V"], ["V", "A"],

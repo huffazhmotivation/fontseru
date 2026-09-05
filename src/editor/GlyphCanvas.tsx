@@ -42,6 +42,16 @@ function matchingFamilyGlyph(map: GlyphMap, activeGlyph: Glyph, activeChar: stri
   });
 }
 
+type PointerMoveSample = {
+  pointerId: number;
+  pointerType: string;
+  clientX: number;
+  clientY: number;
+  shiftKey: boolean;
+  altKey: boolean;
+  pressure: number;
+};
+
 export function GlyphCanvas() {
   const frameRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -82,10 +92,20 @@ export function GlyphCanvas() {
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
   const [hover, setHover] = useState<Point | null>(null);
   const panDragRef = useRef<{ startClient: Point; startPan: Point } | null>(null);
+  const pendingPointerMoveRef = useRef<PointerMoveSample | null>(null);
+  const pointerMoveRafRef = useRef<number | null>(null);
+  const pointerMoveProcessorRef = useRef<(sample: PointerMoveSample) => void>(() => {});
+  const pendingWheelRef = useRef<{ deltaY: number; deltaX: number; clientX: number; clientY: number; shiftKey: boolean } | null>(null);
+  const wheelRafRef = useRef<number | null>(null);
+  const wheelProcessorRef = useRef<(event: NonNullable<typeof pendingWheelRef.current>) => void>(() => {});
   type MetricGuideKey = "ascender" | "capHeight" | "xHeight" | "baseline" | "descender";
   const metricDragRef = useRef<{ key: MetricGuideKey; startClientY: number; startValue: number; startScale: number } | null>(null);
+  const pendingMetricClientYRef = useRef<number | null>(null);
+  const metricMoveRafRef = useRef<number | null>(null);
   const [activeMetricGuide, setActiveMetricGuide] = useState<MetricGuideKey | null>(null);
   const glyphMetricDragRef = useRef<{ key: GlyphMetricKey; startClientX: number; startValue: number; startScale: number } | null>(null);
+  const pendingGlyphMetricClientXRef = useRef<number | null>(null);
+  const glyphMetricMoveRafRef = useRef<number | null>(null);
   const [activeGlyphMetricGuide, setActiveGlyphMetricGuide] = useState<GlyphMetricKey | null>(null);
   const spacePanRef = useRef(false);
 
@@ -115,7 +135,7 @@ export function GlyphCanvas() {
   const hitScale = 1 / sc;
 
   const editor = useGlyphEditor(hitScale);
-  const brushTool = useBrushTool();
+  const brushTool = useBrushTool(hitScale);
   const pencilTool = usePencilTool(hitScale);
   const selectTool = useSelectTool(hitScale);
 
@@ -156,22 +176,55 @@ export function GlyphCanvas() {
 
   // Native, non-passive wheel: plain wheel (any direction, incl. Ctrl/Cmd or
   // trackpad pinch) zooms toward the cursor; hold Shift to pan instead.
-  // Always preventDefault so the page never scrolls.
+  // Coalesce high-resolution trackpad events to one view update per frame.
+  const processWheel = useCallback((event: NonNullable<typeof pendingWheelRef.current>) => {
+    const store = useAppStore.getState();
+    if (event.shiftKey) {
+      const dx = event.deltaX !== 0 ? event.deltaX : event.deltaY;
+      store.setPan({ x: store.pan.x + dx / sc, y: store.pan.y });
+      return;
+    }
+    applyZoomAt(store.zoom * Math.exp(-event.deltaY * 0.0018), event.clientX, event.clientY);
+  }, [applyZoomAt, sc]);
+  wheelProcessorRef.current = processWheel;
+
   useEffect(() => {
     const el = frameRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      if (e.shiftKey) {
-        const dx = e.deltaX !== 0 ? e.deltaX : e.deltaY;
-        setPan({ x: pan.x + dx / sc, y: pan.y });
-        return;
+      const pending = pendingWheelRef.current;
+      if (pending) {
+        pending.deltaY += e.deltaY;
+        pending.deltaX += e.deltaX;
+        pending.clientX = e.clientX;
+        pending.clientY = e.clientY;
+        pending.shiftKey = e.shiftKey;
+      } else {
+        pendingWheelRef.current = {
+          deltaY: e.deltaY,
+          deltaX: e.deltaX,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          shiftKey: e.shiftKey,
+        };
       }
-      applyZoomAt(zoom * Math.exp(-e.deltaY * 0.0018), e.clientX, e.clientY);
+      if (wheelRafRef.current !== null) return;
+      wheelRafRef.current = requestAnimationFrame(() => {
+        wheelRafRef.current = null;
+        const next = pendingWheelRef.current;
+        pendingWheelRef.current = null;
+        if (next) wheelProcessorRef.current(next);
+      });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [zoom, pan, sc, applyZoomAt, setPan]);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      if (wheelRafRef.current !== null) cancelAnimationFrame(wheelRafRef.current);
+      wheelRafRef.current = null;
+      pendingWheelRef.current = null;
+    };
+  }, []);
 
   // Fit: recompute zoom + pan so the glyph (or the em box) fills the view.
   useEffect(() => {
@@ -227,8 +280,90 @@ export function GlyphCanvas() {
     onPanBy: sketchPanBy,
   });
 
+  // Pointer events can arrive several times during one refresh interval.
+  // Collect input cheaply and paint only the newest sample once per frame.
+  const processPointerMove = useCallback(
+    (sample: PointerMoveSample) => {
+      if (sketchGestures.handlePointerMove(sample as unknown as PointerEvent)) return;
+      const p = getFontPoint(sample);
+      if (!p) return;
+      // Hover is only rendered for Pen's rubber-band. Select's handle hover
+      // has its own change guard in useSelectTool.
+      if (tool === "pen") setHover(p);
+      if (panDragRef.current) {
+        setPan({
+          x: panDragRef.current.startPan.x - (sample.clientX - panDragRef.current.startClient.x) / sc,
+          y: panDragRef.current.startPan.y - (sample.clientY - panDragRef.current.startClient.y) / sc,
+        });
+        return;
+      }
+      if (tool === "brush") return brushTool.pointerMove(p, sample);
+      if (tool === "pencil") return pencilTool.pointerMove(p);
+      if (tool === "select") return selectTool.pointerMove(p, sample.shiftKey, sample.pointerType);
+      editor.pointerMove(p, sample.shiftKey, sample.altKey);
+    },
+    [sketchGestures, getFontPoint, tool, setPan, sc, brushTool, pencilTool, selectTool, editor]
+  );
+  pointerMoveProcessorRef.current = processPointerMove;
+
+  const flushPointerMove = useCallback(() => {
+    if (pointerMoveRafRef.current !== null) {
+      cancelAnimationFrame(pointerMoveRafRef.current);
+      pointerMoveRafRef.current = null;
+    }
+    const pending = pendingPointerMoveRef.current;
+    pendingPointerMoveRef.current = null;
+    if (pending) pointerMoveProcessorRef.current(pending);
+  }, []);
+
+  const queuePointerMove = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
+    pendingPointerMoveRef.current = {
+      pointerId: e.pointerId,
+      pointerType: e.pointerType,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
+      pressure: e.pressure,
+    };
+    if (pointerMoveRafRef.current !== null) return;
+    pointerMoveRafRef.current = requestAnimationFrame(() => {
+      pointerMoveRafRef.current = null;
+      const pending = pendingPointerMoveRef.current;
+      pendingPointerMoveRef.current = null;
+      if (pending) pointerMoveProcessorRef.current(pending);
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (pointerMoveRafRef.current !== null) cancelAnimationFrame(pointerMoveRafRef.current);
+    if (metricMoveRafRef.current !== null) cancelAnimationFrame(metricMoveRafRef.current);
+    if (glyphMetricMoveRafRef.current !== null) cancelAnimationFrame(glyphMetricMoveRafRef.current);
+    pointerMoveRafRef.current = null;
+    metricMoveRafRef.current = null;
+    glyphMetricMoveRafRef.current = null;
+    pendingPointerMoveRef.current = null;
+    pendingMetricClientYRef.current = null;
+    pendingGlyphMetricClientXRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (tool !== "pen") setHover(null);
+  }, [tool]);
+
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<SVGSVGElement>) => {
+      // Safari (unlike Chrome) will start a native drag-selection over the
+      // SVG canvas on a plain mousedown+drag if nothing stops it — every
+      // tool here begins with exactly that gesture (marquee-select,
+      // pencil/pen strokes, node drags...). The visible result is Safari
+      // painting the dragged region with `::selection`'s background,
+      // which happens to be the app's bright accent green — read by users
+      // as "the whole canvas turns green in Safari". preventDefault()
+      // here, together with `user-select: none` on the canvas frame in
+      // CSS, stops that selection from ever starting.
+      e.preventDefault();
+      flushPointerMove();
       if (sketchGestures.handlePointerDown(e)) return;
       const p = getFontPoint(e);
       if (!p) return;
@@ -243,38 +378,20 @@ export function GlyphCanvas() {
       if (tool === "select") return selectTool.pointerDown(p, e.shiftKey, e.metaKey || e.ctrlKey);
       editor.pointerDown(p, e.shiftKey, e.altKey, e.metaKey || e.ctrlKey);
     },
-    [getFontPoint, tool, editor, brushTool, pencilTool, selectTool, pan, zoom, applyZoomAt, usingHandPan, sketchGestures]
+    [getFontPoint, tool, editor, brushTool, pencilTool, selectTool, pan, zoom, applyZoomAt, usingHandPan, sketchGestures, flushPointerMove]
   );
 
-  const onPointerMove = useCallback(
-    (e: ReactPointerEvent<SVGSVGElement>) => {
-      if (sketchGestures.handlePointerMove(e)) return;
-      const p = getFontPoint(e);
-      if (!p) return;
-      setHover(p);
-      if (panDragRef.current) {
-        setPan({
-          x: panDragRef.current.startPan.x - (e.clientX - panDragRef.current.startClient.x) / sc,
-          y: panDragRef.current.startPan.y - (e.clientY - panDragRef.current.startClient.y) / sc,
-        });
-        return;
-      }
-      if (tool === "brush") return brushTool.pointerMove(p, e);
-      if (tool === "pencil") return pencilTool.pointerMove(p);
-      if (tool === "select") return selectTool.pointerMove(p, e.shiftKey, e.pointerType);
-      editor.pointerMove(p, e.shiftKey, e.altKey);
-    },
-    [getFontPoint, tool, editor, brushTool, pencilTool, selectTool, sc, setPan, sketchGestures]
-  );
+  const onPointerMove = queuePointerMove;
 
   const onPointerUp = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
+    flushPointerMove();
     sketchGestures.handlePointerUp(e);
     panDragRef.current = null;
     if (tool === "brush") return brushTool.pointerUp();
     if (tool === "pencil") return pencilTool.pointerUp();
     if (tool === "select") return selectTool.pointerUp();
     editor.pointerUp();
-  }, [editor, brushTool, pencilTool, selectTool, tool, sketchGestures]);
+  }, [editor, brushTool, pencilTool, selectTool, tool, sketchGestures, flushPointerMove]);
 
   const onDoubleClick = useCallback(
     (e: ReactMouseEvent<SVGSVGElement>) => {
@@ -344,6 +461,7 @@ export function GlyphCanvas() {
 
   useEffect(() => {
     function onWindowPointerUp(e: PointerEvent) {
+      flushPointerMove();
       sketchGestures.handlePointerUp(e);
       panDragRef.current = null;
       if (tool === "brush") brushTool.pointerUp();
@@ -363,7 +481,7 @@ export function GlyphCanvas() {
       window.removeEventListener("pointerup", onWindowPointerUp);
       window.removeEventListener("pointercancel", onWindowPointerCancel);
     };
-  }, [editor, brushTool, pencilTool, selectTool, tool, sketchGestures]);
+  }, [editor, brushTool, pencilTool, selectTool, tool, sketchGestures, flushPointerMove]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -410,8 +528,17 @@ export function GlyphCanvas() {
       if (!drag || tool !== "home") return;
       e.preventDefault();
       e.stopPropagation();
-      const deltaUnits = -(e.clientY - drag.startClientY) / Math.max(drag.startScale, 0.0001);
-      setFontMetricLive(drag.key, drag.startValue + deltaUnits);
+      pendingMetricClientYRef.current = e.clientY;
+      if (metricMoveRafRef.current !== null) return;
+      metricMoveRafRef.current = requestAnimationFrame(() => {
+        metricMoveRafRef.current = null;
+        const activeDrag = metricDragRef.current;
+        const clientY = pendingMetricClientYRef.current;
+        pendingMetricClientYRef.current = null;
+        if (!activeDrag || clientY === null) return;
+        const deltaUnits = -(clientY - activeDrag.startClientY) / Math.max(activeDrag.startScale, 0.0001);
+        setFontMetricLive(activeDrag.key, activeDrag.startValue + deltaUnits);
+      });
     },
     [tool, setFontMetricLive]
   );
@@ -421,6 +548,15 @@ export function GlyphCanvas() {
       if (!metricDragRef.current) return;
       e.preventDefault();
       e.stopPropagation();
+      if (metricMoveRafRef.current !== null) cancelAnimationFrame(metricMoveRafRef.current);
+      metricMoveRafRef.current = null;
+      const drag = metricDragRef.current;
+      const clientY = pendingMetricClientYRef.current;
+      pendingMetricClientYRef.current = null;
+      if (drag && clientY !== null) {
+        const deltaUnits = -(clientY - drag.startClientY) / Math.max(drag.startScale, 0.0001);
+        setFontMetricLive(drag.key, drag.startValue + deltaUnits);
+      }
       metricDragRef.current = null;
       endMetricDrag();
       setActiveMetricGuide(null);
@@ -462,8 +598,17 @@ export function GlyphCanvas() {
       if (!drag || tool !== "home" || !glyph) return;
       e.preventDefault();
       e.stopPropagation();
-      const deltaUnits = (e.clientX - drag.startClientX) / Math.max(drag.startScale, 0.0001);
-      setGlyphMetricLive(activeChar, drag.key, drag.startValue + deltaUnits);
+      pendingGlyphMetricClientXRef.current = e.clientX;
+      if (glyphMetricMoveRafRef.current !== null) return;
+      glyphMetricMoveRafRef.current = requestAnimationFrame(() => {
+        glyphMetricMoveRafRef.current = null;
+        const activeDrag = glyphMetricDragRef.current;
+        const clientX = pendingGlyphMetricClientXRef.current;
+        pendingGlyphMetricClientXRef.current = null;
+        if (!activeDrag || clientX === null) return;
+        const deltaUnits = (clientX - activeDrag.startClientX) / Math.max(activeDrag.startScale, 0.0001);
+        setGlyphMetricLive(activeChar, activeDrag.key, activeDrag.startValue + deltaUnits);
+      });
     },
     [tool, glyph, activeChar, setGlyphMetricLive]
   );
@@ -473,11 +618,20 @@ export function GlyphCanvas() {
       if (!glyphMetricDragRef.current) return;
       e.preventDefault();
       e.stopPropagation();
+      if (glyphMetricMoveRafRef.current !== null) cancelAnimationFrame(glyphMetricMoveRafRef.current);
+      glyphMetricMoveRafRef.current = null;
+      const drag = glyphMetricDragRef.current;
+      const clientX = pendingGlyphMetricClientXRef.current;
+      pendingGlyphMetricClientXRef.current = null;
+      if (drag && clientX !== null) {
+        const deltaUnits = (clientX - drag.startClientX) / Math.max(drag.startScale, 0.0001);
+        setGlyphMetricLive(activeChar, drag.key, drag.startValue + deltaUnits);
+      }
       glyphMetricDragRef.current = null;
       endGlyphMetricDrag();
       setActiveGlyphMetricGuide(null);
     },
-    [endGlyphMetricDrag]
+    [activeChar, endGlyphMetricDrag, setGlyphMetricLive]
   );
 
   const focusGlyphGuideMetric = useCallback(
@@ -501,8 +655,17 @@ export function GlyphCanvas() {
   const toY = (val: number) => ascender - val;
   const objects = editor.outline.objects;
   // Purely visual: flags the top shape of any stacked pair so overlapping
-  // shapes are easy to spot on the canvas. Doesn't touch geometry.
-  const overlappingIds = useMemo(() => findOverlappingObjectIds(objects), [objects]);
+  // shapes are easy to spot on the canvas. Overlap testing flattens curves and
+  // compares polygon pairs, so doing it synchronously for every live pointer
+  // sample can dominate Chrome's frame. Debounce it while editing; the latest
+  // geometry is still reflected immediately after the pointer stops/commits.
+  const [overlappingIds, setOverlappingIds] = useState<Set<string>>(() => findOverlappingObjectIds(objects));
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setOverlappingIds(findOverlappingObjectIds(objects));
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [objects]);
 
   const selBounds = tool === "select" ? selectTool.bounds : null;
   const handlePts = useMemo(

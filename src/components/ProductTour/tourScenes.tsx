@@ -517,7 +517,7 @@ function BrushRightPanel({ taperP, sizeP }: { taperP: number; sizeP: number }) {
               </span>
               <span>{size}</span>
             </div>
-            <input type="range" min={1} max={200} value={size} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />
+            <input type="range" min={1} max={200} value={size} readOnly tabIndex={-1} style={{ pointerEvents: "none", ["--fm-range-fill" as string]: `${((size - 1) / (200 - 1)) * 100}%` }} />
           </div>
           <div className="fm-field" data-tour-anchor="width-profile">
             <label>Width Profile</label>
@@ -767,7 +767,7 @@ function TestLabModalBody({ progress }: { progress: number }) {
                 value={Math.round(-24 * kernP)}
                 readOnly
                 tabIndex={-1}
-                style={{ pointerEvents: "none" }}
+                style={{ pointerEvents: "none", ["--fm-range-fill" as string]: `${((Math.round(-24 * kernP) - (-80)) / (80 - (-80))) * 100}%` }}
               />
             </div>
           </div>
@@ -787,7 +787,7 @@ function TestLabModalBody({ progress }: { progress: number }) {
                 value={Math.round(26 + sizeP * 14)}
                 readOnly
                 tabIndex={-1}
-                style={{ pointerEvents: "none" }}
+                style={{ pointerEvents: "none", ["--fm-range-fill" as string]: `${((Math.round(26 + sizeP * 14) - 12) / (96 - 12)) * 100}%` }}
               />
             </div>
             <div className="fm-field">
@@ -797,7 +797,7 @@ function TestLabModalBody({ progress }: { progress: number }) {
                 </span>
                 <span>0</span>
               </div>
-              <input type="range" min={-10} max={10} value={0} readOnly tabIndex={-1} style={{ pointerEvents: "none" }} />
+              <input type="range" min={-10} max={10} value={0} readOnly tabIndex={-1} style={{ pointerEvents: "none", ["--fm-range-fill" as string]: "50%" }} />
             </div>
           </div>
         </div>

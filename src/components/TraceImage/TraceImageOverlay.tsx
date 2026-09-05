@@ -9,6 +9,7 @@ import { unicodeHex } from "@/utils/unicode";
 import { GlyphThumbnail } from "@/components/GlyphThumbnail";
 import { Slider } from "@/components/RightPanel";
 import { Toast, type ToastMessage } from "@/components/Toast";
+import { InfoTip } from "@/components/InfoTip";
 import type { FontMetrics } from "@/types/font";
 import type { VectorObject } from "@/types/geometry";
 import {
@@ -574,7 +575,7 @@ export function TraceImageOverlay() {
                     </div>
                   )}
                 </div>
-                <div className="fm-hint">Preview otomatis ini mengikuti Detail, Threshold, dan Balik warna — bandingkan dulu sebelum menekan Trace Image.</div>
+                <InfoTip>Preview otomatis ini mengikuti Detail, Threshold, dan Balik warna — bandingkan dulu sebelum menekan Trace Image.</InfoTip>
               </div>
 
               <div className="fm-field">
@@ -593,7 +594,7 @@ export function TraceImageOverlay() {
                     </button>
                   ))}
                 </div>
-                <div className="fm-hint">Rendah = node paling sedikit &amp; paling halus. Tinggi = mengikuti garis tipis lebih ketat &amp; presisi.</div>
+                <InfoTip>Rendah = node paling sedikit &amp; paling halus. Tinggi = mengikuti garis tipis lebih ketat &amp; presisi.</InfoTip>
               </div>
 
               <Slider
@@ -605,7 +606,7 @@ export function TraceImageOverlay() {
                 directInput
                 onChange={(v) => setSettings((s) => ({ ...s, threshold: v }))}
               />
-              <div className="fm-hint">Piksel lebih gelap dari nilai ini dianggap tinta (bentuk glyph).</div>
+              <InfoTip>Piksel lebih gelap dari nilai ini dianggap tinta (bentuk glyph).</InfoTip>
 
               <label className="fm-checkbox-row" style={{ marginTop: 4 }}>
                 <input

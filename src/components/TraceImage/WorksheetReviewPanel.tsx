@@ -4,6 +4,7 @@ import type { FontMetrics } from "@/types/font";
 import type { GlyphMap } from "@/types/glyph";
 import { GlyphThumbnail } from "@/components/GlyphThumbnail";
 import { objectsPreviewGlyph } from "@/components/TraceImage/previewGlyph";
+import { InfoTip } from "@/components/InfoTip";
 import type { WorksheetCellResult, WorksheetDetectionResult } from "@/worksheet/types";
 
 interface WorksheetReviewPanelProps {
@@ -65,9 +66,9 @@ export function WorksheetReviewPanel({ result, metrics, regularGlyphs, onImport,
             {detectedCells.length} sel terisi · {missingCells.length} sel kosong (Missing)
           </span>
         </div>
-        <span className="fm-hint fm-worksheet-note">
+        <InfoTip>
           Setiap huruf ditentukan murni dari posisinya di grid (kotak ke-berapa → huruf apa) — tidak ada kode/tag yang perlu terbaca sama sekali.
-        </span>
+        </InfoTip>
         {result.warnings.length > 0 && (
           <ul className="fm-worksheet-warnings">
             {result.warnings.map((w, i) => (

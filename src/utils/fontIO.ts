@@ -1237,11 +1237,21 @@ function buildLigatureSubstFormat1(rules: Array<{ components: number[]; ligature
   return w.toUint8Array();
 }
 
-/** Wraps a single subtable in a Lookup table (lookupFlag always 0). */
-function buildLookup(lookupType: number, subtable: Uint8Array): Uint8Array {
+/** Wraps one or more subtables in a single Lookup table (lookupFlag always
+ * 0). When a lookup carries multiple subtables, OpenType Layout applies the
+ * first subtable whose Coverage includes the glyph at the current position
+ * and stops there — so subtable order encodes priority. `buildGposTable`
+ * relies on exactly this to let exact-pair exceptions (subtable 0) win over
+ * class-based kerning (subtable 1) without double-applying both. */
+function buildLookup(lookupType: number, subtables: Uint8Array[]): Uint8Array {
+  const headerSize = 6 + 2 * subtables.length; // lookupType + lookupFlag + subTableCount + offsets[]
+  const offsets: number[] = [];
+  let running = headerSize;
+  for (const st of subtables) { offsets.push(running); running += st.length; }
   const w = new GsubByteWriter();
-  w.u16(lookupType).u16(0).u16(1).u16(8); // header is 8 bytes; subtable starts right after
-  w.raw(subtable);
+  w.u16(lookupType).u16(0).u16(subtables.length);
+  for (const off of offsets) w.u16(off);
+  for (const st of subtables) w.raw(st);
   return w.toUint8Array();
 }
 
@@ -1343,15 +1353,15 @@ function buildGsubTable(config: FeatureBuilderConfig, glyphIndexByChar: Map<stri
 
   if (ligatureRules.length) {
     features.push({ tag: "liga", lookupIndex: lookups.length });
-    lookups.push(buildLookup(4, buildLigatureSubstFormat1(ligatureRules)));
+    lookups.push(buildLookup(4, [buildLigatureSubstFormat1(ligatureRules)]));
   }
   if (alternateRules.length) {
     features.push({ tag: "salt", lookupIndex: lookups.length });
-    lookups.push(buildLookup(3, buildAlternateSubstFormat1(alternateRules)));
+    lookups.push(buildLookup(3, [buildAlternateSubstFormat1(alternateRules)]));
   }
   if (swashRules.length) {
     features.push({ tag: "swsh", lookupIndex: lookups.length });
-    lookups.push(buildLookup(1, buildSingleSubstFormat2(swashRules)));
+    lookups.push(buildLookup(1, [buildSingleSubstFormat2(swashRules)]));
   }
 
   const lookupListBytes = buildLookupList(lookups);
@@ -1444,12 +1454,13 @@ function buildPairPosFormat1(pairs: KerningPairs, glyphIndexByChar: Map<string, 
  * FeatureList with a single 'kern' feature + LookupList with one
  * PairAdjustment lookup) — same header shape as `buildGsubTable`, since
  * GSUB and GPOS share the same top-level "Common Tables" layout, they
- * just point at different lookup subtable formats. */
+ * just point at different lookup subtable formats. Always a flat PairPos
+ * format 1 (explicit pair) subtable — one row per glyph pair. */
 function buildGposTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
-  const pairPos = buildPairPosFormat1(pairs, glyphIndexByChar);
-  if (!pairPos) return null;
+  const format1 = buildPairPosFormat1(pairs ?? {}, glyphIndexByChar);
+  if (!format1) return null;
 
-  const lookupListBytes = buildLookupList([buildLookup(2, pairPos)]); // GPOS lookupType 2 = Pair Adjustment Positioning
+  const lookupListBytes = buildLookupList([buildLookup(2, [format1])]); // GPOS lookupType 2 = Pair Adjustment Positioning
   const featureListBytes = buildFeatureList([{ tag: "kern", lookupIndex: 0 }]);
   const scriptListBytes = buildScriptList(["DFLT", "latn"], [0]);
 
@@ -1730,12 +1741,24 @@ function technicalMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function exportOTF(glyphs: GlyphMap, metrics: FontMetrics, info: FontInfo, kerningPairs: KerningPairs, featureConfig?: FeatureBuilderConfig): ArrayBuffer {
+export function exportOTF(
+  glyphs: GlyphMap,
+  metrics: FontMetrics,
+  info: FontInfo,
+  kerningPairs: KerningPairs,
+  featureConfig?: FeatureBuilderConfig,
+): ArrayBuffer {
   const data = normalizeExportFontData({ glyphs, metrics, info, fontName: info?.familyName, kerningPairs });
   return generateOTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
 }
 
-export async function exportTTF(glyphs: GlyphMap, metrics: FontMetrics, info: FontInfo, kerningPairs: KerningPairs, featureConfig?: FeatureBuilderConfig): Promise<ArrayBuffer> {
+export async function exportTTF(
+  glyphs: GlyphMap,
+  metrics: FontMetrics,
+  info: FontInfo,
+  kerningPairs: KerningPairs,
+  featureConfig?: FeatureBuilderConfig,
+): Promise<ArrayBuffer> {
   const data = normalizeExportFontData({ glyphs, metrics, info, fontName: info?.familyName, kerningPairs });
   return generateTTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
 }

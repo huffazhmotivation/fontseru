@@ -26,7 +26,15 @@ export interface Rect { x: number; y: number; w: number; h: number; }
 type DragState =
   | { mode: "pen-place"; contourId: string; nodeId: string }
   | { mode: "move-selection"; refs: NodeRef[]; origin: Point }
-  | { mode: "move-handle"; contourId: string; nodeId: string; part: "handleIn" | "handleOut"; nodeType: NodeType }
+  | {
+      mode: "move-handle";
+      contourId: string;
+      nodeId: string;
+      part: "handleIn" | "handleOut";
+      nodeType: NodeType;
+      xTargets: number[];
+      yTargets: number[];
+    }
   | { mode: "curve"; contourId: string; fromIndex: number; t: number }
   | { mode: "marquee"; origin: Point; additive: boolean }
   | { mode: "shape-draw"; start: Point; objectId: string }
@@ -350,7 +358,26 @@ export function useGlyphEditor(hitScale: number) {
         if (!node) return;
         setSelectedHandle({ contourId: hit.contourId, nodeId: hit.nodeId, part: hit.part } as HandleRef);
         baseOutlineRef.current = cloneOutline(outline);
-        dragRef.current = { mode: "move-handle", contourId: hit.contourId, nodeId: hit.nodeId, part: hit.part, nodeType: node.type };
+        const xTargets: number[] = [node.point.x];
+        const yTargets: number[] = [node.point.y];
+        for (const obj of nodeableOutline.objects) {
+          for (const contour of obj.contours) {
+            for (const other of contour.nodes) {
+              if (other.id === node.id) continue;
+              xTargets.push(other.point.x);
+              yTargets.push(other.point.y);
+            }
+          }
+        }
+        dragRef.current = {
+          mode: "move-handle",
+          contourId: hit.contourId,
+          nodeId: hit.nodeId,
+          part: hit.part,
+          nodeType: node.type,
+          xTargets,
+          yTargets,
+        };
         return;
       }
 
@@ -416,19 +443,8 @@ export function useGlyphEditor(hitScale: number) {
         // pixels — same feel as the Select tool's guide snapping, applied
         // here to handles specifically per FontLab-style node editing.
         if (snapEnabled && !shiftKey) {
-          const xTargets: number[] = [node.point.x];
-          const yTargets: number[] = [node.point.y];
-          for (const obj of nodeableOutline.objects) {
-            for (const contour of obj.contours) {
-              for (const other of contour.nodes) {
-                if (other.id === node.id) continue;
-                xTargets.push(other.point.x);
-                yTargets.push(other.point.y);
-              }
-            }
-          }
           const tolerance = HANDLE_SNAP_TOLERANCE_PX * hitScale;
-          const snapped = snapHandlePoint(draggedPoint, xTargets, yTargets, tolerance);
+          const snapped = snapHandlePoint(draggedPoint, drag.xTargets, drag.yTargets, tolerance);
           draggedPoint = snapped.point;
           setHandleSnapGuide(
             snapped.snappedX !== null || snapped.snappedY !== null
@@ -455,7 +471,7 @@ export function useGlyphEditor(hitScale: number) {
         setLiveOutline(working);
       }
     },
-    [setLiveOutline, snapEnabled, hitScale, nodeableOutline]
+    [setLiveOutline, snapEnabled, hitScale]
   );
 
   const finishMarquee = useCallback((drag: Extract<NonNullable<DragState>, { mode: "marquee" }>) => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { Layers3, Loader2, MoveHorizontal, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Layers3, Loader2, MoveHorizontal, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
 import { NumericInput } from "@/components/NumericInput";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -17,8 +17,10 @@ import {
   effectiveKerningPairs,
   effectiveWordSpacing,
   kerningKey,
+  getKerningOrigin,
   type KerningContext,
   type KerningPairs,
+  type KerningOrigin,
 } from "@/types/kerning";
 
 type TestId = "type" | "upper" | "lower" | "numbers" | "punctuation" | "symbol" | "multilingual" | "feature" | "kerning" | "pangram" | "paragraph" | "all";
@@ -292,7 +294,6 @@ function EditableStage({
       ref={wrapRef}
       className="fm-lab-editable-wrap"
       onPointerUp={onStagePointerUp}
-      style={{ alignItems: align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center" }}
       data-testid="lab-editable-specimen"
       data-kern-dragging={isDragging ? "true" : "false"}
     >
@@ -322,6 +323,7 @@ function EditableStage({
             ? (rowActivePlaced.x + rowActivePlaced.advance) * pxPerUnit
             : 0;
           const rowHeight = totalH * pxPerUnit;
+          const lineWidth = Math.max(1, (layouts[lineIndex]?.totalAdvance ?? 0) * pxPerUnit);
           const selectionSpan =
             !isDragging && hasSelection
               ? selectionSpanForWrappedLine(
@@ -335,9 +337,16 @@ function EditableStage({
           return (
             <div
               key={`${wrappedLine.start}-${lineIndex}`}
-              className="fm-lab-glyph-row"
+              className="fm-lab-preview-line"
+              style={{
+                justifyContent: align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center",
+                marginBottom: lineIndex < wrappedLines.length - 1 ? fontSize * (lineHeight - 1) : 0,
+              }}
+            >
+            <div
+              className="fm-lab-glyph-row fm-lab-line-inner"
               ref={(el) => (lineRefs.current[lineIndex] = el)}
-              style={{ marginBottom: lineIndex < wrappedLines.length - 1 ? fontSize * (lineHeight - 1) : 0 }}
+              style={{ width: lineWidth, height: rowHeight }}
               data-testid={`lab-line-${lineIndex}`}
             >
               <GlyphRun
@@ -423,6 +432,7 @@ function EditableStage({
                   title={`Drag ${p.char} to adjust kerning`}
                 />
               ))}
+            </div>
             </div>
           );
         })}
@@ -1351,6 +1361,7 @@ export function SpecimenPanel() {
   const openFeatureBuilder = useAppStore((s) => s.openFeatureBuilder);
   const customFamilies = useAppStore((s) => s.customFamilies);
   const kerningPairs = useAppStore((s) => s.kerningPairs);
+  const kerningManual = useAppStore((s) => s.kerningManual);
   const kerningOverridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
   const autoKernLastRun = useAppStore((s) => s.autoKernLastRun);
   const setKerningPair = useAppStore((s) => s.setKerningPair);
@@ -1407,13 +1418,13 @@ export function SpecimenPanel() {
   // the rail is a fixed-width column, not something that needs the same
   // per-frame coalescing as continuous canvas drawing.
   const [sideWidth, setSideWidth] = useState(() => {
-    if (typeof window === "undefined") return 284;
+    if (typeof window === "undefined") return 360;
     // Match the same narrower defaults the old fixed-width CSS breakpoints
     // used, so small screens don't open with a rail wider than before —
     // dragging still overrides this once the user actually resizes it.
-    if (window.innerWidth <= 820) return 210;
-    if (window.innerWidth <= 960) return 250;
-    return 284;
+    if (window.innerWidth <= 820) return 240;
+    if (window.innerWidth <= 960) return 290;
+    return 360;
   });
   const [isResizingSide, setIsResizingSide] = useState(false);
   const sideResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -1429,18 +1440,36 @@ export function SpecimenPanel() {
     const prevCursor = document.body.style.cursor;
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
+    // Pointermove fires far more often than the browser can actually paint
+    // (sometimes 200+/sec). sideWidth lives on this component, so calling
+    // setSideWidth straight from the raw event forced a full re-render/
+    // reconciliation of the entire Test Lab panel -- including the Kerning
+    // Groups list -- on every single one of those events, which is what
+    // made dragging (and the panel generally, while a drag was in flight)
+    // feel laggy. Coalescing to one setSideWidth per animation frame keeps
+    // the drag visually just as responsive while capping the re-render
+    // rate to the screen's actual refresh rate.
+    let pendingWidth: number | null = null;
+    let rafId = 0;
+    const flush = () => {
+      rafId = 0;
+      if (pendingWidth !== null) setSideWidth(pendingWidth);
+    };
     const onMove = (ev: PointerEvent) => {
       const drag = sideResizeRef.current;
       if (!drag) return;
       // The rail sits to the right of the stage, so dragging left (negative
       // clientX delta) should widen it.
       const delta = drag.startX - ev.clientX;
-      const next = Math.min(420, Math.max(220, drag.startWidth + delta));
-      setSideWidth(next);
+      pendingWidth = Math.min(620, Math.max(260, drag.startWidth + delta));
+      if (!rafId) rafId = requestAnimationFrame(flush);
     };
     const onUp = () => {
       sideResizeRef.current = null;
       setIsResizingSide(false);
+      if (rafId) cancelAnimationFrame(rafId);
+      if (pendingWidth !== null) setSideWidth(pendingWidth);
+      pendingWidth = null;
       document.body.style.userSelect = prevUserSelect;
       document.body.style.cursor = prevCursor;
       window.removeEventListener("pointermove", onMove);
@@ -1575,6 +1604,18 @@ export function SpecimenPanel() {
   const panelLeft = kerningMode === "single" ? precisionLeft : familyPrecisionLeft;
   const panelRight = kerningMode === "single" ? precisionRight : familyPrecisionRight;
 
+  // Origin badge: only meaningful in Single mode — a Family Test override
+  // is always a deliberate hand-set value for that style, i.e. always "manual".
+  const panelOrigin: KerningOrigin | null =
+    kerningMode === "single" && panelHasPair && panelLeft && panelRight
+      ? getKerningOrigin(kerningKey(panelLeft, panelRight), kerningManual)
+      : null;
+  const panelOriginLabel: Record<KerningOrigin, string> = { manual: "Manual", auto: "Auto" };
+  const panelOriginTitle: Record<KerningOrigin, string> = {
+    manual: "Hand-tuned — never overwritten by Auto Kerning.",
+    auto: "Filled by geometry-based Auto Kerning.",
+  };
+
   const resetFamilyActivePair = () => {
     if (!familyPrecisionLeft || !familyPrecisionRight) return;
     resetFamilyKerningPair(familyContext, familyPrecisionLeft, familyPrecisionRight);
@@ -1663,6 +1704,104 @@ export function SpecimenPanel() {
             />
           </div>
         )}
+
+        {/* ── Bottom bar: Specimen controls ── */}
+        <div className="fm-lab-bottom-bar" data-testid="lab-bottom-bar">
+          {/* Font Size */}
+          <div className="fm-lab-bottom-control fm-lab-bottom-slider">
+            <div className="fm-lab-bottom-label">
+              <span>Size</span>
+              <span className="fm-lab-bottom-value">{fontSize}px</span>
+            </div>
+            <input
+              type="range"
+              min={16}
+              max={280}
+              value={fontSize}
+              onChange={(e) => setFontSize(Number(e.target.value))}
+              data-testid="lab-fontsize"
+              style={{ ["--fm-range-fill" as string]: `${((fontSize - 16) / (280 - 16)) * 100}%` }}
+            />
+          </div>
+
+          {/* Line Height */}
+          <div className="fm-lab-bottom-control fm-lab-bottom-slider">
+            <div className="fm-lab-bottom-label">
+              <span>Leading</span>
+              <span className="fm-lab-bottom-value">{lineHeight.toFixed(2)}×</span>
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={2.5}
+              step={0.05}
+              value={lineHeight}
+              onChange={(e) => setLineHeight(Number(e.target.value))}
+              data-testid="lab-lineheight"
+              style={{ ["--fm-range-fill" as string]: `${((lineHeight - 1) / (2.5 - 1)) * 100}%` }}
+            />
+          </div>
+
+          {/* Tracking */}
+          <div className="fm-lab-bottom-control fm-lab-bottom-slider">
+            <div className="fm-lab-bottom-label">
+              <span>Tracking</span>
+              <span className="fm-lab-bottom-value">{tracking}u</span>
+            </div>
+            <input
+              type="range"
+              min={-60}
+              max={200}
+              value={tracking}
+              onChange={(e) => setTracking(Number(e.target.value))}
+              data-testid="lab-tracking"
+              style={{ ["--fm-range-fill" as string]: `${((tracking - (-60)) / (200 - (-60))) * 100}%` }}
+            />
+          </div>
+
+          {/* Divider */}
+          <div className="fm-lab-bottom-divider" aria-hidden="true" />
+
+          {/* Alignment */}
+          <div className="fm-lab-bottom-control">
+            <div className="fm-lab-bottom-label"><span>Align</span></div>
+            <div className="fm-tab-select fm-tab-select-sm fm-tab-select-icon" data-testid="lab-align">
+              <button className={align === "left" ? "active" : ""} onClick={() => setAlign("left")} title="Align left" aria-label="Align left" data-testid="lab-align-left">
+                <AlignLeft size={14} />
+              </button>
+              <button className={align === "center" ? "active" : ""} onClick={() => setAlign("center")} title="Align center" aria-label="Align center" data-testid="lab-align-center">
+                <AlignCenter size={14} />
+              </button>
+              <button className={align === "right" ? "active" : ""} onClick={() => setAlign("right")} title="Align right" aria-label="Align right" data-testid="lab-align-right">
+                <AlignRight size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* Preview Background */}
+          <div className="fm-lab-bottom-control">
+            <div className="fm-lab-bottom-label"><span>BG</span></div>
+            <div className="fm-tab-select fm-tab-select-sm" data-testid="lab-bg">
+              <button className={bg === "dark" ? "active" : ""} onClick={() => setBg("dark")} title="Dark background">Dark</button>
+              <button className={bg === "light" ? "active" : ""} onClick={() => setBg("light")} title="Light background">Light</button>
+            </div>
+          </div>
+
+          {/* Apply Tracking (shown only when tracking ≠ 0) */}
+          {tracking !== 0 && (
+            <div className="fm-lab-bottom-control">
+              <button
+                className={`fm-action-btn fm-lab-bottom-apply-tracking${trackingApplyFlash ? " done" : ""}`}
+                onClick={handleApplyTracking}
+                data-testid="apply-tracking-btn"
+                title="Bake tracking permanently into every glyph's spacing"
+              >
+                <MoveHorizontal size={13} />
+                {trackingApplyFlash ? "Applied" : "Apply"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div
@@ -1710,6 +1849,15 @@ export function SpecimenPanel() {
                     {familyHasOverride ? "Override" : "Inherited"}
                   </span>
                 )}
+              {panelOrigin && (
+                <span
+                  className={`fm-kern-origin-badge ${panelOrigin}`}
+                  title={panelOriginTitle[panelOrigin]}
+                  data-testid="kern-origin-badge"
+                >
+                  {panelOriginLabel[panelOrigin]}
+                </span>
+              )}
             </label>
             <div className="fm-kern-value-row">
               <NumericInput
@@ -1899,57 +2047,14 @@ export function SpecimenPanel() {
           </div>
         </div>
 
-        <div className="fm-lab-side-section">
-          <div className="fm-section-title">Specimen</div>
-          <div className="fm-field">
-            <div className="fm-slider-row-label"><label>Font Size</label><span>{fontSize}px</span></div>
-            <input type="range" min={16} max={280} value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} data-testid="lab-fontsize" />
+        {trackingApplyLastRun && trackingApplyLastRun.units !== 0 && (
+          <div className="fm-kern-complete fm-lab-side-section" role="status" data-testid="apply-tracking-complete">
+            <span className="fm-status-dot" />
+            {trackingApplyLastRun.units > 0 ? "+" : ""}
+            {trackingApplyLastRun.units}u baked into {trackingApplyLastRun.updated} glyph
+            {trackingApplyLastRun.updated === 1 ? "" : "s"}
           </div>
-          <div className="fm-field">
-            <div className="fm-slider-row-label"><label>Line Height</label><span>{lineHeight.toFixed(2)}×</span></div>
-            <input type="range" min={1} max={2.5} step={0.05} value={lineHeight} onChange={(e) => setLineHeight(Number(e.target.value))} data-testid="lab-lineheight" />
-          </div>
-          <div className="fm-field">
-            <div className="fm-slider-row-label"><label>Tracking</label><span>{tracking}u</span></div>
-            <input type="range" min={-60} max={200} value={tracking} onChange={(e) => setTracking(Number(e.target.value))} data-testid="lab-tracking" />
-            <div className="fm-hint">
-              Preview-only until applied — it doesn't affect the exported font on its own.
-            </div>
-            <button
-              className={`fm-action-btn${trackingApplyFlash ? " done" : ""}`}
-              onClick={handleApplyTracking}
-              disabled={tracking === 0}
-              data-testid="apply-tracking-btn"
-              title="Bake this tracking value permanently into every glyph's spacing on the active style, so it's included when exporting"
-            >
-              <MoveHorizontal size={14} />
-              {trackingApplyFlash ? "Applied" : "Apply Tracking to Font"}
-            </button>
-            {trackingApplyLastRun && trackingApplyLastRun.units !== 0 && (
-              <div className="fm-kern-complete" role="status" data-testid="apply-tracking-complete">
-                <span className="fm-status-dot" />
-                {trackingApplyLastRun.units > 0 ? "+" : ""}
-                {trackingApplyLastRun.units}u baked into {trackingApplyLastRun.updated} glyph
-                {trackingApplyLastRun.updated === 1 ? "" : "s"}
-              </div>
-            )}
-          </div>
-          <div className="fm-field">
-            <label>Alignment</label>
-            <div className="fm-tab-select" data-testid="lab-align">
-              <button className={align === "left" ? "active" : ""} onClick={() => setAlign("left")}>Left</button>
-              <button className={align === "center" ? "active" : ""} onClick={() => setAlign("center")}>Center</button>
-              <button className={align === "right" ? "active" : ""} onClick={() => setAlign("right")}>Right</button>
-            </div>
-          </div>
-          <div className="fm-field">
-            <label>Preview Background</label>
-            <div className="fm-tab-select" data-testid="lab-bg">
-              <button className={bg === "dark" ? "active" : ""} onClick={() => setBg("dark")}>Dark</button>
-              <button className={bg === "light" ? "active" : ""} onClick={() => setBg("light")}>Light</button>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -32,6 +32,7 @@ import type { ExportFontFormat } from "@/utils/fontIO";
 import { effectiveKerningPairs, effectiveWordSpacing } from "@/types/kerning";
 import { createZipBlob } from "@/utils/zip";
 import { Toast, type ToastKind, type ToastMessage } from "@/components/Toast";
+import { InfoTip } from "@/components/InfoTip";
 import { runFontQA, type QAIssue, type QASeverity } from "@/utils/fontQA";
 
 // --- Export Information System -------------------------------------------
@@ -1112,9 +1113,9 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                     ))}
                 </div>
 
-                <p className="fm-hint">
+                <InfoTip>
                   Pemeriksaan ini jalan otomatis di style yang sedang aktif ({fontStyleLabel(qaFontStyle, customFamilies)}) dan tidak menghalangi export — keputusan tetap di tangan kamu.
-                </p>
+                </InfoTip>
               </div>
             )}
 
@@ -1247,9 +1248,9 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                               </div>
                             ))}
                           </div>
-                          <p className="fm-hint">
+                          <InfoTip>
                             Ini persis record yang bakal ditulis ke name table font (TTF &amp; OTF) — dicek dulu di sini sebelum jadi file. Family export multi-style pakai subfamily masing-masing style, sisanya sama.
-                          </p>
+                          </InfoTip>
                         </>
                       )}
                     </div>

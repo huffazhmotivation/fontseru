@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, PenLine, Minus, Highlighter, Feather, Pencil, Zap, Scissors, Copy, Trash2, Flame, Grid3x3, Lock, Unlock, ImagePlus, FlipHorizontal, FlipVertical, CircleDashed, Droplet, Triangle, Circle, Square } from "lucide-react";
+import { ChevronDown, PenLine, Minus, Highlighter, Feather, Pencil, Zap, Scissors, Trash2, Flame, Grid3x3, Lock, Unlock, ImagePlus, CircleDashed, Droplet, Triangle, Circle, Square } from "lucide-react";
 import type { ShapeKind } from "@/editor/shapeBuilder";
 import { useAppStore, type NodeRef, type GlyphMetricKey } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -7,13 +7,14 @@ import { hasOutline } from "@/types/glyph";
 import type { Glyph } from "@/types/glyph";
 import { unicodeHex } from "@/utils/unicode";
 import { findNode, retypeNode, retypeNodes, deleteNodes, moveNodesBy, setHandlePoint } from "@/editor/nodeOps";
-import { objectsBounds, skewObject, scaleObject } from "@/editor/objectOps";
+import { objectsBounds, skewObject } from "@/editor/objectOps";
 import type { NodeType, PathNode, StrokeCap, VectorObject } from "@/types/geometry";
 import { BRUSH_ORDER, BRUSH_PRESETS } from "@/brushes/presets";
 import { taperFactor } from "@/brushes/strokeToOutline";
 import type { BrushType } from "@/types/brush";
 import { GlyphThumbnail } from "./GlyphThumbnail";
 import { NumericInput } from "./NumericInput";
+import { InfoTip } from "./InfoTip";
 
 const NODE_TYPE_LABEL: Record<NodeType, string> = { corner: "Corner", smooth: "Smooth", symmetric: "Symmetric" };
 
@@ -110,6 +111,13 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
   const objs = glyph.outline.objects.filter((o) => selectedObjectIds.includes(o.id));
   const strokeObjs = objs.filter((o) => o.kind === "line" || o.kind === "brush");
   const capObjs = objs.filter((o) => o.kind === "line" || (o.kind === "brush" && o.brushType === "monoline"));
+  const brushObjs = objs.filter((o) => o.kind === "brush");
+  // Only one active highlight makes sense when the selection is a single
+  // brush type; a mixed multi-brush selection shows no preset as "active"
+  // rather than misleadingly highlighting the first object's type.
+  const commonBrushType = brushObjs.length > 0 && brushObjs.every((o) => o.brushType === brushObjs[0].brushType)
+    ? (brushObjs[0].brushType as BrushType | undefined)
+    : undefined;
   const groupIds = new Set(objs.flatMap((o) => (o.groupId ? [o.groupId] : [])));
   const oneGroupId = groupIds.size === 1 ? [...groupIds][0] : null;
   const isSingleGroup = Boolean(oneGroupId && objs.length > 1 && objs.every((o) => o.groupId === oneGroupId));
@@ -125,9 +133,9 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
           <span className="fm-status-dot" />
           Nothing selected
         </span>
-        <div className="fm-hint" style={{ marginTop: 8 }}>
+        <InfoTip>
           Click an object on the canvas to select it, or drag a marquee to select several.
-        </div>
+        </InfoTip>
       </Section>
     );
   }
@@ -135,6 +143,26 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
   return (
     <>
       <Section title="Selection">
+      {brushObjs.length > 0 && (
+        <div className="fm-brush-grid" data-testid="select-brush-grid">
+          {BRUSH_ORDER.map((id) => {
+            const Icon = BRUSH_ICON[id];
+            const p = BRUSH_PRESETS[id];
+            return (
+              <button
+                key={id}
+                className={`fm-brush-card ${commonBrushType === id ? "active" : ""}`}
+                onClick={() => updateSelectedObject({ brushType: id })}
+                title={`Switch to ${p.label}`}
+                data-testid={`select-brush-${id}`}
+              >
+                <span className="fm-brush-icon"><Icon size={17} strokeWidth={1.8} /></span>
+                <span className="fm-brush-name">{p.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {strokeObjs.length > 0 && (
         <Slider label="Stroke Width" value={strokeObjs[0].strokeWidth ?? 20} min={1} max={200} directInput
           onChange={(v) => updateSelectedObject({ strokeWidth: v })}
@@ -172,9 +200,9 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
           <Scissors size={14} /> Expand Stroke{strokeObjs.length > 1 ? "s" : ""}
         </button>
       )}
-      <div className="fm-hint" style={{ marginTop: 8 }}>
+      <InfoTip>
         Drag to move · corner/edge handles resize (Shift = proportional) · top handle rotates (Shift = 15°). Cmd/Ctrl+G groups · Cmd/Ctrl+U ungroups.
-      </div>
+      </InfoTip>
       </Section>
       <TransformPanel glyph={glyph} selectedObjectIds={selectedObjectIds} />
     </>
@@ -187,9 +215,6 @@ function TransformPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedOb
   const setSelectionSkewState = useAppStore((s) => s.setSelectionSkewState);
   const commitOutline = useAppStore((s) => s.commitOutline);
   const activeChar = useAppStore((s) => s.activeChar);
-  const copySelection = useAppStore((s) => s.copySelection);
-  const pasteClipboard = useAppStore((s) => s.pasteClipboard);
-  const deleteSelectedObjects = useAppStore((s) => s.deleteSelectedObjects);
 
   const applySkewAngle = (rawAngle: number) => {
     if (!Number.isFinite(rawAngle) || selectedObjectIds.length === 0) return;
@@ -220,54 +245,8 @@ function TransformPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedOb
     setSelectionSkewState(angle, handle);
   };
 
-  const flipSelection = (axis: "horizontal" | "vertical") => {
-    if (selectedObjectIds.length === 0) return;
-    const bounds = objectsBounds(glyph.outline, selectedObjectIds);
-    if (!bounds) return;
-    // Mirror around the selection's own center, so a multi-object selection
-    // flips together as one group rather than each object flipping in place.
-    const anchor = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
-    const sx = axis === "horizontal" ? -1 : 1;
-    const sy = axis === "vertical" ? -1 : 1;
-    const objects = glyph.outline.objects.map((obj) =>
-      selectedObjectIds.includes(obj.id) ? scaleObject(obj, anchor, sx, sy, true) : obj
-    );
-    commitOutline(activeChar, { objects });
-  };
-
   return (
     <Section title="Transform">
-      <div className="fm-btn-row">
-        <button className="fm-action-btn" onClick={() => { copySelection(); pasteClipboard(); }} data-testid="duplicate-btn">
-          <Copy size={14} /> Duplicate
-        </button>
-        <button className="fm-action-btn danger" onClick={deleteSelectedObjects} data-testid="delete-object-btn">
-          <Trash2 size={14} /> Delete
-        </button>
-      </div>
-      <div className="fm-field">
-        <label>Flip</label>
-        <div className="fm-btn-row">
-          <button
-            className="fm-action-btn"
-            onClick={() => flipSelection("horizontal")}
-            disabled={selectedObjectIds.length === 0}
-            title="Flip Horizontal"
-            data-testid="flip-horizontal-btn"
-          >
-            <FlipHorizontal size={14} /> Horizontal
-          </button>
-          <button
-            className="fm-action-btn"
-            onClick={() => flipSelection("vertical")}
-            disabled={selectedObjectIds.length === 0}
-            title="Flip Vertical"
-            data-testid="flip-vertical-btn"
-          >
-            <FlipVertical size={14} /> Vertical
-          </button>
-        </div>
-      </div>
       <div className="fm-field">
         <label htmlFor="transform-skew">Skew</label>
         <div className="fm-angle-control">
@@ -284,9 +263,9 @@ function TransformPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedOb
           <span aria-hidden="true">°</span>
         </div>
       </div>
-      <div className="fm-hint">
+      <InfoTip>
         Drag a skew handle or enter an angle. The numeric value follows the active skew direction.
-      </div>
+      </InfoTip>
     </Section>
   );
 }
@@ -397,11 +376,11 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
         );
       })}
 
-      <div className="fm-hint">
+      <InfoTip>
         {isAuto
           ? "Auto Metrik is ON for the whole font: every glyph's horizontal position, LSB, RSB, and advance width are recomputed together from that glyph's own outline — using FontSeru's Pro optical-spacing standard — the instant you draw or edit it, so a glyph drawn off-center or off-size still lands correctly. Dragging a handle or typing a value switches back to Manual."
           : "Manual: drag the LSB / Advance / RSB handles on the canvas, or type exact values above. Switch back to Auto Metrik (here or in the bottom bar) to keep every glyph's position, spacing, and width in sync automatically as you draw."}
-      </div>
+      </InfoTip>
     </Section>
   );
 }
@@ -472,12 +451,12 @@ function FontMetricsSection() {
           />
         </div>
       </div>
-      <div className="fm-hint">
+      <InfoTip>
         Drag guides on the canvas for live adjustment · double-click a guide for precise input. Word Spacing is the
         gap typed between words (the keyboard space bar) — separate from any per-letter sidebearing. "Auto" derives a
         width from the letters you've already drawn, so the gap stays proportional to this typeface instead of one
         flat default.
-      </div>
+      </InfoTip>
     </Section>
   );
 }
@@ -494,11 +473,11 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
           <span className="fm-status-dot" />
           No node selected
         </span>
-        <div className="fm-hint" style={{ marginTop: 8 }}>
+        <InfoTip>
           {outlined
             ? "Click a node on the canvas to see its position and type here."
             : "This glyph has no outline yet — draw with the Pen (P) or Brush (B) first."}
-        </div>
+        </InfoTip>
       </Section>
     );
   }
@@ -527,7 +506,7 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
             ))}
           </div>
         </div>
-        <div className="fm-hint" style={{ marginTop: 8 }}>Drag any selected node to move the group. Shift-click to add/remove. Arrow keys nudge (Shift = ×10).</div>
+        <InfoTip>Drag any selected node to move the group. Shift-click to add/remove. Arrow keys nudge (Shift = ×10).</InfoTip>
         <button className="fm-action-btn danger" style={{ marginTop: 10 }}
           onClick={() => { commitOutline(char, deleteNodes(glyph.outline, selectedNodes)); clearSelection(); }} data-testid="delete-nodes-btn">
           <Trash2 size={14} /> Delete {selectedNodes.length} Nodes
@@ -648,9 +627,9 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
       <button className="fm-action-btn danger" onClick={() => { commitOutline(char, deleteNodes(glyph.outline, [ref])); clearSelection(); }} data-testid="delete-node-btn">
         <Trash2 size={14} /> Delete Node
       </button>
-      <div className="fm-hint" style={{ marginTop: 8 }}>
+      <InfoTip>
         Double-click a node to cycle its type · double-click a segment to insert a node · Cmd/Ctrl-drag a segment to curve it · Alt-drag a handle to break it · Cmd/Ctrl-drag a sharp corner to round it.
-      </div>
+      </InfoTip>
     </Section>
   );
 }
@@ -682,9 +661,9 @@ function ShapePanel() {
           ))}
         </div>
       </div>
-      <div className="fm-hint" style={{ marginTop: 8 }}>
+      <InfoTip>
         Click-drag on the canvas to draw. Hold Shift to constrain to a square / circle / regular triangle. Stays on the Shape tool after releasing, so you can keep drawing more shapes in a row — switch to Select when you're ready to move/edit one.
-      </div>
+      </InfoTip>
     </Section>
   );
 }
@@ -692,10 +671,21 @@ function ShapePanel() {
 function PencilPanel() {
   const pencilSmoothing = useAppStore((s) => s.pencilSmoothing);
   const setPencilSmoothing = useAppStore((s) => s.setPencilSmoothing);
+  const pencilPostSmoothing = useAppStore((s) => s.pencilPostSmoothing);
+  const setPencilPostSmoothing = useAppStore((s) => s.setPencilPostSmoothing);
   return (
     <Section title="Pencil">
       <Slider
         label="Smoothing"
+        value={pencilPostSmoothing}
+        min={0}
+        max={1}
+        step={0.05}
+        onChange={setPencilPostSmoothing}
+        format={(v) => `${Math.round(v * 100)}%`}
+      />
+      <Slider
+        label="Stabilizer"
         value={pencilSmoothing}
         min={0}
         max={1}
@@ -703,9 +693,10 @@ function PencilPanel() {
         onChange={setPencilSmoothing}
         format={(v) => `${Math.round(v * 100)}%`}
       />
-      <div className="fm-hint">
-        Draw freehand — the gesture is fit to a smooth editable curve as you go. A shaky or jagged stroke is detected automatically and gets extra smoothing on top of this setting, so it never comes out as a zigzag. Releasing always closes the path into a filled shape, even if the start and end points didn't quite meet. Edit the result anytime with the Node tool.
-      </div>
+      <InfoTip>
+        <strong>Smoothing</strong> — berapa smooth hasil akhir setelah selesai menggambar. Naikkan untuk kurva lebih bersih, turunkan untuk detail lebih tajam.{" "}
+        <strong>Stabilizer</strong> — smoothing saat proses menggambar berlangsung. Biarkan rendah agar stroke mengikuti pointer secara natural.
+      </InfoTip>
     </Section>
   );
 }
@@ -732,7 +723,7 @@ function PenPanel() {
         <>
           <Slider label="Stroke Width" value={lineWidth} min={1} max={200} directInput onChange={setLineWidth} />
           <CapControl value={lineCap} onChange={setLineCap} />
-          <div className="fm-hint">Line mode makes an editable open centerline — a true monoline. Width and cap stay editable until you Expand it.</div>
+          <InfoTip>Line mode makes an editable open centerline — a true monoline. Width and cap stay editable until you Expand it.</InfoTip>
         </>
       ) : (
         <>
@@ -740,11 +731,11 @@ function PenPanel() {
             <input type="checkbox" checked={penAutoClose} onChange={togglePenAutoClose} />
             Auto Close Shape
           </label>
-          <div className="fm-hint">
+          <InfoTip>
             {penAutoClose
               ? "On: previews as closed + filled while you draw. Click near the first node to finish it."
               : "Off: previews as an outline only until you click back onto the first node — then it closes and fills."}
-          </div>
+          </InfoTip>
         </>
       )}
     </Section>
@@ -909,9 +900,9 @@ function BrushPanel() {
               onChange={(v) => setBrush({ pressureSensitivity: v })}
               format={(v) => `${Math.round(v * 100)}%`}
             />
-            <div className="fm-hint">
+            <InfoTip>
               Real pressure only — Apple Pencil and other styluses. Mouse, trackpad, and touch always draw at Size.
-            </div>
+            </InfoTip>
           </>
         )}
       </Section>
@@ -1058,13 +1049,13 @@ function GhostGlyphSection() {
             </div>
           )}
 
-          <div className="fm-hint">
+          <InfoTip>
             {ghost.mode === "sample"
               ? "One built-in sample reference, centered on the editable canvas."
               : ghost.mode === "family"
                 ? "Two side references from matching saved family vectors. Undrawn styles stay empty."
                 : "Upload a JPG or PNG to use as a reference behind the canvas. It's for tracing only and never becomes part of your glyph vectors."}
-          </div>
+          </InfoTip>
         </>
       )}
     </Section>
@@ -1144,7 +1135,15 @@ export function Slider({ label, value, min, max, step = 1, onChange, format, dir
           <span>{format ? format(value) : Math.round(value)}</span>
         )}
       </div>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => apply(Number(e.target.value))} />
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => apply(Number(e.target.value))}
+        style={{ ["--fm-range-fill" as string]: `${((Math.min(max, Math.max(min, value)) - min) / (max - min || 1)) * 100}%` }}
+      />
     </div>
   );
 }

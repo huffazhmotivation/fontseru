@@ -150,6 +150,7 @@ export function ProductionPreviewBar() {
             value={scale}
             onChange={(e) => setScale(Number(e.target.value))}
             data-testid="preview-scale-slider"
+            style={{ ["--fm-range-fill" as string]: `${((scale - 10) / (120 - 10)) * 100}%` }}
           />
           <span className="fm-preview-value">{scale}px</span>
         </div>
@@ -164,6 +165,7 @@ export function ProductionPreviewBar() {
             value={lineHeight}
             onChange={(e) => setLineHeight(Number(e.target.value))}
             data-testid="preview-line-height-slider"
+            style={{ ["--fm-range-fill" as string]: `${((lineHeight - 0.8) / (3 - 0.8)) * 100}%` }}
           />
           <span className="fm-preview-value">{lineHeight.toFixed(2)}x</span>
         </div>

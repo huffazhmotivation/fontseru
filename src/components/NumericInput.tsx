@@ -84,18 +84,42 @@ export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(func
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
+  // Pointermove fires far more often than the browser can actually paint
+  // (100-200+/sec). Some `onChange` handlers wired to this input are cheap
+  // (a plain setState), but others aren't — e.g. a Kerning Group value
+  // commits a full class→pair materialization pass AND a full store
+  // update/undo-history push on every call. Calling onChange straight from
+  // the raw pointermove event forced that expensive path to run on every
+  // single pixel of drag, which is what made dragging a Kerning Group
+  // value (and anything else using this same stepper) feel heavy and
+  // stuttery. Coalescing to one onChange per animation frame — the same
+  // pattern already used for the kerning-glyph and side-rail drags — keeps
+  // the drag feeling just as responsive while capping the commit rate to
+  // the screen's actual refresh rate.
+  const pendingTargetStepsRef = useRef(0);
+  const dragRafRef = useRef<number | null>(null);
+
+  const flushStepperDrag = () => {
+    dragRafRef.current = null;
+    const drag = dragRef.current;
+    if (!drag) return;
+    const target = pendingTargetStepsRef.current;
+    const deltaSteps = target - drag.appliedDragSteps;
+    if (deltaSteps === 0) return;
+    stepBy(deltaSteps > 0 ? 1 : -1, Math.abs(deltaSteps));
+    drag.appliedDragSteps = target;
+  };
+
   const moveStepperDrag = (e: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     e.preventDefault();
 
     // Up = positive / increase, down = negative / decrease.
-    const targetDragSteps = dragStepsForDistance(drag.startY - e.clientY);
-    const deltaSteps = targetDragSteps - drag.appliedDragSteps;
-    if (deltaSteps === 0) return;
-
-    stepBy(deltaSteps > 0 ? 1 : -1, Math.abs(deltaSteps));
-    drag.appliedDragSteps = targetDragSteps;
+    pendingTargetStepsRef.current = dragStepsForDistance(drag.startY - e.clientY);
+    if (dragRafRef.current === null) {
+      dragRafRef.current = requestAnimationFrame(flushStepperDrag);
+    }
   };
 
   const endStepperDrag = (e: ReactPointerEvent<HTMLButtonElement>) => {
@@ -105,6 +129,13 @@ export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(func
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
+    if (dragRafRef.current !== null) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+    // Flush whatever movement was still pending before tearing the drag
+    // down, so the final pointer position is never dropped by the throttle.
+    flushStepperDrag();
     dragRef.current = null;
     inputRef.current?.focus({ preventScroll: true });
   };
