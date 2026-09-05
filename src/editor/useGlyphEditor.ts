@@ -16,6 +16,7 @@ import {
   bendSegment,
   roundCorner,
   unroundCorner,
+  findCornerHandleAt,
   NODE_TYPE_ORDER,
 } from "./nodeOps";
 import { findObjectOfContour } from "@/types/geometry";
@@ -136,6 +137,11 @@ export function useGlyphEditor(hitScale: number) {
   const hitRadius = 12 * hitScale;
   const closeRadius = 16 * hitScale;
   const segmentRadius = 10 * hitScale;
+  // How far in from the vertex the corner-round handle sits (screen px,
+  // converted to font units) — must match the renderer's CORNER_HANDLE_INSET
+  // in GlyphCanvas.tsx so the drawn icon and the clickable spot line up.
+  const cornerHandleInset = 16 * hitScale;
+  const cornerHandleHitRadius = 8 * hitScale;
 
   // Node tool should only "see" nodes belonging to the currently selected
   // object(s) — with 2+ objects on the canvas, an unselected object's nodes
@@ -299,6 +305,36 @@ export function useGlyphEditor(hitScale: number) {
   /* ----------------------------------------------------------- NODE */
   const nodePointerDown = useCallback(
     (p: Point, shiftKey: boolean, altKey: boolean, cmdKey: boolean) => {
+      // Figma-style corner-round handle: clicking+dragging the inset icon
+      // itself (no Cmd needed) rounds a sharp corner, or re-radii/un-rounds
+      // one that's already rounded. Checked first since the icon sits off
+      // to the side of the vertex, not on top of it, so it never competes
+      // with a normal node-point hit.
+      const handleHit = findCornerHandleAt(nodeableOutline, p, cornerHandleInset, cornerHandleHitRadius);
+      if (handleHit) {
+        if (!handleHit.rounded) {
+          const cornerNode = findNode(outline, handleHit.contourId, handleHit.nodeId);
+          if (cornerNode) {
+            baseOutlineRef.current = cloneOutline(outline);
+            dragRef.current = { mode: "round-corner", contourId: handleHit.contourId, nodeId: handleHit.nodeId, cornerPoint: { ...cornerNode.point } };
+            return;
+          }
+        } else {
+          const unrounded = unroundCorner(outline, { contourId: handleHit.contourId, nodeId: handleHit.nodeId });
+          if (unrounded) {
+            baseOutlineRef.current = unrounded.outline;
+            dragRef.current = {
+              mode: "round-corner",
+              contourId: unrounded.contourId,
+              nodeId: unrounded.nodeId,
+              cornerPoint: unrounded.cornerPoint,
+            };
+            setLiveOutline(unrounded.outline);
+            return;
+          }
+        }
+      }
+
       const hit = hitTestOutline(nodeableOutline, p, hitRadius);
 
       if (hit && hit.part === "point") {
@@ -400,7 +436,7 @@ export function useGlyphEditor(hitScale: number) {
       marqueeRectRef.current = initialRect;
       setMarqueeRect(initialRect);
     },
-    [outline, nodeableOutline, hitRadius, segmentRadius, selectedNodes, selectNodes, toggleNodeSelection, clearSelection, setSelectedHandle, activeChar, commitOutline]
+    [outline, nodeableOutline, hitRadius, segmentRadius, cornerHandleInset, cornerHandleHitRadius, selectedNodes, selectNodes, toggleNodeSelection, clearSelection, setSelectedHandle, activeChar, commitOutline, setLiveOutline]
   );
 
   const nodePointerMove = useCallback(

@@ -529,10 +529,10 @@ export interface FilletPair {
   nextOfB: Point;
 }
 
-function isFilletStart(n: PathNode): boolean {
+export function isFilletStart(n: PathNode): boolean {
   return !!n.handleOut && !n.handleIn;
 }
-function isFilletEnd(n: PathNode): boolean {
+export function isFilletEnd(n: PathNode): boolean {
   return !!n.handleIn && !n.handleOut;
 }
 
@@ -637,4 +637,91 @@ export function unroundCorner(
   }
 
   return { outline: working, contourId: pair.contourId, nodeId: cornerNode.id, cornerPoint: corner };
+}
+
+/**
+ * Figma-style corner-round handle: a single grabbable point sitting `inset`
+ * font-units IN from the vertex, along the interior angle bisector — not on
+ * top of the vertex itself, so it reads as its own affordance instead of
+ * hiding behind the node dot. One handle per sharp corner (drag it out to
+ * round) and one per already-rounded fillet pair (drag it back to the
+ * vertex to un-round, or further to re-radius) — see findCornerHandleAt,
+ * used by both the renderer and the pointer-down hit test so the visual
+ * position and the clickable position can never drift apart.
+ */
+export interface CornerHandle {
+  contourId: string;
+  nodeId: string;
+  point: Point;
+  rounded: boolean;
+}
+
+function bisectorInset(corner: Point, toA: Point, toB: Point, inset: number): Point | null {
+  const la = length(toA);
+  const lb = length(toB);
+  if (la < 0.001 || lb < 0.001) return null;
+  const ua = scale(toA, 1 / la);
+  const ub = scale(toB, 1 / lb);
+  const sum = add(ua, ub);
+  const sl = length(sum);
+  if (sl < 0.001) return null; // 180°/0° edges — no meaningful interior bisector
+  const bis = scale(sum, 1 / sl);
+  const d = Math.min(inset, la * 0.6, lb * 0.6);
+  return add(corner, scale(bis, d));
+}
+
+function sharpCornerHandle(contour: Contour, idx: number, inset: number): CornerHandle | null {
+  const node = contour.nodes[idx];
+  if (node.type !== "corner" || node.handleIn || node.handleOut) return null;
+  const n = contour.nodes.length;
+  const prevIdx = contour.closed ? (idx - 1 + n) % n : idx - 1;
+  const nextIdx = contour.closed ? (idx + 1) % n : idx + 1;
+  if (prevIdx < 0 || nextIdx >= n || prevIdx === idx || nextIdx === idx) return null;
+  const prev = contour.nodes[prevIdx];
+  const next = contour.nodes[nextIdx];
+  const point = bisectorInset(node.point, subtract(prev.point, node.point), subtract(next.point, node.point), inset);
+  if (!point) return null;
+  return { contourId: contour.id, nodeId: node.id, point, rounded: false };
+}
+
+function roundedCornerHandle(outline: GlyphOutline, contour: Contour, node: PathNode, inset: number): CornerHandle | null {
+  if (!isFilletStart(node)) return null;
+  const rec = reconstructCorner(outline, { contourId: contour.id, nodeId: node.id });
+  if (!rec) return null;
+  const { pair, corner } = rec;
+  const point = bisectorInset(corner, subtract(pair.prevOfA, corner), subtract(pair.nextOfB, corner), inset);
+  if (!point) return null;
+  return { contourId: contour.id, nodeId: node.id, point, rounded: true };
+}
+
+/** All corner-round handles across the outline, in font-space, for the
+ *  Node tool overlay. `inset` should already be scaled to font units
+ *  (screen-pixel inset × hitScale) so the handle sits a constant distance
+ *  in from the vertex regardless of zoom. */
+export function getCornerHandles(outline: GlyphOutline, inset: number): CornerHandle[] {
+  const handles: CornerHandle[] = [];
+  for (const obj of outline.objects) {
+    for (const contour of obj.contours) {
+      contour.nodes.forEach((node, idx) => {
+        const h = sharpCornerHandle(contour, idx, inset) ?? roundedCornerHandle(outline, contour, node, inset);
+        if (h) handles.push(h);
+      });
+    }
+  }
+  return handles;
+}
+
+/** Closest corner-round handle to `p` within `radius` (both font-space) —
+ *  shared by the renderer's hover state and the pointer-down hit test. */
+export function findCornerHandleAt(outline: GlyphOutline, p: Point, inset: number, radius: number): CornerHandle | null {
+  let best: CornerHandle | null = null;
+  let bestDist = radius;
+  for (const h of getCornerHandles(outline, inset)) {
+    const d = length(subtract(h.point, p));
+    if (d <= bestDist) {
+      best = h;
+      bestDist = d;
+    }
+  }
+  return best;
 }
