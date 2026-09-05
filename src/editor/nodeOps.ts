@@ -654,13 +654,19 @@ export function unroundCorner(
 
 /**
  * Figma-style corner-round handle: a single grabbable point sitting `inset`
- * font-units IN from the vertex, along the interior angle bisector — not on
- * top of the vertex itself, so it reads as its own affordance instead of
- * hiding behind the node dot. One handle per sharp corner (drag it out to
- * round) and one per already-rounded fillet pair (drag it back to the
- * vertex to un-round, or further to re-radius) — see findCornerHandleAt,
- * used by both the renderer and the pointer-down hit test so the visual
- * position and the clickable position can never drift apart.
+ * font-units IN from the vertex along the interior angle bisector while the
+ * corner is still sharp — not on top of the vertex itself, so it reads as
+ * its own affordance instead of hiding behind the node dot. Once a corner
+ * is actually rounded, the handle instead rides OUT at the fillet's live
+ * radius (see roundedCornerHandle), so the icon visually travels with the
+ * drag as the curve grows and, after you let go, sits exactly where you
+ * left it — ready to grab again from that same spot to re-radius or drag
+ * back to un-round — rather than snapping back to a small fixed point near
+ * the vertex. One handle per sharp corner (drag it out to round) and one
+ * per already-rounded fillet pair (drag it back to the vertex to un-round,
+ * or further to re-radius) — see findCornerHandleAt, used by both the
+ * renderer and the pointer-down hit test so the visual position and the
+ * clickable position can never drift apart.
  */
 export interface CornerHandle {
   contourId: string;
@@ -695,7 +701,7 @@ function bisectorDirection(toA: Point, toB: Point): Point | null {
   return scale(sum, 1 / sl);
 }
 
-function cornerHandleGeometry(corner: Point, toA: Point, toB: Point, inset: number): { point: Point; dirA: Point; dirB: Point } | null {
+function cornerHandleGeometry(corner: Point, toA: Point, toB: Point, targetDist: number): { point: Point; dirA: Point; dirB: Point } | null {
   const la = length(toA);
   const lb = length(toB);
   if (la < 0.001 || lb < 0.001) return null;
@@ -703,7 +709,12 @@ function cornerHandleGeometry(corner: Point, toA: Point, toB: Point, inset: numb
   const dirB = scale(toB, 1 / lb);
   const bis = bisectorDirection(toA, toB);
   if (!bis) return null; // 180°/0° edges — no meaningful interior bisector
-  const d = Math.min(inset, la * 0.6, lb * 0.6);
+  // Clamp to 98% of each edge (matching roundCorner's own max-radius
+  // headroom) rather than a tighter 60% — once the handle tracks the live
+  // fillet radius (see roundedCornerHandle), a tighter clamp would stop it
+  // following the drag well before the corner reaches its actual max
+  // radius, making it look stuck again on larger drags.
+  const d = Math.min(targetDist, la * 0.98, lb * 0.98);
   return { point: add(corner, scale(bis, d)), dirA, dirB };
 }
 
@@ -762,9 +773,18 @@ function roundedCornerHandle(outline: GlyphOutline, contour: Contour, node: Path
   const rec = reconstructCorner(outline, { contourId: contour.id, nodeId: node.id });
   if (!rec) return null;
   const { pair, corner } = rec;
-  const geo = cornerHandleGeometry(corner, subtract(pair.prevOfA, corner), subtract(pair.nextOfB, corner), inset);
-  if (!geo) return null;
   const radius = length(subtract(pair.a, corner));
+  // Once a corner is rounded, the grabbable icon sits at the fillet's own
+  // radius out from the corner — not squeezed back to the small fixed
+  // `inset` used for a still-sharp corner — so it visually rides along with
+  // the curve as you drag it out (instead of hanging back near the vertex
+  // while the shape rounds out from under it), and so clicking it again
+  // afterwards hits the same spot it was last left at, rather than a point
+  // back near the vertex that no longer has anything to grab. `inset` is
+  // still used as a floor so a just-barely-rounded corner keeps a visible,
+  // clickable icon instead of one squashed against the curve's tiny radius.
+  const geo = cornerHandleGeometry(corner, subtract(pair.prevOfA, corner), subtract(pair.nextOfB, corner), Math.max(inset, radius));
+  if (!geo) return null;
   return { contourId: contour.id, nodeId: node.id, point: geo.point, dirA: geo.dirA, dirB: geo.dirB, rounded: true, radius };
 }
 
