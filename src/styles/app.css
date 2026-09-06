@@ -304,6 +304,16 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
 .fm-topbar::-webkit-scrollbar { display: none; }
 .fm-topbar > * { flex: 0 0 auto; }
 .fm-topbar .fm-topbtn { white-space: nowrap; }
+/* Wraps the "actions" half of the bar (undo/redo … theme/account) as one
+   unit so it can wrap onto its own row, independently of row one (logo/
+   file/font name), on narrow phone widths (see the ≤599px block further
+   down). `display: contents` means the wrapper generates no box of its own
+   above that width, so its children stay ordinary direct flex items of
+   `.fm-topbar` and nothing about the tablet/desktop layout changes; the
+   sizing rule above (`.fm-topbar > *`) is repeated for them below since
+   `display: contents` doesn't change actual DOM nesting for selectors. */
+.fm-topbar-row2 { display: contents; }
+.fm-topbar-row2 > * { flex: 0 0 auto; }
 .fm-logo { display: flex; align-items: center; gap: 10px; }
 .fm-logo-image {
   display: block;
@@ -2125,41 +2135,58 @@ input[type="number"]::-webkit-outer-spin-button {
    375-430px wide) left the canvas and its floating controls squeezed into
    too little space - the parts that looked "cut off". Rather than
    shrinking the panels further (they're already close to unusable at
-   165/205px), they become on-demand drawers here, opened with the two new
-   buttons in the TopBar (glyph list / inspector) and closed by tapping the
-   scrim or the same button again. This only changes layout at 900px and
-   below - everything above stays exactly as defined earlier in this file.
-   Sketch Mode is excluded everywhere below because it already has its own
-   equivalent drawer handling for the right panel. */
+   165/205px), they become on-demand drawers here, opened with the two
+   floating buttons rendered over the canvas by MobileDrawerToggles (glyph
+   list / inspector) and closed by tapping the scrim or the same button
+   again. This only changes layout at 900px and below - everything above
+   stays exactly as defined earlier in this file. Sketch Mode is excluded
+   everywhere below because it already has its own equivalent drawer
+   handling for the right panel. */
 .fm-mobile-nav-toggle, .fm-mobile-panel-toggle { display: none; }
 .fm-mobile-backdrop { display: none; }
 
 @media (max-width: 900px) {
+  /* Floating circular buttons docked to the top corners of the canvas,
+     each on the actual side of the screen the drawer it opens slides in
+     from — left toggle bottom-left, right toggle top-right — rather than
+     sitting stacked together on one side the way they used to inside the
+     TopBar. Same translucent/blurred "floating chip" language as the other
+     canvas-docked controls (see .fm-sketch-panel-toggle, .fm-glyph-sidenav-btn
+     above) so they read as part of the same family instead of a leftover
+     toolbar fragment. Positioned near the top (not vertically centered)
+     to stay clear of the GlyphSideNav prev/next arrows, which already own
+     the vertical middle of the left/right edges. */
   .fm-mobile-nav-toggle, .fm-mobile-panel-toggle {
+    position: absolute;
+    top: 14px;
+    /* Above the drawer (30) and its scrim (29) so the button that opened a
+       drawer stays visible and tappable — as a close affordance — the
+       whole time that drawer is open, instead of disappearing under the
+       dark overlay. */
+    z-index: 31;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
-    flex: 0 0 auto;
-    border-radius: 8px;
-    border: 1px solid var(--line);
-    background: var(--panel-2);
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1.5px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    backdrop-filter: blur(10px);
     color: var(--text-dim);
     cursor: pointer;
-    /* Previously `position: sticky`, pinned to the edges of a horizontally
-       scrolling topbar so they'd stay reachable no matter how far the bar
-       had been scrolled. Now that the topbar wraps instead of scrolling
-       (see .fm-topbar above), both buttons are simple in-flow flex items —
-       no sticky positioning needed. This also removes a real-world bug
-       where the right-panel toggle would open fine after rotating to
-       landscape but not respond to taps in portrait: `position: sticky`
-       inside a flex row that could also scroll is a known source of
-       inconsistent hit-testing across iOS Safari orientation changes,
-       since the sticky offset isn't always recomputed until something
-       else forces a reflow (like the resize from rotating the device). */
+    box-shadow: 0 10px 26px var(--shadow);
+    transition: color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
   }
-  .fm-mobile-nav-toggle:hover, .fm-mobile-panel-toggle:hover { color: var(--text); background: var(--panel); }
+  .fm-mobile-nav-toggle { left: 14px; }
+  .fm-mobile-panel-toggle { right: 14px; }
+  .fm-mobile-nav-toggle:hover, .fm-mobile-panel-toggle:hover {
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    transform: scale(1.06);
+  }
+  .fm-mobile-nav-toggle:active, .fm-mobile-panel-toggle:active { transform: scale(0.94); }
+  .fm-mobile-nav-toggle:focus-visible, .fm-mobile-panel-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   .fm-root:not([data-sketch-mode="true"]) .fm-body { position: relative; overflow: hidden; }
 
@@ -2212,46 +2239,50 @@ input[type="number"]::-webkit-outer-spin-button {
 
 /* Phones only — the top bar splits into two short rows instead of one
    that clips. A single row (even icon-only) still doesn't fit a ~360–
-   430px-wide phone once the drawer toggles, logo, file menu, font-name
-   field, undo/redo, export, theme toggle and account button are all
-   accounted for. `.fm-topbar-linebreak` (an empty marker placed in
-   TopBar.tsx right after the font-name field) is invisible everywhere
-   else and only becomes a real 100%-width break here, so the wrap always
-   happens at that exact spot instead of wherever the browser runs out of
-   room mid-group. Kept to two rows (not more) and each row's icons sized
-   down a touch from the generic ≤1180px pass so the *combined* height of
-   both rows stays close to what the old single row was. Tablets are
-   excluded by the same `(pointer: coarse)`-plus-width band used above; a
-   `min-width` isn't repeated here since the tablet band already starts
-   at 600px and phones are always narrower than that. */
-.fm-topbar-linebreak { display: none; }
-
+   430px-wide phone once the logo, file menu, font-name field, undo/redo,
+   export, theme toggle and account button are all accounted for.
+   `.fm-topbar-row2` (see the base rule near the top of this file) is the
+   wrapper that becomes the real second row here — its `flex-basis: 100%`
+   is what forces the break at exactly that point instead of wherever the
+   browser runs out of room mid-group — so row one stays "identity" (logo/
+   file/font name) and row two becomes one self-contained, centered
+   "actions" cluster (undo/redo … theme/account) instead of two clusters
+   pinned to opposite ends with a big uneven gap between them. Icons in
+   row two are sized down a touch from the generic ≤1180px pass so the
+   *combined* height of both rows stays close to what the old single row
+   was. Tablets are excluded by the same `(pointer: coarse)`-plus-width
+   band used above; a `min-width` isn't repeated here since the tablet
+   band already starts at 600px and phones are always narrower than that. */
 @media (max-width: 599px) {
   .fm-topbar {
     flex-wrap: wrap;
-    row-gap: 4px;
+    row-gap: 6px;
     min-height: 0;
     padding-top: 6px;
     padding-bottom: 6px;
   }
-  .fm-topbar-linebreak {
-    display: block;
+  .fm-topbar-row2 {
+    display: flex;
     flex-basis: 100%;
-    width: 0;
-    height: 0;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    row-gap: 4px;
+    gap: 6px;
   }
 
-  /* Row two (undo/redo … theme/account) splits into a left cluster and a
-     right cluster instead of sitting in one clump on the left — the
-     spacer is neutralized at ≤1180px for the old single-row layout, but
-     here it's exactly what keeps the second row from looking lopsided. */
-  .fm-topbar .fm-spacer { flex: 1 1 auto; width: auto; }
+  /* The spacer split the row into two end-pinned clusters on wide desktop
+     layouts; here the wrapper above centers everything as a single group
+     instead, so the spacer is neutralized rather than given room to
+     stretch (which is what produced the large, uneven-looking empty gap
+     in the middle of the row). */
+  .fm-topbar .fm-spacer { flex: 0 0 0; width: 0; }
 
   /* A touch smaller than the generic ≤1180px icon size, so two stacked
      rows don't end up taller overall than the old single (overflowing)
      row was. */
   .fm-topbar .fm-topbtn { min-width: 34px; min-height: 34px; padding: 6px; }
-  .fm-mobile-nav-toggle, .fm-mobile-panel-toggle { width: 32px; height: 32px; }
   .fm-theme-toggle { width: 30px; height: 30px; }
   .fm-topbar .fm-fontname { padding: 5px 8px; }
 }

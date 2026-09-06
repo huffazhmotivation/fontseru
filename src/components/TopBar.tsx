@@ -3,7 +3,7 @@ import {
   Download, FlaskConical, Layers, Maximize, Minimize, Redo2, Undo2, Wand2,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
-  Copy, Trash2, Film, Menu, PanelRight, MoreHorizontal, Info,
+  Copy, Trash2, Film, MoreHorizontal, Info,
 } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
@@ -57,8 +57,6 @@ export function TopBar() {
   const copySelection = useAppStore((s) => s.copySelection);
   const pasteClipboard = useAppStore((s) => s.pasteClipboard);
   const deleteSelectedObjects = useAppStore((s) => s.deleteSelectedObjects);
-  const toggleMobileNav = useAppStore((s) => s.toggleMobileNav);
-  const toggleMobilePanel = useAppStore((s) => s.toggleMobilePanel);
   const activeGlyphObjects = useAppStore((s) => s.glyphs[s.activeChar]?.outline.objects);
   const openTimelapse = useTimelapseUiStore((s) => s.openPanel);
 
@@ -124,36 +122,11 @@ export function TopBar() {
 
   return (
     <div className="fm-topbar">
-      {/* Only visible below the mobile breakpoint (see app.css): opens the
-          glyph list as a drawer over the canvas instead of it permanently
-          eating layout width, which is what was clipping the UI on
-          iPad/phone widths. */}
-      <button
-        type="button"
-        className="fm-mobile-nav-toggle"
-        onClick={toggleMobileNav}
-        title="Glyph list"
-        aria-label="Toggle glyph list"
-        data-testid="mobile-nav-toggle"
-      >
-        <Menu size={18} />
-      </button>
-      {/* Kept right next to the glyph-list toggle above (rather than at the
-          far end of the bar, where it used to live next to AuthWidget) so
-          both drawer toggles stay reachable at a glance on phone/tablet
-          widths without having to scroll the now horizontally-scrollable
-          topbar (see `.fm-topbar` in app.css) all the way to the end just
-          to open the inspector panel. */}
-      <button
-        type="button"
-        className="fm-mobile-panel-toggle"
-        onClick={toggleMobilePanel}
-        title="Inspector panel"
-        aria-label="Toggle inspector panel"
-        data-testid="mobile-panel-toggle"
-      >
-        <PanelRight size={18} />
-      </button>
+      {/* The glyph-list / inspector-panel drawer shortcuts used to live here
+          inline (see git history) but are now floating buttons over the
+          canvas instead — see MobileDrawerToggles, rendered in App.tsx —
+          so each shortcut sits on the actual side of the screen it opens,
+          and this bar stays pure identity + actions. */}
       <FontSeruLogo />
       <div className="fm-divider" />
       <FileMenu onExportButtonReady={handleExportReady} />
@@ -174,14 +147,14 @@ export function TopBar() {
         spellCheck={false}
         data-testid="font-name-input"
       />
-      {/* Invisible on phone AND everywhere else by default — only turned
-          into an actual line-break (see .fm-topbar-linebreak in app.css,
-          phone-only block) on narrow phone widths, where it forces the
-          bar to wrap into a tidy top row (logo/file/font name) and bottom
-          row (undo/redo/export/theme/account) instead of clipping. Placed
-          after the font-name field so row one stays "identity", row two
-          "actions". */}
-      <div className="fm-topbar-linebreak" aria-hidden="true" />
+      {/* Everything below is wrapped as one unit (see .fm-topbar-row2 in
+          app.css) so it can be laid out independently of row one (logo/
+          file/font name) on narrow phone widths, where it wraps onto its
+          own centered row — a tidy "identity" row on top, a tidy "actions"
+          row below, instead of the two rows fighting over the same
+          left/right-pinned spacing. Above the phone breakpoint this wrapper
+          is invisible (`display: contents`) and changes nothing. */}
+      <div className="fm-topbar-row2">
       <div className="fm-topbtn-group">
         <button className="fm-topbtn" disabled={past.length === 0 && !liveOutline} onClick={undo} title="Undo (Cmd/Ctrl+Z)" data-testid="undo-btn">
           <Undo2 size={15} /> Undo
@@ -457,6 +430,7 @@ export function TopBar() {
         {theme === "light" ? <MoonIcon size={16} /> : <SunIcon size={16} />}
       </button>
       <AuthWidget />
+      </div>
     </div>
   );
 }
