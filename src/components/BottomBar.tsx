@@ -118,8 +118,13 @@ export function BottomBar() {
         <Wand2 size={13} /> Auto Metrik
       </button>
 
+      {/* Deliberately NOT `fm-bottombar-more-hide` — unlike Grid/Ruler/
+          Guides/Ghost/Snap/Auto Metrik, Preview stays on the main bar at
+          every width (including phones) instead of moving into the
+          "Settings" dropdown, since it's reached often enough to deserve
+          a direct tap. */}
       <button
-        className={`fm-bottombar-more-hide ${productionPreviewOpen ? "on" : ""}`}
+        className={productionPreviewOpen ? "on" : ""}
         onClick={toggleProductionPreview}
         title="Tampilkan/sembunyikan preview satu kalimat pakai font yang lagi digambar"
         data-testid="toggle-production-preview"
@@ -191,13 +196,6 @@ export function BottomBar() {
                 title="Auto Metrik: posisi, LSB, RSB & advance width tiap glyph mengikuti bentuk outline-nya sendiri secara otomatis setiap kali digambar/diedit."
               >
                 <Wand2 size={14} /> Auto Metrik
-              </button>
-              <button
-                className={productionPreviewOpen ? "on" : ""}
-                onClick={toggleProductionPreview}
-                title="Tampilkan/sembunyikan preview satu kalimat pakai font yang lagi digambar"
-              >
-                <Eye size={14} /> Preview
               </button>
             </div>
           </>

@@ -2078,33 +2078,25 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 /* Tablet portrait specifically (roughly 600–900px in that orientation —
-   e.g. 768×1024, 820×1180 iPads, most Android tablets held upright)
-   needs every remaining pixel: separators add little once every button
-   is already its own icon-only square, so they're dropped, and the
-   icon squares themselves shrink a little further so the full,
-   un-hidden button set still fits one row with no wrapping or
-   side-scrolling. */
+   e.g. 768×1024, 820×1180 iPads, most Android tablets held upright): even
+   after the icon-only compacting above, the full un-hidden top-bar button
+   set (Undo/Redo, Align×6, Boolean×3, object actions, Timelapse/Family/
+   Feature Builder/Test Lab/About, Export, theme, account…) is simply too
+   wide to fit a ~768–820px screen without shrinking icons below a usable
+   touch size. Rather than force that fit, the top bar scrolls sideways
+   here instead — everything stays reachable at a normal, tappable size,
+   just a swipe away. The bottom bar has far fewer buttons and keeps
+   fitting in one row without scrolling, so it's untouched here. */
 @media (min-width: 600px) and (max-width: 900px) and (pointer: coarse) and (max-aspect-ratio: 5/3) {
   .fm-topbar .fm-divider,
-  .fm-topbar .fm-align-divider,
-  .fm-bottombar .fm-bottom-divider {
+  .fm-topbar .fm-align-divider {
     display: none;
   }
-  .fm-topbar .fm-topbtn,
-  .fm-topbar-more-btn > .fm-topbtn {
-    min-width: 30px;
-    min-height: 30px;
-    padding: 5px;
+  .fm-topbar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
-  .fm-align-btn { width: 22px; height: 22px; }
-  .fm-bottombar button {
-    min-width: 28px;
-    min-height: 28px;
-    padding: 5px;
-  }
-  .fm-topbar .fm-fontname { min-width: 0; max-width: 70px; }
-  .fm-zoom-controls input[type="range"] { width: 36px; }
-  .fm-hint-inline { gap: 3px; }
+  .fm-topbar .fm-fontname { min-width: 0; max-width: 110px; }
 }
 
 /* ------------------------------------------------------------ TABLET PORTRAIT
@@ -2216,6 +2208,52 @@ input[type="number"]::-webkit-outer-spin-button {
   /* Canvas now gets the full body width since the panels above are no
      longer part of the flex flow (position: absolute). */
   .fm-canvas-wrap { min-width: 0; width: 100%; }
+}
+
+/* Phones only — the top bar splits into two short rows instead of one
+   that clips. A single row (even icon-only) still doesn't fit a ~360–
+   430px-wide phone once the drawer toggles, logo, file menu, font-name
+   field, undo/redo, export, theme toggle and account button are all
+   accounted for. `.fm-topbar-linebreak` (an empty marker placed in
+   TopBar.tsx right after the font-name field) is invisible everywhere
+   else and only becomes a real 100%-width break here, so the wrap always
+   happens at that exact spot instead of wherever the browser runs out of
+   room mid-group. Kept to two rows (not more) and each row's icons sized
+   down a touch from the generic ≤1180px pass so the *combined* height of
+   both rows stays close to what the old single row was. Tablets are
+   excluded by the same `(pointer: coarse)`-plus-width band used above; a
+   `min-width` isn't repeated here since the tablet band already starts
+   at 600px and phones are always narrower than that. */
+.fm-topbar-linebreak { display: none; }
+
+@media (max-width: 599px) {
+  .fm-topbar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    min-height: 0;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .fm-topbar-linebreak {
+    display: block;
+    flex-basis: 100%;
+    width: 0;
+    height: 0;
+  }
+
+  /* Row two (undo/redo … theme/account) splits into a left cluster and a
+     right cluster instead of sitting in one clump on the left — the
+     spacer is neutralized at ≤1180px for the old single-row layout, but
+     here it's exactly what keeps the second row from looking lopsided. */
+  .fm-topbar .fm-spacer { flex: 1 1 auto; width: auto; }
+
+  /* A touch smaller than the generic ≤1180px icon size, so two stacked
+     rows don't end up taller overall than the old single (overflowing)
+     row was. */
+  .fm-topbar .fm-topbtn { min-width: 34px; min-height: 34px; padding: 6px; }
+  .fm-mobile-nav-toggle, .fm-mobile-panel-toggle { width: 32px; height: 32px; }
+  .fm-theme-toggle { width: 30px; height: 30px; }
+  .fm-topbar .fm-fontname { padding: 5px 8px; }
 }
 
 /* Phones specifically (up to 560px): tighter side padding and a narrower,

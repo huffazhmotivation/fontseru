@@ -174,6 +174,14 @@ export function TopBar() {
         spellCheck={false}
         data-testid="font-name-input"
       />
+      {/* Invisible on phone AND everywhere else by default — only turned
+          into an actual line-break (see .fm-topbar-linebreak in app.css,
+          phone-only block) on narrow phone widths, where it forces the
+          bar to wrap into a tidy top row (logo/file/font name) and bottom
+          row (undo/redo/export/theme/account) instead of clipping. Placed
+          after the font-name field so row one stays "identity", row two
+          "actions". */}
+      <div className="fm-topbar-linebreak" aria-hidden="true" />
       <div className="fm-topbtn-group">
         <button className="fm-topbtn" disabled={past.length === 0 && !liveOutline} onClick={undo} title="Undo (Cmd/Ctrl+Z)" data-testid="undo-btn">
           <Undo2 size={15} /> Undo
