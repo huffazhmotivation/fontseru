@@ -274,7 +274,7 @@ export function TopBar() {
         <Film size={15} /> Timelapse
       </button>
       <button
-        className="fm-topbtn fm-testlab-nav fm-topbar-more-hide"
+        className="fm-topbtn fm-testlab-nav fm-topbar-more-hide fm-topbar-phone-show"
         onClick={openFamily}
         title="Open Family Auto Generate"
         data-testid="family-btn"
@@ -282,14 +282,14 @@ export function TopBar() {
         <Layers size={15} /> Family
       </button>
       <button
-        className="fm-topbtn fm-testlab-nav fm-topbar-more-hide"
+        className="fm-topbtn fm-testlab-nav fm-topbar-more-hide fm-topbar-phone-show"
         onClick={openFeatureBuilder}
         title="Open OpenType Feature Builder"
         data-testid="feature-builder-btn"
       >
         <Wand2 size={15} /> Feature Builder
       </button>
-      <button className="fm-topbtn fm-testlab-nav fm-topbar-more-hide" onClick={() => openTestLab("specimen")} title="Open Test Lab" data-testid="test-lab-btn">
+      <button className="fm-topbtn fm-testlab-nav fm-topbar-more-hide fm-topbar-phone-show" onClick={() => openTestLab("specimen")} title="Open Test Lab" data-testid="test-lab-btn">
         <FlaskConical size={15} /> Test Lab
       </button>
 

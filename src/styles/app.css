@@ -2146,19 +2146,20 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-mobile-backdrop { display: none; }
 
 @media (max-width: 900px) {
-  /* Floating circular buttons docked to the top corners of the canvas,
-     each on the actual side of the screen the drawer it opens slides in
-     from — left toggle bottom-left, right toggle top-right — rather than
-     sitting stacked together on one side the way they used to inside the
-     TopBar. Same translucent/blurred "floating chip" language as the other
-     canvas-docked controls (see .fm-sketch-panel-toggle, .fm-glyph-sidenav-btn
-     above) so they read as part of the same family instead of a leftover
-     toolbar fragment. Positioned near the top (not vertically centered)
-     to stay clear of the GlyphSideNav prev/next arrows, which already own
-     the vertical middle of the left/right edges. */
+  /* Floating square buttons docked to the top corners of the canvas, each
+     on the actual side of the screen the drawer it opens slides in from,
+     rather than sitting stacked together on one side the way they used to
+     inside the TopBar. Same translucent/blurred "floating chip" language
+     as the other canvas-docked controls (see .fm-sketch-panel-toggle
+     above) so they read as part of the same family, just square (10px
+     radius, matching .fm-tool in the main floating toolbar) instead of
+     circular. Docked at top:60px rather than top:14px so they clear
+     .fm-sketch-toggle (Sketch Mode's own floating pill/circle, also
+     top:14px/left:14px, on every screen size — not only mobile) instead of
+     sitting on top of it. */
   .fm-mobile-nav-toggle, .fm-mobile-panel-toggle {
     position: absolute;
-    top: 14px;
+    top: 60px;
     /* Above the drawer (30) and its scrim (29) so the button that opened a
        drawer stays visible and tappable — as a close affordance — the
        whole time that drawer is open, instead of disappearing under the
@@ -2169,7 +2170,7 @@ input[type="number"]::-webkit-outer-spin-button {
     justify-content: center;
     width: 38px;
     height: 38px;
-    border-radius: 50%;
+    border-radius: 10px;
     border: 1.5px solid color-mix(in srgb, var(--accent) 30%, var(--line));
     background: color-mix(in srgb, var(--panel) 88%, transparent);
     backdrop-filter: blur(10px);
@@ -2246,13 +2247,18 @@ input[type="number"]::-webkit-outer-spin-button {
    is what forces the break at exactly that point instead of wherever the
    browser runs out of room mid-group — so row one stays "identity" (logo/
    file/font name) and row two becomes one self-contained, centered
-   "actions" cluster (undo/redo … theme/account) instead of two clusters
-   pinned to opposite ends with a big uneven gap between them. Icons in
-   row two are sized down a touch from the generic ≤1180px pass so the
-   *combined* height of both rows stays close to what the old single row
-   was. Tablets are excluded by the same `(pointer: coarse)`-plus-width
-   band used above; a `min-width` isn't repeated here since the tablet
-   band already starts at 600px and phones are always narrower than that. */
+   "actions" cluster instead of two clusters pinned to opposite ends with a
+   big uneven gap between them. Family / Feature Builder / Test Lab are
+   pulled out of the "More" overflow menu and shown directly here too (see
+   `.fm-topbar-phone-show` below) — otherwise, once the drawer toggles moved
+   out to float over the canvas and the two-cluster gap was fixed, row two
+   only had five small icons left in it and read as sparse/empty on a full
+   phone-width row. Icons in row two are sized down a touch from the
+   generic ≤1180px pass so the *combined* height of both rows stays close
+   to what the old single row was. Tablets are excluded by the same
+   `(pointer: coarse)`-plus-width band used above; a `min-width` isn't
+   repeated here since the tablet band already starts at 600px and phones
+   are always narrower than that. */
 @media (max-width: 599px) {
   .fm-topbar {
     flex-wrap: wrap;
@@ -2269,7 +2275,7 @@ input[type="number"]::-webkit-outer-spin-button {
     justify-content: center;
     flex-wrap: wrap;
     row-gap: 4px;
-    gap: 6px;
+    gap: 4px;
   }
 
   /* The spacer split the row into two end-pinned clusters on wide desktop
@@ -2279,9 +2285,21 @@ input[type="number"]::-webkit-outer-spin-button {
      in the middle of the row). */
   .fm-topbar .fm-spacer { flex: 0 0 0; width: 0; }
 
+  /* Family / Feature Builder / Test Lab: normally folded into the "More"
+     dropdown below 1180px (`.fm-topbar-more-hide { display: none !important; }`
+     further up), but explicitly brought back for phones specifically —
+     these are common, one-tap actions worth keeping visible rather than
+     two taps deep. The extra class + higher specificity is what lets this
+     win over that `!important` hide despite both being `!important`; align/
+     boolean/object-action and Timelapse/About stay tucked away in More,
+     since those are either multi-object-selection tools (rare on a phone)
+     or one-off/secondary actions. */
+  .fm-topbar-more-hide.fm-topbar-phone-show { display: inline-flex !important; }
+
   /* A touch smaller than the generic ≤1180px icon size, so two stacked
      rows don't end up taller overall than the old single (overflowing)
-     row was. */
+     row was — and so the now-fuller row two (with Family/Feature Builder/
+     Test Lab added back in) still comfortably fits one line. */
   .fm-topbar .fm-topbtn { min-width: 34px; min-height: 34px; padding: 6px; }
   .fm-theme-toggle { width: 30px; height: 30px; }
   .fm-topbar .fm-fontname { padding: 5px 8px; }
