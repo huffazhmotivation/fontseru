@@ -157,12 +157,15 @@ export function TopBar() {
       <FontSeruLogo />
       <div className="fm-divider" />
       <FileMenu onExportButtonReady={handleExportReady} />
-      {/* Hidden below 1180px and re-rendered inside the "More" dropdown
-          instead (see fm-topbar-more-hide in app.css) — its label used to
-          collapse to an empty, icon-less button at that width since it has
-          no leading icon like the other fm-topbtn buttons. */}
+      {/* Hidden below 1180px on phones and re-rendered inside the "More"
+          dropdown instead (see fm-topbar-more-hide in app.css); on tablets
+          it's shown inline instead, icon-only. Given a leading icon here
+          (unlike the plain-label version this used to be) so it doesn't
+          collapse to an empty, icon-less button once the icon-only sizing
+          kicks in — it has no other icon of its own like the other
+          fm-topbtn buttons. */}
       <div className="fm-topbar-more-hide">
-        <AboutModal />
+        <AboutModal triggerIcon={<Info size={15} />} />
       </div>
       <input
         className="fm-fontname"

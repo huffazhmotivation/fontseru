@@ -2007,6 +2007,106 @@ input[type="number"]::-webkit-outer-spin-button {
   justify-content: center !important;
 }
 
+/* ------------------------------------------------------ TABLET-ONLY TOP/BOTTOM BAR
+   iPad and tablet request: instead of collapsing the align/boolean/
+   object-action groups and the secondary nav buttons into the "More"/
+   "Settings" dropdown (the ≤1180px behavior above, which still applies
+   to phones), tablets show every single button directly on the bar,
+   shrunk down to icon-only, so nothing needs an extra tap to reach.
+   Phone and desktop layouts are untouched — this only fires inside the
+   band below, which is a best-effort approximation of "tablet" using
+   three signals together:
+     - width 600–1180px: below the largest common phone width (~480px
+       portrait) and above typical tablet-landscape widths;
+     - (pointer: coarse): the primary input has no hover/precise pointer,
+       i.e. touch — excludes mouse-driven desktops/laptops resized to a
+       similar width;
+     - (max-aspect-ratio: 5/3): tablets (portrait ~0.6–0.75, landscape
+       ~1.33–1.6) are much closer to square than phones held sideways
+       (~1.8–2.2), so this keeps a landscape phone out of the tablet band.
+   No single signal is perfect on its own (e.g. iPadOS can report as a
+   Mac in some contexts), but together they match real iPads/Android
+   tablets without touching phone or desktop styling. */
+@media (min-width: 600px) and (max-width: 1180px) and (pointer: coarse) and (max-aspect-ratio: 5/3) {
+  /* Put every group the ≤1180px block above hides back on the bar... */
+  .fm-topbar-more-hide,
+  .fm-bottombar-more-hide {
+    display: inline-flex !important;
+    align-items: center;
+  }
+  /* ...and hide the "More"/"Settings" trigger buttons themselves, since
+     there's nothing left for them to hold. */
+  .fm-topbar-more-btn,
+  .fm-bottombar-more-btn {
+    display: none !important;
+  }
+
+  /* Tighter gaps than the generic ≤1180px pass — a lot more buttons are
+     sharing the row now that none of them moved into a dropdown. */
+  .fm-topbar { gap: 3px; padding: 6px 8px; }
+  .fm-bottombar { gap: 3px; padding: 5px 8px; }
+
+  .fm-topbar .fm-topbtn,
+  .fm-topbar-more-btn > .fm-topbtn {
+    padding: 6px;
+    min-width: 34px;
+    min-height: 34px;
+  }
+  .fm-topbtn-group { gap: 2px; }
+
+  .fm-align-group { gap: 0; }
+  .fm-align-btn { width: 24px; height: 24px; }
+  .fm-align-divider { margin: 0 2px; }
+
+  .fm-bottombar button {
+    padding: 6px;
+    min-width: 32px;
+    min-height: 32px;
+  }
+  .fm-bottombar .fm-icon-btn { min-width: 26px; min-height: 26px; }
+
+  .fm-logo-image { max-width: clamp(46px, 6vw, 90px); }
+  .fm-topbar .fm-fontname { min-width: 36px; max-width: 120px; }
+  .fm-zoom-controls input[type="range"] { width: 50px; }
+  .fm-hint-inline { gap: 6px; }
+
+  /* Free/Pro badge text is the first thing dropped from the account
+     button on tablet — the avatar alone still marks it as a login/
+     account entry point, and plan status is one tap away in the menu. */
+  .fm-auth-avatar-btn { padding: 2px; gap: 0; }
+  .fm-auth-plan-badge { display: none; }
+}
+
+/* Tablet portrait specifically (roughly 600–900px in that orientation —
+   e.g. 768×1024, 820×1180 iPads, most Android tablets held upright)
+   needs every remaining pixel: separators add little once every button
+   is already its own icon-only square, so they're dropped, and the
+   icon squares themselves shrink a little further so the full,
+   un-hidden button set still fits one row with no wrapping or
+   side-scrolling. */
+@media (min-width: 600px) and (max-width: 900px) and (pointer: coarse) and (max-aspect-ratio: 5/3) {
+  .fm-topbar .fm-divider,
+  .fm-topbar .fm-align-divider,
+  .fm-bottombar .fm-bottom-divider {
+    display: none;
+  }
+  .fm-topbar .fm-topbtn,
+  .fm-topbar-more-btn > .fm-topbtn {
+    min-width: 30px;
+    min-height: 30px;
+    padding: 5px;
+  }
+  .fm-align-btn { width: 22px; height: 22px; }
+  .fm-bottombar button {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 5px;
+  }
+  .fm-topbar .fm-fontname { min-width: 0; max-width: 70px; }
+  .fm-zoom-controls input[type="range"] { width: 36px; }
+  .fm-hint-inline { gap: 3px; }
+}
+
 /* ------------------------------------------------------------ TABLET PORTRAIT
    768â€“900px wide (e.g. 768Ã—1024, 820Ã—1180). Sidebars shrink further so the
    canvas + floating toolbar keep real working room; the glyph grid drops to
