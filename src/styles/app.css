@@ -1993,7 +1993,15 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-mobile-nav-toggle { left: 0; }
   .fm-mobile-panel-toggle { right: 0; }
   .fm-mobile-nav-toggle:hover, .fm-mobile-panel-toggle:hover { color: var(--text); background: var(--panel); }
-  .fm-mobile-panel-toggle { margin-left: auto; }
+  /* NOTE: intentionally no `margin-left: auto` here. Combining that with
+     `position: sticky; right: 0` on a scrollable flex row made this button's
+     in-flow (static) position land underneath/behind whatever follows it in
+     the DOM (AuthWidget), so taps on the visible icon were actually landing
+     on AuthWidget instead — the button looked present but never opened the
+     drawer. `.fm-spacer` in TopBar.tsx already pushes this button (and
+     AuthWidget after it) to the end of the row, so no extra margin is
+     needed; removing it lets the sticky button keep its own hit-testable
+     box instead of overlapping the next element. */
 
   .fm-root:not([data-sketch-mode="true"]) .fm-body { position: relative; overflow: hidden; }
 
@@ -2051,6 +2059,16 @@ input[type="number"]::-webkit-outer-spin-button {
 @media (max-width: 560px) {
   .fm-topbar { padding-left: 8px; padding-right: 8px; }
   .fm-topbar .fm-fontname { min-width: 90px; width: 30vw; }
+
+  /* Glyph list on phones: the drawer is min(82vw, 280px) wide (see the
+     mobile-drawer rules above) but the grid still used the desktop 4-column
+     layout, so each tile rendered oversized inside that narrow drawer. Five
+     smaller columns with a tighter gap keeps tiles a normal touch-target
+     size instead of looking blown up. */
+  .fm-grid { grid-template-columns: repeat(5, 1fr); gap: 5px; }
+  .fm-thumb-svg { width: 70%; height: 70%; }
+  .fm-thumb-char { font-size: 15px; }
+  .fm-thumb-char.fm-thumb-char-multi { font-size: 9px; }
 }
 
 /* iPhone notch / home-indicator safe areas: without this, the top and
@@ -2139,6 +2157,27 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .fm-lab-resize-handle.active .fm-lab-resize-grip {
   background: var(--accent);
+}
+
+/* Test Lab on phones/small tablets (<=820px): the side rail (Kerning, Auto
+   Word Spacing, etc — `.fm-lab-side`) was squeezing the preview stage down
+   to almost nothing because the two columns stayed side-by-side at a fixed
+   px width (see `sideWidth` in SpecimenPanel.tsx, which sets that width via
+   an inline style and so needs `!important` here to actually be overridden).
+   Below this width the layout stacks instead: preview stage on top, the
+   settings rail below it (full width), and the drag handle (meaningless
+   once there's nothing to drag horizontally) is hidden. */
+@media (max-width: 820px) {
+  .fm-lab-grid { flex-direction: column; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .fm-lab-main { gap: 10px; }
+  .fm-lab-resize-handle { display: none; }
+  .fm-lab-side {
+    width: 100% !important;
+    flex: 0 0 auto;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+    margin-top: 4px;
+  }
 }
 
 .fm-lab-preview-frame {
@@ -2688,9 +2727,20 @@ input[type="number"]::-webkit-outer-spin-button {
   padding: 13px 18px;
   border-bottom-color: color-mix(in srgb, var(--line) 62%, transparent);
 }
-.fm-lab-body {
+/* `.fm-lab-body` is shared between the Test Lab overlay (which manages its
+   own internal scroll regions via `.fm-lab-stage`/`.fm-lab-side` below) and
+   the Feature Builder overlay (`.fm-feature-body`, which has no nested
+   scroll container of its own and relies on `.fm-lab-body` itself to
+   scroll). Scoping this `overflow: hidden` to exclude `.fm-feature-body`
+   fixes Feature Builder's content being unreachable/unscrollable past the
+   viewport height, which is what this rule used to do unconditionally. */
+.fm-lab-body:not(.fm-feature-body) {
   overflow: hidden;
   padding: 18px 20px 20px;
+}
+.fm-feature-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .fm-lab-grid {
   gap: 4px;
@@ -3089,6 +3139,11 @@ input[type="number"]::-webkit-outer-spin-button {
 /* Production file/project actions â€” intentionally scoped to the existing top chrome. */
 .fm-filemenu-wrap { position: relative; }
 .fm-filemenu-wrap > .fm-topbtn { gap: 5px; }
+/* Invisible full-screen backdrop that closes the File dropdown on outside
+   click/tap. Sits just under `.fm-filemenu` (z-index 80) and only exists in
+   the DOM while the menu is open, so it can never intercept the click that
+   opens it in the first place — see the note in FileMenu.tsx. */
+.fm-filemenu-backdrop { position: fixed; inset: 0; z-index: 79; background: transparent; }
 .fm-filemenu {
   position: absolute; top: calc(100% + 8px); left: 0; z-index: 80;
   width: 210px; max-width: calc(100vw - 20px); padding: 6px; border: 1px solid var(--line);

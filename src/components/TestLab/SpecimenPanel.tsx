@@ -462,7 +462,10 @@ function EditableStage({
         style={{ fontSize, lineHeight }}
         data-testid="lab-stage-input"
         aria-label="Editable FontSeru specimen"
-        autoFocus
+        // No autoFocus: this textarea remounts on every tab/tool switch
+        // inside Test Lab, and autofocusing it each time was popping the
+        // on-screen keyboard on mobile just from tapping around the UI.
+        // The user can tap the preview text directly when they want to type.
       />
 
       <span className="fm-sr-only" aria-live="polite">
@@ -1055,7 +1058,8 @@ function FamilyStylePreview({
             spellCheck={false}
             data-testid="family-regular-input"
             aria-label="Editable Regular family specimen"
-            autoFocus
+            // See note on the Type Test textarea above: no autoFocus, so
+            // switching tabs/tools doesn't summon the mobile keyboard.
           />
         )}
       </div>

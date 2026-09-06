@@ -300,6 +300,29 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const toastId = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const menuWrapRef = useRef<HTMLDivElement>(null);
+
+  // The File dropdown previously only closed when an action inside it was
+  // clicked — tapping anywhere else (the canvas, another toolbar button,
+  // etc) left it open on top of the UI. Escape is handled with a plain
+  // window listener (safe — it's a keyboard event, unrelated to the click
+  // that opens the menu). "Click outside" is handled below via a rendered
+  // backdrop (see `.fm-filemenu-backdrop` in the JSX), not a manually
+  // attached document pointerdown/click listener — that approach was tried
+  // first but could race with the very click that opens the menu on some
+  // browsers (the manual listener can end up seeing part of the *same*
+  // opening click and immediately closing it again, which made the menu
+  // look like it "wouldn't open"). A backdrop element only exists in the
+  // DOM once `open` is already true, so it can never see the click that
+  // set `open` to true in the first place.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
 
   const projectFileName = useAppStore((s) => s.projectFileName);
   const setProjectFileName = useAppStore((s) => s.setProjectFileName);
@@ -945,7 +968,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
 
   return (
     <>
-      <div className="fm-filemenu-wrap">
+      <div className="fm-filemenu-wrap" ref={menuWrapRef}>
         <button
           className="fm-topbtn"
           onClick={() => setOpen((value) => !value)}
@@ -956,7 +979,14 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
         </button>
 
         {open && (
-          <div className="fm-filemenu" role="menu">
+          <>
+            <div
+              className="fm-filemenu-backdrop"
+              onClick={() => setOpen(false)}
+              aria-hidden="true"
+              data-testid="file-menu-backdrop"
+            />
+            <div className="fm-filemenu" role="menu">
             <button onClick={() => { newProject(); setOpen(false); showToast("New project created"); }}>
               <FilePlus2 size={14} /> New
             </button>
@@ -989,7 +1019,8 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
             )}
             <div className="fm-filemenu-sep" />
             <button onClick={beginExport}><Download size={14} /> Export Font…</button>
-          </div>
+            </div>
+          </>
         )}
 
         <input
