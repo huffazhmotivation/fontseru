@@ -1963,18 +1963,6 @@ input[type="number"]::-webkit-outer-spin-button {
    are all shown inline instead. See the ≤1180px block below for the swap. */
 .fm-topbar-more-btn, .fm-bottombar-more-btn { display: none; }
 
-/* Dynamic overflow guard (see the ResizeObserver-driven `forceMore` state in
-   TopBar.tsx): mirrors the ≤1180px more-hide/more-button swap below, but
-   driven by an actually-measured overflow instead of a fixed width, so a
-   window that's technically wider than 1180 CSS px but still too narrow for
-   every button (unusual OS display scaling, a non-maximized window, a long
-   font name) collapses into the "More" menu instead of letting
-   `.fm-topbar`'s `overflow-x: hidden` silently clip whatever sits at the end
-   of the row. Deliberately NOT nested in a media query — JS decides when it
-   applies, not CSS. */
-.fm-topbar-force-more .fm-topbar-more-hide { display: none !important; }
-.fm-topbar-force-more .fm-topbar-more-btn { display: inline-flex; }
-
 @media (max-width: 1180px) {
   .fm-glyphnav { width: 200px; }
   .fm-rightpanel { width: 250px; }
@@ -2113,7 +2101,7 @@ input[type="number"]::-webkit-outer-spin-button {
 
   /* Tighter gaps than the generic ≤1180px pass — a lot more buttons are
      sharing the row now that none of them moved into a dropdown. */
-  .fm-topbar { gap: 3px; padding: 6px 8px; }
+  .fm-topbar { gap: 3px; padding: 6px 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .fm-bottombar { gap: 3px; padding: 5px 8px; }
 
   .fm-topbar .fm-topbtn,
@@ -2167,6 +2155,33 @@ input[type="number"]::-webkit-outer-spin-button {
     -webkit-overflow-scrolling: touch;
   }
   .fm-topbar .fm-fontname { min-width: 0; max-width: 110px; }
+}
+
+/* ------------------------------------------------------------ LAPTOP-ONLY
+   Real mouse/trackpad windows (pointer: fine) — an actual laptop/desktop
+   browser that's simply been resized narrow, or sits at an OS display
+   scaling where the effective CSS width is less than it looks (see the
+   "icons disappeared on laptop" report this replaced: buttons were being
+   pulled into the "More" menu on a real laptop just because the window
+   happened to be narrower than 1180px, the same rule phones use). A laptop
+   is never touch input, so this is a hard, reliable signal to split it from
+   the phone case — deliberately kept as its own rule instead of folding
+   into the ≤1180px block above, which stays exactly as phones need it.
+   Every button stays directly on the bar (never moves into "More"), icon-
+   only-compacted the same way tablets are; if even that still doesn't fit
+   (very cramped windows), the bar scrolls sideways as a fallback rather
+   than ever hiding or clipping a button. */
+@media (max-width: 1180px) and (pointer: fine) {
+  .fm-topbar-more-hide,
+  .fm-bottombar-more-hide {
+    display: inline-flex !important;
+    align-items: center;
+  }
+  .fm-topbar-more-btn,
+  .fm-bottombar-more-btn {
+    display: none !important;
+  }
+  .fm-topbar { overflow-x: auto; }
 }
 
 /* ------------------------------------------------------------ TABLET PORTRAIT

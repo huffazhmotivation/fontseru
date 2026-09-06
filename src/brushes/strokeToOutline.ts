@@ -5,7 +5,6 @@ import { simplifyPolyline } from "@/utils/simplify";
 import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor } from "./strokeSmoothing";
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
-import { union as clipUnion, type Polygon as ClipPolygon } from "@/vendor/polygonClipping";
 
 /**
  * Correct offset vector for sweeping a fixed-orientation elliptical nib
@@ -822,6 +821,21 @@ export function centerlineToOutline(
     "round", "monoline", "marker", "calligraphic", "pencil", "pressureTaper", "outline", "strong",
   ];
   const smoothEdges = SMOOTH_EDGE_TYPES.includes(settings.type);
+  // Outline Brush's "square" cap style (capMode === "none" here — see the
+  // capMode assignment above) deliberately ends in a flat, right-angle cut.
+  // But on a smooth-edge brush type like this one, that cut's two corners
+  // land right around 90°, just under the ~100° cusp threshold below used
+  // to preserve genuine sharp turns — so they were quietly getting rounded
+  // into a small curve instead of staying a crisp square edge. Force the
+  // four nodes that make up the flat chord at both stroke tips (see the
+  // `polygon` assembly just above: `[...simplifiedLeft, ...endCapPts,
+  // ...simplifiedRight.reverse(), ...startCapPts]` with endCapPts/
+  // startCapPts empty in "none" mode) to stay hard corners no matter what
+  // their measured turn angle comes out to.
+  const forceCornerIndices =
+    capMode === "none" && settings.type === "outline"
+      ? new Set<number>([0, simplifiedLeft.length - 1, simplifiedLeft.length, polygon.length - 1])
+      : null;
   const polygonNodes = smoothEdges
     ? polygon.map((point, i) => {
         const prev = polygon[(i - 1 + polygon.length) % polygon.length];
@@ -836,7 +850,7 @@ export function centerlineToOutline(
         // Acos(dot) is the actual turn angle at this vertex — only a real,
         // sharp reversal (~90°+) stays a hard corner; anything gentler
         // gets a fitted curve below.
-        if (Math.acos(dot) > (100 * Math.PI) / 180) {
+        if (forceCornerIndices?.has(i) || Math.acos(dot) > (100 * Math.PI) / 180) {
           return { id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const };
         }
         // BUG FIX: handle length used to be a flat `min(inLen, outLen) * 0.22`
@@ -1007,109 +1021,61 @@ function pixelGridCells(centerline: { x: number; y: number }[], cellSize: number
 }
 
 /**
- * A single grid cell as a rounded-corner square ring (for the exact polygon
- * clipper below), optionally padded outward on all sides before rounding.
- * `pad` is what lets diagonally-touching (not just edge-touching) cells'
- * rounded shapes actually overlap enough to melt into one blob once unioned
- * — without it, only cells sharing a full edge would ever merge.
- */
-function roundedCellRing(cx: number, cy: number, cellSize: number, cornerRadius: number, pad: number): [number, number][] {
-  const x0 = cx * cellSize - pad;
-  const y0 = cy * cellSize - pad;
-  const x1 = (cx + 1) * cellSize + pad;
-  const y1 = (cy + 1) * cellSize + pad;
-  const r = Math.max(0, Math.min((x1 - x0) / 2, (y1 - y0) / 2, cornerRadius));
-  if (r < 0.01) {
-    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
-  }
-  const segments = 6;
-  const pts: [number, number][] = [];
-  const arc = (ccx: number, ccy: number, startAngle: number) => {
-    for (let i = 0; i <= segments; i++) {
-      const a = startAngle + (Math.PI / 2) * (i / segments);
-      pts.push([ccx + Math.cos(a) * r, ccy + Math.sin(a) * r]);
-    }
-  };
-  arc(x1 - r, y0 + r, -Math.PI / 2); // top-right
-  arc(x1 - r, y1 - r, 0);            // bottom-right
-  arc(x0 + r, y1 - r, Math.PI / 2);  // bottom-left
-  arc(x0 + r, y0 + r, Math.PI);      // top-left
-  pts.push(pts[0]);
-  return pts;
-}
-
-function clipRingToPoints(ring: [number, number][]): Point[] {
-  const pts = ring.map(([x, y]) => ({ x, y }));
-  if (pts.length > 1) {
-    const first = pts[0];
-    const last = pts[pts.length - 1];
-    if (Math.abs(first.x - last.x) < 1e-6 && Math.abs(first.y - last.y) < 1e-6) pts.pop();
-  }
-  return pts;
-}
-
-/** Every vertex gets a Catmull-Rom-derived smooth handle — a liquid blob
- * has no genuine sharp corners of its own, unlike the boolean-op rings in
- * booleanOps.ts (which deliberately keep real cut corners crisp). */
-function smoothRingToContour(points: Point[]): Contour {
-  const n = points.length;
-  const nodes: PathNode[] = points.map((point, i) => {
-    const prev = points[(i - 1 + n) % n];
-    const next = points[(i + 1) % n];
-    const tx = (next.x - prev.x) / 6;
-    const ty = (next.y - prev.y) / 6;
-    return {
-      id: shortId("node"),
-      point,
-      handleIn: { x: point.x - tx, y: point.y - ty },
-      handleOut: { x: point.x + tx, y: point.y + ty },
-      type: "smooth" as const,
-    };
-  });
-  return { id: shortId("contour"), closed: true, nodes };
-}
-
 /**
- * Pixel Liquid mode: the same grid-cell footprint as the crisp Pixel Brush
- * (pixelBlockOutline/pixelGridCells above), but instead of emitting one
- * hard-edged square per cell, every cell becomes a rounded, slightly padded
- * shape and all of them are merged with an exact polygon union — so cells
- * that touch or sit close together melt into one soft, blobby silhouette
- * instead of staying visually separate squares. `smoothness` (0..1) drives
- * both the corner rounding and how far apart cells can be and still bridge
- * together (see roundedCellRing's `pad`).
+ * Pixel Liquid mode: walks the exact same grid cells the crisp Pixel Brush
+ * uses (pixelGridCells above) as a single connected skeleton path, then
+ * re-strokes that path with a round pen — the same round/pill stroking
+ * machinery every other round brush already uses (see centerlineToOutline's
+ * ROUND_CAP_TYPES + SMOOTH_EDGE_TYPES handling), just fed a grid-quantized
+ * centerline instead of the raw pointer path. A round pen's own offset
+ * geometry is what turns each 90° grid corner into a smooth, fused joint —
+ * no separate per-cell shape or merge step needed, which is what gives a
+ * clean, continuous rounded-pixel/"gummy" look (bars flowing smoothly into
+ * each other at grid turns) rather than a pile of separately blended blobs.
  */
-export function pixelLiquidOutline(centerline: { x: number; y: number }[], cellSize: number, smoothness: number): Contour[] {
+export function pixelLiquidOutline(
+  centerline: { x: number; y: number }[],
+  cellSize: number,
+  smoothness: number,
+  settings: BrushSettings
+): Contour[] {
   if (centerline.length === 0 || cellSize <= 0) return [];
   const s = Math.max(0, Math.min(1, smoothness));
   const cells = pixelGridCells(centerline, cellSize);
   if (cells.length === 0) return [];
 
-  const pad = cellSize * 0.22 * s;
-  const cornerRadius = cellSize * 0.5 * (0.15 + 0.85 * s);
-  const polys: ClipPolygon[] = cells.map(({ cx, cy }) => [roundedCellRing(cx, cy, cellSize, cornerRadius, pad)]);
-
-  let merged: ClipPolygon[];
-  try {
-    merged = polys.length === 1 ? clipUnion(polys[0]) : clipUnion(polys[0], ...polys.slice(1));
-  } catch {
-    // The exact clipper choked on degenerate input (extremely dense or
-    // overlapping strokes) — fall back to the crisp block look rather than
-    // dropping the stroke entirely.
-    return pixelBlockOutline(centerline, cellSize);
+  const skeleton: StrokeSample[] = cells.map(({ cx, cy }) => ({
+    x: (cx + 0.5) * cellSize,
+    y: (cy + 0.5) * cellSize,
+    pressure: 1,
+  }));
+  if (skeleton.length === 1) {
+    // A single tapped cell has no direction to stroke along — give it a
+    // hair of length so the round pen still draws a full round dot there.
+    skeleton.push({ x: skeleton[0].x + 0.01, y: skeleton[0].y, pressure: 1 });
   }
 
-  const contours: Contour[] = [];
-  for (const poly of merged) {
-    for (const ring of poly) {
-      const raw = clipRingToPoints(ring);
-      if (raw.length < 3) continue;
-      const simplified = simplifyPolyline(raw, Math.max(0.3, cellSize * 0.03));
-      if (simplified.length < 3) continue;
-      contours.push(smoothRingToContour(simplified));
-    }
-  }
-  return contours;
+  // Wider than the raw cell size so neighboring/nearby cells' pen sweeps
+  // actually overlap into one continuous shape at grid turns instead of
+  // pinching to a thin waist; `smoothness` widens that overlap further for
+  // a chunkier, more fused "liquid" look.
+  const width = cellSize * (0.95 + 0.55 * s);
+  const roundSettings: BrushSettings = {
+    ...settings,
+    type: "round",
+    size: width,
+    roundness: 1,
+    angle: 0,
+    taperStart: 0,
+    taperEnd: 0,
+    sharpStart: false,
+    sharpEnd: false,
+    pressureEnabled: false,
+    jitter: 0,
+  };
+
+  const contour = centerlineToOutline(skeleton, roundSettings);
+  return contour ? [contour] : [];
 }
 
 function signedArea(points: Point[]): number {
@@ -1561,7 +1527,7 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
 export function centerlineToOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
   if (settings.type === "pixel" && settings.gridSnap === true) {
     return settings.pixelMode === "liquid"
-      ? pixelLiquidOutline(centerline, settings.cellSize ?? settings.size, settings.pixelLiquidSmoothness ?? 0.5)
+      ? pixelLiquidOutline(centerline, settings.cellSize ?? settings.size, settings.pixelLiquidSmoothness ?? 0.5, settings)
       : pixelBlockOutline(centerline, settings.cellSize ?? settings.size);
   }
   if (settings.type === "rough") {

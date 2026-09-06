@@ -63,14 +63,15 @@ export interface BrushSettings {
   /** Outline Brush only: border thickness as a fraction of the nib's half-width. The interior stays hollow — see outlineBrushOutlineContours. */
   outlineThickness?: number;
   /** Pixel Brush only: "blocks" (default) keeps the original crisp grid-cell
-   * squares; "liquid" fuses neighboring/nearby blocks into one soft, blobby
-   * metaball silhouette instead — see pixelLiquidOutline. Isolated to
-   * `gridSnap`/pixel brush the same way `cellSize` is. */
+   * squares; "liquid" instead walks those same cells as one connected path
+   * and re-strokes it with a round pen, so grid turns flow into smooth,
+   * fused joints — see pixelLiquidOutline. Isolated to `gridSnap`/pixel
+   * brush the same way `cellSize` is. */
   pixelMode?: PixelRenderMode;
-  /** Pixel Liquid mode only: how far apart (in grid cells) two blocks can be
-   * and still melt into each other, and how soft the merge looks. 0 = barely
-   * touching blocks merge with a tight seam; 1 = a wide, very soft blend
-   * radius. Inert when `pixelMode` isn't "liquid". */
+  /** Pixel Liquid mode only: how much extra width beyond the raw cell size
+   * the round pen sweeps at. 0 = close to the plain grid size, so cells
+   * still read as individual rounded blocks; 1 = noticeably chunkier and
+   * more fused at every grid turn. Inert when `pixelMode` isn't "liquid". */
   pixelLiquidSmoothness?: number;
   /** Outline Brush only: how the two stroke ends are finished. "round"/"square"
    * both fully close the ring's tip into one joined end cap (a pill-shaped
@@ -85,11 +86,10 @@ export interface BrushSettings {
 export type OutlineCapStyle = "round" | "square" | "open";
 
 /** Pixel Brush only: how neighboring pixel blocks are rendered. "blocks" is
- * the original crisp grid-cell look (see pixelBlockOutline); "liquid" instead
- * fuses touching/nearby blocks into a single soft, blobby metaball silhouette
- * — neighboring pixels visually melt into each other like liquid droplets
- * merging, rather than staying separate hard-edged squares. See
- * pixelLiquidOutline in strokeToOutline.ts. */
+ * the original crisp grid-cell look (see pixelBlockOutline); "liquid"
+ * re-strokes the same grid cells as one connected round-pen path instead,
+ * so pixel-grid turns flow into smooth, fused joints rather than staying
+ * separate hard-edged squares. See pixelLiquidOutline in strokeToOutline.ts. */
 export type PixelRenderMode = "blocks" | "liquid";
 
 export interface BrushPreset {

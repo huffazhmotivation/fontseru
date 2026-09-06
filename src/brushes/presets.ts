@@ -260,7 +260,7 @@ export const BRUSH_PRESETS: Record<BrushType, BrushPreset> = {
       // flag immediately (see setBrush() in glyph/store.ts).
       gridSnap: true,
       // "blocks" (default) is the original crisp grid-square look; "liquid"
-      // fuses neighboring cells into one soft blob instead — see
+      // fuses grid turns into smooth round-pen joints instead — see
       // pixelLiquidOutline() in strokeToOutline.ts.
       pixelMode: "blocks",
       pixelLiquidSmoothness: 0.5,

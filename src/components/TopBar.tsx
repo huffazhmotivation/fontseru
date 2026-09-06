@@ -78,56 +78,6 @@ export function TopBar() {
     }
   }, []);
 
-  // --- Dynamic overflow guard (fixes buttons clipping at widths ABOVE the
-  // 1180px breakpoint) ----------------------------------------------------
-  // The CSS breakpoint below (.fm-topbar-more-hide in app.css, ≤1180px)
-  // assumes the row always fits above that width, but real browser windows
-  // don't reliably map "wide" to "1920 CSS px" — OS display scaling, a
-  // non-maximized window, or an unusually long font-name string can leave
-  // less actual room than the static breakpoint expects. `overflow-x:
-  // hidden` on `.fm-topbar` then silently clips whatever sits at the end of
-  // the row (in practice, AuthWidget) instead of collapsing it into the
-  // "More" menu. This measures the bar's REAL fit on every resize and
-  // forces the same more-hide/more-button swap the CSS breakpoint does,
-  // independent of window width. Re-expands to full width first before
-  // measuring (see `check` below) so the bar can also grow back out once
-  // there's room again — otherwise, once collapsed, it would stay collapsed
-  // forever even after the window is enlarged.
-  const topbarRef = React.useRef<HTMLDivElement>(null);
-  const [forceMore, setForceMore] = React.useState(false);
-  const forceMoreRef = React.useRef(false);
-  forceMoreRef.current = forceMore;
-
-  React.useLayoutEffect(() => {
-    const el = topbarRef.current;
-    if (!el) return;
-    let raf = 0;
-
-    const measure = () => {
-      if (!el) return;
-      setForceMore(el.scrollWidth > el.clientWidth + 1);
-    };
-
-    const check = () => {
-      if (forceMoreRef.current) {
-        setForceMore(false);
-        raf = requestAnimationFrame(measure);
-      } else {
-        measure();
-      }
-    };
-
-    check();
-    window.addEventListener("resize", check);
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => {
-      window.removeEventListener("resize", check);
-      ro.disconnect();
-      cancelAnimationFrame(raf);
-    };
-  }, []);
-
   // --- "More" overflow menu (tablet/phone widths, see .fm-topbar-more-hide
   // in app.css) ---------------------------------------------------------
   // Below 1180px the align/boolean/object-action groups and the secondary
@@ -171,7 +121,7 @@ export function TopBar() {
   }, []);
 
   return (
-    <div className={`fm-topbar${forceMore ? " fm-topbar-force-more" : ""}`} ref={topbarRef}>
+    <div className="fm-topbar">
       {/* The glyph-list / inspector-panel drawer shortcuts used to live here
           inline (see git history) but are now floating buttons over the
           canvas instead — see MobileDrawerToggles, rendered in App.tsx —

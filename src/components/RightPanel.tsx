@@ -916,7 +916,7 @@ function BrushPanel() {
                   format={(v) => `${Math.round(v * 100)}%`}
                 />
                 <InfoTip>
-                  Neighboring pixel blocks melt into one soft blob instead of staying separate squares — higher smoothness lets blocks further apart bridge together too.
+                  Pixel-grid turns flow into smooth, rounded joints instead of hard corners — higher smoothness makes the strokes chunkier and more fused where they meet.
                 </InfoTip>
               </>
             )}
