@@ -1073,26 +1073,24 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
   color: var(--accent); background: none; border: none; cursor: pointer; padding: 0;
 }
 .fm-group-select-all:hover { text-decoration: underline; }
-.fm-tile.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
-.fm-tile-check {
-  position: absolute; top: 5px; left: 5px; width: 14px; height: 14px; border-radius: 4px;
-  border: 1.5px solid var(--text-faint); background: var(--panel);
-  display: flex; align-items: center; justify-content: center; color: var(--accent-ink);
-  z-index: 1;
+/* Explicit green (not the theme accent) so a multi-selected tile always
+   reads as its own distinct state from the single "active" (currently
+   open) tile, whatever the current color theme's accent looks like. */
+.fm-tile.selected { border-color: #22c55e; box-shadow: inset 0 0 0 1.5px #22c55e; }
+.fm-glyph-select-hint {
+  flex: 0 0 auto; padding: 8px 12px; border-top: 1px solid var(--line-soft);
+  background: var(--panel-2); display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px;
+  font-size: 11px; color: var(--text-dim); line-height: 1.4;
 }
-.fm-tile-check.on { background: var(--accent); border-color: var(--accent); }
-.fm-glyph-batch-bar {
-  flex: 0 0 auto; padding: 10px 12px; border-top: 1px solid var(--line-soft);
-  background: var(--panel-2); display: flex; flex-direction: column; gap: 8px;
-}
-.fm-glyph-batch-summary { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
 .fm-glyph-batch-count {
-  font-family: var(--mono); font-weight: 700; color: var(--accent-ink); background: var(--accent);
+  font-family: var(--mono); font-weight: 700; color: #fff; background: #22c55e;
   border-radius: 20px; padding: 1px 8px; font-size: 11px;
 }
-.fm-glyph-batch-actions { display: flex; gap: 8px; }
-.fm-glyph-batch-actions .fm-action-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; }
-.fm-glyph-batch-brush-grid { max-height: 220px; overflow-y: auto; }
+.fm-glyph-select-clear {
+  margin-left: auto; font-size: 11px; font-weight: 600; color: var(--accent);
+  background: none; border: none; cursor: pointer; padding: 0; white-space: nowrap;
+}
+.fm-glyph-select-clear:hover { text-decoration: underline; }
 .fm-panel-eyebrow {
   display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em;
   text-transform: uppercase; color: var(--text-faint); margin-bottom: 10px;

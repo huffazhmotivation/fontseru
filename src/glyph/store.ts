@@ -428,19 +428,16 @@ interface AppState {
   setLiveOutline: (outline: GlyphOutline | null) => void;
   updateSelectedObject: (patch: Partial<VectorObject>) => void;
 
-  // multi-glyph selection (GlyphNav) + batch actions
+  // multi-glyph selection (GlyphNav) — synced live into the Brush panel:
+  // with glyphs selected here, setBrushType/setBrush (below) also restyle
+  // every selected glyph's existing brush strokes, not just the default
+  // used for the next one drawn. No separate "apply" action needed.
   toggleGlyphSelectMode: () => void;
   setGlyphSelectMode: (on: boolean) => void;
   toggleGlyphSelected: (char: string, additive?: boolean) => void;
   setGlyphSelection: (chars: string[]) => void;
   addGlyphsToSelection: (chars: string[]) => void;
   clearGlyphSelection: () => void;
-  /** Re-nibs every brush stroke inside every currently-selected glyph to
-   * `type`, mirroring what `updateSelectedObject({ brushType })` does for a
-   * single glyph's selected objects — but across the whole batch in one
-   * history entry. Glyphs with no brush objects (empty, or drawn entirely
-   * with pen/shape tools) are left untouched. */
-  applyBrushTypeToSelectedGlyphs: (type: BrushType) => void;
 
   // object selection / clipboard / transforms
   selectObjects: (ids: string[], additive?: boolean) => void;
@@ -657,6 +654,36 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
     }
     return false;
+  }
+  /** Retypes every already-drawn brush stroke inside `chars` via `transform`,
+   * leaving non-brush objects and glyphs with no brush strokes untouched.
+   * Returns `null` when nothing actually changed. Backs the GlyphNav
+   * multi-select flow: with glyphs selected there, the normal Brush panel
+   * (preset grid + Size/Stabilizer/etc sliders) restyles every selected
+   * glyph's existing strokes live, on top of its usual job of setting the
+   * default for the NEXT stroke — no separate "apply" action needed. */
+  function restyleBrushObjectsIn(
+    glyphs: GlyphMap,
+    chars: string[],
+    transform: (obj: VectorObject) => VectorObject
+  ): GlyphMap | null {
+    let touched = false;
+    const next: GlyphMap = { ...glyphs };
+    for (const char of chars) {
+      const glyph = glyphs[char];
+      if (!glyph) continue;
+      let changed = false;
+      const objects = glyph.outline.objects.map((o) => {
+        if (o.kind !== "brush") return o;
+        changed = true;
+        return transform(cloneObject(o));
+      });
+      if (changed) {
+        touched = true;
+        next[char] = { ...glyph, outline: { objects } };
+      }
+    }
+    return touched ? next : null;
   }
   function commit(nextGlyphs: GlyphMap) {
     const { glyphs, glyphsByStyle, fontStyle, metrics, past, kerningPairs, kerningManual } = get();
@@ -1282,19 +1309,46 @@ export const useAppStore = create<AppState>()((set, get) => {
     // brush switch must fully reset to the target preset's own settings —
     // this is what guarantees pixel grid-snapping never survives a switch
     // to Monoline/Marker/Calligraphic/Pencil/Grunge.
-    setBrushType: (type) =>
-      set(() => {
-        const next = { type, ...BRUSH_PRESETS[type].settings } as BrushSettings;
-        if (type !== "pixel") delete next.gridSnap;
-        return { brush: next };
-      }),
-    setBrush: (patch) =>
-      set((s) => {
-        const next = { ...s.brush, ...patch };
-        if (next.type === "pixel") next.gridSnap = true;
-        else delete next.gridSnap;
-        return { brush: next };
-      }),
+    setBrushType: (type) => {
+      const state = get();
+      const next = { type, ...BRUSH_PRESETS[type].settings } as BrushSettings;
+      if (type !== "pixel") delete next.gridSnap;
+
+      // Multi-glyph selection active in GlyphNav: retype every already-drawn
+      // brush stroke in the selected glyphs too, not just the default used
+      // for the next stroke drawn.
+      if (state.glyphSelectMode && state.selectedGlyphChars.length > 0) {
+        const preset = BRUSH_PRESETS[type];
+        const nextGlyphs = restyleBrushObjectsIn(state.glyphs, state.selectedGlyphChars, (o) => {
+          const width = o.strokeWidth ?? preset?.settings.size ?? 20;
+          o.brushType = type;
+          o.brushSettings = preset ? { ...preset.settings, type, size: width } : undefined;
+          o.cap = type === "monoline" ? (o.cap ?? "round") : "round";
+          return o;
+        });
+        if (nextGlyphs) commit(nextGlyphs);
+      }
+      set({ brush: next });
+    },
+    setBrush: (patch) => {
+      const state = get();
+      const next = { ...state.brush, ...patch };
+      if (next.type === "pixel") next.gridSnap = true;
+      else delete next.gridSnap;
+
+      if (state.glyphSelectMode && state.selectedGlyphChars.length > 0) {
+        const nextGlyphs = restyleBrushObjectsIn(state.glyphs, state.selectedGlyphChars, (o) => {
+          const objType = (o.brushType as BrushType | undefined) ?? "monoline";
+          const base = o.brushSettings ?? { type: objType, ...BRUSH_PRESETS[objType].settings };
+          const merged: BrushSettings = { ...base, ...patch, type: base.type };
+          if (patch.size !== undefined) o.strokeWidth = patch.size;
+          o.brushSettings = merged;
+          return o;
+        });
+        if (nextGlyphs) commit(nextGlyphs);
+      }
+      set({ brush: next });
+    },
 
     updateGlyphMetrics: (char, patch, scope) => {
       const { glyphs, glyphMetricScope } = get();
@@ -1453,35 +1507,6 @@ export const useAppStore = create<AppState>()((set, get) => {
         return { selectedGlyphChars: [...merged] };
       }),
     clearGlyphSelection: () => set({ selectedGlyphChars: [] }),
-
-    applyBrushTypeToSelectedGlyphs: (type) => {
-      const { glyphs, selectedGlyphChars } = get();
-      if (selectedGlyphChars.length === 0) return;
-      const preset = BRUSH_PRESETS[type];
-      let touched = false;
-      const nextGlyphs: GlyphMap = { ...glyphs };
-      for (const char of selectedGlyphChars) {
-        const glyph = glyphs[char];
-        if (!glyph) continue;
-        let changedThisGlyph = false;
-        const objects = glyph.outline.objects.map((o) => {
-          if (o.kind !== "brush" || o.brushType === type) return o;
-          changedThisGlyph = true;
-          const next = cloneObject(o);
-          const width = next.strokeWidth ?? preset?.settings.size ?? 20;
-          next.brushType = type;
-          next.brushSettings = preset ? { ...preset.settings, type, size: width } : undefined;
-          next.cap = type === "monoline" ? (next.cap ?? "round") : "round";
-          return next;
-        });
-        if (changedThisGlyph) {
-          touched = true;
-          nextGlyphs[char] = { ...glyph, outline: { objects } };
-        }
-      }
-      if (!touched) return;
-      commit(nextGlyphs);
-    },
 
     selectObjects: (ids, additive) =>
       set((s) => {

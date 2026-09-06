@@ -1,19 +1,11 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { CheckSquare, Lock, PenLine, Minus, Highlighter, Feather, Pencil, Zap as BoltIcon, CircleDashed, Flame, Droplet, Grid3x3, Triangle, Circle, Plus, Search, X, Zap, Globe } from "lucide-react";
+import { CheckSquare, Lock, Plus, Search, X, Zap, Globe } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useAuth } from "@/auth/AuthProvider";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
 import { FONT_STYLES, MAX_CUSTOM_FAMILIES, hasOutline } from "@/types/glyph";
 import { unicodeHex } from "@/utils/unicode";
-import { BRUSH_ORDER, BRUSH_PRESETS } from "@/brushes/presets";
-import type { BrushType } from "@/types/brush";
 import { GlyphThumbnail } from "./GlyphThumbnail";
-
-const BRUSH_ICON: Record<BrushType, typeof PenLine> = {
-  round: PenLine, monoline: Minus, marker: Highlighter, calligraphic: Feather, pencil: Pencil, pressureTaper: BoltIcon,
-  rough: CircleDashed, grunge: Flame, oilBrush: Droplet, pixel: Grid3x3,
-  strong: Triangle, outline: Circle,
-};
 
 // Bold/Italic keep these reserved ids (see the store's defaultCustomFamilies)
 // so they can stay PRO-gated like before, even though they're now ordinary
@@ -43,7 +35,6 @@ export function GlyphNav() {
   const setGlyphSelection = useAppStore((s) => s.setGlyphSelection);
   const addGlyphsToSelection = useAppStore((s) => s.addGlyphsToSelection);
   const clearGlyphSelection = useAppStore((s) => s.clearGlyphSelection);
-  const applyBrushTypeToSelectedGlyphs = useAppStore((s) => s.applyBrushTypeToSelectedGlyphs);
   const { isPro } = useAuth();
   const [multilingualStatus, setMultilingualStatus] = useState<string | null>(null);
   const [addingFamily, setAddingFamily] = useState(false);
@@ -314,11 +305,6 @@ export function GlyphNav() {
                       data-testid={`glyph-tile-${ch}`}
                     >
                       {done && <span className="fm-tile-dot" />}
-                      {glyphSelectMode && (
-                        <span className={`fm-tile-check ${selected ? "on" : ""}`}>
-                          {selected && <CheckSquare size={11} />}
-                        </span>
-                      )}
                       <span className="fm-tile-thumb"><GlyphThumbnail glyph={info} /></span>
                     </button>
                   );
@@ -332,11 +318,13 @@ export function GlyphNav() {
         )}
       </div>
       {glyphSelectMode && selectedGlyphChars.length > 0 && (
-        <GlyphBatchActionBar
-          count={selectedGlyphChars.length}
-          onClear={clearGlyphSelection}
-          onApplyBrush={applyBrushTypeToSelectedGlyphs}
-        />
+        <div className="fm-glyph-select-hint" data-testid="glyph-select-hint">
+          <span className="fm-glyph-batch-count">{selectedGlyphChars.length}</span>
+          <span>glyph dipilih — atur brush di panel Brush untuk terapkan ke semuanya sekaligus</span>
+          <button type="button" className="fm-glyph-select-clear" onClick={clearGlyphSelection} data-testid="glyph-select-clear">
+            Batal pilih
+          </button>
+        </div>
       )}
       <div className="fm-glyphnav-foot">
         <button
@@ -354,64 +342,6 @@ export function GlyphNav() {
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-/** Floating bar shown in GlyphNav's select mode once at least one glyph is
- * picked — batch actions apply to every selected glyph at once instead of
- * requiring the Select tool's per-glyph "Selection" panel to be revisited
- * one character at a time. Currently just brush re-typing (the requested
- * flow); more batch actions can slot in here later. */
-function GlyphBatchActionBar({
-  count,
-  onClear,
-  onApplyBrush,
-}: {
-  count: number;
-  onClear: () => void;
-  onApplyBrush: (type: BrushType) => void;
-}) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  return (
-    <div className="fm-glyph-batch-bar" data-testid="glyph-batch-bar">
-      <div className="fm-glyph-batch-summary">
-        <span className="fm-glyph-batch-count">{count}</span>
-        <span>glyph dipilih</span>
-      </div>
-      <div className="fm-glyph-batch-actions">
-        <button
-          type="button"
-          className="fm-action-btn"
-          onClick={() => setPickerOpen((o) => !o)}
-          data-testid="glyph-batch-brush-btn"
-        >
-          <PenLine size={13} /> Ganti Brush
-        </button>
-        <button type="button" className="fm-action-btn" onClick={onClear} data-testid="glyph-batch-clear-btn">
-          Batal
-        </button>
-      </div>
-      {pickerOpen && (
-        <div className="fm-brush-grid fm-glyph-batch-brush-grid" data-testid="glyph-batch-brush-grid">
-          {BRUSH_ORDER.map((id) => {
-            const Icon = BRUSH_ICON[id];
-            const p = BRUSH_PRESETS[id];
-            return (
-              <button
-                key={id}
-                className="fm-brush-card"
-                onClick={() => { onApplyBrush(id); setPickerOpen(false); }}
-                title={`Ganti brush terpilih ke ${p.label}`}
-                data-testid={`glyph-batch-brush-${id}`}
-              >
-                <span className="fm-brush-icon"><Icon size={17} strokeWidth={1.8} /></span>
-                <span className="fm-brush-name">{p.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
