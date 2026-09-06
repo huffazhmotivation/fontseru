@@ -3,7 +3,7 @@ import {
   Download, FlaskConical, Layers, Maximize, Minimize, Redo2, Undo2, Wand2,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
-  Copy, Trash2, Film, Menu, PanelRight,
+  Copy, Trash2, Film, Menu, PanelRight, MoreHorizontal, Info,
 } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
@@ -80,6 +80,48 @@ export function TopBar() {
     }
   }, []);
 
+  // --- "More" overflow menu (tablet/phone widths, see .fm-topbar-more-hide
+  // in app.css) ---------------------------------------------------------
+  // Below 1180px the align/boolean/object-action groups and the secondary
+  // nav buttons (Timelapse/Family/Feature Builder/Test Lab/About) are
+  // hidden from the bar itself and re-rendered here instead, so the bar
+  // stays a single row that always fits the screen width with no
+  // horizontal scrolling and no wrapping to extra rows. Same fixed-position
+  // dropdown approach as FileMenu/AuthWidget (see the note there) so it
+  // can never be clipped by anything.
+  const [moreOpen, setMoreOpen] = React.useState(false);
+  const [morePos, setMorePos] = React.useState<{ top: number; left: number } | null>(null);
+  const moreWrapRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!moreOpen) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setMoreOpen(false); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [moreOpen]);
+
+  React.useEffect(() => {
+    if (!moreOpen) return;
+    const close = () => setMoreOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [moreOpen]);
+
+  const openMore = React.useCallback(() => {
+    const rect = moreWrapRef.current?.getBoundingClientRect();
+    const menuWidth = 240;
+    const left = rect
+      ? Math.max(10, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 10))
+      : 14;
+    const top = rect ? rect.bottom + 8 : 60;
+    setMorePos({ top, left });
+    setMoreOpen(true);
+  }, []);
+
   return (
     <div className="fm-topbar">
       {/* Only visible below the mobile breakpoint (see app.css): opens the
@@ -96,10 +138,32 @@ export function TopBar() {
       >
         <Menu size={18} />
       </button>
+      {/* Kept right next to the glyph-list toggle above (rather than at the
+          far end of the bar, where it used to live next to AuthWidget) so
+          both drawer toggles stay reachable at a glance on phone/tablet
+          widths without having to scroll the now horizontally-scrollable
+          topbar (see `.fm-topbar` in app.css) all the way to the end just
+          to open the inspector panel. */}
+      <button
+        type="button"
+        className="fm-mobile-panel-toggle"
+        onClick={toggleMobilePanel}
+        title="Inspector panel"
+        aria-label="Toggle inspector panel"
+        data-testid="mobile-panel-toggle"
+      >
+        <PanelRight size={18} />
+      </button>
       <FontSeruLogo />
       <div className="fm-divider" />
       <FileMenu onExportButtonReady={handleExportReady} />
-      <AboutModal />
+      {/* Hidden below 1180px and re-rendered inside the "More" dropdown
+          instead (see fm-topbar-more-hide in app.css) — its label used to
+          collapse to an empty, icon-less button at that width since it has
+          no leading icon like the other fm-topbtn buttons. */}
+      <div className="fm-topbar-more-hide">
+        <AboutModal />
+      </div>
       <input
         className="fm-fontname"
         value={fontName}
@@ -116,9 +180,14 @@ export function TopBar() {
         </button>
       </div>
 
-      <div className="fm-align-divider" />
+      {/* Align / boolean / object-action groups below are hidden below
+          1180px (see .fm-topbar-more-hide in app.css) and re-rendered
+          inside the "More" dropdown near the end of this bar instead —
+          that's what lets tablet/phone widths show a single row that
+          fits the screen with no horizontal scrolling and no wrapping. */}
+      <div className="fm-align-divider fm-topbar-more-hide" />
 
-      <div className="fm-align-group" role="group" aria-label="Align selected objects">
+      <div className="fm-align-group fm-topbar-more-hide" role="group" aria-label="Align selected objects">
         {ALIGN_BUTTONS.map(({ mode, label, icon: Icon }, i) => (
           <React.Fragment key={mode}>
             {i === 3 && <div className="fm-align-divider" />}
@@ -137,9 +206,9 @@ export function TopBar() {
         ))}
       </div>
 
-      <div className="fm-align-divider" />
+      <div className="fm-align-divider fm-topbar-more-hide" />
 
-      <div className="fm-align-group" role="group" aria-label="Boolean shape actions">
+      <div className="fm-align-group fm-topbar-more-hide" role="group" aria-label="Boolean shape actions">
         {BOOLEAN_BUTTONS.map(({ op, label }) => (
           <button
             key={op}
@@ -156,9 +225,9 @@ export function TopBar() {
         ))}
       </div>
 
-      <div className="fm-align-divider" />
+      <div className="fm-align-divider fm-topbar-more-hide" />
 
-      <div className="fm-align-group" role="group" aria-label="Object actions">
+      <div className="fm-align-group fm-topbar-more-hide" role="group" aria-label="Object actions">
         <button
           type="button"
           className="fm-align-btn"
@@ -213,7 +282,7 @@ export function TopBar() {
           (enforced in the store, right where each action happens), so this
           button no longer shows a locked state. */}
       <button
-        className="fm-topbtn fm-testlab-nav"
+        className="fm-topbtn fm-testlab-nav fm-topbar-more-hide"
         onClick={openTimelapse}
         title="Open Timelapse Recording"
         data-testid="timelapse-btn"
@@ -221,7 +290,7 @@ export function TopBar() {
         <Film size={15} /> Timelapse
       </button>
       <button
-        className="fm-topbtn fm-testlab-nav"
+        className="fm-topbtn fm-testlab-nav fm-topbar-more-hide"
         onClick={openFamily}
         title="Open Family Auto Generate"
         data-testid="family-btn"
@@ -229,16 +298,134 @@ export function TopBar() {
         <Layers size={15} /> Family
       </button>
       <button
-        className="fm-topbtn fm-testlab-nav"
+        className="fm-topbtn fm-testlab-nav fm-topbar-more-hide"
         onClick={openFeatureBuilder}
         title="Open OpenType Feature Builder"
         data-testid="feature-builder-btn"
       >
         <Wand2 size={15} /> Feature Builder
       </button>
-      <button className="fm-topbtn fm-testlab-nav" onClick={() => openTestLab("specimen")} title="Open Test Lab" data-testid="test-lab-btn">
+      <button className="fm-topbtn fm-testlab-nav fm-topbar-more-hide" onClick={() => openTestLab("specimen")} title="Open Test Lab" data-testid="test-lab-btn">
         <FlaskConical size={15} /> Test Lab
       </button>
+
+      {/* "More" overflow menu: only visible below 1180px (see
+          .fm-topbar-more-btn in app.css). Holds the align/boolean/object
+          groups and the secondary nav buttons hidden above, as full-width
+          labeled rows instead of bare icons since there's no width
+          pressure inside a dropdown. */}
+      <div className="fm-topbar-more-btn fm-filemenu-wrap" ref={moreWrapRef}>
+        <button
+          type="button"
+          className="fm-topbtn"
+          onClick={() => (moreOpen ? setMoreOpen(false) : openMore())}
+          aria-expanded={moreOpen}
+          title="More actions"
+          aria-label="More actions"
+          data-testid="topbar-more-btn"
+        >
+          <MoreHorizontal size={18} />
+        </button>
+
+        {moreOpen && (
+          <>
+            <div
+              className="fm-filemenu-backdrop"
+              onClick={() => setMoreOpen(false)}
+              aria-hidden="true"
+              data-testid="topbar-more-backdrop"
+            />
+            <div
+              className="fm-filemenu fm-morebar-menu"
+              role="menu"
+              style={morePos ? { top: morePos.top, left: morePos.left } : undefined}
+            >
+              <div className="fm-morebar-section-label">Align</div>
+              <div className="fm-morebar-grid">
+                {ALIGN_BUTTONS.map(({ mode, label, icon: Icon }) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    disabled={selectedObjectIds.length < 2}
+                    onClick={() => { alignSelectedObjects(mode); setMoreOpen(false); }}
+                    title={label}
+                    aria-label={label}
+                  >
+                    <Icon size={15} strokeWidth={1.7} />
+                  </button>
+                ))}
+              </div>
+
+              <div className="fm-filemenu-sep" />
+              <div className="fm-morebar-section-label">Combine</div>
+              <div className="fm-morebar-grid">
+                {BOOLEAN_BUTTONS.map(({ op, label }) => (
+                  <button
+                    key={op}
+                    type="button"
+                    disabled={booleanEligibleCount < 2}
+                    onClick={() => { booleanSelectedObjects(op); setMoreOpen(false); }}
+                    title={label}
+                    aria-label={label}
+                  >
+                    <BooleanOpIcon op={op} size={15} />
+                  </button>
+                ))}
+              </div>
+
+              <div className="fm-filemenu-sep" />
+              <button
+                disabled={selectedObjectIds.length === 0}
+                onClick={() => { copySelection(); pasteClipboard(); setMoreOpen(false); }}
+              >
+                <Copy size={14} strokeWidth={1.7} /> Duplicate
+              </button>
+              <button
+                disabled={selectedObjectIds.length === 0}
+                onClick={() => { flipSelectedObjects("horizontal"); setMoreOpen(false); }}
+              >
+                <FlipIcon direction="horizontal" size={14} /> Flip Horizontal
+              </button>
+              <button
+                disabled={selectedObjectIds.length === 0}
+                onClick={() => { flipSelectedObjects("vertical"); setMoreOpen(false); }}
+              >
+                <FlipIcon direction="vertical" size={14} /> Flip Vertical
+              </button>
+              <button
+                className="fm-filemenu-danger"
+                disabled={selectedObjectIds.length === 0}
+                onClick={() => { deleteSelectedObjects(); setMoreOpen(false); }}
+              >
+                <Trash2 size={14} strokeWidth={1.7} /> Delete
+              </button>
+
+              <div className="fm-filemenu-sep" />
+              <button onClick={() => { openTimelapse(); setMoreOpen(false); }}>
+                <Film size={14} /> Timelapse
+              </button>
+              <button onClick={() => { openFamily(); setMoreOpen(false); }}>
+                <Layers size={14} /> Family
+              </button>
+              <button onClick={() => { openFeatureBuilder(); setMoreOpen(false); }}>
+                <Wand2 size={14} /> Feature Builder
+              </button>
+              <button onClick={() => { openTestLab("specimen"); setMoreOpen(false); }}>
+                <FlaskConical size={14} /> Test Lab
+              </button>
+
+              <div className="fm-filemenu-sep" />
+              {/* Not wrapped with a menu-closing onClick: AboutModal's own
+                  overlay (z-index 200) renders above this dropdown (z-index
+                  80) regardless, and closing this menu first would unmount
+                  AboutModal — and the "open" state it just set — before its
+                  modal ever gets a chance to render. */}
+              <AboutModal triggerClassName="" triggerIcon={<Info size={14} />} triggerLabel="About Us" />
+            </div>
+          </>
+        )}
+      </div>
+
       <button
         className="fm-topbtn fm-export-nav"
         onClick={() => exportRef.current?.()}
@@ -248,7 +435,7 @@ export function TopBar() {
         <Download size={15} /> Export
       </button>
       <button
-        className="fm-theme-toggle"
+        className="fm-theme-toggle fm-fullscreen-toggle"
         onClick={toggleFullscreen}
         title={isFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
         data-testid="fullscreen-toggle"
@@ -257,18 +444,6 @@ export function TopBar() {
       </button>
       <button className="fm-theme-toggle fm-theme-toggle-bare" onClick={toggleTheme} title="Toggle theme" data-testid="theme-toggle">
         {theme === "light" ? <MoonIcon size={16} /> : <SunIcon size={16} />}
-      </button>
-      {/* Mobile-only counterpart to the nav toggle above, opening the right
-          inspector drawer (glyph metrics/tools/brush settings, etc). */}
-      <button
-        type="button"
-        className="fm-mobile-panel-toggle"
-        onClick={toggleMobilePanel}
-        title="Inspector panel"
-        aria-label="Toggle inspector panel"
-        data-testid="mobile-panel-toggle"
-      >
-        <PanelRight size={18} />
       </button>
       <AuthWidget />
     </div>

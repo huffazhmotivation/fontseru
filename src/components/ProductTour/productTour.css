@@ -573,13 +573,24 @@
   .pt-header { gap: 10px; padding: 12px 14px; }
   .pt-progress-dot span { display: none; }
   .pt-glyphnav-mini { display: none; }
-  .fm-rightpanel { width: 220px !important; }
+  /* Scoped to `.pt-app-shell` (the tour's own mock editor, see
+     AppShellTopBar/tourScenes.tsx above) — NOT the real app's right panel.
+     This selector used to be unscoped (`.fm-rightpanel { ... }`), which
+     matched BOTH the tour's fake panel AND the real `.fm-rightpanel`
+     drawer used by the actual editor. Since ProductTour.tsx (and this
+     stylesheet) is imported unconditionally in App.tsx — not just while
+     the tour is open — that unscoped rule permanently forced the real
+     inspector panel to `display: none !important` on any phone-width
+     viewport (<520px), which is what made the mobile drawer look "broken"
+     (tapping the toggle only revealed the backdrop, never the panel)
+     regardless of whether the tour had ever been opened. */
+  .pt-app-shell .fm-rightpanel { width: 220px !important; }
   .fm-feature-modal .fm-feature-thumb { width: 40px; height: 40px; }
   .pt-caption-text { font-size: 12px; }
   .pt-cta h2 { font-size: 20px; }
 }
 
 @media (max-width: 520px) {
-  .fm-rightpanel { display: none !important; }
+  .pt-app-shell .fm-rightpanel { display: none !important; }
   .fm-family-auto-row { grid-template-columns: 84px minmax(0, 1fr) !important; }
 }

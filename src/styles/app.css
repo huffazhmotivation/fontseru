@@ -287,18 +287,21 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   min-width: 0;
-  /* Previously this scrolled horizontally (overflow-x: auto) whenever the
-     row didn't fit — which forced side-swiping on iPad/phone widths to
-     reach controls on the right, AND (a nastier side effect) turned this
-     bar into an `overflow: auto` clipping box on BOTH axes per the CSS
-     spec, silently clipping anything that rendered taller than the bar
-     itself — like the File dropdown menu, which opens below the File
-     button and is much taller than this 54px bar. Wrapping instead of
-     scrolling fixes both: nothing needs to be dragged into view, and the
-     bar is no longer a clipping ancestor for its own dropdowns. */
-  flex-wrap: wrap;
-  row-gap: 6px;
+  /* Single row that never wraps to extra rows (wrapping used to make the
+     bar 3-5 rows tall on narrow screens, which looked broken and ate a
+     huge chunk of vertical space from the canvas) and never scrolls
+     sideways either — below 1180px the less-essential button groups are
+     hidden via `.fm-topbar-more-hide` and moved into the "More" dropdown
+     rendered by TopBar.tsx instead, so what's left always fits the actual
+     screen width. `overflow-x` stays `hidden` (not `auto`) as a quiet
+     safety net for the rare case something still doesn't fit, rather than
+     a visible scrollbar/scroll gesture — see the `.fm-topbar-more-*`
+     rules and the ≤1180px block further down for the actual fix. */
+  flex-wrap: nowrap;
+  overflow-x: hidden;
+  overflow-y: hidden;
 }
+.fm-topbar::-webkit-scrollbar { display: none; }
 .fm-topbar > * { flex: 0 0 auto; }
 .fm-topbar .fm-topbtn { white-space: nowrap; }
 .fm-logo { display: flex; align-items: center; gap: 10px; }
@@ -447,7 +450,12 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
 .fm-auth-plan-pro { color: var(--accent); }
 
 .fm-auth-menu {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 190;
+  /* `position: fixed` with a JS-computed `top`/`left` (see AuthWidget.tsx)
+     instead of `absolute` — same reasoning as `.fm-filemenu` above: this
+     button lives inside the topbar's horizontally-scrolling row, and a
+     plain `absolute` menu would get clipped by that scroll container on
+     tablet/phone widths. The `top`/`right` here are just a fallback. */
+  position: fixed; top: 60px; right: 14px; z-index: 190;
   width: 220px; padding: 10px;
   border: 1px solid var(--line); border-radius: 12px;
   background: var(--panel); box-shadow: 0 16px 44px rgba(0,0,0,.36);
@@ -1304,14 +1312,17 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
   border-top: 1px solid var(--line); background: var(--panel);
   display: flex; align-items: center; gap: 12px; padding: 6px 16px;
   font-size: 12px; color: var(--text-dim);
-  /* Wraps to a second line instead of requiring horizontal scrolling when
-     everything doesn't fit on one row (tablet/phone widths) — see the
-     matching note on .fm-topbar above. A fixed `height: 44px` here used to
-     clip a wrapped second row right off, so this is now `min-height` and
-     lets the bar grow. */
-  flex-wrap: wrap;
-  row-gap: 6px;
+  /* Single row, never wraps and never scrolls sideways — see the matching
+     note on .fm-topbar above. Below 1180px the display-toggle buttons are
+     hidden via `.fm-bottombar-more-hide` and moved into the "Settings"
+     dropdown rendered by BottomBar.tsx instead, so what's left (zoom +
+     Fit/Reset) always fits the actual screen width. */
+  flex-wrap: nowrap;
+  overflow-x: hidden;
+  overflow-y: hidden;
 }
+.fm-bottombar::-webkit-scrollbar { display: none; }
+.fm-bottombar > * { flex: 0 0 auto; }
 .fm-bottombar button {
   display: flex; align-items: center; gap: 6px;
   background: transparent; border: none; color: var(--text-dim);
@@ -1889,15 +1900,20 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-width-profile-advanced-toggle .fm-section-caret.open { transform: rotate(180deg); }
 .fm-width-profile-advanced { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 
+/* Default (desktop, >1180px): the "More"/"Settings" overflow triggers stay
+   out of the DOM's visual flow entirely — the buttons/groups they'd hold
+   are all shown inline instead. See the ≤1180px block below for the swap. */
+.fm-topbar-more-btn, .fm-bottombar-more-btn { display: none; }
+
 @media (max-width: 1180px) {
   .fm-glyphnav { width: 200px; }
   .fm-rightpanel { width: 250px; }
 
-  /* Tablet landscape (1024â€“1180): compact the top bar so File / Undo / Redo /
-     Family / Test Lab / Export keep their click targets and tooltips but no
-     longer force horizontal overflow. Icons + tooltips remain fully usable;
-     only the visible text label is collapsed via font-size, nothing is removed. */
-  .fm-topbar { gap: 8px; padding: 8px 10px; }
+  /* Tablet landscape and below (â‰¤1180): compact the top bar so File / Undo /
+     Redo / Export keep their click targets and tooltips but no longer force
+     horizontal overflow. Icons + tooltips remain fully usable; only the
+     visible text label is collapsed via font-size, nothing is removed. */
+  .fm-topbar { gap: 6px; padding: 8px 10px; }
   .fm-topbar .fm-topbtn {
     font-size: 0;
     gap: 0;
@@ -1910,24 +1926,40 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-topbtn-group { gap: 4px; }
   .fm-theme-toggle { width: 40px; height: 40px; flex: 0 0 auto; }
 
-  /* Thin standalone separators read fine mid-row on a single scrolling
-     line, but once the bar wraps (see .fm-topbar above) one can land alone
-     at the start of a new row, which looks like a stray mark. Hidden here;
-     the gap between groups already reads as separation once wrapped. */
+  /* Thin standalone separators add little once every button is already an
+     icon-only square with its own padding/border-radius acting as visual
+     separation — hidden here to save width in the now-fixed-fit row. */
   .fm-topbar .fm-divider,
   .fm-topbar .fm-align-divider { display: none; }
-  /* The spacer only makes sense pushing content to the end of a single
-     row; on a wrapped multi-row bar it just leaves a large blank gap
-     partway through a line, so it's neutralized here. */
+  /* The spacer exists to push trailing buttons to the end of the row on
+     wide desktop layouts; in the compact row every button should just sit
+     next to the last one instead of leaving a big blank gap, so it's
+     neutralized here. */
   .fm-topbar .fm-spacer { flex: 0 0 0; width: 0; }
+
+  /* The align/boolean/object-action groups and the secondary nav buttons
+     (Timelapse/Family/Feature Builder/Test Lab/About) move into the
+     "More" dropdown below this width — see TopBar.tsx — so they're
+     removed from the row here instead of just shrinking, which is what
+     actually frees up enough width to avoid both wrapping and scrolling. */
+  .fm-topbar-more-hide { display: none !important; }
+  .fm-topbar-more-btn { display: inline-flex; }
+  .fm-topbar-more-btn > .fm-topbtn { font-size: 0; gap: 0; padding: 8px; min-width: 40px; min-height: 40px; justify-content: center; }
+  .fm-topbar-more-btn > .fm-topbtn svg { flex: 0 0 auto; }
+
+  /* The font-name field is the one flexible ("sacrificial") element in the
+     row: every icon button above has a fixed size, so instead of the row
+     as a whole ever needing to scroll or clip, this input is the part
+     that shrinks first to absorb whatever width is left over. */
+  .fm-topbar .fm-fontname { flex: 1 1 0; width: auto; min-width: 44px; max-width: 170px; }
 
   .fm-zoom-controls input[type="range"] { width: 90px; }
 
   /* Bottom bar: same icon-first treatment as the top bar â€” labels collapse,
      tooltips/titles and click targets stay intact. */
-  .fm-bottombar { gap: 8px; padding: 6px 10px; }
+  .fm-bottombar { gap: 6px; padding: 6px 10px; }
   .fm-bottombar .fm-bottom-divider { display: none; }
-  .fm-bottombar .fm-hint-inline { margin-left: 0; }
+  .fm-bottombar .fm-hint-inline { margin-left: auto; gap: 6px; }
   .fm-bottombar button {
     font-size: 0;
     gap: 0;
@@ -1939,7 +1971,40 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-bottombar button svg { flex: 0 0 auto; }
   .fm-bottombar .fm-icon-btn { padding: 8px !important; min-width: 32px; min-height: 32px; }
   .fm-inline-field { gap: 4px; }
-  .fm-hint-inline { gap: 6px; }
+
+  /* Grid/Ruler/Guides/Ghost/Snap/Auto Metrik/Preview move into the
+     "Settings" dropdown below this width — see BottomBar.tsx — freeing up
+     the row for zoom + Fit/Reset, which always stay visible. */
+  .fm-bottombar-more-hide { display: none !important; }
+  .fm-bottombar-more-btn { display: inline-flex; }
+  .fm-bottombar-more-btn > button { font-size: 0; gap: 0; padding: 8px; min-width: 36px; min-height: 36px; justify-content: center; }
+  .fm-bottombar-more-btn > button svg { flex: 0 0 auto; }
+}
+
+/* Inside the "More"/"Settings" dropdowns themselves, labels are always
+   shown at full size as normal left-aligned list rows regardless of
+   screen width — there's no width pressure inside a vertical menu, only
+   inside the bar itself. `.fm-bottombar button` (≤1180px, above) matches
+   *any* button inside `.fm-bottombar`, including these — since they're
+   still DOM descendants of it even though the dropdown itself renders
+   with `position: fixed` — so its icon-only-square styling has to be
+   undone here explicitly rather than relying on source order. */
+.fm-filemenu.fm-morebar-menu button {
+  font-size: 12.5px !important;
+  gap: 9px !important;
+  padding: 0 9px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: 34px !important;
+  width: 100% !important;
+  justify-content: flex-start !important;
+}
+.fm-filemenu .fm-morebar-grid button {
+  font-size: 0 !important;
+  gap: 0 !important;
+  width: auto !important;
+  height: 32px !important;
+  justify-content: center !important;
 }
 
 /* ------------------------------------------------------------ TABLET PORTRAIT
@@ -2053,13 +2118,34 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-canvas-wrap { min-width: 0; width: 100%; }
 }
 
-/* Phones specifically (up to 560px): tighter side padding and a narrower
-   font-name field so more of the scrollable bar (see the base .fm-topbar
-   rule above, which now handles the horizontal-scroll safety net at every
-   width) is used for actual controls. */
+/* Phones specifically (up to 560px): tighter side padding and a narrower,
+   more flexible font-name field so everything fits one non-scrolling row
+   (see the base .fm-topbar rule above). */
 @media (max-width: 560px) {
-  .fm-topbar { padding-left: 8px; padding-right: 8px; }
-  .fm-topbar .fm-fontname { min-width: 90px; width: 30vw; }
+  .fm-topbar { padding-left: 8px; padding-right: 8px; gap: 4px; }
+  .fm-topbar .fm-fontname { min-width: 0; width: auto; max-width: 30vw; }
+
+  /* Fullscreen is the least useful of the remaining icon buttons at phone
+     widths (mobile Safari/Chrome keep their own browser chrome around it
+     anyway) so it's dropped first to make room — everything else stays. */
+  .fm-fullscreen-toggle { display: none; }
+
+  /* Logo already scales with clamp() (see the base .fm-logo-image rule)
+     down to a 64px floor — shrink that floor a bit further on phones,
+     where every extra pixel matters most for keeping the row unbroken. */
+  .fm-logo-image { max-width: clamp(46px, 14vw, 112px); }
+
+  /* Account button: keep just the avatar circle, drop the Free/Pro badge
+     text — plan is still one tap away inside the account menu. */
+  .fm-auth-avatar-btn { padding: 2px; gap: 0; }
+  .fm-auth-plan-badge { display: none; }
+
+  /* Bottom bar: same tighter spacing so zoom + Fit/Reset + Settings keep
+     their own room without pushing the row wider than the screen. */
+  .fm-bottombar { padding-left: 8px; padding-right: 8px; gap: 4px; }
+  .fm-zoom-controls { gap: 4px; }
+  .fm-zoom-controls input[type="range"] { width: 56px; }
+  .fm-hint-inline { gap: 4px; }
 
   /* Glyph list on phones: the drawer is min(82vw, 280px) wide (see the
      mobile-drawer rules above) but the grid still used the desktop 4-column
@@ -3146,7 +3232,14 @@ input[type="number"]::-webkit-outer-spin-button {
    opens it in the first place — see the note in FileMenu.tsx. */
 .fm-filemenu-backdrop { position: fixed; inset: 0; z-index: 79; background: transparent; }
 .fm-filemenu {
-  position: absolute; top: calc(100% + 8px); left: 0; z-index: 80;
+  /* `position: fixed` (not `absolute`) — FileMenu.tsx sets `top`/`left`
+     inline via a JS-computed viewport position (see the note on
+     `.fm-topbar` above). Fixed positioning means this menu is laid out
+     relative to the viewport, not `.fm-filemenu-wrap`/`.fm-topbar`, so it
+     can never be clipped by the topbar's own horizontal scroll container
+     no matter how far that's been scrolled. `top`/`left` here are just a
+     harmless fallback in case the inline style hasn't applied yet. */
+  position: fixed; top: 60px; left: 14px; z-index: 80;
   width: 210px; max-width: calc(100vw - 20px); padding: 6px; border: 1px solid var(--line);
   border-radius: 10px; background: color-mix(in srgb, var(--panel) 96%, transparent);
   box-shadow: 0 18px 46px rgba(0,0,0,.36); backdrop-filter: blur(18px);
@@ -3163,6 +3256,31 @@ input[type="number"]::-webkit-outer-spin-button {
   background: transparent; border: 0; padding: 0;
 }
 .fm-filemenu-sep { height: 1px; margin: 5px 4px; background: var(--line); }
+
+/* TopBar "More" / BottomBar "Settings" dropdowns — reuse .fm-filemenu's
+   panel chrome (border/background/blur/shadow, plus its `button` row
+   styling above) via the shared class, just with a couple of extra rules
+   for the parts that differ from a plain single-column action list. */
+.fm-morebar-menu { width: 240px; max-height: min(70vh, 460px); overflow-y: auto; }
+/* BottomBar's version opens upward (this bar lives at the bottom of the
+   screen) — `top` is cancelled so the JS-computed `bottom` inline style
+   (see BottomBar.tsx) actually takes effect instead of being fought by
+   `.fm-filemenu`'s own `top: 60px` fallback. */
+.fm-morebar-menu-up { top: auto; }
+.fm-morebar-section-label {
+  padding: 4px 9px 2px; font-size: 10.5px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--text-faint);
+}
+.fm-morebar-grid {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px;
+  padding: 2px 6px 4px;
+}
+.fm-filemenu .fm-morebar-grid button {
+  border-radius: 7px; background: transparent; color: var(--text-dim);
+}
+.fm-filemenu .fm-morebar-grid button:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+.fm-filemenu-danger { color: var(--danger) !important; }
+.fm-filemenu-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 12%, transparent) !important; }
 .fm-filemenu button.fm-filemenu-locked { color: var(--text-dim); }
 .fm-filemenu button.fm-filemenu-locked:hover { background: var(--panel-2); }
 .fm-filemenu button.fm-filemenu-locked .fm-lock-badge-inline { margin-left: auto; }

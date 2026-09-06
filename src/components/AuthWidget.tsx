@@ -19,6 +19,11 @@ export function AuthWidget() {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  // Rendered with `position: fixed` at this JS-computed viewport position
+  // (see the matching CSS comment on `.fm-auth-menu`) instead of
+  // `position: absolute`, so it isn't clipped by the topbar's own
+  // horizontal scroll container on tablet/phone widths.
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -30,6 +35,28 @@ export function AuthWidget() {
     document.addEventListener("mousedown", onClickAway);
     return () => document.removeEventListener("mousedown", onClickAway);
   }, [menuOpen]);
+
+  // Closes on scroll (captured on window since scroll events don't bubble
+  // — this is what catches the topbar's own horizontal scroll) or resize,
+  // instead of continuously repositioning a short-lived menu.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => setMenuOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [menuOpen]);
+
+  const openMenu = () => {
+    const rect = menuRef.current?.getBoundingClientRect();
+    const right = rect ? Math.max(10, window.innerWidth - rect.right) : 14;
+    const top = rect ? rect.bottom + 8 : 60;
+    setMenuPos({ top, right });
+    setMenuOpen(true);
+  };
 
   const handleSignOut = async () => {
     setMenuOpen(false);
@@ -46,7 +73,7 @@ export function AuthWidget() {
         <button
           type="button"
           className="fm-auth-avatar-btn"
-          onClick={() => setMenuOpen((v) => !v)}
+          onClick={() => (menuOpen ? setMenuOpen(false) : openMenu())}
           title={user.email ?? "Account"}
           data-testid="auth-account-btn"
         >
@@ -57,7 +84,12 @@ export function AuthWidget() {
           </span>
         </button>
         {menuOpen && (
-          <div className="fm-auth-menu" role="menu" data-testid="auth-menu">
+          <div
+            className="fm-auth-menu"
+            role="menu"
+            data-testid="auth-menu"
+            style={menuPos ? { top: menuPos.top, right: menuPos.right } : undefined}
+          >
             <div className="fm-auth-menu-email">{user.email}</div>
             <div className="fm-auth-menu-plan">
               Plan: <strong>{isPro ? "Pro" : "Free"}</strong>

@@ -291,6 +291,15 @@ function selectedExportStyles(
 
 export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open: () => void) => void }) {
   const [open, setOpen] = useState(false);
+  // The dropdown is rendered with `position: fixed` at this JS-computed
+  // viewport position instead of `position: absolute` relative to the
+  // trigger button (see the matching CSS comment on `.fm-filemenu`). This
+  // is what lets it open correctly regardless of the topbar's own
+  // horizontal scroll position/state on tablet and phone widths, where
+  // the topbar is a horizontally-scrolling single row (see `.fm-topbar`
+  // in app.css) that would otherwise clip an absolutely-positioned child
+  // taller than the bar itself.
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   // Real progress for the Export button: one step per selected style's font
@@ -323,6 +332,33 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
+
+  // Closes the menu on any scroll (including the topbar's own horizontal
+  // scroll — scroll events don't bubble, so this has to be attached with
+  // `capture: true` on window to see them) or resize, rather than trying
+  // to continuously reposition it. The menu is short-lived and this keeps
+  // it from ever being left floating over the wrong spot.
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  const openMenu = useCallback(() => {
+    const rect = menuWrapRef.current?.getBoundingClientRect();
+    const menuWidth = 210;
+    const left = rect
+      ? Math.max(10, Math.min(rect.left, window.innerWidth - menuWidth - 10))
+      : 14;
+    const top = rect ? rect.bottom + 8 : 60;
+    setMenuPos({ top, left });
+    setOpen(true);
+  }, []);
 
   const projectFileName = useAppStore((s) => s.projectFileName);
   const setProjectFileName = useAppStore((s) => s.setProjectFileName);
@@ -971,7 +1007,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       <div className="fm-filemenu-wrap" ref={menuWrapRef}>
         <button
           className="fm-topbtn"
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => (open ? setOpen(false) : openMenu())}
           aria-expanded={open}
           data-testid="file-menu-btn"
         >
@@ -992,7 +1028,11 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
               aria-hidden="true"
               data-testid="file-menu-backdrop"
             />
-            <div className="fm-filemenu" role="menu">
+            <div
+              className="fm-filemenu"
+              role="menu"
+              style={menuPos ? { top: menuPos.top, left: menuPos.left } : undefined}
+            >
             <button onClick={() => { newProject(); setOpen(false); showToast("New project created"); }}>
               <FilePlus2 size={14} /> New
             </button>

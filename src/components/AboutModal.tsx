@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Mail, MessageCircle, X } from "lucide-react";
 import { FontSeruLogo } from "@/components/FontSeruLogo";
 
@@ -17,20 +17,36 @@ function getAboutWhatsAppUrl(): string {
  * Small "About" trigger button + modal. Fully self-contained (owns its
  * own open/close state) so it can be dropped anywhere — e.g. the TopBar —
  * without touching the global app store.
+ *
+ * `triggerClassName`/`triggerIcon`/`triggerLabel` let the same component be
+ * reused verbatim as a row inside the TopBar's mobile "More" dropdown
+ * (see TopBar.tsx) instead of the default bare `fm-topbtn` — without a
+ * leading icon, "About Us" used to collapse to an invisible, icon-less
+ * button once the topbar's icon-only mobile styles kicked in (font-size: 0
+ * hides the label but there was nothing else to show).
  */
-export function AboutModal() {
+export function AboutModal({
+  triggerClassName = "fm-topbtn",
+  triggerIcon = null,
+  triggerLabel = "About Us",
+}: {
+  triggerClassName?: string;
+  triggerIcon?: ReactNode;
+  triggerLabel?: ReactNode;
+} = {}) {
   const [open, setOpen] = useState(false);
 
   return (
     <>
       <button
         type="button"
-        className="fm-topbtn"
+        className={triggerClassName}
         onClick={() => setOpen(true)}
         title="Tentang FontSeru"
         data-testid="about-btn"
       >
-        About Us
+        {triggerIcon}
+        {triggerLabel}
       </button>
 
       {open ? (
