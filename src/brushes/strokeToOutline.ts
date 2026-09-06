@@ -581,11 +581,26 @@ export function centerlineToOutline(
   // function is ever reached for that case (it builds two separate side
   // strips instead of a single ring), so this function only ever sees
   // "round" or "square" for the outline type.
-  const capMode: "round" | "comb" | "none" =
+  //
+  // BUG FIX: "square" used to fall into the generic "none" bucket, which
+  // just leaves a flat chord AT the exact centerline endpoint with no cap
+  // geometry of its own. That's fine for a single solid stroke, but Outline
+  // Brush's ring shape calls this function twice from the SAME endpoint —
+  // once for the outer boundary, once for the smaller inner hole boundary
+  // (see outlineBrushOutlineContours) — so both flat chords landed exactly
+  // on top of each other. The hole then cut almost all the way through to
+  // the tip, leaving two disconnected prongs: visually indistinguishable
+  // from the "open" style the user was trying to get away from. "square"
+  // now gets its own capMode so it can build a real flat-topped plate (see
+  // capSquare below) that extends past the endpoint by that boundary's OWN
+  // half-width — the outer plate reaches further than the inner plate by
+  // exactly the border thickness, the same way "round"'s concentric arcs
+  // already keep a constant ring width all the way around the tip.
+  const capMode: "round" | "comb" | "square" | "none" =
     settings.type === "outline"
       ? settings.outlineCapStyle === "round"
         ? "round"
-        : "none"
+        : "square"
       : ROUND_CAP_TYPES.includes(settings.type)
         ? "round"
         : COMB_CAP_TYPES.includes(settings.type)
@@ -756,19 +771,43 @@ export function centerlineToOutline(
     }
     return arcPts;
   };
+  // Flat-topped "square" cap: two corner points, offset from the two side
+  // points (at `sideAngle` and its opposite) by the ellipse's own extent in
+  // `extensionAngle` — i.e. a plate that sticks out past the endpoint by
+  // this boundary's own half-width, with hard right-angle corners instead
+  // of `capArc`'s smooth sweep. See the capMode comment above for why this
+  // needs to be a genuine per-boundary shape rather than a shared flat
+  // chord: called once per boundary (outer ring, smaller inner hole), each
+  // call's `cap.semiA/semiB` already reflect that boundary's own size, so
+  // the outer plate naturally reaches further than the inner plate by the
+  // border thickness — keeping the ring's width constant across the cap
+  // the same way `capArc`'s concentric arcs do for "round".
+  const capSquare = (cap: { center: Point; tangentAngle: number; semiA: number; semiB: number }, sideAngle: number, extensionAngle: number): Point[] => {
+    const sideV = ellipseSupportVector(sideAngle, nibAngleRad, cap.semiA, cap.semiB);
+    const oppositeV = ellipseSupportVector(sideAngle - Math.PI, nibAngleRad, cap.semiA, cap.semiB);
+    const forwardV = ellipseSupportVector(extensionAngle, nibAngleRad, cap.semiA, cap.semiB);
+    return [
+      { x: cap.center.x + sideV.x + forwardV.x, y: cap.center.y + sideV.y + forwardV.y },
+      { x: cap.center.x + oppositeV.x + forwardV.x, y: cap.center.y + oppositeV.y + forwardV.y },
+    ];
+  };
   const endCapPts = endCap
     ? capMode === "comb"
       // Teeth point straight OUT along the direction of travel (the stroke
       // is heading this way and keeps going past the tip).
       ? combToothCap(endCap, endCap.tangentAngle + Math.PI / 2, endCap.tangentAngle, nibAngleRad, 11.3)
-      : capArc(endCap, endCap.tangentAngle + Math.PI / 2)
+      : capMode === "square"
+        ? capSquare(endCap, endCap.tangentAngle + Math.PI / 2, endCap.tangentAngle)
+        : capArc(endCap, endCap.tangentAngle + Math.PI / 2)
     : [];
   const startCapPts = startCap
     ? capMode === "comb"
       // Teeth point straight BACK, opposite the direction of travel (the
       // stroke starts here and heads forward, so the tip trails behind).
       ? combToothCap(startCap, startCap.tangentAngle - Math.PI / 2, startCap.tangentAngle + Math.PI, nibAngleRad, 83.1)
-      : capArc(startCap, startCap.tangentAngle - Math.PI / 2)
+      : capMode === "square"
+        ? capSquare(startCap, startCap.tangentAngle - Math.PI / 2, startCap.tangentAngle + Math.PI)
+        : capArc(startCap, startCap.tangentAngle - Math.PI / 2)
     : [];
 
   // Clean up local self-intersections on each side independently (see
@@ -821,20 +860,29 @@ export function centerlineToOutline(
     "round", "monoline", "marker", "calligraphic", "pencil", "pressureTaper", "outline", "strong",
   ];
   const smoothEdges = SMOOTH_EDGE_TYPES.includes(settings.type);
-  // Outline Brush's "square" cap style (capMode === "none" here — see the
-  // capMode assignment above) deliberately ends in a flat, right-angle cut.
-  // But on a smooth-edge brush type like this one, that cut's two corners
-  // land right around 90°, just under the ~100° cusp threshold below used
-  // to preserve genuine sharp turns — so they were quietly getting rounded
-  // into a small curve instead of staying a crisp square edge. Force the
-  // four nodes that make up the flat chord at both stroke tips (see the
+  // Outline Brush's "square" cap style ends in a flat-topped plate with
+  // hard right-angle corners (see capSquare above). But on a smooth-edge
+  // brush type like this one, those corners land right around 90°, just
+  // under the ~100° cusp threshold below used to preserve genuine sharp
+  // turns — so they were quietly getting rounded into a small curve instead
+  // of staying crisp. Force every node around both cap plates (see the
   // `polygon` assembly just above: `[...simplifiedLeft, ...endCapPts,
-  // ...simplifiedRight.reverse(), ...startCapPts]` with endCapPts/
-  // startCapPts empty in "none" mode) to stay hard corners no matter what
-  // their measured turn angle comes out to.
+  // ...simplifiedRight.reverse(), ...startCapPts]`) to stay a hard corner
+  // no matter what its measured turn angle comes out to. Also covers plain
+  // "none" (non-outline flat-cut brushes), where endCapPts/startCapPts are
+  // empty and this reduces to just the four chord-junction indices.
   const forceCornerIndices =
-    capMode === "none" && settings.type === "outline"
-      ? new Set<number>([0, simplifiedLeft.length - 1, simplifiedLeft.length, polygon.length - 1])
+    (capMode === "square" || capMode === "none") && settings.type === "outline"
+      ? new Set<number>([
+          0,
+          simplifiedLeft.length - 1,
+          simplifiedLeft.length,
+          simplifiedLeft.length + endCapPts.length - 1,
+          simplifiedLeft.length + endCapPts.length,
+          simplifiedLeft.length + endCapPts.length + simplifiedRight.length - 1,
+          simplifiedLeft.length + endCapPts.length + simplifiedRight.length,
+          polygon.length - 1,
+        ])
       : null;
   const polygonNodes = smoothEdges
     ? polygon.map((point, i) => {
@@ -1372,6 +1420,99 @@ function oilBrushOutlineContours(centerline: StrokeSample[], settings: BrushSett
 }
 
 /**
+ * Spray Brush: no continuous stroke body at all — just a dense field of
+ * tiny ink specks scattered along the stroke, like a can of spray paint
+ * dragged across the page. Reuses the same small wobbly-polygon speck shape
+ * Oil Brush uses for its ink spatter accent (makeSpeckle) — a real, closed
+ * vector shape rather than a raster texture — just as the WHOLE brush here
+ * instead of a scatter on top of a solid nib body.
+ *
+ * Each "puff" along the length scatters several specks within a cone
+ * (`coneRadius * spread`, tapered by taperStart/taperEnd like every other
+ * brush's width ramp): the radial placement is biased toward the cone's
+ * axis so the core reads dense and solid while the rim thins out into a
+ * soft mist, the same falloff a real spray can leaves. `roundness` is
+ * reused as the cone's spread (tight vs. loose), and `jitter` as the
+ * falloff's density — see their doc comments in types/brush.ts — rather
+ * than adding dedicated fields, the same way other presets already reuse
+ * these two sliders to shape a completely different physical effect.
+ */
+function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
+  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.05));
+  if (dense.length < 2) return [];
+
+  const cumulative: number[] = [0];
+  for (let i = 1; i < dense.length; i++) {
+    cumulative.push(cumulative[i - 1] + Math.hypot(dense[i].x - dense[i - 1].x, dense[i].y - dense[i - 1].y));
+  }
+  const totalLength = cumulative[cumulative.length - 1] || 0;
+  if (totalLength <= 0) return [];
+
+  const at = (t: number): { p: Point; tangent: Point; taper: number } => {
+    const clamped = Math.max(0, Math.min(totalLength, t));
+    let idx = 1;
+    while (idx < cumulative.length - 1 && cumulative[idx] < clamped) idx++;
+    const p0 = dense[idx - 1];
+    const p1 = dense[idx];
+    const segLen = cumulative[idx] - cumulative[idx - 1] || 1;
+    const frac = (clamped - cumulative[idx - 1]) / segLen;
+    const p = { x: p0.x + (p1.x - p0.x) * frac, y: p0.y + (p1.y - p0.y) * frac };
+    const tangent = { x: p1.x - p0.x, y: p1.y - p0.y };
+    const s = totalLength > 0 ? clamped / totalLength : 0;
+    return { p, tangent, taper: taperFactor(s, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd }) };
+  };
+
+  const coneRadius = Math.max(1, settings.size / 2);
+  // 1 (default-ish) is a tight, round cone; lower roundness widens and
+  // loosens it into a broader mist.
+  const spread = 0.6 + 0.55 * settings.roundness;
+  const density = settings.jitter ?? 0.6;
+
+  // Both the puff spacing and specks-per-puff scale with the cone's own
+  // radius, so a bigger nozzle covers proportionally more area per step
+  // instead of the same speck count stretched thinner over more ground.
+  const stepLen = Math.max(0.7, coneRadius * 0.22);
+  const stepCount = Math.max(1, Math.round(totalLength / stepLen));
+  const specksPerStep = Math.max(2, Math.round(coneRadius * 0.9));
+
+  const specks: Contour[] = [];
+  let seedBase = 0;
+  for (let i = 0; i <= stepCount; i++) {
+    const t = (i / stepCount) * totalLength;
+    const { p, tangent, taper } = at(t);
+    if (taper <= 0.02) continue;
+    const tLen = Math.hypot(tangent.x, tangent.y) || 1;
+    const tx = tangent.x / tLen;
+    const ty = tangent.y / tLen;
+    const nx = -ty;
+    const ny = tx;
+    const radiusHere = coneRadius * spread * taper;
+
+    for (let k = 0; k < specksPerStep; k++) {
+      seedBase += 1;
+      const seed = seedBase * 91.7 + i * 3.3;
+      const angle = ((pseudoNoise(seed) + 1) / 2) * Math.PI * 2;
+      // Squaring (and beyond, via `density`) the radial fraction clusters
+      // more specks near the cone's axis and thins them toward the rim —
+      // the dense-core/soft-edge falloff real overspray leaves, rather
+      // than an evenly-filled disc.
+      const rFrac = Math.pow((pseudoNoise(seed + 7.7) + 1) / 2, 1.6 + density);
+      const r = radiusHere * rFrac;
+      const along = Math.cos(angle) * r;
+      const across = Math.sin(angle) * r;
+      const center = { x: p.x + tx * along + nx * across, y: p.y + ty * along + ny * across };
+      const dotRadius = Math.max(0.15, coneRadius * (0.02 + ((pseudoNoise(seed + 14.1) + 1) / 2) * 0.05));
+      // Every speck shares the same winding (no main body to match) so
+      // overlapping dots add up into solid ink instead of cancelling each
+      // other out under the nonzero fill rule.
+      specks.push(makeSpeckle(center, dotRadius, seed, 1));
+    }
+  }
+
+  return specks;
+}
+
+/**
  * Outline Brush: a hollow ring cross-section rather than a filled stroke.
  * Builds the same elliptical-nib body every other brush uses for the OUTER
  * boundary, then sweeps a second, narrower copy of the identical centerline
@@ -1519,10 +1660,12 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
  * Multi-contour outline for a centerline. Pixel Brush forks entirely into
  * `pixelBlockOutline` (isolated behind `settings.gridSnap`), Rough Brush
  * adds counter-holes on top of the standard elliptical-nib body, Outline
- * Brush punches a single hole following the whole stroke, and every other
- * preset (including Strong Brush, whose torn comb-tooth tips are built as
- * a dedicated end cap inside centerlineToOutline() — see combToothCap)
- * uses the single elliptical-nib contour directly.
+ * Brush punches a single hole following the whole stroke, Spray Brush skips
+ * the elliptical-nib body entirely for a scattered speck field (see
+ * sprayBrushOutlineContours), and every other preset (including Strong
+ * Brush, whose torn comb-tooth tips are built as a dedicated end cap inside
+ * centerlineToOutline() — see combToothCap) uses the single elliptical-nib
+ * contour directly.
  */
 export function centerlineToOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
   if (settings.type === "pixel" && settings.gridSnap === true) {
@@ -1538,6 +1681,9 @@ export function centerlineToOutlineContours(centerline: StrokeSample[], settings
   }
   if (settings.type === "outline") {
     return outlineBrushOutlineContours(centerline, settings);
+  }
+  if (settings.type === "sprayBrush") {
+    return sprayBrushOutlineContours(centerline, settings);
   }
   const single = centerlineToOutline(centerline, settings);
   return single ? [single] : [];

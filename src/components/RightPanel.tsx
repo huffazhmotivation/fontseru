@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, PenLine, Minus, Highlighter, Feather, Pencil, Zap, Scissors, Trash2, Flame, Grid3x3, Lock, Unlock, ImagePlus, CircleDashed, Droplet, Triangle, Circle, Square } from "lucide-react";
+import { ChevronDown, PenLine, Minus, Highlighter, Feather, Pencil, Zap, Scissors, Trash2, Flame, Grid3x3, Lock, Unlock, ImagePlus, CircleDashed, Droplet, Triangle, Circle, Square, Sparkles } from "lucide-react";
 import type { ShapeKind } from "@/editor/shapeBuilder";
 import { useAppStore, type NodeRef, type GlyphMetricKey } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -21,7 +21,7 @@ const NODE_TYPE_LABEL: Record<NodeType, string> = { corner: "Corner", smooth: "S
 const BRUSH_ICON: Record<BrushType, typeof PenLine> = {
   round: PenLine, monoline: Minus, marker: Highlighter, calligraphic: Feather, pencil: Pencil, pressureTaper: Zap,
   rough: CircleDashed, grunge: Flame, oilBrush: Droplet, pixel: Grid3x3,
-  strong: Triangle, outline: Circle,
+  strong: Triangle, outline: Circle, sprayBrush: Sparkles,
 };
 
 export function RightPanel() {

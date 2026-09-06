@@ -325,6 +325,36 @@ export const BRUSH_PRESETS: Record<BrushType, BrushPreset> = {
       outlineCapStyle: "square",
     },
   },
+  sprayBrush: {
+    id: "sprayBrush",
+    label: "Spray Brush",
+    description: "A can of spray paint, not a nib — a dense cloud of tiny ink specks along the stroke, thick at the core and misting out toward the edge, with no continuous body underneath.",
+    settings: {
+      size: 46,
+      opacity: 0.9,
+      // Dense resampling, same reasoning as Grunge: more samples along the
+      // path means more even coverage from the puffs seeded in
+      // sprayBrushOutlineContours, not a smoother line (there's no line).
+      spacing: 2,
+      smoothing: 0.25,
+      stabilizer: 0.25,
+      // Reused as the spray cone's spread rather than a nib shape — 1 keeps
+      // a tight, round cone; dial it down for a wider, looser mist. See
+      // sprayBrushOutlineContours() in strokeToOutline.ts.
+      roundness: 0.75,
+      angle: 0,
+      // A real can naturally runs thin as the hand lifts off at each end.
+      taperStart: 0.2,
+      taperEnd: 0.28,
+      pressureEnabled: false,
+      pressureSensitivity: 0,
+      // Reused as the speck field's density/falloff (see jitter's doc
+      // comment in types/brush.ts) instead of an edge amplitude — higher
+      // pulls more specks toward the cone's core, lower spreads them out
+      // more evenly for a softer mist.
+      jitter: 0.6,
+    },
+  },
 };
 
 export const BRUSH_ORDER: BrushType[] = [
@@ -338,4 +368,5 @@ export const BRUSH_ORDER: BrushType[] = [
   "pixel",
   "strong",
   "outline",
+  "sprayBrush",
 ];
