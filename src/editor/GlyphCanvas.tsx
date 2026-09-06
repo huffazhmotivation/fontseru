@@ -815,10 +815,10 @@ export function GlyphCanvas() {
              nodes and handles read clearly against it instead of vanishing
              into a solid dark silhouette. */
           .obj-fill.semi-fill { opacity: 0.62; }
-          .obj-fill-overlap { fill: var(--overlap); opacity: 0.88; }
+          .obj-fill-overlap { fill: var(--overlap-canvas); opacity: 0.88; }
           .obj-fill-preview-outline { fill: none; stroke: var(--ink); stroke-width: ${1.25 / sc}; opacity: 0.85; }
           .obj-stroke { fill: none; stroke: var(--ink); }
-          .obj-stroke-overlap { stroke: var(--overlap); opacity: 0.88; }
+          .obj-stroke-overlap { stroke: var(--overlap-canvas); opacity: 0.88; }
           .obj-sel-outline { fill: none; stroke: var(--accent); stroke-width: ${1.5 / sc}; opacity: 0.9; }
           .brush-preview { fill: none; stroke: var(--accent); opacity: 0.85; }
           .pencil-preview { fill: none; stroke: var(--accent); opacity: 0.9; }

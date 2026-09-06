@@ -125,6 +125,12 @@ input[type="range"]:disabled { opacity: 0.4; cursor: not-allowed; }
   --thumb-ink: #d9d9d9;
   --danger: #ff6b57;
   --overlap: #a6e034;
+  /* Canvas-only "stacked shapes" highlight (see obj-fill-overlap /
+     obj-stroke-overlap in GlyphCanvas.tsx). Deliberately the SAME fixed
+     lime in both themes — it's a highlight painted over shape fills/
+     strokes, not text needing per-theme contrast tuning, so it should
+     look like this one recognizable color regardless of light/dark. */
+  --overlap-canvas: #a6e034;
   --shadow: rgba(0, 0, 0, 0.5);
   /* Sidebearing (LSB/RSB/Advance) metrics get their own vivid, high-contrast
      color, distinct from the muted --guide-2 used for descender — otherwise
@@ -181,6 +187,7 @@ input[type="range"]:disabled { opacity: 0.4; cursor: not-allowed; }
   --thumb-ink: #1f1f1f;
   --danger: #d1402d;
   --overlap: #6ea11a;
+  --overlap-canvas: #a6e034;
   --shadow: rgba(20, 22, 24, 0.08);
   --sb: #0e86b8;
   --sb-soft: #e2f4fb;
@@ -1073,17 +1080,19 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
   color: var(--accent); background: none; border: none; cursor: pointer; padding: 0;
 }
 .fm-group-select-all:hover { text-decoration: underline; }
-/* Explicit green (not the theme accent) so a multi-selected tile always
-   reads as its own distinct state from the single "active" (currently
-   open) tile, whatever the current color theme's accent looks like. */
-.fm-tile.selected { border-color: #22c55e; box-shadow: inset 0 0 0 1.5px #22c55e; }
+/* Uses the theme's own accent color (already the app's green in dark
+   theme) rather than a hardcoded green, so it always matches whatever
+   theme is active. Safe to reuse here even though .fm-tile.active also
+   uses --accent: the "active" class is only applied when select mode is
+   OFF (see the tile's className above), so the two never show at once. */
+.fm-tile.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .fm-glyph-select-hint {
   flex: 0 0 auto; padding: 8px 12px; border-top: 1px solid var(--line-soft);
   background: var(--panel-2); display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px;
   font-size: 11px; color: var(--text-dim); line-height: 1.4;
 }
 .fm-glyph-batch-count {
-  font-family: var(--mono); font-weight: 700; color: #fff; background: #22c55e;
+  font-family: var(--mono); font-weight: 700; color: var(--accent-ink); background: var(--accent);
   border-radius: 20px; padding: 1px 8px; font-size: 11px;
 }
 .fm-glyph-select-clear {
