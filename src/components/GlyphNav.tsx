@@ -1,11 +1,19 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { Lock, Plus, Search, X, Zap, Globe } from "lucide-react";
+import { CheckSquare, Lock, PenLine, Minus, Highlighter, Feather, Pencil, Zap as BoltIcon, CircleDashed, Flame, Droplet, Grid3x3, Triangle, Circle, Plus, Search, X, Zap, Globe } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useAuth } from "@/auth/AuthProvider";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
 import { FONT_STYLES, MAX_CUSTOM_FAMILIES, hasOutline } from "@/types/glyph";
 import { unicodeHex } from "@/utils/unicode";
+import { BRUSH_ORDER, BRUSH_PRESETS } from "@/brushes/presets";
+import type { BrushType } from "@/types/brush";
 import { GlyphThumbnail } from "./GlyphThumbnail";
+
+const BRUSH_ICON: Record<BrushType, typeof PenLine> = {
+  round: PenLine, monoline: Minus, marker: Highlighter, calligraphic: Feather, pencil: Pencil, pressureTaper: BoltIcon,
+  rough: CircleDashed, grunge: Flame, oilBrush: Droplet, pixel: Grid3x3,
+  strong: Triangle, outline: Circle,
+};
 
 // Bold/Italic keep these reserved ids (see the store's defaultCustomFamilies)
 // so they can stay PRO-gated like before, even though they're now ordinary
@@ -28,6 +36,14 @@ export function GlyphNav() {
   const openProModal = useAppStore((s) => s.openProModal);
   const addMultilingualGlyphs = useAppStore((s) => s.addMultilingualGlyphs);
   const closeMobilePanels = useAppStore((s) => s.closeMobilePanels);
+  const glyphSelectMode = useAppStore((s) => s.glyphSelectMode);
+  const setGlyphSelectMode = useAppStore((s) => s.setGlyphSelectMode);
+  const selectedGlyphChars = useAppStore((s) => s.selectedGlyphChars);
+  const toggleGlyphSelected = useAppStore((s) => s.toggleGlyphSelected);
+  const setGlyphSelection = useAppStore((s) => s.setGlyphSelection);
+  const addGlyphsToSelection = useAppStore((s) => s.addGlyphsToSelection);
+  const clearGlyphSelection = useAppStore((s) => s.clearGlyphSelection);
+  const applyBrushTypeToSelectedGlyphs = useAppStore((s) => s.applyBrushTypeToSelectedGlyphs);
   const { isPro } = useAuth();
   const [multilingualStatus, setMultilingualStatus] = useState<string | null>(null);
   const [addingFamily, setAddingFamily] = useState(false);
@@ -112,13 +128,25 @@ export function GlyphNav() {
       <div className="fm-glyphnav-head">
         <div className="fm-glyphnav-eyebrow-row">
           <span className="fm-panel-eyebrow">Glyphs</span>
-          <span
-            className="fm-glyph-count-badge"
-            title={`${doneCount} dari ${totalCount} glyph sudah digambar`}
-            data-testid="glyph-done-count"
-          >
-            {doneCount}/{totalCount}
-          </span>
+          <div className="fm-glyphnav-eyebrow-right">
+            <span
+              className="fm-glyph-count-badge"
+              title={`${doneCount} dari ${totalCount} glyph sudah digambar`}
+              data-testid="glyph-done-count"
+            >
+              {doneCount}/{totalCount}
+            </span>
+            <button
+              type="button"
+              className={`fm-glyph-select-toggle ${glyphSelectMode ? "on" : ""}`}
+              onClick={() => setGlyphSelectMode(!glyphSelectMode)}
+              title={glyphSelectMode ? "Selesai memilih" : "Pilih beberapa glyph sekaligus"}
+              data-testid="glyph-select-toggle"
+            >
+              <CheckSquare size={13} />
+              <span>{glyphSelectMode ? "Selesai" : "Select"}</span>
+            </button>
+          </div>
         </div>
 
         <div className="fm-family-tabs" role="tablist" aria-label="Font family style" data-testid="family-tabs">
@@ -245,34 +273,71 @@ export function GlyphNav() {
         </div>
       </div>
       <div className="fm-glyphlist">
-        {filteredGroups.map((g) => (
-          <div key={g.id}>
-            <div className="fm-group-label">{g.label}</div>
-            <div className="fm-grid">
-              {g.chars.map((ch) => {
-                const info = glyphs[ch];
-                if (!info) return null;
-                const done = hasOutline(info);
-                return (
+        {filteredGroups.map((g) => {
+          const groupChars = g.chars.filter((ch) => glyphs[ch]);
+          const allInGroupSelected = groupChars.length > 0 && groupChars.every((ch) => selectedGlyphChars.includes(ch));
+          return (
+            <div key={g.id}>
+              <div className="fm-group-label-row">
+                <div className="fm-group-label">{g.label}</div>
+                {glyphSelectMode && groupChars.length > 0 && (
                   <button
-                    key={ch}
-                    className={`fm-tile ${activeChar === ch ? "active" : ""} ${done ? "done" : ""}`}
-                    onClick={() => { setActiveChar(ch); closeMobilePanels(); }}
-                    title={`${ch === " " ? "Space" : ch} — ${unicodeHex(info.unicode)}`}
-                    data-testid={`glyph-tile-${ch}`}
+                    type="button"
+                    className="fm-group-select-all"
+                    onClick={() =>
+                      allInGroupSelected
+                        ? setGlyphSelection(selectedGlyphChars.filter((ch) => !groupChars.includes(ch)))
+                        : addGlyphsToSelection(groupChars)
+                    }
+                    data-testid={`glyph-group-select-${g.id}`}
                   >
-                    {done && <span className="fm-tile-dot" />}
-                    <span className="fm-tile-thumb"><GlyphThumbnail glyph={info} /></span>
+                    {allInGroupSelected ? "Batal" : "Pilih semua"}
                   </button>
-                );
-              })}
+                )}
+              </div>
+              <div className="fm-grid">
+                {g.chars.map((ch) => {
+                  const info = glyphs[ch];
+                  if (!info) return null;
+                  const done = hasOutline(info);
+                  const selected = selectedGlyphChars.includes(ch);
+                  return (
+                    <button
+                      key={ch}
+                      className={`fm-tile ${activeChar === ch && !glyphSelectMode ? "active" : ""} ${done ? "done" : ""} ${selected ? "selected" : ""}`}
+                      onClick={() =>
+                        glyphSelectMode
+                          ? toggleGlyphSelected(ch)
+                          : (setActiveChar(ch), closeMobilePanels())
+                      }
+                      title={`${ch === " " ? "Space" : ch} — ${unicodeHex(info.unicode)}`}
+                      data-testid={`glyph-tile-${ch}`}
+                    >
+                      {done && <span className="fm-tile-dot" />}
+                      {glyphSelectMode && (
+                        <span className={`fm-tile-check ${selected ? "on" : ""}`}>
+                          {selected && <CheckSquare size={11} />}
+                        </span>
+                      )}
+                      <span className="fm-tile-thumb"><GlyphThumbnail glyph={info} /></span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {filteredGroups.length === 0 && (
           <div className="fm-hint" style={{ padding: "10px 4px" }}>No glyph matches “{query}”.</div>
         )}
       </div>
+      {glyphSelectMode && selectedGlyphChars.length > 0 && (
+        <GlyphBatchActionBar
+          count={selectedGlyphChars.length}
+          onClear={clearGlyphSelection}
+          onApplyBrush={applyBrushTypeToSelectedGlyphs}
+        />
+      )}
       <div className="fm-glyphnav-foot">
         <button
           type="button"
@@ -289,6 +354,64 @@ export function GlyphNav() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Floating bar shown in GlyphNav's select mode once at least one glyph is
+ * picked — batch actions apply to every selected glyph at once instead of
+ * requiring the Select tool's per-glyph "Selection" panel to be revisited
+ * one character at a time. Currently just brush re-typing (the requested
+ * flow); more batch actions can slot in here later. */
+function GlyphBatchActionBar({
+  count,
+  onClear,
+  onApplyBrush,
+}: {
+  count: number;
+  onClear: () => void;
+  onApplyBrush: (type: BrushType) => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  return (
+    <div className="fm-glyph-batch-bar" data-testid="glyph-batch-bar">
+      <div className="fm-glyph-batch-summary">
+        <span className="fm-glyph-batch-count">{count}</span>
+        <span>glyph dipilih</span>
+      </div>
+      <div className="fm-glyph-batch-actions">
+        <button
+          type="button"
+          className="fm-action-btn"
+          onClick={() => setPickerOpen((o) => !o)}
+          data-testid="glyph-batch-brush-btn"
+        >
+          <PenLine size={13} /> Ganti Brush
+        </button>
+        <button type="button" className="fm-action-btn" onClick={onClear} data-testid="glyph-batch-clear-btn">
+          Batal
+        </button>
+      </div>
+      {pickerOpen && (
+        <div className="fm-brush-grid fm-glyph-batch-brush-grid" data-testid="glyph-batch-brush-grid">
+          {BRUSH_ORDER.map((id) => {
+            const Icon = BRUSH_ICON[id];
+            const p = BRUSH_PRESETS[id];
+            return (
+              <button
+                key={id}
+                className="fm-brush-card"
+                onClick={() => { onApplyBrush(id); setPickerOpen(false); }}
+                title={`Ganti brush terpilih ke ${p.label}`}
+                data-testid={`glyph-batch-brush-${id}`}
+              >
+                <span className="fm-brush-icon"><Icon size={17} strokeWidth={1.8} /></span>
+                <span className="fm-brush-name">{p.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

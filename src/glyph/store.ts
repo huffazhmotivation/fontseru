@@ -261,6 +261,15 @@ interface AppState {
    * the resize handle at the top of the bar. */
   productionPreviewHeight: number;
 
+  /** Multi-glyph selection in GlyphNav — lets batch actions (e.g. "change
+   * every selected glyph's brush at once") apply to several glyphs without
+   * visiting each one's Select-tool panel individually. Session-only (not
+   * saved into the project file), scoped to whichever family/style tab is
+   * currently active: switching tabs clears it, same as `selectedObjectIds`
+   * already does per-glyph. */
+  glyphSelectMode: boolean;
+  selectedGlyphChars: string[];
+
   /** Glyph map for the currently selected family style. */
   glyphs: GlyphMap;
   glyphsByStyle: GlyphFamily;
@@ -418,6 +427,20 @@ interface AppState {
   commitOutline: (char: string, outline: GlyphOutline, opts?: { skipAutoSpacing?: boolean }) => void;
   setLiveOutline: (outline: GlyphOutline | null) => void;
   updateSelectedObject: (patch: Partial<VectorObject>) => void;
+
+  // multi-glyph selection (GlyphNav) + batch actions
+  toggleGlyphSelectMode: () => void;
+  setGlyphSelectMode: (on: boolean) => void;
+  toggleGlyphSelected: (char: string, additive?: boolean) => void;
+  setGlyphSelection: (chars: string[]) => void;
+  addGlyphsToSelection: (chars: string[]) => void;
+  clearGlyphSelection: () => void;
+  /** Re-nibs every brush stroke inside every currently-selected glyph to
+   * `type`, mirroring what `updateSelectedObject({ brushType })` does for a
+   * single glyph's selected objects — but across the whole batch in one
+   * history entry. Glyphs with no brush objects (empty, or drawn entirely
+   * with pen/shape tools) are left untouched. */
+  applyBrushTypeToSelectedGlyphs: (type: BrushType) => void;
 
   // object selection / clipboard / transforms
   selectObjects: (ids: string[], additive?: boolean) => void;
@@ -876,6 +899,9 @@ export const useAppStore = create<AppState>()((set, get) => {
     productionPreviewAlign: "left",
     productionPreviewCategory: "auto",
     productionPreviewHeight: 120,
+
+    glyphSelectMode: false,
+    selectedGlyphChars: [],
     // Default ON: a brand-new font should let the just-drawn ink be the
     // reference and have LSB/RSB/position follow it automatically (see
     // `commitOutline`'s autoSpacingEnabled branch), not the other way
@@ -1120,6 +1146,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         clipboard: null,
         clipboardSourceChar: null,
         glyphMetricFocus: null,
+        selectedGlyphChars: [],
         past: [],
         future: [],
       });
@@ -1146,6 +1173,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         clipboard: null,
         clipboardSourceChar: null,
         glyphMetricFocus: null,
+        selectedGlyphChars: [],
         past: [],
         future: [],
       });
@@ -1214,6 +1242,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         clipboard: null,
         clipboardSourceChar: null,
         glyphMetricFocus: null,
+        selectedGlyphChars: [],
         past: [],
         future: [],
       });
@@ -1242,6 +1271,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         selectedHandle: null,
         drawingContourId: null,
         liveOutline: null,
+        selectedGlyphChars: [],
       });
     },
 
@@ -1399,6 +1429,58 @@ export const useAppStore = create<AppState>()((set, get) => {
         return { ...next, ...rest };
       });
       commit({ ...glyphs, [activeChar]: { ...glyph, outline: { objects } } });
+    },
+
+    toggleGlyphSelectMode: () =>
+      set((s) => ({
+        glyphSelectMode: !s.glyphSelectMode,
+        // Leaving select mode drops any in-progress selection so re-entering
+        // later (or a stray toggle) never surprises you with stale picks.
+        selectedGlyphChars: s.glyphSelectMode ? [] : s.selectedGlyphChars,
+      })),
+    setGlyphSelectMode: (on) => set({ glyphSelectMode: on, selectedGlyphChars: on ? get().selectedGlyphChars : [] }),
+    toggleGlyphSelected: (char, additive = true) =>
+      set((s) => {
+        const has = s.selectedGlyphChars.includes(char);
+        if (has) return { selectedGlyphChars: s.selectedGlyphChars.filter((c) => c !== char) };
+        return { selectedGlyphChars: additive ? [...s.selectedGlyphChars, char] : [char] };
+      }),
+    setGlyphSelection: (chars) => set({ selectedGlyphChars: chars }),
+    addGlyphsToSelection: (chars) =>
+      set((s) => {
+        const merged = new Set(s.selectedGlyphChars);
+        for (const c of chars) merged.add(c);
+        return { selectedGlyphChars: [...merged] };
+      }),
+    clearGlyphSelection: () => set({ selectedGlyphChars: [] }),
+
+    applyBrushTypeToSelectedGlyphs: (type) => {
+      const { glyphs, selectedGlyphChars } = get();
+      if (selectedGlyphChars.length === 0) return;
+      const preset = BRUSH_PRESETS[type];
+      let touched = false;
+      const nextGlyphs: GlyphMap = { ...glyphs };
+      for (const char of selectedGlyphChars) {
+        const glyph = glyphs[char];
+        if (!glyph) continue;
+        let changedThisGlyph = false;
+        const objects = glyph.outline.objects.map((o) => {
+          if (o.kind !== "brush" || o.brushType === type) return o;
+          changedThisGlyph = true;
+          const next = cloneObject(o);
+          const width = next.strokeWidth ?? preset?.settings.size ?? 20;
+          next.brushType = type;
+          next.brushSettings = preset ? { ...preset.settings, type, size: width } : undefined;
+          next.cap = type === "monoline" ? (next.cap ?? "round") : "round";
+          return next;
+        });
+        if (changedThisGlyph) {
+          touched = true;
+          nextGlyphs[char] = { ...glyph, outline: { objects } };
+        }
+      }
+      if (!touched) return;
+      commit(nextGlyphs);
     },
 
     selectObjects: (ids, additive) =>
