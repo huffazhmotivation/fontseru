@@ -1061,7 +1061,25 @@ export const useAppStore = create<AppState>()((set, get) => {
     setPencilPostSmoothing: (v) => set({ pencilPostSmoothing: Math.max(0, Math.min(1, v)) }),
     setLineWidth: (w) => set({ lineWidth: Math.max(1, Math.round(w)) }),
     setLineCap: (cap) => set({ lineCap: cap }),
-    setBrushCap: (cap) => set({ brushCap: cap }),
+    setBrushCap: (cap) => {
+      const state = get();
+      // Same multi-glyph restyle contract as setBrushType/setBrush: with
+      // glyphs selected in GlyphNav, changing the cap must retype every
+      // already-drawn monoline stroke in those glyphs too, not just set
+      // the default used for the NEXT stroke. Previously this only ever
+      // set `brushCap`, so cap changes silently no-op'd on existing strokes
+      // whenever multiple glyphs were selected.
+      if (state.glyphSelectMode && state.selectedGlyphChars.length > 0) {
+        const nextGlyphs = restyleBrushObjectsIn(state.glyphs, state.selectedGlyphChars, (o) => {
+          const objType = (o.brushType as BrushType | undefined) ?? "monoline";
+          if (objType !== "monoline") return o;
+          o.cap = cap;
+          return o;
+        });
+        if (nextGlyphs) commit(nextGlyphs);
+      }
+      set({ brushCap: cap });
+    },
     toggleStrokeWidthLock: () => set((s) => ({ strokeWidthLocked: !s.strokeWidthLocked })),
     setZoom: (z) => set({ zoom: Math.min(8000, Math.max(20, Math.round(z))) }),
     setPan: (pan) => set({ pan }),
