@@ -5,6 +5,7 @@ import { simplifyPolyline } from "@/utils/simplify";
 import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor } from "./strokeSmoothing";
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
+import { union as clipUnion, type Polygon as ClipPolygon } from "@/vendor/polygonClipping";
 
 /**
  * Correct offset vector for sweeping a fixed-orientation elliptical nib
@@ -575,11 +576,22 @@ export function centerlineToOutline(
   // Oil Brush, spiky Grunge) opt out of both and keep their current look.
   const ROUND_CAP_TYPES: BrushType[] = ["round", "marker", "calligraphic", "pencil", "pressureTaper"];
   const COMB_CAP_TYPES: BrushType[] = ["strong"];
-  const capMode: "round" | "comb" | "none" = ROUND_CAP_TYPES.includes(settings.type)
-    ? "round"
-    : COMB_CAP_TYPES.includes(settings.type)
-      ? "comb"
-      : "none";
+  // Outline Brush's cap is user-controlled (see BrushSettings.outlineCapStyle)
+  // instead of being fixed per brush type like every other preset here.
+  // "open" is handled entirely by outlineBrushOutlineContours() before this
+  // function is ever reached for that case (it builds two separate side
+  // strips instead of a single ring), so this function only ever sees
+  // "round" or "square" for the outline type.
+  const capMode: "round" | "comb" | "none" =
+    settings.type === "outline"
+      ? settings.outlineCapStyle === "round"
+        ? "round"
+        : "none"
+      : ROUND_CAP_TYPES.includes(settings.type)
+        ? "round"
+        : COMB_CAP_TYPES.includes(settings.type)
+          ? "comb"
+          : "none";
   let startCap: { center: Point; tangentAngle: number; semiA: number; semiB: number } | null = null;
   let endCap: { center: Point; tangentAngle: number; semiA: number; semiB: number } | null = null;
 
@@ -955,6 +967,151 @@ export function pixelBlockOutline(centerline: { x: number; y: number }[], cellSi
   });
 }
 
+/** Same Bresenham cell-walk as pixelBlockOutline, factored out so Pixel
+ * Liquid mode (below) starts from the exact same set of grid cells the
+ * crisp block mode would use — only what happens to those cells differs. */
+function pixelGridCells(centerline: { x: number; y: number }[], cellSize: number): { cx: number; cy: number }[] {
+  const toCell = (p: { x: number; y: number }) => ({ cx: Math.floor(p.x / cellSize), cy: Math.floor(p.y / cellSize) });
+  const seen = new Set<string>();
+  const cells: { cx: number; cy: number }[] = [];
+  const addCell = (cx: number, cy: number) => {
+    const key = `${cx},${cy}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    cells.push({ cx, cy });
+  };
+  if (centerline.length === 0) return cells;
+  let prevCell = toCell(centerline[0]);
+  addCell(prevCell.cx, prevCell.cy);
+  for (let i = 1; i < centerline.length; i++) {
+    const cur = toCell(centerline[i]);
+    let x0 = prevCell.cx;
+    let y0 = prevCell.cy;
+    const x1 = cur.cx;
+    const y1 = cur.cy;
+    const dx = Math.abs(x1 - x0);
+    const dy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1;
+    const sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+    while (x0 !== x1 || y0 !== y1) {
+      addCell(x0, y0);
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x0 += sx; }
+      if (e2 < dx) { err += dx; y0 += sy; }
+    }
+    addCell(x1, y1);
+    prevCell = cur;
+  }
+  return cells;
+}
+
+/**
+ * A single grid cell as a rounded-corner square ring (for the exact polygon
+ * clipper below), optionally padded outward on all sides before rounding.
+ * `pad` is what lets diagonally-touching (not just edge-touching) cells'
+ * rounded shapes actually overlap enough to melt into one blob once unioned
+ * — without it, only cells sharing a full edge would ever merge.
+ */
+function roundedCellRing(cx: number, cy: number, cellSize: number, cornerRadius: number, pad: number): [number, number][] {
+  const x0 = cx * cellSize - pad;
+  const y0 = cy * cellSize - pad;
+  const x1 = (cx + 1) * cellSize + pad;
+  const y1 = (cy + 1) * cellSize + pad;
+  const r = Math.max(0, Math.min((x1 - x0) / 2, (y1 - y0) / 2, cornerRadius));
+  if (r < 0.01) {
+    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
+  }
+  const segments = 6;
+  const pts: [number, number][] = [];
+  const arc = (ccx: number, ccy: number, startAngle: number) => {
+    for (let i = 0; i <= segments; i++) {
+      const a = startAngle + (Math.PI / 2) * (i / segments);
+      pts.push([ccx + Math.cos(a) * r, ccy + Math.sin(a) * r]);
+    }
+  };
+  arc(x1 - r, y0 + r, -Math.PI / 2); // top-right
+  arc(x1 - r, y1 - r, 0);            // bottom-right
+  arc(x0 + r, y1 - r, Math.PI / 2);  // bottom-left
+  arc(x0 + r, y0 + r, Math.PI);      // top-left
+  pts.push(pts[0]);
+  return pts;
+}
+
+function clipRingToPoints(ring: [number, number][]): Point[] {
+  const pts = ring.map(([x, y]) => ({ x, y }));
+  if (pts.length > 1) {
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    if (Math.abs(first.x - last.x) < 1e-6 && Math.abs(first.y - last.y) < 1e-6) pts.pop();
+  }
+  return pts;
+}
+
+/** Every vertex gets a Catmull-Rom-derived smooth handle — a liquid blob
+ * has no genuine sharp corners of its own, unlike the boolean-op rings in
+ * booleanOps.ts (which deliberately keep real cut corners crisp). */
+function smoothRingToContour(points: Point[]): Contour {
+  const n = points.length;
+  const nodes: PathNode[] = points.map((point, i) => {
+    const prev = points[(i - 1 + n) % n];
+    const next = points[(i + 1) % n];
+    const tx = (next.x - prev.x) / 6;
+    const ty = (next.y - prev.y) / 6;
+    return {
+      id: shortId("node"),
+      point,
+      handleIn: { x: point.x - tx, y: point.y - ty },
+      handleOut: { x: point.x + tx, y: point.y + ty },
+      type: "smooth" as const,
+    };
+  });
+  return { id: shortId("contour"), closed: true, nodes };
+}
+
+/**
+ * Pixel Liquid mode: the same grid-cell footprint as the crisp Pixel Brush
+ * (pixelBlockOutline/pixelGridCells above), but instead of emitting one
+ * hard-edged square per cell, every cell becomes a rounded, slightly padded
+ * shape and all of them are merged with an exact polygon union — so cells
+ * that touch or sit close together melt into one soft, blobby silhouette
+ * instead of staying visually separate squares. `smoothness` (0..1) drives
+ * both the corner rounding and how far apart cells can be and still bridge
+ * together (see roundedCellRing's `pad`).
+ */
+export function pixelLiquidOutline(centerline: { x: number; y: number }[], cellSize: number, smoothness: number): Contour[] {
+  if (centerline.length === 0 || cellSize <= 0) return [];
+  const s = Math.max(0, Math.min(1, smoothness));
+  const cells = pixelGridCells(centerline, cellSize);
+  if (cells.length === 0) return [];
+
+  const pad = cellSize * 0.22 * s;
+  const cornerRadius = cellSize * 0.5 * (0.15 + 0.85 * s);
+  const polys: ClipPolygon[] = cells.map(({ cx, cy }) => [roundedCellRing(cx, cy, cellSize, cornerRadius, pad)]);
+
+  let merged: ClipPolygon[];
+  try {
+    merged = polys.length === 1 ? clipUnion(polys[0]) : clipUnion(polys[0], ...polys.slice(1));
+  } catch {
+    // The exact clipper choked on degenerate input (extremely dense or
+    // overlapping strokes) — fall back to the crisp block look rather than
+    // dropping the stroke entirely.
+    return pixelBlockOutline(centerline, cellSize);
+  }
+
+  const contours: Contour[] = [];
+  for (const poly of merged) {
+    for (const ring of poly) {
+      const raw = clipRingToPoints(ring);
+      if (raw.length < 3) continue;
+      const simplified = simplifyPolyline(raw, Math.max(0.3, cellSize * 0.03));
+      if (simplified.length < 3) continue;
+      contours.push(smoothRingToContour(simplified));
+    }
+  }
+  return contours;
+}
+
 function signedArea(points: Point[]): number {
   let a = 0;
   for (let i = 0; i < points.length; i++) {
@@ -1259,6 +1416,63 @@ function oilBrushOutlineContours(centerline: StrokeSample[], settings: BrushSett
  * result is a constant-thickness border with the interior left open, like
  * tracing the stroke's shape with a pen instead of filling it with ink.
  */
+/**
+ * Raw left/right offset rails for a plain elliptical-nib sweep at a given
+ * width, with none of the other presets' edge effects (jitter/grunge/rough
+ * texture) — Outline Brush never uses those, so this is a lighter-weight,
+ * self-contained version of the sweep in centerlineToOutline() used only for
+ * building the two independent side strips of the "open" cap style below.
+ */
+function nibOffsetRails(
+  pts: StrokeSample[],
+  cumulative: number[],
+  totalLength: number,
+  settings: BrushSettings,
+  size: number,
+  nibAngleRad: number
+): { left: Point[]; right: Point[] } {
+  const semiMajor = Math.max(0.5, size / 2);
+  const semiMinor = Math.max(0.3, (size / 2) * settings.roundness);
+  const left: Point[] = [];
+  const right: Point[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const prev = pts[Math.max(0, i - 1)];
+    const next = pts[Math.min(pts.length - 1, i + 1)];
+    const tangent = { x: next.x - prev.x, y: next.y - prev.y };
+    const tLen = Math.hypot(tangent.x, tangent.y) || 1;
+    const normal = { x: -tangent.y / tLen, y: tangent.x / tLen };
+    const normalAngle = Math.atan2(normal.y, normal.x);
+    const pressure = settings.pressureEnabled ? pts[i].pressure : 1;
+    const sensitivity = settings.pressureSensitivity ?? 0;
+    const widthFromPressure = size * (1 - sensitivity * (1 - pressure));
+    const s = cumulative[i] / totalLength;
+    const taper = taperFactor(s, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd });
+    const halfWidthBase = (widthFromPressure / 2) * taper;
+    const scale = halfWidthBase / Math.max(0.001, semiMajor);
+    const { x: vx, y: vy } = ellipseSupportVector(normalAngle, nibAngleRad, semiMajor * scale, semiMinor * scale);
+    left.push({ x: pts[i].x + vx, y: pts[i].y + vy });
+    right.push({ x: pts[i].x - vx, y: pts[i].y - vy });
+  }
+  return { left, right };
+}
+
+/**
+ * Turns two parallel rails (traced in the same direction, e.g. an outer
+ * border edge and the matching inner-hole edge) into one thin, independent
+ * closed strip: `a` forward then `b` backward, closed with a short flat seam
+ * at each stroke end. Used for Outline Brush's "open" cap style, where the
+ * left-side and right-side borders become two separate strips instead of
+ * one ring joined at the tips — see outlineBrushOutlineContours().
+ */
+function railsToContour(a: Point[], b: Point[]): Contour {
+  const polygon = [...a, ...[...b].reverse()];
+  return {
+    id: shortId("contour"),
+    closed: true,
+    nodes: polygon.map((point) => ({ id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const })),
+  };
+}
+
 function outlineBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
   if (centerline.length < 2) return [];
 
@@ -1280,15 +1494,32 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
   const totalLength = cumulative[cumulative.length - 1] || 1;
   const precomputed = { pts, cumulative, totalLength };
 
-  const main = centerlineToOutline(centerline, settings, precomputed);
-  if (!main) return [];
-  const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
-
   // Border thickness is a fraction of the nib's own half-width, so it
   // scales naturally with stroke size instead of needing its own unit.
   const thickness = Math.max(0.6, (settings.size / 2) * (settings.outlineThickness ?? 0.32));
   const shrink = thickness * 2;
   const innerSize = settings.size - shrink;
+
+  // "open" cap style: the border is built as two independent side strips
+  // (left rail pair, right rail pair) instead of a single ring that's
+  // joined shut at both tips — see nibOffsetRails()/railsToContour()'s doc
+  // comments. Falls through to the normal closed-ring path below when the
+  // stroke is too thin for a hole (same guard as the closed styles), since
+  // there's no separate inner rail to pair up with in that case.
+  if ((settings.outlineCapStyle ?? "square") === "open" && innerSize >= 1.5) {
+    const nibAngleRad = (settings.angle * Math.PI) / 180;
+    const outerRails = nibOffsetRails(pts, cumulative, totalLength, settings, settings.size, nibAngleRad);
+    const innerRails = nibOffsetRails(pts, cumulative, totalLength, settings, Math.max(1, innerSize), nibAngleRad);
+    return [
+      railsToContour(outerRails.left, innerRails.left),
+      railsToContour(outerRails.right, innerRails.right),
+    ];
+  }
+
+  const main = centerlineToOutline(centerline, settings, precomputed);
+  if (!main) return [];
+  const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
+
   // Stroke too thin for this border thickness at its narrowest point —
   // there's no room left for a hole, so fall back to solid rather than a
   // degenerate/self-intersecting inner contour.
@@ -1329,7 +1560,9 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
  */
 export function centerlineToOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
   if (settings.type === "pixel" && settings.gridSnap === true) {
-    return pixelBlockOutline(centerline, settings.cellSize ?? settings.size);
+    return settings.pixelMode === "liquid"
+      ? pixelLiquidOutline(centerline, settings.cellSize ?? settings.size, settings.pixelLiquidSmoothness ?? 0.5)
+      : pixelBlockOutline(centerline, settings.cellSize ?? settings.size);
   }
   if (settings.type === "rough") {
     return roughBrushOutlineContours(centerline, settings);
@@ -1410,6 +1643,9 @@ export function normalizeBrushSettings(raw: (Partial<BrushSettings> & { minSize?
     gridSnap: raw.gridSnap,
     cellSize: raw.cellSize,
     outlineThickness: raw.outlineThickness,
+    outlineCapStyle: raw.outlineCapStyle,
+    pixelMode: raw.pixelMode,
+    pixelLiquidSmoothness: raw.pixelLiquidSmoothness,
   };
 }
 

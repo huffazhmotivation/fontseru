@@ -62,7 +62,35 @@ export interface BrushSettings {
   cellSize?: number;
   /** Outline Brush only: border thickness as a fraction of the nib's half-width. The interior stays hollow — see outlineBrushOutlineContours. */
   outlineThickness?: number;
+  /** Pixel Brush only: "blocks" (default) keeps the original crisp grid-cell
+   * squares; "liquid" fuses neighboring/nearby blocks into one soft, blobby
+   * metaball silhouette instead — see pixelLiquidOutline. Isolated to
+   * `gridSnap`/pixel brush the same way `cellSize` is. */
+  pixelMode?: PixelRenderMode;
+  /** Pixel Liquid mode only: how far apart (in grid cells) two blocks can be
+   * and still melt into each other, and how soft the merge looks. 0 = barely
+   * touching blocks merge with a tight seam; 1 = a wide, very soft blend
+   * radius. Inert when `pixelMode` isn't "liquid". */
+  pixelLiquidSmoothness?: number;
+  /** Outline Brush only: how the two stroke ends are finished. "round"/"square"
+   * both fully close the ring's tip into one joined end cap (a pill-shaped
+   * bulge or a flat square-cornered cut, respectively); "open" instead keeps
+   * the outer and inner border rails as two separate strips that are never
+   * joined across the stroke width at either end, so the ends read as
+   * genuinely open rather than capped off. See outlineBrushOutlineContours. */
+  outlineCapStyle?: OutlineCapStyle;
 }
+
+/** See `BrushSettings.outlineCapStyle`. */
+export type OutlineCapStyle = "round" | "square" | "open";
+
+/** Pixel Brush only: how neighboring pixel blocks are rendered. "blocks" is
+ * the original crisp grid-cell look (see pixelBlockOutline); "liquid" instead
+ * fuses touching/nearby blocks into a single soft, blobby metaball silhouette
+ * — neighboring pixels visually melt into each other like liquid droplets
+ * merging, rather than staying separate hard-edged squares. See
+ * pixelLiquidOutline in strokeToOutline.ts. */
+export type PixelRenderMode = "blocks" | "liquid";
 
 export interface BrushPreset {
   id: BrushType;

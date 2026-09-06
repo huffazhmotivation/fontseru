@@ -259,6 +259,11 @@ export const BRUSH_PRESETS: Record<BrushType, BrushPreset> = {
       // strokeToOutline.ts — and switching to any other preset clears this
       // flag immediately (see setBrush() in glyph/store.ts).
       gridSnap: true,
+      // "blocks" (default) is the original crisp grid-square look; "liquid"
+      // fuses neighboring cells into one soft blob instead — see
+      // pixelLiquidOutline() in strokeToOutline.ts.
+      pixelMode: "blocks",
+      pixelLiquidSmoothness: 0.5,
     },
   },
   strong: {
@@ -311,6 +316,13 @@ export const BRUSH_PRESETS: Record<BrushType, BrushPreset> = {
       // border thickness; raise for a heavier border, lower for a finer
       // hairline ring.
       outlineThickness: 0.32,
+      // "square" (default) fully closes each tip into a flat, square-
+      // cornered end — the ring's original always-closed look. "round"
+      // closes it with a pill-shaped bulge instead. "open" keeps the two
+      // border rails as separate strips that never join at either tip —
+      // see outlineCapStyle in types/brush.ts and
+      // outlineBrushOutlineContours() in strokeToOutline.ts.
+      outlineCapStyle: "square",
     },
   },
 };

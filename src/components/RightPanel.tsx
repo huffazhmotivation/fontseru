@@ -11,7 +11,7 @@ import { objectsBounds, skewObject } from "@/editor/objectOps";
 import type { NodeType, PathNode, StrokeCap, VectorObject } from "@/types/geometry";
 import { BRUSH_ORDER, BRUSH_PRESETS } from "@/brushes/presets";
 import { taperFactor } from "@/brushes/strokeToOutline";
-import type { BrushType } from "@/types/brush";
+import type { BrushType, OutlineCapStyle, PixelRenderMode } from "@/types/brush";
 import { GlyphThumbnail } from "./GlyphThumbnail";
 import { NumericInput } from "./NumericInput";
 import { InfoTip } from "./InfoTip";
@@ -873,6 +873,55 @@ function BrushPanel() {
       <Section title="Stroke Settings">
         <Slider label="Size" value={brush.size} min={1} max={200} directInput onChange={(v) => setBrush({ size: v })} />
         {brush.type === "monoline" && <CapControl value={brushCap} onChange={setBrushCap} />}
+        {brush.type === "outline" && (
+          <OutlineCapControl
+            value={brush.outlineCapStyle ?? "square"}
+            onChange={(outlineCapStyle) => setBrush({ outlineCapStyle })}
+          />
+        )}
+        {brush.type === "pixel" && (
+          <>
+            <div className="fm-field">
+              <label>Pixel Mode</label>
+              <div className="fm-kern-mode-toggle" role="group" aria-label="Pixel render mode">
+                <button
+                  type="button"
+                  className={(brush.pixelMode ?? "blocks") === "blocks" ? "active" : ""}
+                  onClick={() => setBrush({ pixelMode: "blocks" })}
+                  aria-pressed={(brush.pixelMode ?? "blocks") === "blocks"}
+                  data-testid="pixel-mode-blocks"
+                >
+                  Blocks
+                </button>
+                <button
+                  type="button"
+                  className={brush.pixelMode === "liquid" ? "active" : ""}
+                  onClick={() => setBrush({ pixelMode: "liquid" })}
+                  aria-pressed={brush.pixelMode === "liquid"}
+                  data-testid="pixel-mode-liquid"
+                >
+                  Liquid
+                </button>
+              </div>
+            </div>
+            {brush.pixelMode === "liquid" && (
+              <>
+                <Slider
+                  label="Liquid Smoothness"
+                  value={brush.pixelLiquidSmoothness ?? 0.5}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => setBrush({ pixelLiquidSmoothness: v })}
+                  format={(v) => `${Math.round(v * 100)}%`}
+                />
+                <InfoTip>
+                  Neighboring pixel blocks melt into one soft blob instead of staying separate squares — higher smoothness lets blocks further apart bridge together too.
+                </InfoTip>
+              </>
+            )}
+          </>
+        )}
         <Slider label="Stabilizer" value={brush.stabilizer ?? 0} min={0} max={1} step={0.05} onChange={(v) => setBrush({ stabilizer: v })} format={(v) => `${Math.round(v * 100)}%`} />
         <Slider label="Spacing" value={brush.spacing} min={1} max={20} onChange={(v) => setBrush({ spacing: v })} />
         <Slider label="Smoothing" value={brush.smoothing} min={0} max={1} step={0.05} onChange={(v) => setBrush({ smoothing: v })} format={(v) => `${Math.round(v * 100)}%`} />
@@ -1077,6 +1126,39 @@ function CapControl({ value, onChange }: { value: StrokeCap; onChange: (cap: Str
             title={CAP_LABELS[cap]}
             aria-label={CAP_LABELS[cap]}
             data-testid={`cap-${cap}`}
+          >
+            <span className={`fm-cap-icon ${cap}`} aria-hidden="true" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const OUTLINE_CAP_LABELS: Record<OutlineCapStyle, string> = {
+  round: "Round (closed)",
+  square: "Square (closed)",
+  open: "Open (rails never join)",
+};
+
+/** Outline Brush's own cap control — same look as CapControl above, but
+ * over OutlineCapStyle ("round"/"square"/"open") instead of the generic
+ * StrokeCap, since "open" means something specific to Outline Brush's
+ * hollow ring (see BrushSettings.outlineCapStyle) that no other stroke type
+ * has an equivalent of. */
+function OutlineCapControl({ value, onChange }: { value: OutlineCapStyle; onChange: (cap: OutlineCapStyle) => void }) {
+  return (
+    <div className="fm-field">
+      <label>End Style</label>
+      <div className="fm-cap-control" role="group" aria-label="Outline brush end style">
+        {(["round", "square", "open"] as OutlineCapStyle[]).map((cap) => (
+          <button
+            key={cap}
+            className={`fm-cap-btn ${value === cap ? "active" : ""}`}
+            onClick={() => onChange(cap)}
+            title={OUTLINE_CAP_LABELS[cap]}
+            aria-label={OUTLINE_CAP_LABELS[cap]}
+            data-testid={`outline-cap-${cap}`}
           >
             <span className={`fm-cap-icon ${cap}`} aria-hidden="true" />
           </button>
