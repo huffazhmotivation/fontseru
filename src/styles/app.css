@@ -283,24 +283,22 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 14px;
+  padding: 8px 14px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   min-width: 0;
-  /* Universal safety net: whenever the row of controls doesn't fit the
-     viewport (tablet portrait widths especially - 768-834px is exactly
-     where iPad portrait falls, between the 560px phone breakpoint and the
-     900px drawer breakpoint), scroll horizontally within the bar itself
-     instead of silently overflowing past `.fm-root`'s `overflow: hidden`
-     and having the right-most controls (incl. the panel toggle button)
-     clipped and unreachable. This applies at every width - on desktop the
-     bar simply never needs to scroll, so it's a no-op there. */
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  flex-wrap: nowrap;
-  scrollbar-width: none; /* Firefox: hide the scrollbar, keep the scroll */
+  /* Previously this scrolled horizontally (overflow-x: auto) whenever the
+     row didn't fit — which forced side-swiping on iPad/phone widths to
+     reach controls on the right, AND (a nastier side effect) turned this
+     bar into an `overflow: auto` clipping box on BOTH axes per the CSS
+     spec, silently clipping anything that rendered taller than the bar
+     itself — like the File dropdown menu, which opens below the File
+     button and is much taller than this 54px bar. Wrapping instead of
+     scrolling fixes both: nothing needs to be dragged into view, and the
+     bar is no longer a clipping ancestor for its own dropdowns. */
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
-.fm-topbar::-webkit-scrollbar { display: none; } /* Safari/Chrome: same */
 .fm-topbar > * { flex: 0 0 auto; }
 .fm-topbar .fm-topbtn { white-space: nowrap; }
 .fm-logo { display: flex; align-items: center; gap: 10px; }
@@ -1302,10 +1300,17 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 
 /* ------------------------------------------------------------------ BOTTOM BAR */
 .fm-bottombar {
-  height: 44px; flex: 0 0 auto;
+  min-height: 44px; flex: 0 0 auto;
   border-top: 1px solid var(--line); background: var(--panel);
-  display: flex; align-items: center; gap: 12px; padding: 0 16px;
+  display: flex; align-items: center; gap: 12px; padding: 6px 16px;
   font-size: 12px; color: var(--text-dim);
+  /* Wraps to a second line instead of requiring horizontal scrolling when
+     everything doesn't fit on one row (tablet/phone widths) — see the
+     matching note on .fm-topbar above. A fixed `height: 44px` here used to
+     clip a wrapped second row right off, so this is now `min-height` and
+     lets the bar grow. */
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 .fm-bottombar button {
   display: flex; align-items: center; gap: 6px;
@@ -1892,7 +1897,7 @@ input[type="number"]::-webkit-outer-spin-button {
      Family / Test Lab / Export keep their click targets and tooltips but no
      longer force horizontal overflow. Icons + tooltips remain fully usable;
      only the visible text label is collapsed via font-size, nothing is removed. */
-  .fm-topbar { gap: 8px; padding: 0 10px; }
+  .fm-topbar { gap: 8px; padding: 8px 10px; }
   .fm-topbar .fm-topbtn {
     font-size: 0;
     gap: 0;
@@ -1905,11 +1910,24 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-topbtn-group { gap: 4px; }
   .fm-theme-toggle { width: 40px; height: 40px; flex: 0 0 auto; }
 
+  /* Thin standalone separators read fine mid-row on a single scrolling
+     line, but once the bar wraps (see .fm-topbar above) one can land alone
+     at the start of a new row, which looks like a stray mark. Hidden here;
+     the gap between groups already reads as separation once wrapped. */
+  .fm-topbar .fm-divider,
+  .fm-topbar .fm-align-divider { display: none; }
+  /* The spacer only makes sense pushing content to the end of a single
+     row; on a wrapped multi-row bar it just leaves a large blank gap
+     partway through a line, so it's neutralized here. */
+  .fm-topbar .fm-spacer { flex: 0 0 0; width: 0; }
+
   .fm-zoom-controls input[type="range"] { width: 90px; }
 
   /* Bottom bar: same icon-first treatment as the top bar â€” labels collapse,
      tooltips/titles and click targets stay intact. */
-  .fm-bottombar { gap: 8px; padding: 0 10px; }
+  .fm-bottombar { gap: 8px; padding: 6px 10px; }
+  .fm-bottombar .fm-bottom-divider { display: none; }
+  .fm-bottombar .fm-hint-inline { margin-left: 0; }
   .fm-bottombar button {
     font-size: 0;
     gap: 0;
@@ -1936,16 +1954,6 @@ input[type="number"]::-webkit-outer-spin-button {
 
   .fm-canvas-area { padding: clamp(8px, 2vw, 20px); }
 
-  /* Safety net: if the compacted controls still don't all fit at the
-     narrowest widths, the bar scrolls horizontally within its own 40â€“44px
-     strip instead of the page gaining a horizontal scrollbar or any control
-     being clipped/hidden. */
-  .fm-bottombar {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    flex-wrap: nowrap;
-  }
-  .fm-bottombar > * { flex: 0 0 auto; }
   .fm-zoom-controls input[type="range"] { width: 70px; }
 
   .fm-floating-toolbar { max-width: calc(100% - 20px); }
@@ -1982,26 +1990,19 @@ input[type="number"]::-webkit-outer-spin-button {
     background: var(--panel-2);
     color: var(--text-dim);
     cursor: pointer;
-    /* Pin both drawer toggles to the edges of the now-scrollable topbar
-       (see .fm-topbar overflow-x above) so they stay reachable and
-       tappable no matter how far the bar has been scrolled - this is what
-       was making the right-panel button effectively unreachable/unusable
-       on phones, since it used to sit at the very end of a ~25-button row. */
-    position: sticky;
-    z-index: 6;
+    /* Previously `position: sticky`, pinned to the edges of a horizontally
+       scrolling topbar so they'd stay reachable no matter how far the bar
+       had been scrolled. Now that the topbar wraps instead of scrolling
+       (see .fm-topbar above), both buttons are simple in-flow flex items —
+       no sticky positioning needed. This also removes a real-world bug
+       where the right-panel toggle would open fine after rotating to
+       landscape but not respond to taps in portrait: `position: sticky`
+       inside a flex row that could also scroll is a known source of
+       inconsistent hit-testing across iOS Safari orientation changes,
+       since the sticky offset isn't always recomputed until something
+       else forces a reflow (like the resize from rotating the device). */
   }
-  .fm-mobile-nav-toggle { left: 0; }
-  .fm-mobile-panel-toggle { right: 0; }
   .fm-mobile-nav-toggle:hover, .fm-mobile-panel-toggle:hover { color: var(--text); background: var(--panel); }
-  /* NOTE: intentionally no `margin-left: auto` here. Combining that with
-     `position: sticky; right: 0` on a scrollable flex row made this button's
-     in-flow (static) position land underneath/behind whatever follows it in
-     the DOM (AuthWidget), so taps on the visible icon were actually landing
-     on AuthWidget instead — the button looked present but never opened the
-     drawer. `.fm-spacer` in TopBar.tsx already pushes this button (and
-     AuthWidget after it) to the end of the row, so no extra margin is
-     needed; removing it lets the sticky button keep its own hit-testable
-     box instead of overlapping the next element. */
 
   .fm-root:not([data-sketch-mode="true"]) .fm-body { position: relative; overflow: hidden; }
 

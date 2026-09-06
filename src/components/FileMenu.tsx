@@ -975,7 +975,13 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
           aria-expanded={open}
           data-testid="file-menu-btn"
         >
-          File <ChevronDown size={13} />
+          {/* Leading icon added so this button stays recognizable on
+              tablet/phone widths, where `.fm-topbtn` collapses to an
+              icon-only square (see the ≤1180px rule in app.css) — without
+              an icon here, only the trailing chevron survived that
+              collapse, making the entire File menu look like it had
+              disappeared. */}
+          <FileText size={14} /> File <ChevronDown size={13} />
         </button>
 
         {open && (
