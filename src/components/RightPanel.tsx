@@ -1136,31 +1136,34 @@ function CapControl({ value, onChange }: { value: StrokeCap; onChange: (cap: Str
 }
 
 const OUTLINE_CAP_LABELS: Record<OutlineCapStyle, string> = {
-  round: "Round (closed)",
-  square: "Square (closed)",
-  open: "Open (rails never join)",
+  square: "Flat, square-cornered closed end",
+  round: "Pill-shaped closed end",
+  open: "Border rails stay separate, never joined at the ends",
 };
 
-/** Outline Brush's own cap control — same look as CapControl above, but
- * over OutlineCapStyle ("round"/"square"/"open") instead of the generic
- * StrokeCap, since "open" means something specific to Outline Brush's
- * hollow ring (see BrushSettings.outlineCapStyle) that no other stroke type
- * has an equivalent of. */
+/** Outline Brush's own end-style control. Text-labeled rather than
+ * icon-only (unlike CapControl above) — a tiny "Square" vs "Open" glyph at
+ * this size was too easy to mix up (a fully-bordered box and a box with its
+ * side borders removed read as near-identical at 16px), which is exactly
+ * what caused Square to get picked while meaning to pick Open and vice
+ * versa. Spelling the three choices out removes that ambiguity entirely. */
 function OutlineCapControl({ value, onChange }: { value: OutlineCapStyle; onChange: (cap: OutlineCapStyle) => void }) {
+  const OUTLINE_CAP_TEXT: Record<OutlineCapStyle, string> = { square: "Square", round: "Round", open: "Open" };
   return (
     <div className="fm-field">
       <label>End Style</label>
-      <div className="fm-cap-control" role="group" aria-label="Outline brush end style">
-        {(["round", "square", "open"] as OutlineCapStyle[]).map((cap) => (
+      <div className="fm-kern-mode-toggle fm-toggle-3col" role="group" aria-label="Outline brush end style">
+        {(["square", "round", "open"] as OutlineCapStyle[]).map((cap) => (
           <button
+            type="button"
             key={cap}
-            className={`fm-cap-btn ${value === cap ? "active" : ""}`}
+            className={value === cap ? "active" : ""}
             onClick={() => onChange(cap)}
             title={OUTLINE_CAP_LABELS[cap]}
-            aria-label={OUTLINE_CAP_LABELS[cap]}
+            aria-pressed={value === cap}
             data-testid={`outline-cap-${cap}`}
           >
-            <span className={`fm-cap-icon ${cap}`} aria-hidden="true" />
+            {OUTLINE_CAP_TEXT[cap]}
           </button>
         ))}
       </div>

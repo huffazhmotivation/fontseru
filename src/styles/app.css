@@ -289,7 +289,7 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   padding: 8px 14px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
@@ -357,9 +357,9 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
 .fm-fontname:focus { border-color: var(--accent); }
 .fm-topbtn-group { display: flex; gap: 2px; }
 .fm-topbtn {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 5px;
   border: none; background: transparent; color: var(--text-dim);
-  padding: 7px 11px; border-radius: 8px; cursor: pointer;
+  padding: 7px 9px; border-radius: 8px; cursor: pointer;
   font-size: 12.5px; font-weight: 600;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -446,9 +446,9 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
 
 .fm-auth-user { position: relative; flex: 0 0 auto; }
 .fm-auth-avatar-btn {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 6px;
   border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
-  border-radius: 20px; padding: 4px 10px 4px 4px; cursor: pointer;
+  border-radius: 20px; padding: 4px 9px 4px 4px; cursor: pointer;
   transition: border-color 0.15s ease;
 }
 .fm-auth-avatar-btn:hover { border-color: var(--accent); }
@@ -2780,8 +2780,7 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .fm-cap-icon.butt::after,
 .fm-cap-icon.square::after,
-.fm-cap-icon.round::after,
-.fm-cap-icon.open::after {
+.fm-cap-icon.round::after {
   content: "";
   position: absolute;
   inset: 1px 3px;
@@ -2790,10 +2789,6 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-cap-icon.butt::after { border-top: 0; border-bottom: 0; border-radius: 0; }
 .fm-cap-icon.square::after { border-radius: 0; }
 .fm-cap-icon.round::after { border-radius: 7px; }
-/* "Open" (Outline Brush only): mirror of "butt" — keeps the top/bottom
-   rails but drops the left/right ends entirely, so the icon reads as two
-   parallel lines that never join, instead of a closed box. */
-.fm-cap-icon.open::after { border-left: 0; border-right: 0; border-radius: 0; }
 
 /* Test Lab/Kerning tabs are intentionally text/icon tabs, not cards. */
 .fm-lab-tabs {
@@ -4044,6 +4039,10 @@ input[type="number"]::-webkit-outer-spin-button {
   gap: 7px;
   margin: 10px 0 12px;
 }
+/* Same toggle look, three equal-width options instead of two — used for
+   Outline Brush's End Style (Square/Round/Open), which needs a third
+   choice `.fm-kern-mode-toggle`'s other 2-up uses don't. */
+.fm-kern-mode-toggle.fm-toggle-3col { grid-template-columns: 1fr 1fr 1fr; }
 .fm-kern-mode-toggle button {
   min-width: 0;
   height: 36px;
