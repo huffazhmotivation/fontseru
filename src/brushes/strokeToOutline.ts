@@ -918,26 +918,41 @@ export function centerlineToOutline(
         // sides, so it tracks real curvature rather than a fixed fraction,
         // and matches the same conversion already used for the centerline
         // itself (see catmullRomPoint above).
-        const tx = (next.x - prev.x) / 6;
-        const ty = (next.y - prev.y) / 6;
-        const rawLen = Math.hypot(tx, ty);
-        // BUG FIX: was `Math.min(inLen, outLen) * 0.5` which capped handles
-        // too short after RDP simplification (sparse polygon segments are
-        // long, so the shorter side still undershoot the actual arc). The
-        // rendered edge was technically "smooth" type but visually still flat
-        // between nodes. Raised to 0.65x — still safe against Catmull-Rom
-        // overshoot on evenly-spaced points, but gives enough reach to
-        // accurately follow the nib's actual swept arc on the sparser polygon
-        // that comes out of the now-tighter RDP pass above.
-        const maxLen = Math.min(inLen, outLen) * 0.65;
-        const scale = rawLen > maxLen && rawLen > 0 ? maxLen / rawLen : 1;
-        const hx = tx * scale;
-        const hy = ty * scale;
+        // BUG FIX ("menyong"/lopsided round caps): this used to build ONE
+        // shared vector `(next-prev)/6` and mirror it to both handleIn and
+        // handleOut, i.e. both handles were forced to the exact same
+        // length. That's a fine approximation when `prev`/`next` sit at
+        // roughly equal distances from `point`, but Outline Brush's round
+        // cap is exactly the one place that assumption breaks: capArc()
+        // hands back a dense run of evenly-spaced arc points, stitched
+        // directly onto the rail edge's own RDP-simplified points, which
+        // are usually spaced very differently (often much farther apart).
+        // Right at that arc-to-rail junction, `inLen` and `outLen` differ a
+        // lot — but the old code still gave both sides the same handle
+        // length, so one side overshot past where the actual geometry was
+        // and the other undershot, bulging the tip out unevenly to one
+        // side. Scaling handleIn/handleOut independently by their OWN local
+        // segment length keeps the tangent direction shared (still C1
+        // continuous — no visible kink) while letting each side's bulge
+        // amount track its own real spacing, so a round cap stays a even,
+        // symmetric arc instead of leaning toward whichever neighbor
+        // happened to be closer.
+        const dx = next.x - prev.x;
+        const dy = next.y - prev.y;
+        const dLen = Math.hypot(dx, dy) || 1;
+        const ux = dx / dLen;
+        const uy = dy / dLen;
+        // 1/3 of the local segment length is the standard smooth-cubic
+        // handle length for evenly spaced points; the 0.65x cap (kept from
+        // the previous fix) still guards against overshoot on any
+        // unusually short segment.
+        const inHandleLen = Math.min(inLen / 3, inLen * 0.65);
+        const outHandleLen = Math.min(outLen / 3, outLen * 0.65);
         return {
           id: shortId("node"),
           point,
-          handleIn: { x: point.x - hx, y: point.y - hy },
-          handleOut: { x: point.x + hx, y: point.y + hy },
+          handleIn: { x: point.x - ux * inHandleLen, y: point.y - uy * inHandleLen },
+          handleOut: { x: point.x + ux * outHandleLen, y: point.y + uy * outHandleLen },
           type: "smooth" as const,
         };
       })
@@ -1487,18 +1502,33 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
 
   const stepLen = Math.max(0.7, halfWidthBase * 0.2);
   const stepCount = Math.max(1, Math.round(totalLength / stepLen));
-  // Total specks seeded per step, spread across the FULL radial range below
-  // (not split into fixed "edge"/"mist" quotas) — how many actually land
-  // near the core vs. further out is entirely down to the radiusFrac
-  // distribution, not separate per-band counts.
-  const specksPerStep = Math.max(3, Math.round(halfWidthBase * 0.55 * (0.6 + density)));
+  // BUG FIX (thin/weak-looking core): specksPerStep and the old single-curve
+  // `pow(u, 2.4)` radial distribution below both fed one narrow, pointy
+  // cluster right at the centerline instead of a proper "dense disc in the
+  // middle, real mist at the edge" spray-can profile — the core read as a
+  // thin bright thread rather than solid coverage. Raised overall count
+  // ~40% so there's enough ink to fill the wider core built below without
+  // thinning it back out.
+  const specksPerStep = Math.max(4, Math.round(halfWidthBase * 0.77 * (0.6 + density)));
   const outerSign = 1;
-  const maxReach = 1.9 * spread;
-  // >1 biases a uniform [0,1] sample toward 0: most draws land small, a
-  // shrinking few land large. That's what makes the core dense enough to
-  // read as solid while the outer reach stays a thin scatter, with no hard
-  // edge anywhere in between.
-  const radialGamma = 2.4;
+  // Reach pushed out a bit further than before so the sparse mist genuinely
+  // has room to fade out and scatter, instead of stopping right where the
+  // old, tighter cluster already thinned to nothing.
+  const maxReach = 2.3 * spread;
+  // Radial layout is now two explicit zones instead of one power curve
+  // across the whole reach:
+  //  - CORE (out to `coreReachFrac` of maxReach): most specks land here
+  //    (`coreShare`), with a gentle bias (`coreGamma` close to 1, i.e.
+  //    close to a uniform disc) so the whole core area fills in densely and
+  //    evenly — a solid-reading blob, not just a hot spot at dead center.
+  //  - EDGE (from the core boundary out to maxReach): the remaining, far
+  //    fewer specks, biased toward the inner edge of this band with
+  //    `edgeGamma` so they thin out fast — the loose, individually visible
+  //    flecks and light mist a real spray can leaves past its solid center.
+  const coreReachFrac = 0.55;
+  const coreShare = 0.72;
+  const coreGamma = 1.15;
+  const edgeGamma = 2.5;
 
   const flecks: Contour[] = [];
   let seedBase = 0;
@@ -1519,16 +1549,24 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
     for (let k = 0; k < count; k++) {
       seedBase += 1;
       const seed = seedBase * 91.7 + i * 3.3 + k * 17;
+      const zoneRoll = (pseudoNoise(seed * 1.1 + 55.5) + 1) / 2;
+      const inCore = zoneRoll < coreShare;
       const u = (pseudoNoise(seed * 1.7 + 0.31) + 1) / 2;
-      const radiusFrac = Math.pow(u, radialGamma);
+      const radiusFrac = inCore
+        ? Math.pow(u, coreGamma) * coreReachFrac
+        : coreReachFrac + Math.pow(u, edgeGamma) * (1 - coreReachFrac);
       const angle = Math.PI * ((pseudoNoise(seed * 2.3 + 8.9) + 1) / 2) * 2;
       const across = Math.cos(angle) * radiusFrac * maxReach * halfWidth;
       const along = Math.sin(angle) * radiusFrac * maxReach * halfWidth * 0.7;
       const center = { x: p.x + nx * across + tx * along, y: p.y + ny * across + ty * along };
-      // Slightly larger near the core, tapering toward tiny at the far
-      // reach — reinforces the dense-center/sparse-edge read on top of the
-      // placement distribution itself.
-      const sizeFrac = 1 - Math.min(1, radiusFrac) * 0.5;
+      // Core dots stay large and close to full size across the WHOLE core
+      // disc (only a mild taper, `1 - radiusFrac * 0.15`) so they overlap
+      // into solid coverage rather than fading out toward its own rim;
+      // edge dots drop sharply in size the further past the core boundary
+      // they land, so the mist genuinely reads as fine and sparse.
+      const sizeFrac = inCore
+        ? 1 - Math.min(1, radiusFrac / coreReachFrac) * 0.15
+        : 0.85 - Math.min(1, (radiusFrac - coreReachFrac) / (1 - coreReachFrac)) * 0.6;
       const radius = Math.max(0.35, halfWidthBase * (0.02 + ((pseudoNoise(seed * 1.3 + 9.3) + 1) / 2) * 0.06) * sizeFrac);
       // Same winding on every speck so overlapping dots add solid ink under
       // the nonzero fill rule instead of risking a stray hole.
@@ -1644,9 +1682,21 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
     const nibAngleRad = (settings.angle * Math.PI) / 180;
     const outerRails = nibOffsetRails(pts, cumulative, totalLength, settings, settings.size, nibAngleRad);
     const innerRails = nibOffsetRails(pts, cumulative, totalLength, settings, Math.max(1, innerSize), nibAngleRad);
+    // BUG FIX: unlike the "round"/"square" path below (which runs every
+    // rail through removeSelfIntersectionLoops before capping — see that
+    // call's doc comment), these raw rails were being turned straight into
+    // strips with no cleanup at all. On a sharply bent or self-touching
+    // stroke (a loop, a tight corner, two parts of the same gesture
+    // crossing back over each other) the offset rail folds over itself
+    // there, and with no cap ever closing the strip shut, that fold showed
+    // up as a visibly tangled, non-merged seam right at the point of
+    // contact instead of the clean join "round"/"square" get for free from
+    // their closed ring. Cleaning each rail the same way collapses that
+    // local fold into a single point, so an "open" stroke that touches or
+    // crosses itself merges into one simple strip there too.
     return [
-      railsToContour(outerRails.left, innerRails.left),
-      railsToContour(outerRails.right, innerRails.right),
+      railsToContour(removeSelfIntersectionLoops(outerRails.left), removeSelfIntersectionLoops(innerRails.left)),
+      railsToContour(removeSelfIntersectionLoops(outerRails.right), removeSelfIntersectionLoops(innerRails.right)),
     ];
   }
 
