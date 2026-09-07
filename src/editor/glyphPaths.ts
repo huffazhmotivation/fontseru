@@ -45,22 +45,61 @@ const glyphPathCache = new WeakMap<Glyph, Map<number, GlyphPathEntry[]>>();
  * disjoint rings (see applyBooleanOp's polygon-clipping union), so an "i"'s
  * two unrelated dots merge into a no-op and still render as two dots.
  */
+/** Unions 0..N single-purpose shapes without needless boolean calls for the
+ * trivial cases (nothing to union / already just one shape). */
+function unionShapes(contoursList: Contour[][]): Contour[] {
+  const nonEmpty = contoursList.filter((c) => c.length > 0);
+  if (nonEmpty.length === 0) return [];
+  if (nonEmpty.length === 1) return nonEmpty[0];
+  const wrapped: VectorObject[] = nonEmpty.map((contours) => ({ id: `tmp-${Math.random()}`, kind: "expanded", contours }));
+  const merged = applyBooleanOp(wrapped, "union");
+  return merged?.contours ?? [];
+}
+
 function mergeOutlineBrushStrokes(objects: VectorObject[]): { contours: Contour[]; consumedIds: Set<string> } | null {
   const outlineObjs = objects.filter((o) => o.kind === "brush" && o.brushType === "outline");
   if (outlineObjs.length < 2) return null;
 
-  const wrapped: VectorObject[] = [];
+  // outlineBrushOutlineContours() returns [outerBody] when the stroke is too
+  // thin for a hole, or [outerBody, innerHole] otherwise. Rather than
+  // unioning each stroke's own outer+hole pair together (a plain donut
+  // union), collect ALL outer bodies and ALL inner holes across every
+  // stroke separately, union each group on its own, then subtract the
+  // combined hole from the combined body. This makes a hole always show
+  // through, even where a *different* stroke's solid ink crosses over it —
+  // matching how real hollow/outline letterforms read where strokes meet —
+  // instead of the later stroke's ink silently plugging the earlier
+  // stroke's hole (what a plain donut-vs-donut union does, since union just
+  // ORs ink together with no concept of "hole wins").
+  const outerContours: Contour[][] = [];
+  const innerContours: Contour[][] = [];
   for (const o of outlineObjs) {
     const contours = brushOutlineContours(o);
-    if (contours.length) wrapped.push({ id: o.id, kind: "expanded", contours });
+    if (contours.length === 0) continue;
+    outerContours.push([contours[0]]);
+    if (contours.length > 1) innerContours.push([contours[1]]);
   }
-  if (wrapped.length < 2) return null;
+  if (outerContours.length < 2) return null;
 
-  const merged = applyBooleanOp(wrapped, "union");
-  if (!merged || merged.contours.length === 0) return null;
+  const outerUnion = unionShapes(outerContours);
+  if (outerUnion.length === 0) return null;
+
+  const innerUnion = innerContours.length > 0 ? unionShapes(innerContours) : [];
+
+  let finalContours = outerUnion;
+  if (innerUnion.length > 0) {
+    const cut = applyBooleanOp(
+      [
+        { id: "tmp-outer", kind: "expanded", contours: outerUnion },
+        { id: "tmp-inner", kind: "expanded", contours: innerUnion },
+      ],
+      "subtract"
+    );
+    if (cut && cut.contours.length > 0) finalContours = cut.contours;
+  }
 
   const consumedIds = new Set(outlineObjs.map((o) => o.id));
-  return { contours: merged.contours, consumedIds };
+  return { contours: finalContours, consumedIds };
 }
 
 export function getGlyphPaths(glyph: Glyph, ascender: number): GlyphPathEntry[] {

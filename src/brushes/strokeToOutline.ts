@@ -1185,19 +1185,37 @@ function makeRoughHole(center: Point, radius: number, seed: number, desiredSign:
  * punch through it) — used for Oil Brush's spatter dots near a frayed edge.
  */
 function makeSpeckle(center: Point, radius: number, seed: number, desiredSign: number): Contour {
-  const sides = 6;
+  // 12 sides + smooth (curved, not corner) nodes reads as a soft round ink
+  // droplet. The previous 6-corner polygon with sharp "corner" node types
+  // faceted into a visible little hexagon at real brush sizes, which is
+  // what made the whole spray field look mechanical/blocky instead of like
+  // fine atomized specks.
+  const sides = 12;
   const raw: Point[] = [];
   for (let i = 0; i < sides; i++) {
-    const a = (i / sides) * Math.PI * 2;
-    const wobble = 1 + pseudoNoise(seed + i * 4.3) * 0.4;
+    const a = (i / sides) * Math.PI * 2 + pseudoNoise(seed + i * 2.1) * 0.35;
+    const wobble = 1 + pseudoNoise(seed + i * 4.3) * 0.45;
     raw.push({ x: center.x + Math.cos(a) * radius * wobble, y: center.y + Math.sin(a) * radius * wobble });
   }
   const sign = Math.sign(signedArea(raw));
   const pts = sign !== 0 && sign !== desiredSign ? [...raw].reverse() : raw;
+  const n = pts.length;
   return {
     id: shortId("contour"),
     closed: true,
-    nodes: pts.map((point) => ({ id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const })),
+    nodes: pts.map((p, i) => {
+      const prev = pts[(i - 1 + n) % n];
+      const next = pts[(i + 1) % n];
+      const hx = (next.x - prev.x) / 6;
+      const hy = (next.y - prev.y) / 6;
+      return {
+        id: shortId("node"),
+        point: p,
+        handleIn: { x: p.x - hx, y: p.y - hy },
+        handleOut: { x: p.x + hx, y: p.y + hy },
+        type: "smooth" as const,
+      };
+    }),
   };
 }
 
@@ -1488,7 +1506,13 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   const flecks: Contour[] = [];
   let seedBase = 0;
   for (let i = 0; i <= stepCount; i++) {
-    const t = (i / stepCount) * totalLength;
+    // Jitter the sample position itself along the stroke (not just what's
+    // scattered around it) so consecutive steps stop landing at perfectly
+    // even intervals — evenly-spaced steps are what made the flecks read as
+    // combed "rows" across the stroke instead of a loose natural cloud.
+    const jitterSeed = i * 17.3 + 4.2;
+    const tJitter = (pseudoNoise(jitterSeed) * 0.5) * stepLen;
+    const t = Math.max(0, Math.min(totalLength, (i / stepCount) * totalLength + tJitter));
     const { p, tangent, taper } = at(t);
     if (taper <= 0.02) continue;
     const tLen = Math.hypot(tangent.x, tangent.y) || 1;
@@ -1498,34 +1522,43 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
     const ny = tx;
     const halfWidth = halfWidthBase * taper;
 
+    // Randomize count per step too (instead of a fixed number every time)
+    // so density itself varies a little along the pass, like a real can's
+    // uneven flow, rather than a metronomic per-step quota.
     for (const side of [-1, 1] as const) {
-      for (let k = 0; k < edgeFlecksPerStep; k++) {
+      const edgeCount = Math.max(0, Math.round(edgeFlecksPerStep * (0.5 + pseudoNoise(jitterSeed + side * 31) * 0.5 + 0.5)));
+      for (let k = 0; k < edgeCount; k++) {
         seedBase += 1;
-        const seed = seedBase * 91.7 + i * 3.3 + side * 500;
-        // Sit right on the boundary out to a bit beyond it — the ragged,
-        // torn edge, not a clean offset line of dots.
-        const reach = ((pseudoNoise(seed) + 1) / 2) * halfWidth * 0.4 * spread;
+        // Two independent, non-integer-correlated noise lookups per axis —
+        // the previous version derived reach/along from seeds that were
+        // simple linear offsets of each other (seed, seed+5.1), which keeps
+        // pseudoNoise's periodic structure aligned between the two axes and
+        // shows up as faint rows/columns across many flecks. Multiplying by
+        // large, unrelated irrational-ish constants decorrelates them.
+        const seed = seedBase * 91.7 + i * 3.3 + side * 500 + k * 17;
+        const reach = Math.pow((pseudoNoise(seed * 1.7 + 0.31) + 1) / 2, 0.7) * halfWidth * 0.55 * spread;
         const across = side * (halfWidth + reach);
-        const along = pseudoNoise(seed + 5.1) * halfWidth * 0.6;
+        const along = pseudoNoise(seed * 2.3 + 8.9) * halfWidth * 0.7;
         const center = { x: p.x + nx * across + tx * along, y: p.y + ny * across + ty * along };
-        const radius = Math.max(0.4, halfWidthBase * (0.025 + ((pseudoNoise(seed + 9.3) + 1) / 2) * 0.05));
+        const radius = Math.max(0.4, halfWidthBase * (0.02 + ((pseudoNoise(seed * 1.3 + 9.3) + 1) / 2) * 0.07));
         // Same winding as the main body so flecks add solid ink onto it
         // under the nonzero fill rule, rather than risking a stray hole.
         flecks.push(makeSpeckle(center, radius, seed, outerSign));
       }
     }
 
-    for (let k = 0; k < mistFlecksPerStep; k++) {
+    const mistCount = Math.max(0, Math.round(mistFlecksPerStep * (0.4 + pseudoNoise(jitterSeed + 71) * 0.6 + 0.6)));
+    for (let k = 0; k < mistCount; k++) {
       seedBase += 1;
-      const seed = seedBase * 133.1 + i * 7.7;
-      const side = pseudoNoise(seed) > 0 ? 1 : -1;
+      const seed = seedBase * 133.1 + i * 7.7 + k * 23;
+      const side = pseudoNoise(seed * 0.7) > 0 ? 1 : -1;
       // Reach further out than the edge flecks, thinning with `density` via
       // the exponent — a soft overspray haze trailing off the pass.
-      const reachFrac = 1 + Math.pow((pseudoNoise(seed + 3.3) + 1) / 2, 1.2 + density) * 1.8;
+      const reachFrac = 1 + Math.pow((pseudoNoise(seed * 2.9 + 3.3) + 1) / 2, 1.2 + density) * 2.2;
       const across = side * halfWidth * reachFrac;
-      const along = pseudoNoise(seed + 6.6) * halfWidth * 0.8;
+      const along = pseudoNoise(seed * 1.9 + 6.6) * halfWidth * 1.1;
       const center = { x: p.x + nx * across + tx * along, y: p.y + ny * across + ty * along };
-      const radius = Math.max(0.3, halfWidthBase * (0.015 + ((pseudoNoise(seed + 12.1) + 1) / 2) * 0.035));
+      const radius = Math.max(0.3, halfWidthBase * (0.012 + ((pseudoNoise(seed * 1.1 + 12.1) + 1) / 2) * 0.04));
       flecks.push(makeSpeckle(center, radius, seed, outerSign));
     }
   }
