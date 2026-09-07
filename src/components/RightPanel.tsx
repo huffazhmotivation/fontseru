@@ -118,6 +118,18 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
   const commonBrushType = brushObjs.length > 0 && brushObjs.every((o) => o.brushType === brushObjs[0].brushType)
     ? (brushObjs[0].brushType as BrushType | undefined)
     : undefined;
+  // Select-mode End Style control (see OutlineCapControl below): only makes
+  // sense for Outline Brush strokes, and only shows a definite value when
+  // every selected Outline stroke currently shares the same cap style — a
+  // mixed selection shows no control at all rather than misleadingly
+  // picking the first object's value, same reasoning as commonBrushType.
+  const outlineBrushObjs = brushObjs.filter((o) => o.brushType === "outline");
+  const commonOutlineCapStyle: OutlineCapStyle | "mixed" =
+    outlineBrushObjs.length === 0
+      ? "square"
+      : outlineBrushObjs.every((o) => (o.brushSettings?.outlineCapStyle ?? "square") === (outlineBrushObjs[0].brushSettings?.outlineCapStyle ?? "square"))
+        ? outlineBrushObjs[0].brushSettings?.outlineCapStyle ?? "square"
+        : "mixed";
   const groupIds = new Set(objs.flatMap((o) => (o.groupId ? [o.groupId] : [])));
   const oneGroupId = groupIds.size === 1 ? [...groupIds][0] : null;
   const isSingleGroup = Boolean(oneGroupId && objs.length > 1 && objs.every((o) => o.groupId === oneGroupId));
@@ -182,6 +194,12 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
       )}
       {capObjs.length > 0 && (
         <CapControl value={capObjs[0].cap ?? "round"} onChange={(cap) => updateSelectedObject({ cap })} />
+      )}
+      {outlineBrushObjs.length > 0 && commonOutlineCapStyle !== "mixed" && (
+        <OutlineCapControl
+          value={commonOutlineCapStyle}
+          onChange={(outlineCapStyle) => updateSelectedObject({ brushSettings: { outlineCapStyle } })}
+        />
       )}
 
       {objs.length > 1 && (

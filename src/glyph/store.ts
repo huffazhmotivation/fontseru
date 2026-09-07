@@ -426,7 +426,7 @@ interface AppState {
   setAutoSpacingEnabled: (enabled: boolean) => void;
   commitOutline: (char: string, outline: GlyphOutline, opts?: { skipAutoSpacing?: boolean }) => void;
   setLiveOutline: (outline: GlyphOutline | null) => void;
-  updateSelectedObject: (patch: Partial<VectorObject>) => void;
+  updateSelectedObject: (patch: Partial<Omit<VectorObject, "brushSettings">> & { brushSettings?: Partial<BrushSettings> }) => void;
 
   // multi-glyph selection (GlyphNav) — synced live into the Brush panel:
   // with glyphs selected here, setBrushType/setBrush (below) also restyle
@@ -1492,12 +1492,16 @@ export const useAppStore = create<AppState>()((set, get) => {
           next.brushType = presetId;
           next.brushSettings = preset ? { ...preset.settings, type: presetId, size: width } : undefined;
           next.cap = presetId === "monoline" ? (next.cap ?? "round") : "round";
+        } else if (patch.brushSettings !== undefined && o.kind === "brush" && o.brushSettings) {
+          // A targeted field tweak (e.g. Outline Brush's End Style from the
+          // Select-tool panel) — merge onto the object's EXISTING settings
+          // instead of the brushType branch above's full preset reset, so
+          // adjusting one field never reverts every other slider (size,
+          // taper, roundness, ...) back to that preset's defaults.
+          next.brushSettings = { ...o.brushSettings, ...patch.brushSettings } as BrushSettings;
         }
-        const rest = { ...patch };
-        delete rest.strokeWidth;
-        delete rest.cap;
-        delete rest.brushType;
-        delete rest.brushSettings;
+        const { strokeWidth: _sw, cap: _cap, brushType: _bt, brushSettings: _bs, ...rest } = patch;
+        void _sw; void _cap; void _bt; void _bs;
         return { ...next, ...rest };
       });
       commit({ ...glyphs, [activeChar]: { ...glyph, outline: { objects } } });
