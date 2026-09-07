@@ -42,6 +42,7 @@ export function TopBar() {
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const fontName = useAppStore((s) => s.fontName);
   const setFontName = useAppStore((s) => s.setFontName);
+  const commitFontNameEdit = useAppStore((s) => s.commitFontNameEdit);
   const past = useAppStore((s) => s.past);
   const future = useAppStore((s) => s.future);
   const liveOutline = useAppStore((s) => s.liveOutline);
@@ -144,6 +145,8 @@ export function TopBar() {
         className="fm-fontname"
         value={fontName}
         onChange={(event) => setFontName(event.target.value)}
+        onBlur={commitFontNameEdit}
+        onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
         spellCheck={false}
         data-testid="font-name-input"
       />

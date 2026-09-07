@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlignCenter, AlignLeft, AlignRight, Ampersand, CaseLower, CaseUpper, Hash, Quote, Wand2, X } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Ampersand, CaseLower, CaseUpper, Globe, Hash, Quote, Wand2, X } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { GlyphRun } from "@/editor/GlyphRun";
 import { wrapLines } from "@/editor/textLayout";
@@ -7,15 +7,16 @@ import { sentenceForCategory } from "@/glyph/testSentences";
 import type { GlyphCategory } from "@/types/glyph";
 import { SunIcon, MoonIcon } from "@/components/icons/ThemeIcon";
 
-/** Small icon toggles for the categories that actually have a preset
- * sentence (see sentenceForCategory) — spacing/multilingual/feature glyphs
- * fall back to the uppercase pangram so they don't get a button here. */
+/** Small icon toggles for the categories that have a preset sentence (see
+ * sentenceForCategory) — spacing/feature glyphs fall back to the uppercase
+ * pangram so they don't get a button here. */
 const CATEGORY_OPTIONS: { id: GlyphCategory; label: string; Icon: typeof CaseUpper }[] = [
   { id: "upper", label: "Uppercase", Icon: CaseUpper },
   { id: "lower", label: "Lowercase", Icon: CaseLower },
   { id: "digits", label: "Numbers", Icon: Hash },
   { id: "punct", label: "Punctuation", Icon: Quote },
   { id: "symbols", label: "Symbols", Icon: Ampersand },
+  { id: "multilingual", label: "Multilingual", Icon: Globe },
 ];
 
 /**

@@ -4,7 +4,7 @@ import { AlignCenter, AlignLeft, AlignRight, Loader2, MoveHorizontal, Redo2, Rot
 import { NumericInput } from "@/components/NumericInput";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
-import { UPPER_TEST, LOWER_TEST, NUMBERS_TEST, PUNCTUATION_TEST, SYMBOL_TEST } from "@/glyph/testSentences";
+import { UPPER_TEST, LOWER_TEST, NUMBERS_TEST, PUNCTUATION_TEST, SYMBOL_TEST, MULTILINGUAL_TEST } from "@/glyph/testSentences";
 import { GlyphRun } from "@/editor/GlyphRun";
 import { GlyphThumbnail } from "@/components/GlyphThumbnail";
 import { caretX, fallbackAdvance, layoutLine, nearestCaretColumn, type LineLayout } from "@/editor/textLayout";
@@ -1555,20 +1555,6 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
     window.setTimeout(() => setTrackingApplyFlash(false), 900);
   }, [applyTrackingToAllGlyphs, tracking]);
 
-  // Unlike the other presets (fixed strings), Multilingual reflects
-  // whatever the font actually has right now: every "multilingual"
-  // category glyph that's been drawn or composed via "+ Multilingual
-  // Glyphs", sorted by Unicode code point.
-  const multilingualText = useMemo(
-    () =>
-      Object.values(glyphs)
-        .filter((g) => g.category === "multilingual" && hasOutline(g))
-        .sort((a, b) => a.unicode - b.unicode)
-        .map((g) => g.char)
-        .join(" "),
-    [glyphs]
-  );
-
   const presetText = (id: TestId): string | null => {
     switch (id) {
       case "type": return "";
@@ -1577,7 +1563,7 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
       case "numbers": return NUMBERS_TEST;
       case "punctuation": return PUNCTUATION_TEST;
       case "symbol": return SYMBOL_TEST;
-      case "multilingual": return multilingualText || "Draw or compose multilingual glyphs first.";
+      case "multilingual": return MULTILINGUAL_TEST;
       case "feature": return "";
       case "kerning": return KERNING_TEST_LINES.join("\n");
       case "pangram": return PANGRAM_LINES.join("\n");

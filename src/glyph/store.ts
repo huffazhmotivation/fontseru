@@ -79,6 +79,20 @@ interface HistoryEntry {
   /** Optional so history created before per-style word spacing remains compatible. */
   wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle;
   autoKernLastRun?: { processed: number; updated: number; preservedManual: number } | null;
+  /** Which Glyph/Family tab (Regular/Bold/Italic/custom) was active when this
+   * entry was captured. Only tagged by actions that can actually change the
+   * active tab (style switch, family generation/add/remove) — every other
+   * entry leaves this undefined and undo/redo falls back to the current
+   * value, which is always correct because the tab can't have changed
+   * without going through one of those tagged actions in between. */
+  fontStyle?: FontStyle;
+  /** Present only on entries from actions that touch font-wide identity
+   * (name/metadata) or the family/feature-glyph list, so those edits are
+   * undoable too instead of silently bypassing history. */
+  fontName?: string;
+  fontInfo?: FontInfo;
+  customFamilies?: CustomFamily[];
+  featureConfig?: FeatureBuilderConfig;
 }
 const HISTORY_LIMIT = 120;
 
@@ -351,6 +365,9 @@ interface AppState {
   toggleMobilePanel: () => void;
   closeMobilePanels: () => void;
   setFontName: (name: string) => void;
+  /** Flushes the in-progress font-name edit into a single undo step. Call
+   * on blur (or Enter) of the name field — see `setFontName`. */
+  commitFontNameEdit: () => void;
   setFontInfo: (patch: Partial<FontInfo>) => void;
   setProjectFileName: (name: string) => void;
   newProject: () => void;
@@ -642,6 +659,12 @@ export const useAppStore = create<AppState>()((set, get) => {
     kerningOverridesByStyle: KerningOverridesByStyle;
     kerningOverrideManualByStyle: KerningOverrideManualByStyle;
   } | null = null;
+  // Remembers the font name as it was before the current burst of keystrokes
+  // in TopBar's title field, mirroring the metric/kerning drag-snapshot
+  // pattern below: `setFontName` fires on every keystroke, so pushing
+  // history there directly would turn one rename into dozens of undo steps.
+  // `commitFontNameEdit` (called on blur) flushes a single entry instead.
+  let fontNameEditSnapshot: string | null = null;
   let metricDragSnapshot: FontMetrics | null = null;
   let glyphMetricDragSnapshot: GlyphMap | null = null;
   /** Debounce handle for the italicAngle → re-space-all-glyphs pass (see
@@ -703,6 +726,44 @@ export const useAppStore = create<AppState>()((set, get) => {
       past: [...past, { glyphs, metrics, kerningPairs, kerningManual }].slice(-HISTORY_LIMIT),
       future: [],
     });
+  }
+
+  /**
+   * General-purpose history-tracked patch for actions that don't fit the
+   * glyph-outline-shaped `commit()`/`commitKerning()` helpers — font
+   * name/info edits, adding or removing a Glyph/Family tab, regenerating a
+   * whole style, and Feature Builder rule changes. Snapshots every field
+   * `undo`/`redo` know how to restore *before* applying `patch`, so these
+   * activities join the same single undo/redo timeline as glyph editing
+   * instead of being invisible to it (previously several of these either
+   * skipped history outright or wiped `past`/`future` completely, which is
+   * what made Ctrl+Z stop working after touching Font Info, Family tabs, or
+   * Feature Builder).
+   */
+  function commitPatch(patch: Partial<AppState>) {
+    const state = get();
+    set({
+      ...patch,
+      past: [
+        ...state.past,
+        {
+          glyphs: state.glyphs,
+          glyphsByStyle: state.glyphsByStyle,
+          metrics: state.metrics,
+          kerningPairs: state.kerningPairs,
+          kerningManual: state.kerningManual,
+          kerningOverridesByStyle: state.kerningOverridesByStyle,
+          kerningOverrideManualByStyle: state.kerningOverrideManualByStyle,
+          wordSpacingOverridesByStyle: state.wordSpacingOverridesByStyle,
+          fontStyle: state.fontStyle,
+          fontName: state.fontName,
+          fontInfo: state.fontInfo,
+          customFamilies: state.customFamilies,
+          featureConfig: state.featureConfig,
+        },
+      ].slice(-HISTORY_LIMIT),
+      future: [],
+    } as Partial<AppState>);
   }
 
   /** Same history stack as `commit`, for edits that touch kerning instead of glyph geometry. */
@@ -1006,11 +1067,53 @@ export const useAppStore = create<AppState>()((set, get) => {
     toggleMobileNav: () => set((s) => ({ mobileNavOpen: !s.mobileNavOpen, mobilePanelOpen: false })),
     toggleMobilePanel: () => set((s) => ({ mobilePanelOpen: !s.mobilePanelOpen, mobileNavOpen: false })),
     closeMobilePanels: () => set({ mobileNavOpen: false, mobilePanelOpen: false }),
-    setFontName: (name) => set((s) => ({
-      fontName: name,
-      fontInfo: s.fontInfo.familyName === s.fontName ? { ...s.fontInfo, familyName: name, fullName: `${name} ${s.fontInfo.styleName}` } : s.fontInfo,
-    })),
-    setFontInfo: (patch) => set((s) => ({ fontInfo: { ...s.fontInfo, ...patch } })),
+    setFontName: (name) => {
+      const s = get();
+      if (name === s.fontName) return;
+      // First keystroke of a burst remembers the pre-edit name; later
+      // keystrokes in the same burst just update live without touching
+      // history (see `commitFontNameEdit`/`fontNameEditSnapshot` above).
+      if (fontNameEditSnapshot === null) fontNameEditSnapshot = s.fontName;
+      set({
+        fontName: name,
+        fontInfo: s.fontInfo.familyName === s.fontName ? { ...s.fontInfo, familyName: name, fullName: `${name} ${s.fontInfo.styleName}` } : s.fontInfo,
+      });
+    },
+    /** Flushes a single undo step for the font-name edit(s) since the field
+     * was last focused. Call on blur/Enter of the name field. No-op if the
+     * name never actually changed. */
+    commitFontNameEdit: () => {
+      const before = fontNameEditSnapshot;
+      fontNameEditSnapshot = null;
+      if (before === null) return;
+      const state = get();
+      if (before === state.fontName) return;
+      set({
+        past: [
+          ...state.past,
+          {
+            glyphs: state.glyphs,
+            glyphsByStyle: state.glyphsByStyle,
+            metrics: state.metrics,
+            kerningPairs: state.kerningPairs,
+            kerningManual: state.kerningManual,
+            kerningOverridesByStyle: state.kerningOverridesByStyle,
+            kerningOverrideManualByStyle: state.kerningOverrideManualByStyle,
+            wordSpacingOverridesByStyle: state.wordSpacingOverridesByStyle,
+            fontStyle: state.fontStyle,
+            fontName: before,
+            fontInfo: state.fontInfo.familyName === state.fontName ? { ...state.fontInfo, familyName: before } : state.fontInfo,
+            customFamilies: state.customFamilies,
+            featureConfig: state.featureConfig,
+          },
+        ].slice(-HISTORY_LIMIT),
+        future: [],
+      });
+    },
+    setFontInfo: (patch) => {
+      const s = get();
+      commitPatch({ fontInfo: { ...s.fontInfo, ...patch } });
+    },
     setProjectFileName: (name) => set({ projectFileName: name }),
     newProject: () => {
       const name = "Untitled Font";
@@ -1189,7 +1292,11 @@ export const useAppStore = create<AppState>()((set, get) => {
       const nextActiveChar = nextGlyphs[state.activeChar]
         ? state.activeChar
         : Object.keys(nextGlyphs)[0] ?? state.activeChar;
-      set({
+      // Switching the Glyph/Family tab used to wipe the whole undo stack —
+      // now it's just another tagged step, so undo/redo keeps working
+      // seamlessly across tab switches instead of losing everything the
+      // moment you look at Bold or Italic.
+      commitPatch({
         fontStyle: style,
         glyphs: nextGlyphs,
         activeChar: nextActiveChar,
@@ -1202,8 +1309,6 @@ export const useAppStore = create<AppState>()((set, get) => {
         clipboardSourceChar: null,
         glyphMetricFocus: null,
         selectedGlyphChars: [],
-        past: [],
-        future: [],
       });
     },
 
@@ -1216,7 +1321,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const nextActiveChar = generated[state.activeChar]
         ? state.activeChar
         : Object.keys(generated)[0] ?? state.activeChar;
-      set({
+      commitPatch({
         glyphs: generated,
         glyphsByStyle: { ...state.glyphsByStyle, [state.fontStyle]: generated },
         activeChar: nextActiveChar,
@@ -1229,8 +1334,6 @@ export const useAppStore = create<AppState>()((set, get) => {
         clipboardSourceChar: null,
         glyphMetricFocus: null,
         selectedGlyphChars: [],
-        past: [],
-        future: [],
       });
     },
 
@@ -1283,7 +1386,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const glyphs = newCustomFamilyGlyphs(state.glyphsByStyle.regular);
       const nextFamilies = [...state.customFamilies, { id, name: trimmed }];
       const nextGlyphsByStyle: GlyphFamily = { ...state.glyphsByStyle, [id]: glyphs };
-      set({
+      commitPatch({
         customFamilies: nextFamilies,
         glyphsByStyle: nextGlyphsByStyle,
         fontStyle: id,
@@ -1298,8 +1401,6 @@ export const useAppStore = create<AppState>()((set, get) => {
         clipboardSourceChar: null,
         glyphMetricFocus: null,
         selectedGlyphChars: [],
-        past: [],
-        future: [],
       });
       return id;
     },
@@ -1313,7 +1414,9 @@ export const useAppStore = create<AppState>()((set, get) => {
       const wasActive = state.fontStyle === id;
       const nextStyle = wasActive ? "regular" : state.fontStyle;
       const nextGlyphs = wasActive ? nextGlyphsByStyle.regular : state.glyphs;
-      set({
+      // Deleting a Glyph tab used to bypass the undo stack entirely — now
+      // it's a normal undoable step, just like removing anything else.
+      commitPatch({
         customFamilies: nextFamilies,
         glyphsByStyle: nextGlyphsByStyle,
         fontStyle: nextStyle,
@@ -1845,33 +1948,51 @@ export const useAppStore = create<AppState>()((set, get) => {
       finalizeLive();
       const {
         past, future, glyphs, glyphsByStyle, fontStyle, metrics, kerningPairs, kerningManual,
-        kerningOverridesByStyle, kerningOverrideManualByStyle, wordSpacingOverridesByStyle, activeChar, drawingContourId,
+        kerningOverridesByStyle, kerningOverrideManualByStyle, wordSpacingOverridesByStyle,
+        fontName, fontInfo, customFamilies, featureConfig, activeChar, drawingContourId,
       } = get();
       if (past.length === 0) return;
       const prev = past[past.length - 1];
       const familyTransaction = Boolean(prev.glyphsByStyle);
+      // The tab active when this entry was captured — falls back to the
+      // current tab, which is only wrong if the active tab changed without
+      // going through a history-tagged action, and every action that can
+      // change it now tags itself (see `commitPatch`).
+      const targetStyle = prev.fontStyle ?? fontStyle;
       const restoredFamily = prev.glyphsByStyle ?? { ...glyphsByStyle, [fontStyle]: prev.glyphs };
-      const restoredGlyphs = familyTransaction ? restoredFamily[fontStyle] : prev.glyphs;
-      const stillDrawing = contourStillExists(restoredGlyphs, activeChar, drawingContourId);
+      const restoredGlyphs = familyTransaction ? (restoredFamily[targetStyle] ?? prev.glyphs) : prev.glyphs;
+      const nextActiveChar = restoredGlyphs[activeChar] ? activeChar : (Object.keys(restoredGlyphs)[0] ?? activeChar);
+      const stillDrawing = targetStyle === fontStyle && contourStillExists(restoredGlyphs, nextActiveChar, drawingContourId);
       set({
         glyphs: restoredGlyphs,
         glyphsByStyle: restoredFamily,
+        fontStyle: targetStyle,
+        activeChar: nextActiveChar,
         metrics: prev.metrics,
         kerningPairs: prev.kerningPairs,
         kerningManual: prev.kerningManual,
         kerningOverridesByStyle: prev.kerningOverridesByStyle ?? kerningOverridesByStyle,
         kerningOverrideManualByStyle: prev.kerningOverrideManualByStyle ?? kerningOverrideManualByStyle,
         wordSpacingOverridesByStyle: prev.wordSpacingOverridesByStyle ?? wordSpacingOverridesByStyle,
+        fontName: prev.fontName ?? fontName,
+        fontInfo: prev.fontInfo ?? fontInfo,
+        customFamilies: prev.customFamilies ?? customFamilies,
+        featureConfig: prev.featureConfig ?? featureConfig,
         past: past.slice(0, -1),
         future: [{
           glyphs,
           glyphsByStyle: familyTransaction ? glyphsByStyle : undefined,
+          fontStyle,
           metrics,
           kerningPairs,
           kerningManual,
           kerningOverridesByStyle,
           kerningOverrideManualByStyle,
           wordSpacingOverridesByStyle,
+          fontName,
+          fontInfo,
+          customFamilies,
+          featureConfig,
         }, ...future].slice(0, HISTORY_LIMIT),
         selectedNodes: [], selectedHandle: null, selectedObjectIds: [],
         drawingContourId: stillDrawing ? drawingContourId : null,
@@ -1885,33 +2006,47 @@ export const useAppStore = create<AppState>()((set, get) => {
       finalizeLive();
       const {
         past, future, glyphs, glyphsByStyle, fontStyle, metrics, kerningPairs, kerningManual,
-        kerningOverridesByStyle, kerningOverrideManualByStyle, wordSpacingOverridesByStyle, activeChar, drawingContourId,
+        kerningOverridesByStyle, kerningOverrideManualByStyle, wordSpacingOverridesByStyle,
+        fontName, fontInfo, customFamilies, featureConfig, activeChar, drawingContourId,
       } = get();
       if (future.length === 0) return;
       const next = future[0];
       const familyTransaction = Boolean(next.glyphsByStyle);
+      const targetStyle = next.fontStyle ?? fontStyle;
       const restoredFamily = next.glyphsByStyle ?? { ...glyphsByStyle, [fontStyle]: next.glyphs };
-      const restoredGlyphs = familyTransaction ? restoredFamily[fontStyle] : next.glyphs;
-      const stillDrawing = contourStillExists(restoredGlyphs, activeChar, drawingContourId);
+      const restoredGlyphs = familyTransaction ? (restoredFamily[targetStyle] ?? next.glyphs) : next.glyphs;
+      const nextActiveChar = restoredGlyphs[activeChar] ? activeChar : (Object.keys(restoredGlyphs)[0] ?? activeChar);
+      const stillDrawing = targetStyle === fontStyle && contourStillExists(restoredGlyphs, nextActiveChar, drawingContourId);
       set({
         glyphs: restoredGlyphs,
         glyphsByStyle: restoredFamily,
+        fontStyle: targetStyle,
+        activeChar: nextActiveChar,
         metrics: next.metrics,
         kerningPairs: next.kerningPairs,
         kerningManual: next.kerningManual,
         kerningOverridesByStyle: next.kerningOverridesByStyle ?? kerningOverridesByStyle,
         kerningOverrideManualByStyle: next.kerningOverrideManualByStyle ?? kerningOverrideManualByStyle,
         wordSpacingOverridesByStyle: next.wordSpacingOverridesByStyle ?? wordSpacingOverridesByStyle,
+        fontName: next.fontName ?? fontName,
+        fontInfo: next.fontInfo ?? fontInfo,
+        customFamilies: next.customFamilies ?? customFamilies,
+        featureConfig: next.featureConfig ?? featureConfig,
         future: future.slice(1),
         past: [...past, {
           glyphs,
           glyphsByStyle: familyTransaction ? glyphsByStyle : undefined,
+          fontStyle,
           metrics,
           kerningPairs,
           kerningManual,
           kerningOverridesByStyle,
           kerningOverrideManualByStyle,
           wordSpacingOverridesByStyle,
+          fontName,
+          fontInfo,
+          customFamilies,
+          featureConfig,
         }].slice(-HISTORY_LIMIT),
         selectedNodes: [], selectedHandle: null, selectedObjectIds: [],
         drawingContourId: stillDrawing ? drawingContourId : null,
@@ -2537,7 +2672,9 @@ export const useAppStore = create<AppState>()((set, get) => {
         (key) => !stillReferenced.has(key) && isFeatureGlyphUnicode(regularGlyphs[key]?.unicode)
       );
       if (toDelete.length === 0) {
-        set({ featureConfig: nextConfig });
+        // Still a real, undoable rule-set edit even when no glyph happens
+        // to be orphaned by it.
+        commitPatch({ featureConfig: nextConfig });
         return;
       }
       const deleteSet = new Set(toDelete);
@@ -2553,7 +2690,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
       const nextGlyphs = nextGlyphsByStyle[state.fontStyle] ?? state.glyphs;
       const activeCharDeleted = deleteSet.has(state.activeChar);
-      set({
+      commitPatch({
         featureConfig: nextConfig,
         glyphsByStyle: nextGlyphsByStyle,
         glyphs: nextGlyphs,
@@ -2563,19 +2700,6 @@ export const useAppStore = create<AppState>()((set, get) => {
         selectedHandle: activeCharDeleted ? null : state.selectedHandle,
         drawingContourId: activeCharDeleted ? null : state.drawingContourId,
         liveOutline: activeCharDeleted ? null : state.liveOutline,
-        past: [
-          ...state.past,
-          {
-            glyphs: state.glyphs,
-            glyphsByStyle: state.glyphsByStyle,
-            metrics: state.metrics,
-            kerningPairs: state.kerningPairs,
-            kerningManual: state.kerningManual,
-            kerningOverridesByStyle: state.kerningOverridesByStyle,
-            kerningOverrideManualByStyle: state.kerningOverrideManualByStyle,
-          },
-        ].slice(-HISTORY_LIMIT),
-        future: [],
       });
     },
 
@@ -2592,7 +2716,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (cleanComponents.length < 2 || !cleanTarget) return;
       const state = get();
       const rule: LigatureRule = { id: nextFeatureRuleId("liga"), components: cleanComponents, target: cleanTarget };
-      set({ featureConfig: { ...state.featureConfig, ligatures: [...state.featureConfig.ligatures, rule] } });
+      commitPatch({ featureConfig: { ...state.featureConfig, ligatures: [...state.featureConfig.ligatures, rule] } });
     },
     removeLigatureRule: (id) => {
       const state = get();
@@ -2621,7 +2745,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         const rule: AlternateRule = { id: nextFeatureRuleId("salt"), base: cleanBase, alternates: [cleanAlt] };
         alternates = [...state.featureConfig.alternates, rule];
       }
-      set({ featureConfig: { ...state.featureConfig, alternates } });
+      commitPatch({ featureConfig: { ...state.featureConfig, alternates } });
     },
     removeAlternateOption: (id, alternate) => {
       const state = get();
@@ -2654,7 +2778,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const swashes: SwashRule[] = existing
         ? state.featureConfig.swashes.map((r) => (r.id === existing.id ? { ...r, swash: cleanSwash } : r))
         : [...state.featureConfig.swashes, { id: nextFeatureRuleId("swsh"), base: cleanBase, swash: cleanSwash }];
-      set({ featureConfig: { ...state.featureConfig, swashes } });
+      commitPatch({ featureConfig: { ...state.featureConfig, swashes } });
     },
     removeSwashRule: (id) => {
       const state = get();

@@ -71,8 +71,21 @@ export function useKeyboardShortcuts() {
       if (textEditing) return;
 
       const s = useAppStore.getState();
-      if (s.testLabOpen) return; // Test Lab / Kerning overlay owns keyboard input while open
       const mod = e.metaKey || e.ctrlKey;
+      // Test Lab / Kerning overlay owns keyboard input while open (its own
+      // letter-key shortcuts, arrow nudges, etc. would collide with the
+      // main canvas' tool shortcuts below) — EXCEPT undo/redo, which must
+      // keep working everywhere in the app, including while the overlay is
+      // open, since edits made there (kerning drags, tracking, auto-space)
+      // are themselves part of the same undo stack.
+      if (s.testLabOpen) {
+        if (mod) {
+          const k = e.key.toLowerCase();
+          if (k === "z") { e.preventDefault(); e.shiftKey ? s.redo() : s.undo(); return; }
+          if (k === "y") { e.preventDefault(); s.redo(); return; }
+        }
+        return;
+      }
 
       // Arrow-key nudge and Delete/Backspace have real native meaning
       // inside a focused form control (moving a range slider, deleting a
