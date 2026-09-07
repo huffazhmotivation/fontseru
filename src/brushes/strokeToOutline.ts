@@ -1443,37 +1443,27 @@ function oilBrushOutlineContours(centerline: StrokeSample[], settings: BrushSett
  * edge of scattered ink flecks layered on top, instead of a scattered dot
  * field standing in for the WHOLE body.
  *
- * A pure dot field (the previous approach) reads as translucent grain
- * everywhere, including the middle — no matter how densely packed, there
- * are always visible gaps between individual specks, so it never lands as
- * a clean, legible letterform the way a real spray-paint stencil does.
- * Actual overspray still lays down solid, opaque ink in the core of the
- * pass; it only frays into individual visible specks right at the edge and
- * just beyond it. So: one solid tapered body for the readable core, plus
- * two speck layers riding its boundary —
- *   - EDGE flecks: dense, sit right on/just past the boundary, breaking the
- *     smooth edge into a rough, torn line.
- *   - MIST flecks: sparser, reach further out, a light overspray haze
- *     trailing off the pass.
- * `roundness` controls how tight vs. loose the graininess reads, `jitter`
- * how heavy it is — reusing the same two sliders every other "reused
- * slider" preset in this file does (see their doc comments in
- * types/brush.ts) rather than adding dedicated fields.
+ * Pure dot field, no solid body underneath: density itself carries the
+ * shape. Every speck's distance from the centerline is drawn from a
+ * distribution biased toward 0 (see `radiusFrac` below), so most land near
+ * the core — tight enough to overlap into what reads as solid ink — and
+ * progressively fewer land further out, thinning into individual visible
+ * specks and then a light mist at the edge. `roundness` controls how tight
+ * vs. loose the graininess reads, `jitter` how heavy/dense it is — reusing
+ * the same two sliders every other "reused slider" preset in this file does
+ * (see their doc comments in types/brush.ts) rather than adding dedicated
+ * fields.
  */
 function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
-  const main = centerlineToOutline(centerline, settings);
-  if (!main) return [];
-  const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
-
   const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.05));
-  if (dense.length < 2) return [main];
+  if (dense.length < 2) return [];
 
   const cumulative: number[] = [0];
   for (let i = 1; i < dense.length; i++) {
     cumulative.push(cumulative[i - 1] + Math.hypot(dense[i].x - dense[i - 1].x, dense[i].y - dense[i - 1].y));
   }
   const totalLength = cumulative[cumulative.length - 1] || 0;
-  if (totalLength <= 0) return [main];
+  if (totalLength <= 0) return [];
 
   const at = (t: number): { p: Point; tangent: Point; taper: number } => {
     const clamped = Math.max(0, Math.min(totalLength, t));
@@ -1497,21 +1487,24 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
 
   const stepLen = Math.max(0.7, halfWidthBase * 0.2);
   const stepCount = Math.max(1, Math.round(totalLength / stepLen));
-  // Enough flecks per side, per step, to read as a continuous torn edge
-  // rather than isolated, individually-visible dots.
-  const edgeFlecksPerStep = Math.max(2, Math.round(halfWidthBase * 0.4 * (0.6 + density)));
-  // A lighter, sparser mist further beyond the edge.
-  const mistFlecksPerStep = Math.max(1, Math.round(halfWidthBase * 0.15 * (0.6 + density)));
+  // Total specks seeded per step, spread across the FULL radial range below
+  // (not split into fixed "edge"/"mist" quotas) — how many actually land
+  // near the core vs. further out is entirely down to the radiusFrac
+  // distribution, not separate per-band counts.
+  const specksPerStep = Math.max(3, Math.round(halfWidthBase * 0.55 * (0.6 + density)));
+  const outerSign = 1;
+  const maxReach = 1.9 * spread;
+  // >1 biases a uniform [0,1] sample toward 0: most draws land small, a
+  // shrinking few land large. That's what makes the core dense enough to
+  // read as solid while the outer reach stays a thin scatter, with no hard
+  // edge anywhere in between.
+  const radialGamma = 2.4;
 
   const flecks: Contour[] = [];
   let seedBase = 0;
   for (let i = 0; i <= stepCount; i++) {
-    // Jitter the sample position itself along the stroke (not just what's
-    // scattered around it) so consecutive steps stop landing at perfectly
-    // even intervals — evenly-spaced steps are what made the flecks read as
-    // combed "rows" across the stroke instead of a loose natural cloud.
     const jitterSeed = i * 17.3 + 4.2;
-    const tJitter = (pseudoNoise(jitterSeed) * 0.5) * stepLen;
+    const tJitter = pseudoNoise(jitterSeed) * 0.5 * stepLen;
     const t = Math.max(0, Math.min(totalLength, (i / stepCount) * totalLength + tJitter));
     const { p, tangent, taper } = at(t);
     if (taper <= 0.02) continue;
@@ -1522,48 +1515,28 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
     const ny = tx;
     const halfWidth = halfWidthBase * taper;
 
-    // Randomize count per step too (instead of a fixed number every time)
-    // so density itself varies a little along the pass, like a real can's
-    // uneven flow, rather than a metronomic per-step quota.
-    for (const side of [-1, 1] as const) {
-      const edgeCount = Math.max(0, Math.round(edgeFlecksPerStep * (0.5 + pseudoNoise(jitterSeed + side * 31) * 0.5 + 0.5)));
-      for (let k = 0; k < edgeCount; k++) {
-        seedBase += 1;
-        // Two independent, non-integer-correlated noise lookups per axis —
-        // the previous version derived reach/along from seeds that were
-        // simple linear offsets of each other (seed, seed+5.1), which keeps
-        // pseudoNoise's periodic structure aligned between the two axes and
-        // shows up as faint rows/columns across many flecks. Multiplying by
-        // large, unrelated irrational-ish constants decorrelates them.
-        const seed = seedBase * 91.7 + i * 3.3 + side * 500 + k * 17;
-        const reach = Math.pow((pseudoNoise(seed * 1.7 + 0.31) + 1) / 2, 0.7) * halfWidth * 0.55 * spread;
-        const across = side * (halfWidth + reach);
-        const along = pseudoNoise(seed * 2.3 + 8.9) * halfWidth * 0.7;
-        const center = { x: p.x + nx * across + tx * along, y: p.y + ny * across + ty * along };
-        const radius = Math.max(0.4, halfWidthBase * (0.02 + ((pseudoNoise(seed * 1.3 + 9.3) + 1) / 2) * 0.07));
-        // Same winding as the main body so flecks add solid ink onto it
-        // under the nonzero fill rule, rather than risking a stray hole.
-        flecks.push(makeSpeckle(center, radius, seed, outerSign));
-      }
-    }
-
-    const mistCount = Math.max(0, Math.round(mistFlecksPerStep * (0.4 + pseudoNoise(jitterSeed + 71) * 0.6 + 0.6)));
-    for (let k = 0; k < mistCount; k++) {
+    const count = Math.max(1, Math.round(specksPerStep * (0.6 + pseudoNoise(jitterSeed + 71) * 0.4 + 0.4)));
+    for (let k = 0; k < count; k++) {
       seedBase += 1;
-      const seed = seedBase * 133.1 + i * 7.7 + k * 23;
-      const side = pseudoNoise(seed * 0.7) > 0 ? 1 : -1;
-      // Reach further out than the edge flecks, thinning with `density` via
-      // the exponent — a soft overspray haze trailing off the pass.
-      const reachFrac = 1 + Math.pow((pseudoNoise(seed * 2.9 + 3.3) + 1) / 2, 1.2 + density) * 2.2;
-      const across = side * halfWidth * reachFrac;
-      const along = pseudoNoise(seed * 1.9 + 6.6) * halfWidth * 1.1;
+      const seed = seedBase * 91.7 + i * 3.3 + k * 17;
+      const u = (pseudoNoise(seed * 1.7 + 0.31) + 1) / 2;
+      const radiusFrac = Math.pow(u, radialGamma);
+      const angle = Math.PI * ((pseudoNoise(seed * 2.3 + 8.9) + 1) / 2) * 2;
+      const across = Math.cos(angle) * radiusFrac * maxReach * halfWidth;
+      const along = Math.sin(angle) * radiusFrac * maxReach * halfWidth * 0.7;
       const center = { x: p.x + nx * across + tx * along, y: p.y + ny * across + ty * along };
-      const radius = Math.max(0.3, halfWidthBase * (0.012 + ((pseudoNoise(seed * 1.1 + 12.1) + 1) / 2) * 0.04));
+      // Slightly larger near the core, tapering toward tiny at the far
+      // reach — reinforces the dense-center/sparse-edge read on top of the
+      // placement distribution itself.
+      const sizeFrac = 1 - Math.min(1, radiusFrac) * 0.5;
+      const radius = Math.max(0.35, halfWidthBase * (0.02 + ((pseudoNoise(seed * 1.3 + 9.3) + 1) / 2) * 0.06) * sizeFrac);
+      // Same winding on every speck so overlapping dots add solid ink under
+      // the nonzero fill rule instead of risking a stray hole.
       flecks.push(makeSpeckle(center, radius, seed, outerSign));
     }
   }
 
-  return [main, ...flecks];
+  return flecks;
 }
 
 /**

@@ -56,7 +56,7 @@ function unionShapes(contoursList: Contour[][]): Contour[] {
   return merged?.contours ?? [];
 }
 
-function mergeOutlineBrushStrokes(objects: VectorObject[]): { contours: Contour[]; consumedIds: Set<string> } | null {
+export function mergeOutlineBrushStrokes(objects: VectorObject[]): { contours: Contour[]; consumedIds: Set<string> } | null {
   const outlineObjs = objects.filter((o) => o.kind === "brush" && o.brushType === "outline");
   if (outlineObjs.length < 2) return null;
 

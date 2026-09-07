@@ -13,6 +13,7 @@ import { getCornerHandles } from "./nodeOps";
 import { hitTestSegments } from "./segmentHitTest";
 import { findOverlappingObjectIds } from "./overlapDetect";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
+import { mergeOutlineBrushStrokes } from "./glyphPaths";
 import { GhostGlyph } from "./GhostGlyph";
 import { CanvasRuler, RulerGuideLines, RULER_SIZE } from "./CanvasRuler";
 import { RecordingBadge } from "@/timelapse/RecordingBadge";
@@ -1313,6 +1314,17 @@ const ObjectsLayer = memo(function ObjectsLayer({
   selectedObjectIds: string[];
   overlappingIds: Set<string>;
 }) {
+  // Same merge used for Preview/Test Lab/export (see glyphPaths.ts) so
+  // crossing Outline Brush strokes read as one clean merged shape on the
+  // main canvas too, instead of each stroke's own independent hollow ring
+  // just stacking on top of the others.
+  const outlineMerge = useMemo(() => mergeOutlineBrushStrokes(objects), [objects]);
+  const mergedD = useMemo(
+    () => (outlineMerge ? outlineMerge.contours.map((c) => contourToPath(c, ascender)).join(" ") : null),
+    [outlineMerge, ascender]
+  );
+  const firstConsumedId = outlineMerge ? objects.find((o) => outlineMerge.consumedIds.has(o.id))?.id ?? null : null;
+
   return (
     <>
       {objects.map((obj) => {
@@ -1341,6 +1353,12 @@ const ObjectsLayer = memo(function ObjectsLayer({
         // faded by its wrapper opacity, so it skips this to avoid stacking
         // two separate transparency effects into an almost-invisible shape.
         const semiFill = tool === "node" && !dimmed;
+        const isMergedMember = outlineMerge?.consumedIds.has(obj.id) ?? false;
+        // Only the first member of the merged group actually paints the
+        // shared fill; the rest pass "" so ObjectShape skips its own fill
+        // path entirely (their selection outline still uses their own
+        // individual silhouette, see ObjectShape).
+        const mergedFillD = isMergedMember ? (obj.id === firstConsumedId ? mergedD : "") : null;
         return (
           <ObjectShape
             key={obj.id}
@@ -1351,6 +1369,7 @@ const ObjectsLayer = memo(function ObjectsLayer({
             overlapping={overlappingIds.has(obj.id)}
             dimmed={dimmed}
             semiFill={semiFill}
+            mergedFillD={mergedFillD}
           />
         );
       })}
@@ -1505,8 +1524,8 @@ const SkeletonGuideLayer = memo(function SkeletonGuideLayer({
 });
 
 const ObjectShape = memo(function ObjectShape({
-  obj, ascender, selected, outlineOnly, overlapping, dimmed, semiFill,
-}: { obj: VectorObject; ascender: number; selected: boolean; outlineOnly?: boolean; overlapping?: boolean; dimmed?: boolean; semiFill?: boolean }) {
+  obj, ascender, selected, outlineOnly, overlapping, dimmed, semiFill, mergedFillD,
+}: { obj: VectorObject; ascender: number; selected: boolean; outlineOnly?: boolean; overlapping?: boolean; dimmed?: boolean; semiFill?: boolean; mergedFillD?: string | null }) {
   const isFillKind = obj.kind === "shape" || obj.kind === "expanded";
   const isMonolineBrush = obj.kind === "brush" && obj.brushType === "monoline";
   const isVariableBrush = obj.kind === "brush" && !isMonolineBrush;
@@ -1556,12 +1575,19 @@ const ObjectShape = memo(function ObjectShape({
       );
     }
     // Variable-profile brushes render a derived silhouette while retaining the
-    // editable centerline as their stored geometry.
-    const d = variableBrushD;
+    // editable centerline as their stored geometry. Outline Brush strokes
+    // that are part of a merged group (see mergeOutlineBrushStrokes) paint
+    // the SHARED merged fill instead of their own independent silhouette —
+    // only the FIRST member of the group actually emits it (mergedFillD is
+    // "" for every other member, see ObjectsLayer), so the merge isn't
+    // drawn once per stroke. The individual, unmerged silhouette is still
+    // used for the selection outline so selecting one stroke highlights
+    // just that stroke's own shape, not the whole merged group.
+    const d = mergedFillD != null ? mergedFillD : variableBrushD;
     return wrap(
       <>
-        <path d={d} className={fillClass()} />
-        {selected && <path d={d} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
+        {d && <path d={d} className={fillClass()} />}
+        {selected && <path d={variableBrushD} className="obj-sel-outline" vectorEffect="non-scaling-stroke" />}
       </>
     );
   }
