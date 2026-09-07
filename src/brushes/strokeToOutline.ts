@@ -536,7 +536,8 @@ export function centerlineToContour(
 export function centerlineToOutline(
   centerline: StrokeSample[],
   settings: BrushSettings,
-  precomputed?: { pts: StrokeSample[]; cumulative: number[]; totalLength: number }
+  precomputed?: { pts: StrokeSample[]; cumulative: number[]; totalLength: number },
+  capForwardOverride?: number
 ): Contour | null {
   if (centerline.length < 2 && !precomputed) return null;
 
@@ -575,12 +576,12 @@ export function centerlineToOutline(
   // Oil Brush, spiky Grunge) opt out of both and keep their current look.
   const ROUND_CAP_TYPES: BrushType[] = ["round", "marker", "calligraphic", "pencil", "pressureTaper"];
   const COMB_CAP_TYPES: BrushType[] = ["strong"];
-  // Outline Brush's cap is user-controlled (see BrushSettings.outlineCapStyle)
-  // instead of being fixed per brush type like every other preset here.
-  // "open" is handled entirely by outlineBrushOutlineContours() before this
-  // function is ever reached for that case (it builds two separate side
-  // strips instead of a single ring), so this function only ever sees
-  // "round" or "square" for the outline type.
+  // Outline Brush's cap is user-controlled (see BrushSettings.outlineCapStyle).
+  // All three styles ("round", "square", "open") now go through this SAME
+  // outer+inner ring construction (see outlineBrushOutlineContours) instead
+  // of "open" diverting to its own separate two-strip builder — see that
+  // function's doc comment for why the strip approach couldn't merge
+  // cleanly at a crossing/touching point the way the ring approach does.
   //
   // BUG FIX: "square" used to fall into the generic "none" bucket, which
   // just leaves a flat chord AT the exact centerline endpoint with no cap
@@ -596,11 +597,22 @@ export function centerlineToOutline(
   // half-width — the outer plate reaches further than the inner plate by
   // exactly the border thickness, the same way "round"'s concentric arcs
   // already keep a constant ring width all the way around the tip.
+  //
+  // "open" deliberately reuses that same disconnected-prongs look the
+  // "square" fix above was steering AWAY from: it's exactly what a
+  // genuinely open, uncapped tip should look like (outer and inner both cut
+  // off with a flat, un-extended chord at the same point, so the border
+  // reads as stopping abruptly with the hollow interior reaching all the
+  // way to the tip, rather than a solid plate plugging it shut) — so it
+  // maps to the plain "none" cap treatment (no cap geometry inserted at
+  // all), same as any non-outline brush with no dedicated end cap.
   const capMode: "round" | "comb" | "square" | "none" =
     settings.type === "outline"
       ? settings.outlineCapStyle === "round"
         ? "round"
-        : "square"
+        : settings.outlineCapStyle === "open"
+          ? "none"
+          : "square"
       : ROUND_CAP_TYPES.includes(settings.type)
         ? "round"
         : COMB_CAP_TYPES.includes(settings.type)
@@ -782,10 +794,35 @@ export function centerlineToOutline(
   // the outer plate naturally reaches further than the inner plate by the
   // border thickness — keeping the ring's width constant across the cap
   // the same way `capArc`'s concentric arcs do for "round".
+  //
+  // BUG FIX (square-cap notch at deep joins): that "extend by this
+  // boundary's own half-width" rule is exactly right for a truly isolated
+  // tip, but Outline Brush's crossing-merge (mergeOutlineBrushStrokes)
+  // unions every stroke's hole together and subtracts it from the union of
+  // every stroke's solid body — see that function's doc comment. When one
+  // stroke's endpoint is drawn buried inside ANOTHER stroke's body (a T
+  // junction, a serif foot, a stem meeting a bowl — anywhere a letterform
+  // is deliberately overlapped to guarantee a solid join), the INNER hole's
+  // own half-width extension can reach past that other stroke's own hole
+  // boundary and gouge a small rectangular notch into what should be solid
+  // ink there, since a hole from ANY stroke always wins over another
+  // stroke's solid ink at the subtract step. The outer boundary doesn't
+  // have this problem — its own overshoot only ever ADDS solid coverage,
+  // never removes it. So `capForwardOverride`, when given (only the inner
+  // hole boundary passes it — see outlineBrushOutlineContours), caps how
+  // far a hole's own cap plate can reach past its endpoint to a fixed,
+  // modest distance instead of that boundary's full half-width. This makes
+  // the ring at a lone open tip a little thicker right at the very end
+  // instead of perfectly uniform width — a small, easy-to-miss cosmetic
+  // trade — in exchange for never punching an unwanted hole into a
+  // neighboring stroke's ink at a join.
   const capSquare = (cap: { center: Point; tangentAngle: number; semiA: number; semiB: number }, sideAngle: number, extensionAngle: number): Point[] => {
     const sideV = ellipseSupportVector(sideAngle, nibAngleRad, cap.semiA, cap.semiB);
     const oppositeV = ellipseSupportVector(sideAngle - Math.PI, nibAngleRad, cap.semiA, cap.semiB);
-    const forwardV = ellipseSupportVector(extensionAngle, nibAngleRad, cap.semiA, cap.semiB);
+    const forwardV =
+      capForwardOverride !== undefined
+        ? ellipseSupportVector(extensionAngle, nibAngleRad, capForwardOverride, capForwardOverride)
+        : ellipseSupportVector(extensionAngle, nibAngleRad, cap.semiA, cap.semiB);
     return [
       { x: cap.center.x + sideV.x + forwardV.x, y: cap.center.y + sideV.y + forwardV.y },
       { x: cap.center.x + oppositeV.x + forwardV.x, y: cap.center.y + oppositeV.y + forwardV.y },
@@ -1598,85 +1635,6 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
  * result is a constant-thickness border with the interior left open, like
  * tracing the stroke's shape with a pen instead of filling it with ink.
  */
-/**
- * Raw left/right offset rails for a plain elliptical-nib sweep at a given
- * width, with none of the other presets' edge effects (jitter/grunge/rough
- * texture) — Outline Brush never uses those, so this is a lighter-weight,
- * self-contained version of the sweep in centerlineToOutline() used only for
- * building the two independent side strips of the "open" cap style below.
- */
-function nibOffsetRails(
-  pts: StrokeSample[],
-  cumulative: number[],
-  totalLength: number,
-  settings: BrushSettings,
-  size: number,
-  nibAngleRad: number
-): { left: Point[]; right: Point[] } {
-  const semiMajor = Math.max(0.5, size / 2);
-  const semiMinor = Math.max(0.3, (size / 2) * settings.roundness);
-  const left: Point[] = [];
-  const right: Point[] = [];
-  for (let i = 0; i < pts.length; i++) {
-    const prev = pts[Math.max(0, i - 1)];
-    const next = pts[Math.min(pts.length - 1, i + 1)];
-    const tangent = { x: next.x - prev.x, y: next.y - prev.y };
-    const tLen = Math.hypot(tangent.x, tangent.y) || 1;
-    const normal = { x: -tangent.y / tLen, y: tangent.x / tLen };
-    const normalAngle = Math.atan2(normal.y, normal.x);
-    const pressure = settings.pressureEnabled ? pts[i].pressure : 1;
-    const sensitivity = settings.pressureSensitivity ?? 0;
-    const widthFromPressure = size * (1 - sensitivity * (1 - pressure));
-    const s = cumulative[i] / totalLength;
-    const taper = taperFactor(s, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd });
-    const halfWidthBase = (widthFromPressure / 2) * taper;
-    const scale = halfWidthBase / Math.max(0.001, semiMajor);
-    const { x: vx, y: vy } = ellipseSupportVector(normalAngle, nibAngleRad, semiMajor * scale, semiMinor * scale);
-    left.push({ x: pts[i].x + vx, y: pts[i].y + vy });
-    right.push({ x: pts[i].x - vx, y: pts[i].y - vy });
-  }
-  return { left, right };
-}
-
-/**
- * Turns two parallel rails (traced in the same direction, e.g. an outer
- * border edge and the matching inner-hole edge) into one thin, independent
- * closed strip: `a` forward then `b` backward, closed with a short flat seam
- * at each stroke end. Used for Outline Brush's "open" cap style, where the
- * left-side and right-side borders become two separate strips instead of
- * one ring joined at the tips — see outlineBrushOutlineContours().
- */
-function railsToContour(a: Point[], b: Point[]): Contour {
-  const polygon = [...a, ...[...b].reverse()];
-  // BUG FIX ("open" strokes not merging/unioning where they touch or
-  // cross): unlike the round/square ring below — which explicitly forces
-  // its inner hole to the OPPOSITE winding of its outer boundary (see
-  // `desiredInnerSign` in outlineBrushOutlineContours) so every stroke's
-  // ink band always contributes the exact same net sign — this strip had
-  // no such normalization. For a straight run, tracing the outer rail
-  // forward then the inner rail backward winds the LEFT strip one way
-  // (say clockwise) and the RIGHT strip the OTHER way (counter-clockwise),
-  // purely as a side effect of which side of the stroke each rail sits on.
-  // Two strokes drawn in different directions can just as easily end up
-  // with opposite signs too. Since every stroke object's contours are
-  // combined under one nonzero fill (see objectFillPath's doc comment),
-  // any two of these strips that happen to land with OPPOSITE signs cancel
-  // out wherever they overlap (nonzero winding sums to 0 = a hole),
-  // instead of adding up into solid, merged ink like round/square's
-  // consistently-signed ring always does. Forcing every "open" strip to
-  // the SAME canonical orientation (positive/CCW signed area) here means
-  // any two of them — the left vs. right strip of one stroke, or strips
-  // from two entirely different crossing strokes — always add
-  // constructively where they touch or cross, the same guaranteed way
-  // round/square's ring does.
-  if (signedArea(polygon) < 0) polygon.reverse();
-  return {
-    id: shortId("contour"),
-    closed: true,
-    nodes: polygon.map((point) => ({ id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const })),
-  };
-}
-
 function outlineBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
   if (centerline.length < 2) return [];
 
@@ -1704,34 +1662,26 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
   const shrink = thickness * 2;
   const innerSize = settings.size - shrink;
 
-  // "open" cap style: the border is built as two independent side strips
-  // (left rail pair, right rail pair) instead of a single ring that's
-  // joined shut at both tips — see nibOffsetRails()/railsToContour()'s doc
-  // comments. Falls through to the normal closed-ring path below when the
-  // stroke is too thin for a hole (same guard as the closed styles), since
-  // there's no separate inner rail to pair up with in that case.
-  if ((settings.outlineCapStyle ?? "square") === "open" && innerSize >= 1.5) {
-    const nibAngleRad = (settings.angle * Math.PI) / 180;
-    const outerRails = nibOffsetRails(pts, cumulative, totalLength, settings, settings.size, nibAngleRad);
-    const innerRails = nibOffsetRails(pts, cumulative, totalLength, settings, Math.max(1, innerSize), nibAngleRad);
-    // BUG FIX: unlike the "round"/"square" path below (which runs every
-    // rail through removeSelfIntersectionLoops before capping — see that
-    // call's doc comment), these raw rails were being turned straight into
-    // strips with no cleanup at all. On a sharply bent or self-touching
-    // stroke (a loop, a tight corner, two parts of the same gesture
-    // crossing back over each other) the offset rail folds over itself
-    // there, and with no cap ever closing the strip shut, that fold showed
-    // up as a visibly tangled, non-merged seam right at the point of
-    // contact instead of the clean join "round"/"square" get for free from
-    // their closed ring. Cleaning each rail the same way collapses that
-    // local fold into a single point, so an "open" stroke that touches or
-    // crosses itself merges into one simple strip there too.
-    return [
-      railsToContour(removeSelfIntersectionLoops(outerRails.left), removeSelfIntersectionLoops(innerRails.left)),
-      railsToContour(removeSelfIntersectionLoops(outerRails.right), removeSelfIntersectionLoops(innerRails.right)),
-    ];
-  }
-
+  // NOTE: "open" cap style used to be built here as two independent side
+  // strips (left rail pair, right rail pair) instead of a single ring that's
+  // joined shut at both tips. That made a lone stroke's ends look right, but
+  // broke the crossing-merge story badly: mergeOutlineBrushStrokes() (see
+  // glyph/editor/glyphPaths.ts) cleanly fuses touching/crossing strokes for
+  // "square"/"round" by unioning every stroke's OUTER boundary together,
+  // unioning every stroke's INNER hole together, then subtracting hole-union
+  // from outer-union — which works because each stroke's "outer" is already
+  // a full, solid, hole-free shape covering its ENTIRE width, so two
+  // crossing strokes' outers fully paper over each other at the join before
+  // any hole is cut. Two independent thin rail STRIPS never had that full
+  // solid coverage to begin with (each strip only covers a thin sliver near
+  // one edge), so unioning them just stacked the raw strips on top of each
+  // other with no merging at all — exactly the "lines visibly crossing
+  // instead of fusing" bug. Building "open" as a normal outer+inner ring
+  // (below, shared with "square"/"round") fixes this: it gets the exact same
+  // robust union/subtract crossing behavior, and still reads as a genuinely
+  // open, uncapped tip because centerlineToOutline's capMode "none" for
+  // "open" (see its doc comment) leaves both boundaries' ends as plain
+  // flat, un-extended chords instead of a closed plate/bulge.
   const main = centerlineToOutline(centerline, settings, precomputed);
   if (!main) return [];
   const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
@@ -1745,7 +1695,10 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
     ...settings,
     size: Math.max(1, innerSize),
   };
-  const inner = centerlineToOutline(centerline, innerSettings, precomputed);
+  // capForwardOverride = thickness: see centerlineToOutline's capSquare doc
+  // comment above — keeps a "square"-capped hole from overshooting into a
+  // different, overlapping stroke's ink at a deep join.
+  const inner = centerlineToOutline(centerline, innerSettings, precomputed, thickness);
   if (!inner) return [main];
 
   const innerSign = Math.sign(signedArea(inner.nodes.map((n) => n.point))) || 1;

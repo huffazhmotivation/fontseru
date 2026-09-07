@@ -76,19 +76,16 @@ export function mergeOutlineBrushStrokes(objects: VectorObject[]): { contours: C
   for (const o of outlineObjs) {
     const contours = brushOutlineContours(o);
     if (contours.length === 0) continue;
-    // "open" End Style is a special case: outlineBrushOutlineContours()
-    // returns TWO independent solid rail strips (left border, right border)
-    // for that cap style, not an [outerBody, innerHole] pair — there's no
-    // hole at all, the ring is deliberately left open at both tips. Feeding
-    // the second strip into innerContours (the general case below) would
-    // wrongly treat it as a hole and subtract it away wherever it overlaps
-    // another stroke's body, which is exactly what made one whole rail
-    // silently vanish at a touching/crossing point. Both strips go into the
-    // SAME outer bucket instead, same as any other pair of solid shapes.
-    if ((o.brushSettings?.outlineCapStyle ?? "square") === "open") {
-      outerContours.push(contours);
-      continue;
-    }
+    // Every End Style — "square", "round", and "open" alike — now returns
+    // the same [outerBody, innerHole] shape from outlineBrushOutlineContours
+    // (or just [outerBody] when the stroke's too thin for a hole), so they
+    // all bucket the same way: outer goes in the outer-union pool, the hole
+    // (if any) goes in the hole-union pool. "open" no longer builds a
+    // separate pair of independent rail strips — see
+    // centerlineToOutline's capMode doc comment for why that stopped
+    // touching/crossing strokes from merging cleanly, and
+    // outlineBrushOutlineContours' doc comment for how the ring approach
+    // fixes it while still reading as a genuinely open, uncapped tip.
     outerContours.push([contours[0]]);
     if (contours.length > 1) innerContours.push([contours[1]]);
   }
