@@ -2528,6 +2528,15 @@ input[type="number"]::-webkit-outer-spin-button {
     margin-top: 4px;
   }
 }
+/* Keep the relocated Single/Family Test switch from crowding the title and
+   close button out of the top bar on narrow screens: drop the button text
+   and keep only the icon once space gets tight. */
+@media (max-width: 480px) {
+  .fm-lab-head { gap: 8px; }
+  .fm-lab-head-mode-toggle { gap: 4px; }
+  .fm-lab-head-mode-toggle button { padding: 0 9px; }
+  .fm-lab-head-mode-toggle button span { display: none; }
+}
 
 .fm-lab-preview-frame {
   background: var(--canvas);
@@ -3075,6 +3084,20 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-lab-head {
   padding: 13px 18px;
   border-bottom-color: color-mix(in srgb, var(--line) 62%, transparent);
+}
+/* Single/Family Test switch, relocated from the side rail into the Test
+   Lab window's top bar. Same look as .fm-kern-mode-toggle elsewhere, just
+   sized to sit inline between the title and the close button instead of
+   stretching to fill a vertical panel. */
+.fm-lab-head-mode-toggle {
+  width: auto;
+  margin: 0;
+  gap: 6px;
+}
+.fm-lab-head-mode-toggle button {
+  height: 34px;
+  padding: 0 12px;
+  white-space: nowrap;
 }
 /* `.fm-lab-body` is shared between the Test Lab overlay (which manages its
    own internal scroll regions via `.fm-lab-stage`/`.fm-lab-side` below) and

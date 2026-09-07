@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { AlignCenter, AlignLeft, AlignRight, Layers3, Loader2, MoveHorizontal, Redo2, RotateCcw, Type, Undo2, Wand2, Zap } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Loader2, MoveHorizontal, Redo2, RotateCcw, Undo2, Wand2, Zap } from "lucide-react";
 import { NumericInput } from "@/components/NumericInput";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -1357,7 +1357,13 @@ function FeatureSpecimen({
   );
 }
 
-export function SpecimenPanel() {
+interface SpecimenPanelProps {
+  /** Single/Family Test switch, lifted up to TestLabOverlay's top bar. */
+  kerningMode: "single" | "family";
+  setKerningMode: (mode: "single" | "family") => void;
+}
+
+export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProps) {
   const glyphs = useAppStore((s) => s.glyphs);
   const featureConfig = useAppStore((s) => s.featureConfig);
   const setActiveChar = useAppStore((s) => s.setActiveChar);
@@ -1415,7 +1421,6 @@ export function SpecimenPanel() {
   const [activeGlyph, setActiveGlyph] = useState<ActiveGlyph>(null);
   const [familyActiveGlyph, setFamilyActiveGlyph] = useState<FamilyActiveGlyph>(null);
   const [focusNonce, setFocusNonce] = useState(0);
-  const [kerningMode, setKerningMode] = useState<"single" | "family">("single");
   const [familyContext, setFamilyContext] = useState<KerningContext>("shared");
 
   // Drag-to-resize for the right settings rail. Dragging the handle moves
@@ -1944,23 +1949,6 @@ export function SpecimenPanel() {
             </div>
           </div>
 
-          <div className="fm-kern-mode-toggle" data-testid="kern-test-mode">
-            <button
-              className={kerningMode === "single" ? "active" : ""}
-              onClick={() => setKerningMode("single")}
-              data-testid="kern-single-test"
-            >
-              <Type size={14} /> Single Test
-            </button>
-            <button
-              className={kerningMode === "family" ? "active" : ""}
-              onClick={() => setKerningMode("family")}
-              data-testid="kern-family-test"
-            >
-              <Layers3 size={14} /> Family Test
-            </button>
-          </div>
-
           {kerningMode === "family" && (
             <div className="fm-field fm-kern-layer-field">
               <label>Kerning Context</label>
@@ -1986,7 +1974,10 @@ export function SpecimenPanel() {
           )}
 
           <div className="fm-kern-block">
-            <div className="fm-kern-side-actions">
+            {/* Same row class as Auto Word Spacing below, so the two accent
+                buttons line up at identical full-row width instead of Auto
+                Kerning being squeezed into a 3-up grid with the resets. */}
+            <div className="fm-auto-space-row">
               <button
                 className={`fm-action-btn accent fm-auto-kern-btn${autoKernRunning ? " running" : ""}${autoKernProgress === "done" ? " done" : ""}`}
                 style={autoKernRunning ? { "--fm-auto-kern-fill": `${Math.round(autoKernProgress * 100)}%` } as CSSProperties : undefined}
@@ -2001,6 +1992,9 @@ export function SpecimenPanel() {
                 )}
                 {autoKernRunning ? `Kerning… ${Math.round(autoKernProgress * 100)}%` : "Auto Kerning"}
               </button>
+            </div>
+
+            <div className="fm-kern-side-actions">
               <button
                 className="fm-action-btn fm-kern-reset-btn"
                 disabled={
