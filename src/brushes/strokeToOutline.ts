@@ -1502,32 +1502,33 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
 
   const stepLen = Math.max(0.7, halfWidthBase * 0.2);
   const stepCount = Math.max(1, Math.round(totalLength / stepLen));
-  // BUG FIX (thin/weak-looking core): specksPerStep and the old single-curve
-  // `pow(u, 2.4)` radial distribution below both fed one narrow, pointy
-  // cluster right at the centerline instead of a proper "dense disc in the
-  // middle, real mist at the edge" spray-can profile — the core read as a
-  // thin bright thread rather than solid coverage. Raised overall count
-  // ~40% so there's enough ink to fill the wider core built below without
-  // thinning it back out.
-  const specksPerStep = Math.max(4, Math.round(halfWidthBase * 0.77 * (0.6 + density)));
+  // BUG FIX (core dots too sparse to actually touch): raised again — this
+  // needs to be dense enough that neighboring core dots' radii overlap and
+  // fuse into one continuous solid patch, not just "densely scattered but
+  // still individually visible".
+  const specksPerStep = Math.max(5, Math.round(halfWidthBase * 1.15 * (0.6 + density)));
   const outerSign = 1;
   // Reach pushed out a bit further than before so the sparse mist genuinely
   // has room to fade out and scatter, instead of stopping right where the
   // old, tighter cluster already thinned to nothing.
   const maxReach = 2.3 * spread;
-  // Radial layout is now two explicit zones instead of one power curve
-  // across the whole reach:
+  // Radial layout is two explicit zones instead of one power curve across
+  // the whole reach:
   //  - CORE (out to `coreReachFrac` of maxReach): most specks land here
-  //    (`coreShare`), with a gentle bias (`coreGamma` close to 1, i.e.
-  //    close to a uniform disc) so the whole core area fills in densely and
-  //    evenly — a solid-reading blob, not just a hot spot at dead center.
+  //    (`coreShare`), with a near-uniform bias (`coreGamma` ~1) so the
+  //    whole core area fills in evenly, and large enough dots (see the
+  //    radius calc below) that adjacent ones physically touch and read as
+  //    one solid patch rather than a dense-but-separate dot cluster.
   //  - EDGE (from the core boundary out to maxReach): the remaining, far
   //    fewer specks, biased toward the inner edge of this band with
   //    `edgeGamma` so they thin out fast — the loose, individually visible
   //    flecks and light mist a real spray can leaves past its solid center.
-  const coreReachFrac = 0.55;
-  const coreShare = 0.72;
-  const coreGamma = 1.15;
+  // BUG FIX: widened further (0.55 -> 0.7) and pushed more of the specks
+  // into it (0.72 -> 0.82) per request — the solid-reading area needed to
+  // cover noticeably more of the stroke's width, not just its dead center.
+  const coreReachFrac = 0.7;
+  const coreShare = 0.82;
+  const coreGamma = 1.05;
   const edgeGamma = 2.5;
 
   const flecks: Contour[] = [];
@@ -1567,7 +1568,16 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
       const sizeFrac = inCore
         ? 1 - Math.min(1, radiusFrac / coreReachFrac) * 0.15
         : 0.85 - Math.min(1, (radiusFrac - coreReachFrac) / (1 - coreReachFrac)) * 0.6;
-      const radius = Math.max(0.35, halfWidthBase * (0.02 + ((pseudoNoise(seed * 1.3 + 9.3) + 1) / 2) * 0.06) * sizeFrac);
+      // BUG FIX: core and edge now draw from separate, much wider-apart
+      // radius ranges instead of one shared `0.02–0.08x` band. That shared
+      // range was sized for individually-visible edge flecks — fine for
+      // the mist, but far too small for core dots to overlap at any
+      // reasonable spacing. Core dots now draw from a noticeably bigger
+      // range so adjacent ones physically overlap and fuse into a solid
+      // patch; edge flecks keep the old small range so they still read as
+      // fine, separate specks.
+      const radiusRange = inCore ? { base: 0.05, spanRand: 0.11 } : { base: 0.02, spanRand: 0.05 };
+      const radius = Math.max(0.35, halfWidthBase * (radiusRange.base + ((pseudoNoise(seed * 1.3 + 9.3) + 1) / 2) * radiusRange.spanRand) * sizeFrac);
       // Same winding on every speck so overlapping dots add solid ink under
       // the nonzero fill rule instead of risking a stray hole.
       flecks.push(makeSpeckle(center, radius, seed, outerSign));
@@ -1638,6 +1648,28 @@ function nibOffsetRails(
  */
 function railsToContour(a: Point[], b: Point[]): Contour {
   const polygon = [...a, ...[...b].reverse()];
+  // BUG FIX ("open" strokes not merging/unioning where they touch or
+  // cross): unlike the round/square ring below — which explicitly forces
+  // its inner hole to the OPPOSITE winding of its outer boundary (see
+  // `desiredInnerSign` in outlineBrushOutlineContours) so every stroke's
+  // ink band always contributes the exact same net sign — this strip had
+  // no such normalization. For a straight run, tracing the outer rail
+  // forward then the inner rail backward winds the LEFT strip one way
+  // (say clockwise) and the RIGHT strip the OTHER way (counter-clockwise),
+  // purely as a side effect of which side of the stroke each rail sits on.
+  // Two strokes drawn in different directions can just as easily end up
+  // with opposite signs too. Since every stroke object's contours are
+  // combined under one nonzero fill (see objectFillPath's doc comment),
+  // any two of these strips that happen to land with OPPOSITE signs cancel
+  // out wherever they overlap (nonzero winding sums to 0 = a hole),
+  // instead of adding up into solid, merged ink like round/square's
+  // consistently-signed ring always does. Forcing every "open" strip to
+  // the SAME canonical orientation (positive/CCW signed area) here means
+  // any two of them — the left vs. right strip of one stroke, or strips
+  // from two entirely different crossing strokes — always add
+  // constructively where they touch or cross, the same guaranteed way
+  // round/square's ring does.
+  if (signedArea(polygon) < 0) polygon.reverse();
   return {
     id: shortId("contour"),
     closed: true,
