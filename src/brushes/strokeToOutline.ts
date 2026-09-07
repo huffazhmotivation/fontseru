@@ -1492,11 +1492,25 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
       seedBase += 1;
       const seed = seedBase * 91.7 + i * 3.3;
       const angle = ((pseudoNoise(seed) + 1) / 2) * Math.PI * 2;
-      // Squaring (and beyond, via `density`) the radial fraction clusters
-      // more specks near the cone's axis and thins them toward the rim —
-      // the dense-core/soft-edge falloff real overspray leaves, rather
-      // than an evenly-filled disc.
-      const rFrac = Math.pow((pseudoNoise(seed + 7.7) + 1) / 2, 1.6 + density);
+      // Two-zone radial placement: a WIDE, evenly-packed solid disc in the
+      // middle (CORE_SHARE of specks, uniform-area sampled via sqrt(u) out
+      // to CORE_RADIUS_FRAC of the cone), then the remaining specks scatter
+      // from there out to the rim with the old power-law falloff for the
+      // soft mist edge. A single power curve over the whole radius (the
+      // previous approach) pulls almost every speck toward one pinpoint at
+      // the very center — dense, but as a narrow hot spot rather than a
+      // wide solid core — which is what read as "kurang padat lebar
+      // tengahnya" (dense area too narrow). Splitting core vs. rim gives a
+      // dense zone that actually covers a wide middle before it starts
+      // misting out.
+      const u = (pseudoNoise(seed + 7.7) + 1) / 2;
+      const CORE_SHARE = 0.55;
+      const CORE_RADIUS_FRAC = 0.55;
+      const rFrac =
+        u < CORE_SHARE
+          ? Math.sqrt(u / CORE_SHARE) * CORE_RADIUS_FRAC
+          : CORE_RADIUS_FRAC +
+            Math.pow((u - CORE_SHARE) / (1 - CORE_SHARE), 1.6 + density) * (1 - CORE_RADIUS_FRAC);
       const r = radiusHere * rFrac;
       const along = Math.cos(angle) * r;
       const across = Math.sin(angle) * r;
