@@ -21,7 +21,7 @@ import { standardGlyphMetrics } from "./defaultGlyphs";
  * clobbers a hand-drawn glyph of the same character.
  */
 
-type DiacriticPlacement = "capHeight" | "xHeight" | "below";
+type DiacriticPlacement = "capHeight" | "xHeight" | "below" | "aboveGlyph";
 
 interface DiacriticRecipe {
   char: string;
@@ -120,7 +120,17 @@ const RECIPES: DiacriticRecipe[] = [
   { char: "Ç", unicode: 0x00c7, base: "C", mark: "¸", placement: "below" },
   { char: "ç", unicode: 0x00e7, base: "c", mark: "¸", placement: "below" },
   // Caron / háček — Czech, Slovak, Slovenian, Croatian, Latvian, etc.
-  ...pairs("CDELNRSTZcdelnrstz", "ˇ", "caron"),
+  // Letters without an ascender take the full caron mark as-is.
+  ...pairs("CENRSZcenrsz", "ˇ", "caron"),
+  // D/d, L/l, T/t have a tall ascender that a full caron would visually
+  // collide with, so Czech/Slovak orthography substitutes a small
+  // apostrophe-like mark instead (Ď ď, Ľ ľ, Ť ť). Reuses the right single
+  // quote already registered as a symbol slot — `markKind` stays "caron"
+  // so the Unicode codepoint lookup (accentedCodepoint) is unaffected;
+  // only the visual mark and its placement differ. Anchored to the base
+  // glyph's own top (not a fixed x-height/cap-height line) since the
+  // ascender's actual height varies by design.
+  ...pairs("DLTdlt", "\u2019", "caron", "aboveGlyph"),
   // Ogonek (below) — Polish, Lithuanian
   ...pairs("AEae", "˛", "ogonek", "below"),
   // Macron — Latvian, Lithuanian, Maori, romanized Japanese
@@ -224,7 +234,9 @@ function composeOne(base: Glyph, mark: Glyph, recipe: DiacriticRecipe, metrics: 
   const dy =
     recipe.placement === "below"
       ? metrics.baseline - markBounds.maxY
-      : (recipe.placement === "capHeight" ? metrics.capHeight : metrics.xHeight) + gap - markBounds.minY;
+      : recipe.placement === "aboveGlyph"
+        ? baseBounds.maxY + gap - markBounds.minY
+        : (recipe.placement === "capHeight" ? metrics.capHeight : metrics.xHeight) + gap - markBounds.minY;
 
   const baseObjects = base.outline.objects.map((o) => cloneObjectWithNewIds(o));
   const markObjects = mark.outline.objects.map((o) => translateObject(cloneObjectWithNewIds(o), dx, dy));
