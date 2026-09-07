@@ -2,7 +2,7 @@ import type { Glyph } from "@/types/glyph";
 import type { Contour, VectorObject } from "@/types/geometry";
 import { objectFillPath, objectStrokePath, contourToPath } from "./pathBuilder";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
-import { applyBooleanOp } from "./booleanOps";
+import { applyBooleanOp, normalizeSelfIntersectingContours } from "./booleanOps";
 
 /**
  * Rendering a glyph's outline (fill paths, brush stroke-to-outline
@@ -46,11 +46,15 @@ const glyphPathCache = new WeakMap<Glyph, Map<number, GlyphPathEntry[]>>();
  * two unrelated dots merge into a no-op and still render as two dots.
  */
 /** Unions 0..N single-purpose shapes without needless boolean calls for the
- * trivial cases (nothing to union / already just one shape). */
+ * trivial case of nothing to union. A lone shape still gets run through
+ * `normalizeSelfIntersectingContours` (not just handed back untouched) —
+ * see that function's doc comment for why a SINGLE stroke can itself be
+ * self-crossing and needs the same cleanup 2+ strokes get from the union
+ * call below. */
 function unionShapes(contoursList: Contour[][]): Contour[] {
   const nonEmpty = contoursList.filter((c) => c.length > 0);
   if (nonEmpty.length === 0) return [];
-  if (nonEmpty.length === 1) return nonEmpty[0];
+  if (nonEmpty.length === 1) return normalizeSelfIntersectingContours(nonEmpty[0]);
   const wrapped: VectorObject[] = nonEmpty.map((contours) => ({ id: `tmp-${Math.random()}`, kind: "expanded", contours }));
   const merged = applyBooleanOp(wrapped, "union");
   return merged?.contours ?? [];
@@ -58,7 +62,17 @@ function unionShapes(contoursList: Contour[][]): Contour[] {
 
 export function mergeOutlineBrushStrokes(objects: VectorObject[]): { contours: Contour[]; consumedIds: Set<string> } | null {
   const outlineObjs = objects.filter((o) => o.kind === "brush" && o.brushType === "outline");
-  if (outlineObjs.length < 2) return null;
+  // BUG FIX: used to require 2+ Outline Brush strokes before doing anything
+  // ("< 2"), on the assumption that self-intersection cleanup only mattered
+  // when merging separate crossing strokes. But a SINGLE stroke whose own
+  // centerline loops back over itself (one continuous pen gesture around a
+  // bowl+leg letterform, e.g. drawing an "R"/"a"/"e" in one motion) is just
+  // as self-intersecting, and with only 1 outline object in the glyph this
+  // function bailed out entirely, leaving that raw tangled ring to render
+  // unfixed. Now runs for 1+ so a lone stroke still gets normalized (see
+  // unionShapes above), while everything about how 2+ strokes merge stays
+  // exactly as before.
+  if (outlineObjs.length < 1) return null;
 
   // outlineBrushOutlineContours() returns [outerBody] when the stroke is too
   // thin for a hole, or [outerBody, innerHole] otherwise. Rather than
@@ -89,7 +103,7 @@ export function mergeOutlineBrushStrokes(objects: VectorObject[]): { contours: C
     outerContours.push([contours[0]]);
     if (contours.length > 1) innerContours.push([contours[1]]);
   }
-  if (outerContours.length < 2) return null;
+  if (outerContours.length < 1) return null;
 
   const outerUnion = unionShapes(outerContours);
   if (outerUnion.length === 0) return null;

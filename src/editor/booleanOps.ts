@@ -270,6 +270,48 @@ function ringSimplifyTolerance(ring: Point[]): number {
 }
 
 /**
+ * Turns a raw clip-library MultiPolygon result back into simplified,
+ * correctly-nested closed contours with smooth handles refitted from local
+ * curvature. Shared by `applyBooleanOp` (2+ object boolean ops) and
+ * `normalizeSelfIntersectingContours` (single-shape self-intersection
+ * cleanup) below, since both end with the exact same "raw clipped rings ->
+ * editable contours" step.
+ */
+function multiPolygonToContours(resultMulti: ClipMultiPolygon): Contour[] {
+  if (!resultMulti || resultMulti.length === 0) return [];
+
+  const rings: Point[][] = [];
+  for (const poly of resultMulti) {
+    for (const ring of poly) {
+      const pts = ringToPoints(ring);
+      if (pts.length >= 3) rings.push(pts);
+    }
+  }
+  if (rings.length === 0) return [];
+
+  // Nesting depth via containment against the other rings' first point —
+  // still needed because a single result can contain several disjoint
+  // exterior shapes plus their own holes.
+  const depths = rings.map((ring, idx) => {
+    let depth = 0;
+    for (let k = 0; k < rings.length; k++) {
+      if (k === idx) continue;
+      if (pointInPolygon(ring[0], rings[k])) depth++;
+    }
+    return depth;
+  });
+
+  return rings.map((ring, idx) => {
+    const wantPositive = depths[idx] % 2 === 0;
+    const area = polygonArea(ring);
+    const oriented = (area > 0) === wantPositive ? ring : [...ring].reverse();
+    const { points, isCorner } = simplifyRingPreservingCorners(oriented, ringSimplifyTolerance(oriented));
+    const nodes: PathNode[] = ringToSmoothNodes(points, isCorner);
+    return { id: shortId("contour"), nodes, closed: true };
+  });
+}
+
+/**
  * Applies a boolean op to 2+ eligible objects (in z-order, back-to-front).
  * Shapes are flattened to polygons, combined with the `polygon-clipping`
  * library (exact Martinez-Rueda-Feito clipping, not a raster approximation),
@@ -302,37 +344,36 @@ export function applyBooleanOp(objectsInZOrder: VectorObject[], op: BooleanOp): 
     return null;
   }
 
-  if (!resultMulti || resultMulti.length === 0) return null;
-
-  const rings: Point[][] = [];
-  for (const poly of resultMulti) {
-    for (const ring of poly) {
-      const pts = ringToPoints(ring);
-      if (pts.length >= 3) rings.push(pts);
-    }
-  }
-  if (rings.length === 0) return null;
-
-  // Nesting depth via containment against the other rings' first point —
-  // still needed because a single result can contain several disjoint
-  // exterior shapes plus their own holes.
-  const depths = rings.map((ring, idx) => {
-    let depth = 0;
-    for (let k = 0; k < rings.length; k++) {
-      if (k === idx) continue;
-      if (pointInPolygon(ring[0], rings[k])) depth++;
-    }
-    return depth;
-  });
-
-  const contours: Contour[] = rings.map((ring, idx) => {
-    const wantPositive = depths[idx] % 2 === 0;
-    const area = polygonArea(ring);
-    const oriented = (area > 0) === wantPositive ? ring : [...ring].reverse();
-    const { points, isCorner } = simplifyRingPreservingCorners(oriented, ringSimplifyTolerance(oriented));
-    const nodes: PathNode[] = ringToSmoothNodes(points, isCorner);
-    return { id: shortId("contour"), nodes, closed: true };
-  });
+  const contours = multiPolygonToContours(resultMulti);
+  if (contours.length === 0) return null;
 
   return { id: shortId("obj"), kind: "shape", contours };
+}
+
+/**
+ * Resolves a SINGLE shape's own contours through the exact same clipper
+ * used for multi-object boolean ops, so a self-crossing outline (a
+ * freehand stroke whose offset loops back over itself on a tight bend/
+ * loop — see mergeOutlineBrushStrokes' doc comment) comes out as a clean,
+ * simple silhouette instead of the raw self-intersecting polygon.
+ *
+ * BUG FIX: `mergeOutlineBrushStrokes` previously only ran this
+ * normalization as a side effect of unioning 2+ separate Outline Brush
+ * strokes together (`applyBooleanOp` needs 2+ eligible objects). A single
+ * self-crossing stroke — e.g. one continuous pen gesture that loops
+ * around and crosses its own earlier path, very common when drawing a
+ * bowl+stem letterform (R, a, e, g, ...) in one motion — has only one
+ * "outline" object in the glyph, so that path was skipped entirely and
+ * the raw, self-intersecting outer/inner ring was rendered as-is: the
+ * "kusut"/tangled crossing artifact where the ring's far edge shows
+ * straight through the loop instead of merging cleanly. Routing every
+ * Outline Brush stroke's contours through this normalizer — even a lone
+ * one — fixes that without needing a second stroke to trigger it.
+ */
+export function normalizeSelfIntersectingContours(contours: Contour[]): Contour[] {
+  if (contours.length === 0) return [];
+  const multi = objectToMultiPolygon({ id: "tmp-normalize", kind: "expanded", contours });
+  if (multi.length === 0) return contours;
+  const cleaned = multiPolygonToContours(multi);
+  return cleaned.length > 0 ? cleaned : contours;
 }

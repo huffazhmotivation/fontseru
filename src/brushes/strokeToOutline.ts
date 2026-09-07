@@ -1236,13 +1236,15 @@ function makeRoughHole(center: Point, radius: number, seed: number, desiredSign:
  * Tiny filled speck — same winding as the main contour (adds ink, doesn't
  * punch through it) — used for Oil Brush's spatter dots near a frayed edge.
  */
-function makeSpeckle(center: Point, radius: number, seed: number, desiredSign: number): Contour {
+function makeSpeckle(center: Point, radius: number, seed: number, desiredSign: number, sides = 12): Contour {
   // 12 sides + smooth (curved, not corner) nodes reads as a soft round ink
   // droplet. The previous 6-corner polygon with sharp "corner" node types
   // faceted into a visible little hexagon at real brush sizes, which is
   // what made the whole spray field look mechanical/blocky instead of like
-  // fine atomized specks.
-  const sides = 12;
+  // fine atomized specks. `sides` is lowered (still smooth-noded, just
+  // coarser) for the Spray Brush's live-drawing `fast` preview — see
+  // sprayBrushOutlineContours' doc comment — where speed matters more than
+  // per-speck roundness.
   const raw: Point[] = [];
   for (let i = 0; i < sides; i++) {
     const a = (i / sides) * Math.PI * 2 + pseudoNoise(seed + i * 2.1) * 0.35;
@@ -1506,7 +1508,29 @@ function oilBrushOutlineContours(centerline: StrokeSample[], settings: BrushSett
  * (see their doc comments in types/brush.ts) rather than adding dedicated
  * fields.
  */
-function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
+/**
+ * PERFORMANCE FIX (Spray Brush stutters/lags while drawing): this function
+ * scatters `specksPerStep` little 12-sided speckle contours at every
+ * `stepLen` along the WHOLE stroke, from scratch, every single call — and
+ * `useBrushTool`'s pointerMove previously called it (via
+ * `centerlineToOutlineContours`) unthrottled on every raw pointer-move
+ * event, rebuilding the ENTIRE speck field for the whole stroke-so-far each
+ * time. For a stroke of length L that's O(L) work per move and O(L^2) total
+ * across a single gesture — thousands of speckle contours (each with 12
+ * Bezier nodes + a fresh id) regenerated dozens of times a second as the
+ * stroke grows, which is exactly what reads as laggy/patah-patah (choppy)
+ * while actively spraying, getting worse the longer the stroke gets.
+ *
+ * `fast`, when true, is used ONLY for the live drawing preview (see
+ * `useBrushTool.buildPreview`) and drastically thins the field: far fewer
+ * steps along the stroke, far fewer specks per step, and simpler (6-sided
+ * instead of 12) speckle polygons — cheap enough to rebuild every frame
+ * without stalling the pointer. The committed/final render (glyph canvas,
+ * export, thumbnails — anywhere `fast` isn't explicitly passed) still uses
+ * the full, dense field exactly as before, so finished artwork is
+ * unaffected; only the live in-progress preview gets coarser.
+ */
+function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings, fast = false): Contour[] {
   const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.05));
   if (dense.length < 2) return [];
 
@@ -1537,13 +1561,21 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   const spread = 0.6 + 0.55 * settings.roundness;
   const density = settings.jitter ?? 0.6;
 
-  const stepLen = Math.max(0.7, halfWidthBase * 0.2);
+  // `fast` (live preview only, see doc comment above) spaces steps out
+  // ~4x further apart and draws ~4x fewer specks at each one — roughly a
+  // 16x cut in total speck count, which is what actually removes the lag
+  // (specks-per-move, not step count alone, was the dominant cost). The
+  // committed/final field (fast=false) is untouched.
+  const stepLen = Math.max(0.7, halfWidthBase * 0.2) * (fast ? 4 : 1);
   const stepCount = Math.max(1, Math.round(totalLength / stepLen));
   // BUG FIX (core dots too sparse to actually touch): raised again — this
   // needs to be dense enough that neighboring core dots' radii overlap and
   // fuse into one continuous solid patch, not just "densely scattered but
   // still individually visible".
-  const specksPerStep = Math.max(5, Math.round(halfWidthBase * 1.15 * (0.6 + density)));
+  const specksPerStep = Math.max(
+    fast ? 2 : 5,
+    Math.round(halfWidthBase * 1.15 * (0.6 + density) * (fast ? 0.25 : 1))
+  );
   const outerSign = 1;
   // Reach pushed out a bit further than before so the sparse mist genuinely
   // has room to fade out and scatter, instead of stopping right where the
@@ -1616,8 +1648,10 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
       const radiusRange = inCore ? { base: 0.05, spanRand: 0.11 } : { base: 0.02, spanRand: 0.05 };
       const radius = Math.max(0.35, halfWidthBase * (radiusRange.base + ((pseudoNoise(seed * 1.3 + 9.3) + 1) / 2) * radiusRange.spanRand) * sizeFrac);
       // Same winding on every speck so overlapping dots add solid ink under
-      // the nonzero fill rule instead of risking a stray hole.
-      flecks.push(makeSpeckle(center, radius, seed, outerSign));
+      // the nonzero fill rule instead of risking a stray hole. `fast` uses a
+      // cheaper 6-sided speckle instead of the full 12-sided one — half the
+      // nodes per speck, invisible at live-preview scale/speed.
+      flecks.push(makeSpeckle(center, radius, seed, outerSign, fast ? 6 : 12));
     }
   }
 
@@ -1662,6 +1696,24 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
   const shrink = thickness * 2;
   const innerSize = settings.size - shrink;
 
+  // BUG FIX (square cap reads thicker than the rest of the ring): the
+  // outer boundary's "square" cap plate extended by its own FULL half-width
+  // (no override -> capSquare falls back to `cap.semiA/semiB`, i.e.
+  // `settings.size / 2`), while the inner hole's cap plate was capped to
+  // just `thickness` (see capForwardOverride below). Ring width at a flat
+  // tip is (outer extension - inner extension), so that mismatch made the
+  // tip's visible border noticeably wider than the constant `thickness`
+  // the sides use — e.g. size 40 / outlineThickness 0.32 drew a ~13.6-unit
+  // tip against a ~6.4-unit body. Capping BOTH plates' forward reach — not
+  // just the inner one — to a shared, bounded pair (`capReach` for the
+  // outer plate, `thickness` for the inner one, so their difference is
+  // exactly `thickness`) keeps the ring's thickness visually uniform all
+  // the way around, including a flat squared-off tip, while still bounding
+  // how far either plate can reach past the endpoint (the original reason
+  // for capForwardOverride — see its doc comment above) instead of the
+  // unbounded full half-width the outer boundary used before.
+  const capReach = thickness * 2;
+
   // NOTE: "open" cap style used to be built here as two independent side
   // strips (left rail pair, right rail pair) instead of a single ring that's
   // joined shut at both tips. That made a lone stroke's ends look right, but
@@ -1682,7 +1734,7 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
   // open, uncapped tip because centerlineToOutline's capMode "none" for
   // "open" (see its doc comment) leaves both boundaries' ends as plain
   // flat, un-extended chords instead of a closed plate/bulge.
-  const main = centerlineToOutline(centerline, settings, precomputed);
+  const main = centerlineToOutline(centerline, settings, precomputed, capReach);
   if (!main) return [];
   const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
 
@@ -1729,7 +1781,7 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
  * centerlineToOutline() — see combToothCap) uses the single elliptical-nib
  * contour directly.
  */
-export function centerlineToOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
+export function centerlineToOutlineContours(centerline: StrokeSample[], settings: BrushSettings, opts?: { fast?: boolean }): Contour[] {
   if (settings.type === "pixel" && settings.gridSnap === true) {
     return settings.pixelMode === "liquid"
       ? pixelLiquidOutline(centerline, settings.cellSize ?? settings.size, settings.pixelLiquidSmoothness ?? 0.5, settings)
@@ -1745,7 +1797,7 @@ export function centerlineToOutlineContours(centerline: StrokeSample[], settings
     return outlineBrushOutlineContours(centerline, settings);
   }
   if (settings.type === "sprayBrush") {
-    return sprayBrushOutlineContours(centerline, settings);
+    return sprayBrushOutlineContours(centerline, settings, opts?.fast ?? false);
   }
   const single = centerlineToOutline(centerline, settings);
   return single ? [single] : [];

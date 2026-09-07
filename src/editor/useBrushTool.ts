@@ -113,8 +113,48 @@ export function useBrushTool(hitScale: number) {
     // setting for the live preview too, so what you see while drawing
     // matches exactly what gets committed.
     const settings = pixelSnap ? { ...brush, cellSize: gridSize } : brush;
-    return { centerline: null as Contour | null, outline: centerlineToOutlineContours(cl, settings) };
+    // `fast: true` only matters for Spray Brush (every other brush type
+    // ignores it) — see sprayBrushOutlineContours' doc comment. It swaps
+    // the live-drawing preview to a much cheaper, thinned-out speck field
+    // instead of the full one, which is what was causing Spray Brush to
+    // lag/stutter while actively drawing (the full field was previously
+    // rebuilt from scratch on every pointer move for the whole stroke so
+    // far). The final committed stroke is unaffected: it's rendered via
+    // brushOutlineContours()/getGlyphPaths() elsewhere, which never passes
+    // this flag and always uses the full-fidelity field.
+    return { centerline: null as Contour | null, outline: centerlineToOutlineContours(cl, settings, { fast: true }) };
   }, [brush, gridSize, pixelSnap, hitScale]);
+
+  // PERFORMANCE FIX (lag/patah-patah while drawing, worst on Spray Brush):
+  // pointermove can fire far faster than the screen can actually redraw
+  // (100-240Hz on some mice/tablets vs. a 60Hz display), and every prior
+  // call rebuilt the full brush preview + triggered a React re-render
+  // synchronously on EACH event. Several of those rebuilds per displayed
+  // frame is pure wasted, blocking work — the browser throws away all but
+  // the last one anyway. Coalescing with requestAnimationFrame caps the
+  // (expensive) preview rebuild + setState pair to once per actual frame,
+  // regardless of how many pointer events arrive in between, while the
+  // raw sample buffer (rawSamplesRef, used to build the final committed
+  // geometry on pointerUp) is still updated synchronously on every move so
+  // committed accuracy is unaffected — only the live visual update is
+  // throttled.
+  const rafIdRef = useRef<number | null>(null);
+  const flushPreview = useCallback(() => {
+    rafIdRef.current = null;
+    const preview = buildPreview();
+    setPreviewCenterline(preview.centerline);
+    setPreviewOutline(preview.outline);
+  }, [buildPreview]);
+  const schedulePreviewUpdate = useCallback(() => {
+    if (rafIdRef.current != null) return;
+    rafIdRef.current = requestAnimationFrame(flushPreview);
+  }, [flushPreview]);
+  const cancelScheduledPreview = useCallback(() => {
+    if (rafIdRef.current != null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+  }, []);
 
   const pointerDown = useCallback((p: Point, e: PointerLike) => {
     // Pixel brush: snap captured points to the centers of canvas grid cells as you draw, for
@@ -127,7 +167,8 @@ export function useBrushTool(hitScale: number) {
     setPreviewOutline([]);
     setPreviewCenterline(null);
     clearQuickShapeHold();
-  }, [pressureFor, pixelSnap, gridSize, clearQuickShapeHold]);
+    cancelScheduledPreview();
+  }, [pressureFor, pixelSnap, gridSize, clearQuickShapeHold, cancelScheduledPreview]);
 
   const pointerMove = useCallback(
     (p: Point, e: PointerLike) => {
@@ -143,9 +184,7 @@ export function useBrushTool(hitScale: number) {
         const sample: StrokeSample = { x: snapped.x, y: snapped.y, pressure: pressureFor(snapped, e) };
         rawSamplesRef.current.push(sample);
         samples.push(sample);
-        const preview = buildPreview();
-        setPreviewCenterline(preview.centerline);
-        setPreviewOutline(preview.outline);
+        schedulePreviewUpdate();
         return;
       }
       const raw = rawSamplesRef.current;
@@ -177,9 +216,7 @@ export function useBrushTool(hitScale: number) {
         for (const s of rawSamplesRef.current) sumP += s.pressure;
         const avgPressure = rawSamplesRef.current.length ? sumP / rawSamplesRef.current.length : 1;
         samplesRef.current = quickShapePolyline(shape).map((p) => ({ ...p, pressure: avgPressure }));
-        const preview = buildPreview();
-        setPreviewCenterline(preview.centerline);
-        setPreviewOutline(preview.outline);
+        schedulePreviewUpdate();
       }, QUICK_SHAPE_HOLD_MS);
       // Live preview only: append ONE new stabilized point from a small
       // trailing window, instead of re-running the full smoothing+RDP
@@ -189,11 +226,9 @@ export function useBrushTool(hitScale: number) {
       // engine still runs once on pointerUp for the actual committed
       // geometry, so this only affects what you see while still drawing.
       samplesRef.current = appendStabilizedSample(raw, samplesRef.current, brush.stabilizer ?? 0);
-      const preview = buildPreview();
-      setPreviewCenterline(preview.centerline);
-      setPreviewOutline(preview.outline);
+      schedulePreviewUpdate();
     },
-    [isDrawing, brush, buildPreview, pressureFor, gridSize, pixelSnap, hitScale]
+    [isDrawing, brush, schedulePreviewUpdate, pressureFor, gridSize, pixelSnap, hitScale]
   );
 
   const pointerUp = useCallback(() => {
@@ -222,6 +257,7 @@ export function useBrushTool(hitScale: number) {
     setPreviewOutline([]);
     setPreviewCenterline(null);
     clearQuickShapeHold();
+    cancelScheduledPreview();
     if (!centerline || !glyph) return;
     const obj: VectorObject = {
       id: shortId("obj"),
