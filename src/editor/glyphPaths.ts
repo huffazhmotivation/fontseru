@@ -22,6 +22,17 @@ export type GlyphPathEntry =
 
 const glyphPathCache = new WeakMap<Glyph, Map<number, GlyphPathEntry[]>>();
 
+/** Shoelace signed area, used only to classify a resolved contour as
+ * "outer/ink" vs. "hole" by comparing its winding sign against the
+ * stroke's original outer boundary — see mergeOutlineBrushStrokes. */
+function signedArea(points: { x: number; y: number }[]): number {
+  let a = 0;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    a += (points[j].x + points[i].x) * (points[j].y - points[i].y);
+  }
+  return a / 2;
+}
+
 /**
  * Outline Brush is a hollow ring: two independent strokes crossing each
  * still render as their OWN separate SVG path (see VectorObject's doc
@@ -100,8 +111,38 @@ export function mergeOutlineBrushStrokes(objects: VectorObject[]): { contours: C
     // touching/crossing strokes from merging cleanly, and
     // outlineBrushOutlineContours' doc comment for how the ring approach
     // fixes it while still reading as a genuinely open, uncapped tip.
-    outerContours.push([contours[0]]);
-    if (contours.length > 1) innerContours.push([contours[1]]);
+    if (contours.length === 1) {
+      outerContours.push(contours);
+      continue;
+    }
+
+    // BUG FIX (one continuous self-crossing stroke erasing its own inner
+    // border): a single touch whose CENTERLINE loops back over its own
+    // earlier path — e.g. a bowl+leg letterform like "R"/"a" drawn in one
+    // motion — makes BOTH this stroke's outer boundary and its inner hole
+    // self-intersect, not just the outer one. Bucketing the raw outer and
+    // raw hole separately (as before) and only normalizing each one's
+    // self-crossing later, independently, inside `unionShapes` is wrong for
+    // the hole: a plain self-union ADDS a self-crossing ring's overlapping
+    // loops together into one bigger solid hole blob instead of resolving
+    // them with the even-odd/counter fill rule the rest of the app uses for
+    // one object's own overlapping contours (e.g. an "O"'s counter). Where
+    // the tube crosses itself, that swallows the thin ink bridge that
+    // should stay solid there, and the subtract step below then cuts it
+    // away entirely — the "inner line kehapus semua" bug. Resolving this
+    // stroke's OWN outer+hole pair together, first, through the same
+    // even-odd normalizer (`normalizeSelfIntersectingContours`) fixes that
+    // stroke's self-crossing correctly before it ever reaches the
+    // cross-stroke union/subtract below — which still needs outer and hole
+    // kept in separate pools, so the resolved contours are re-sorted back
+    // into outer vs. hole by comparing each one's winding sign against the
+    // original outer boundary's sign.
+    const resolved = normalizeSelfIntersectingContours(contours);
+    const outerSign = Math.sign(signedArea(contours[0].nodes.map((n) => n.point))) || 1;
+    for (const c of resolved) {
+      const sign = Math.sign(signedArea(c.nodes.map((n) => n.point))) || outerSign;
+      (sign === outerSign ? outerContours : innerContours).push([c]);
+    }
   }
   if (outerContours.length < 1) return null;
 

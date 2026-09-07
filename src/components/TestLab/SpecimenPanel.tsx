@@ -1367,6 +1367,7 @@ export function SpecimenPanel() {
   const kerningPairs = useAppStore((s) => s.kerningPairs);
   const kerningManual = useAppStore((s) => s.kerningManual);
   const kerningOverridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
+  const kerningOverrideManualByStyle = useAppStore((s) => s.kerningOverrideManualByStyle);
   const autoKernLastRun = useAppStore((s) => s.autoKernLastRun);
   const setKerningPair = useAppStore((s) => s.setKerningPair);
   const resetKerningPair = useAppStore((s) => s.resetKerningPair);
@@ -1374,6 +1375,8 @@ export function SpecimenPanel() {
   const setFamilyKerningPair = useAppStore((s) => s.setFamilyKerningPair);
   const resetFamilyKerningPair = useAppStore((s) => s.resetFamilyKerningPair);
   const autoKernAllPairsForContext = useAppStore((s) => s.autoKernAllPairsForContext);
+  const resetAllKerningToAuto = useAppStore((s) => s.resetAllKerningToAuto);
+  const resetAllKerningToAutoForContext = useAppStore((s) => s.resetAllKerningToAutoForContext);
   const autoWordSpacing = useAppStore((s) => s.autoWordSpacing);
   const autoWordSpacingForContext = useAppStore((s) => s.autoWordSpacingForContext);
   const resetFamilyWordSpacing = useAppStore((s) => s.resetFamilyWordSpacing);
@@ -1499,6 +1502,33 @@ export function SpecimenPanel() {
       setAutoKernProgress("idle");
     }
   }, [autoKernRunning, autoKernAllPairs, autoKernAllPairsForContext, kerningMode, familyContext]);
+
+  // Whether the currently active kerning layer (Shared, one style's
+  // override layer, or the whole font in Single Test) has ANY manually-set
+  // pair at all — used to grey out "Reset All" when there's nothing to
+  // reset back to Auto Metrik.
+  const hasAnyManualKerningInScope = kerningMode === "family"
+    ? Object.values(
+        familyContext === "shared" ? kerningManual : (kerningOverrideManualByStyle[familyContext] ?? {})
+      ).some(Boolean)
+    : Object.values(kerningManual).some(Boolean);
+
+  const handleResetAllKerning = useCallback(async () => {
+    if (autoKernRunning) return;
+    setAutoKernProgress(0);
+    try {
+      if (kerningMode === "family") {
+        await resetAllKerningToAutoForContext(familyContext, setAutoKernProgress);
+      } else {
+        await resetAllKerningToAuto(setAutoKernProgress);
+      }
+      setAutoKernProgress("done");
+      window.setTimeout(() => setAutoKernProgress("idle"), 550);
+    } catch (error) {
+      console.error("[FontSeru] Reset All Kerning failed.", error);
+      setAutoKernProgress("idle");
+    }
+  }, [autoKernRunning, resetAllKerningToAuto, resetAllKerningToAutoForContext, kerningMode, familyContext]);
 
   const [wordSpacingFlash, setWordSpacingFlash] = useState<number | null>(null);
 
@@ -1986,6 +2016,21 @@ export function SpecimenPanel() {
               >
                 <RotateCcw size={14} />{" "}
                 {kerningMode === "single" ? "Reset" : familyContext === "shared" ? "Reset Shared" : "Reset Override"}
+              </button>
+              <button
+                type="button"
+                className="fm-action-btn fm-kern-reset-btn"
+                disabled={autoKernRunning || !hasAnyManualKerningInScope}
+                onClick={(e) => { handleResetAllKerning(); e.currentTarget.blur(); }}
+                data-testid="kern-reset-all"
+                title={
+                  kerningMode === "family"
+                    ? `Clear every manually-tuned pair in ${familyContext === "shared" ? "Shared" : fontStyleLabel(familyContext, customFamilies)} and recompute all of them with Auto Kerning`
+                    : "Clear every manually-tuned pair in the font and recompute all of them with Auto Kerning"
+                }
+              >
+                <RotateCcw size={14} />{" "}
+                Reset All
               </button>
             </div>
 

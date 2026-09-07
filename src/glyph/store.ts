@@ -496,6 +496,12 @@ interface AppState {
   applyKerningSuggestion: (left: string, right: string) => void;
   resetKerningPair: (left: string, right: string) => void;
   autoKernAllPairs: (onProgress?: (fraction: number) => void) => Promise<void>;
+  /** Discards EVERY manually-tuned kerning pair in the Shared layer in one
+   * shot, then recomputes every pair fresh from Auto Kerning — unlike
+   * `resetKerningPair`, which only clears the single pair currently
+   * focused in Test Lab. Meant for a project whose old hand-kerning is
+   * now fighting the newer Auto Metrik-driven spacing. */
+  resetAllKerningToAuto: (onProgress?: (fraction: number) => void) => Promise<void>;
   /** Normalizes every glyph's LSB/RSB in the active style to a shared,
    * optically-balanced baseline margin. Fixes inconsistent hand-drawn
    * sidebearings; runs before Auto Kern refines specific pairs on top. */
@@ -515,6 +521,10 @@ interface AppState {
   setFamilyKerningPair: (context: KerningContext, left: string, right: string, value: number) => void;
   resetFamilyKerningPair: (context: KerningContext, left: string, right: string) => void;
   autoKernAllPairsForContext: (context: KerningContext, onProgress?: (fraction: number) => void) => Promise<void>;
+  /** Family-context version of `resetAllKerningToAuto`: discards every
+   * manual pair in `context`'s own layer (Shared, or one style's sparse
+   * override layer) and recomputes all of them via Auto Kerning. */
+  resetAllKerningToAutoForContext: (context: KerningContext, onProgress?: (fraction: number) => void) => Promise<void>;
   /** Family-aware version of `autoSpaceAllGlyphs`: normalizes LSB/RSB for
    * the style selected as Test Lab's "Kerning Context" ("shared" maps to
    * Regular, the same baseline `autoKernAllPairsForContext` uses), instead
@@ -2022,6 +2032,20 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ autoKernLastRun: { processed: result.processed, updated: result.updated, preservedManual: result.preservedManual } });
     },
 
+    resetAllKerningToAuto: async (onProgress) => {
+      const { glyphs, metrics, kerningPairs } = get();
+      // Same call as autoKernAllPairs, but with an EMPTY manual-flags map
+      // instead of the real one: autoKernAllAvailablePairs only ever skips
+      // a pair when it's flagged manual (see its own doc comment), so
+      // pretending nothing is manual makes it recompute every pair in the
+      // font fresh, discarding whatever hand-kerning was there before —
+      // in one pass, instead of clearing each pair's manual flag one
+      // letter at a time via the per-pair Reset button first.
+      const result = await autoKernAllAvailablePairs(glyphs, metrics, kerningPairs, {}, undefined, onProgress);
+      commitKerning(result.pairs, result.manual);
+      set({ autoKernLastRun: { processed: result.processed, updated: result.updated, preservedManual: result.preservedManual } });
+    },
+
     autoSpaceAllGlyphs: async (options, onProgress) => {
       const excludeManuallyKerned = options?.excludeManuallyKerned ?? true;
       const reKernAfter = options?.reKernAfter ?? true;
@@ -2277,6 +2301,28 @@ export const useAppStore = create<AppState>()((set, get) => {
         updated: result.updated,
         preservedManual: result.preservedManual,
       } });
+    },
+
+    resetAllKerningToAutoForContext: async (context, onProgress) => {
+      if (context === "shared") {
+        await get().resetAllKerningToAuto(onProgress);
+        return;
+      }
+      const state = get();
+      const currentPairs = state.kerningOverridesByStyle[context] ?? {};
+      // Same "pretend nothing is manual" trick as resetAllKerningToAuto,
+      // but scoped to this style's own sparse override layer only —
+      // Shared and any OTHER style's overrides are left untouched.
+      const result = await autoKernAllAvailablePairs(
+        state.glyphsByStyle[context],
+        state.metrics,
+        currentPairs,
+        {},
+        state.kerningPairs,
+        onProgress
+      );
+      commitFamilyStyleKerning(context, result.pairs, result.manual);
+      set({ autoKernLastRun: { processed: result.processed, updated: result.updated, preservedManual: result.preservedManual } });
     },
 
     beginFamilyKerningDrag: (context) => {
