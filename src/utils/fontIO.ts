@@ -480,14 +480,6 @@ function samePoint(a: { x: number; y: number }, b: { x: number; y: number }): bo
 }
 
 
-interface ExportContourGeometry {
-  contour: Contour;
-  polygon: { x: number; y: number }[];
-  signedArea: number;
-  absArea: number;
-  bounds: { minX: number; minY: number; maxX: number; maxY: number };
-}
-
 function cubicPointAt(
   p0: { x: number; y: number },
   p1: { x: number; y: number },
@@ -544,50 +536,6 @@ function polygonSignedArea(points: { x: number; y: number }[]): number {
   return twiceArea / 2;
 }
 
-function polygonBounds(points: { x: number; y: number }[]): ExportContourGeometry["bounds"] {
-  if (!points.length) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-  let minX = points[0].x;
-  let minY = points[0].y;
-  let maxX = points[0].x;
-  let maxY = points[0].y;
-  for (const point of points) {
-    minX = Math.min(minX, point.x);
-    minY = Math.min(minY, point.y);
-    maxX = Math.max(maxX, point.x);
-    maxY = Math.max(maxY, point.y);
-  }
-  return { minX, minY, maxX, maxY };
-}
-
-function pointInPolygonForExport(
-  point: { x: number; y: number },
-  polygon: { x: number; y: number }[],
-): boolean {
-  let inside = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const a = polygon[i];
-    const b = polygon[j];
-    if (
-      (a.y > point.y) !== (b.y > point.y)
-      && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y || 1e-12) + a.x
-    ) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
-
-function boundsContainForExport(
-  outer: ExportContourGeometry["bounds"],
-  inner: ExportContourGeometry["bounds"],
-): boolean {
-  const eps = 1e-6;
-  return outer.minX <= inner.minX + eps
-    && outer.minY <= inner.minY + eps
-    && outer.maxX >= inner.maxX - eps
-    && outer.maxY >= inner.maxY - eps;
-}
-
 /**
  * Reverse a contour without changing its curve. When traversal reverses,
  * incoming/outgoing Bézier handles swap roles at every node.
@@ -615,61 +563,61 @@ function reverseContourForExport(contour: Contour): Contour {
  * outer contours happen to have opposite directions, their overlap can cancel
  * and become an accidental hole.
  *
- * Preserve FontSeru's object semantics by normalizing every object's outer
- * contour to the requested format convention, then alternating direction by
- * nesting depth for true counters/islands inside THAT SAME object. The default
- * is TrueType (outer clockwise); the CFF/OTF writer requests the inverse.
+ * Test Lab's own preview never re-derives which contour is a "hole" — see
+ * pathBuilder.ts's `objectFillPath`: it concatenates an object's contours
+ * with whatever winding they already carry and lets the browser's `nonzero`
+ * fill rule resolve them. That authored/generated relative winding is the
+ * single source of truth for how an object is meant to look. This used to
+ * be re-derived here from scratch per contour, via bounding-box containment
+ * + a point-in-polygon nesting-depth count — which assumes real holes are
+ * always strictly nested inside their container. Rough/Grunge/Oil Brush
+ * textures break that assumption on purpose: `makeRoughHole`/`makeSpeckle`
+ * in strokeToOutline.ts scatter many small counter-holes across a stroke's
+ * body that are siblings, not nested inside one another, and by construction
+ * are simply wound opposite the main contour. When two of those sibling
+ * holes happened to have one's bounding box sit inside another's, the old
+ * per-contour heuristic misread that as nesting and flipped the wrong one —
+ * turning a punched-out divot into an extra solid fleck of ink the live
+ * preview never showed.
+ *
+ * The only thing export is actually responsible for here is satisfying the
+ * sfnt format's OUTER-direction convention (TrueType outer clockwise; CFF/OTF
+ * outer counter-clockwise — the `outerClockwise` param). So: find the truly
+ * outer, ink-adding contour (the one with the largest absolute area — holes
+ * are, by construction, smaller than the body they're cut from) and check
+ * whether IT already matches the target convention. If not, reverse every
+ * contour in the object together, as one rigid flip, which preserves each
+ * contour's winding *relative to the others* exactly as authored/generated —
+ * matching Test Lab's preview bit-for-bit — rather than recomputing any of
+ * them independently.
  *
  * We intentionally do not infer holes across different VectorObjects. A shape
  * placed inside or across another object is still independent ink in the editor
  * and must stay independent ink after export.
  */
 function normalizeObjectContourDirections(contours: Contour[], outerClockwise = true): Contour[] {
-  if (contours.length <= 1) {
-    if (!contours.length) return contours;
-    const polygon = flattenContourForExport(contours[0]);
+  if (!contours.length) return contours;
+
+  let outerArea = 0;
+  let outerAbsArea = -1;
+  for (const contour of contours) {
+    const polygon = flattenContourForExport(contour);
+    if (polygon.length < 3) continue;
     const area = polygonSignedArea(polygon);
-    if (Math.abs(area) <= 1e-6) return contours;
-    const isClockwise = area < 0;
-    return isClockwise === outerClockwise
-      ? contours
-      : [reverseContourForExport(contours[0])];
+    const absArea = Math.abs(area);
+    if (absArea > outerAbsArea) {
+      outerAbsArea = absArea;
+      outerArea = area;
+    }
   }
 
-  const geometry: ExportContourGeometry[] = contours.map((contour) => {
-    const polygon = flattenContourForExport(contour);
-    const signedArea = polygonSignedArea(polygon);
-    return {
-      contour,
-      polygon,
-      signedArea,
-      absArea: Math.abs(signedArea),
-      bounds: polygonBounds(polygon),
-    };
-  });
+  // Degenerate (zero-area) object — nothing meaningful to orient.
+  if (outerAbsArea <= 1e-6) return contours;
 
-  return geometry.map((item, index) => {
-    if (item.polygon.length < 3 || item.absArea <= 1e-6) return item.contour;
+  const outerIsClockwise = outerArea < 0;
+  if (outerIsClockwise === outerClockwise) return contours;
 
-    const probe = item.polygon[0];
-    let depth = 0;
-    for (let otherIndex = 0; otherIndex < geometry.length; otherIndex++) {
-      if (otherIndex === index) continue;
-      const other = geometry[otherIndex];
-
-      // A true container must be geometrically larger. This keeps coincident
-      // duplicate contours and ordinary overlaps at the same nesting level.
-      if (other.absArea <= item.absArea + 1e-6) continue;
-      if (!boundsContainForExport(other.bounds, item.bounds)) continue;
-      if (pointInPolygonForExport(probe, other.polygon)) depth++;
-    }
-
-    const shouldBeClockwise = depth % 2 === 0 ? outerClockwise : !outerClockwise;
-    const isClockwise = item.signedArea < 0;
-    return shouldBeClockwise === isClockwise
-      ? item.contour
-      : reverseContourForExport(item.contour);
-  });
+  return contours.map((contour) => reverseContourForExport(contour));
 }
 
 function sanitizeContour(contour: Contour): Contour | null {
