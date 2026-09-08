@@ -2060,6 +2060,64 @@ function arcControl(center: Point, radius: number, a0: number, a1: number) {
 }
 
 /**
+ * Fit smooth Bézier handles through an OPEN offset-edge polyline (one side
+ * of a uniform-width stroke), matching the Catmull-Rom-to-Bezier fit already
+ * used for the round/marker/etc. brush family in `centerlineToOutline`
+ * above (see the `smoothEdges` block there for the full rationale).
+ *
+ * BUG FIX: `uniformCenterlineToOutline` (Pen Line / Monoline Brush) never
+ * had this pass — every offset-edge point was emitted as a hard "corner"
+ * node with null handles, so ANY curve drawn with those tools exported as a
+ * many-sided straight-edge polygon instead of a smooth outline, even though
+ * the same curve rendered smoothly in the live editor. That mismatch is
+ * exactly the "smooth in-app, faceted/jagged after export+install" report:
+ * on-screen the dense polygon is small enough per-facet to disappear under
+ * canvas antialiasing, but an installed font's rasterizer draws those same
+ * vertices as visible straight facets, especially at display sizes.
+ *
+ * The two chain endpoints are intentionally left as hard corners (matching
+ * prior behavior) since that's where cap geometry attaches; the caller's
+ * cap-handling code already overwrites/extends handles on those endpoint
+ * nodes as needed.
+ */
+function smoothOffsetPolyline(points: Point[]): PathNode[] {
+  const n = points.length;
+  return points.map((point, i) => {
+    if (i === 0 || i === n - 1) {
+      return { id: shortId("node"), point, handleIn: null as Point | null, handleOut: null as Point | null, type: "corner" as const };
+    }
+    const prev = points[i - 1];
+    const next = points[i + 1];
+    const inLen = Math.hypot(point.x - prev.x, point.y - prev.y) || 1;
+    const outLen = Math.hypot(next.x - point.x, next.y - point.y) || 1;
+    const inUx = (point.x - prev.x) / inLen;
+    const inUy = (point.y - prev.y) / inLen;
+    const outUx = (next.x - point.x) / outLen;
+    const outUy = (next.y - point.y) / outLen;
+    const dot = Math.max(-1, Math.min(1, inUx * outUx + inUy * outUy));
+    // Preserve genuine sharp corners; smooth everything gentler than that,
+    // same ~100° cusp threshold used for the other brush family.
+    if (Math.acos(dot) > (100 * Math.PI) / 180) {
+      return { id: shortId("node"), point, handleIn: null as Point | null, handleOut: null as Point | null, type: "corner" as const };
+    }
+    const dx = next.x - prev.x;
+    const dy = next.y - prev.y;
+    const dLen = Math.hypot(dx, dy) || 1;
+    const ux = dx / dLen;
+    const uy = dy / dLen;
+    const inHandleLen = Math.min(inLen / 3, inLen * 0.65);
+    const outHandleLen = Math.min(outLen / 3, outLen * 0.65);
+    return {
+      id: shortId("node"),
+      point,
+      handleIn: { x: point.x - ux * inHandleLen, y: point.y - uy * inHandleLen },
+      handleOut: { x: point.x + ux * outHandleLen, y: point.y + uy * outHandleLen },
+      type: "smooth" as const,
+    };
+  });
+}
+
+/**
  * Clean uniform-width outline for Pen Line / Monoline brush.
  * Uses the editable centerline geometry, keeps node density bounded, and
  * represents round caps with cubic arcs so the expanded result stays smooth
@@ -2092,9 +2150,9 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
     right.push({ x: base.x - n.x * r, y: base.y - n.y * r });
   }
 
-  const nodes: PathNode[] = left.map((point) => ({
-    id: shortId("node"), point, handleIn: null as Point | null, handleOut: null as Point | null, type: "corner" as const,
-  }));
+  const leftNodes = smoothOffsetPolyline(left);
+  const rightNodes = smoothOffsetPolyline(right);
+  const nodes: PathNode[] = [...leftNodes];
 
   if (cap === "round") {
     const end = pts[pts.length - 1];
@@ -2110,12 +2168,11 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
     };
     nodes.push(rightEnd);
   } else {
-    const point = right[right.length - 1];
-    nodes.push({ id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const });
+    nodes.push(rightNodes[rightNodes.length - 1]);
   }
 
   for (let i = right.length - 2; i >= 0; i--) {
-    nodes.push({ id: shortId("node"), point: right[i], handleIn: null, handleOut: null, type: "corner" as const });
+    nodes.push(rightNodes[i]);
   }
 
   if (cap === "round") {
