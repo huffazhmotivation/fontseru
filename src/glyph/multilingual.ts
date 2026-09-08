@@ -104,8 +104,10 @@ export const MULTILINGUAL_LETTER_SLOTS: { char: string; unicode: number }[] = [
 // reused for Å/å) already ship in the default Symbols set, so no extra
 // mark slot is needed for those three.
 const RECIPES: DiacriticRecipe[] = [
-  // Acute
-  ...pairs("AEIOUYaeiouy", "´", "acute"),
+  // Acute (vowels + the Polish/Slovak/Sorbian consonants Ć/Ń/Ś/Ź that also
+  // take a plain acute — previously missing, which left Polish's own
+  // pangram unable to compose ć/ń/ś/ź even though C/N/S/Z and ´ both exist)
+  ...pairs("AEIOUYaeiouyCNSZcnsz", "´", "acute"),
   // Grave
   ...pairs("AEIOUaeiou", "`", "grave"),
   // Diaeresis
@@ -119,6 +121,10 @@ const RECIPES: DiacriticRecipe[] = [
   // Cedilla (below) — Romance/Turkish
   { char: "Ç", unicode: 0x00c7, base: "C", mark: "¸", placement: "below" },
   { char: "ç", unicode: 0x00e7, base: "c", mark: "¸", placement: "below" },
+  // Turkish also cedillas S (Ş/ş) — previously missing, which left Turkish's
+  // own pangram unable to compose ş even though S and ¸ both exist.
+  { char: "Ş", unicode: 0x015e, base: "S", mark: "¸", placement: "below" },
+  { char: "ş", unicode: 0x015f, base: "s", mark: "¸", placement: "below" },
   // Caron / háček — Czech, Slovak, Slovenian, Croatian, Latvian, etc.
   // Letters without an ascender take the full caron mark as-is.
   ...pairs("CENRSZcenrsz", "ˇ", "caron"),
@@ -135,8 +141,9 @@ const RECIPES: DiacriticRecipe[] = [
   ...pairs("AEae", "˛", "ogonek", "below"),
   // Macron — Latvian, Lithuanian, Maori, romanized Japanese
   ...pairs("AEIOUaeiou", "¯", "macron"),
-  // Breve — Romanian, Turkish, Esperanto
-  ...pairs("Aa", "˘", "breve"),
+  // Breve — Romanian, Turkish, Esperanto (G/g added for Turkish ğ/Ğ, the
+  // "yumuşak ge" that made Turkish's own pangram fail the same way)
+  ...pairs("AaGg", "˘", "breve"),
   // Dot above — Polish, Maltese, Lithuanian, Turkish
   ...pairs("CEGZcegz", "˙", "dotabove"),
   // Double acute — Hungarian
@@ -148,7 +155,11 @@ function accentedCodepoint(base: string, markKind: string): number | null {
   // this file uses; kept as a lookup (not String.normalize at runtime)
   // so the recipe table above stays the single source of truth.
   const TABLE: Record<string, Record<string, number>> = {
-    acute: { A: 0xc1, E: 0xc9, I: 0xcd, O: 0xd3, U: 0xda, Y: 0xdd, a: 0xe1, e: 0xe9, i: 0xed, o: 0xf3, u: 0xfa, y: 0xfd },
+    acute: {
+      A: 0xc1, E: 0xc9, I: 0xcd, O: 0xd3, U: 0xda, Y: 0xdd, a: 0xe1, e: 0xe9, i: 0xed, o: 0xf3, u: 0xfa, y: 0xfd,
+      // Polish/Slovak/Sorbian consonants that also take a plain acute.
+      C: 0x0106, c: 0x0107, N: 0x0143, n: 0x0144, S: 0x015a, s: 0x015b, Z: 0x0179, z: 0x017a,
+    },
     grave: { A: 0xc0, E: 0xc8, I: 0xcc, O: 0xd2, U: 0xd9, a: 0xe0, e: 0xe8, i: 0xec, o: 0xf2, u: 0xf9 },
     diaeresis: { A: 0xc4, E: 0xcb, I: 0xcf, O: 0xd6, U: 0xdc, Y: 0x0178, a: 0xe4, e: 0xeb, i: 0xef, o: 0xf6, u: 0xfc, y: 0xff },
     circumflex: { A: 0xc2, E: 0xca, I: 0xce, O: 0xd4, U: 0xdb, a: 0xe2, e: 0xea, i: 0xee, o: 0xf4, u: 0xfb },
@@ -166,7 +177,7 @@ function accentedCodepoint(base: string, markKind: string): number | null {
       A: 0x0100, a: 0x0101, E: 0x0112, e: 0x0113, I: 0x012a, i: 0x012b,
       O: 0x014c, o: 0x014d, U: 0x016a, u: 0x016b,
     },
-    breve: { A: 0x0102, a: 0x0103 },
+    breve: { A: 0x0102, a: 0x0103, G: 0x011e, g: 0x011f },
     dotabove: { C: 0x010a, c: 0x010b, E: 0x0116, e: 0x0117, G: 0x0120, g: 0x0121, Z: 0x017b, z: 0x017c },
     doubleacute: { O: 0x0150, o: 0x0151, U: 0x0170, u: 0x0171 },
   };

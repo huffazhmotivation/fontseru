@@ -5,6 +5,7 @@ import { simplifyPolyline } from "@/utils/simplify";
 import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor } from "./strokeSmoothing";
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
+import { offsetClosedContour } from "@/glyph/autoGenerate";
 
 /**
  * Correct offset vector for sweeping a fixed-orientation elliptical nib
@@ -1695,23 +1696,23 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
   const thickness = Math.max(0.6, (settings.size / 2) * (settings.outlineThickness ?? 0.32));
   const shrink = thickness * 2;
   const innerSize = settings.size - shrink;
+  // ^ still used just as a "is there any room for a hole at all" guard
+  // below — the hole's actual shape no longer comes from sweeping the nib
+  // at this size (see BUG FIX below).
 
   // BUG FIX (square cap reads thicker than the rest of the ring): the
-  // outer boundary's "square" cap plate extended by its own FULL half-width
-  // (no override -> capSquare falls back to `cap.semiA/semiB`, i.e.
-  // `settings.size / 2`), while the inner hole's cap plate was capped to
-  // just `thickness` (see capForwardOverride below). Ring width at a flat
-  // tip is (outer extension - inner extension), so that mismatch made the
-  // tip's visible border noticeably wider than the constant `thickness`
-  // the sides use — e.g. size 40 / outlineThickness 0.32 drew a ~13.6-unit
-  // tip against a ~6.4-unit body. Capping BOTH plates' forward reach — not
-  // just the inner one — to a shared, bounded pair (`capReach` for the
-  // outer plate, `thickness` for the inner one, so their difference is
-  // exactly `thickness`) keeps the ring's thickness visually uniform all
-  // the way around, including a flat squared-off tip, while still bounding
-  // how far either plate can reach past the endpoint (the original reason
-  // for capForwardOverride — see its doc comment above) instead of the
-  // unbounded full half-width the outer boundary used before.
+  // outer boundary's "square" cap plate extending by its own FULL
+  // half-width (`settings.size / 2`) instead of a bounded reach used to
+  // make the tip's visible border noticeably wider than the constant
+  // `thickness` the sides use — e.g. size 40 / outlineThickness 0.32 drew a
+  // ~13.6-unit tip against a ~6.4-unit body. Capping the outer plate's
+  // forward reach to this bounded `capReach` keeps the tip proportional to
+  // the body instead of ballooning with the full nib size. The inner hole
+  // no longer needs its own separate, smaller cap reach to match (see the
+  // BUG FIX below `offsetClosedContour`) — since the hole is now a uniform
+  // inset of this exact outer plate rather than an independently-capped
+  // sweep, it automatically comes out `thickness` narrower on every side,
+  // cap included.
   const capReach = thickness * 2;
 
   // NOTE: "open" cap style used to be built here as two independent side
@@ -1743,31 +1744,43 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
   // degenerate/self-intersecting inner contour.
   if (innerSize < 1.5) return [main];
 
-  const innerSettings: BrushSettings = {
-    ...settings,
-    size: Math.max(1, innerSize),
-  };
-  // capForwardOverride = thickness: see centerlineToOutline's capSquare doc
-  // comment above — keeps a "square"-capped hole from overshooting into a
-  // different, overlapping stroke's ink at a deep join.
-  const inner = centerlineToOutline(centerline, innerSettings, precomputed, thickness);
-  if (!inner) return [main];
-
-  const innerSign = Math.sign(signedArea(inner.nodes.map((n) => n.point))) || 1;
+  // BUG FIX (ring width "melenceng"/uneven on curved strokes): the inner
+  // hole used to be built by sweeping the SAME centerline a second time at
+  // a smaller nib size (`innerSize`), independently from the outer
+  // boundary above. Each sweep runs its own `removeSelfIntersectionLoops`
+  // fold-cleanup on tight bends (see that function's doc comment) — and
+  // WHERE a bend folds depends on the sweep's own radius, so the outer
+  // sweep (bigger radius) and this inner sweep (smaller radius) folded at
+  // two DIFFERENT points along the same bend. The visible gap between them
+  // is the ring's actual width, so wherever those fold points diverged —
+  // any curved stretch of the stroke, not just extreme cusps — the border
+  // read as bulging or pinching instead of the constant `thickness` the
+  // straight sections show, exactly the reported "lebar line melenceng dan
+  // ga seimbang" symptom.
+  //
+  // Building the hole as a direct, constant-distance INSET of the outer
+  // boundary that's already been computed and cleaned (via
+  // `offsetClosedContour`, the same mitered-normal-with-clamp offset that
+  // keeps Bold/Light family generation from folding on itself) guarantees
+  // the two boundaries stay `thickness` apart everywhere by construction,
+  // including all the way around a curve — there's no second independent
+  // sweep left to drift out of sync with the first.
+  const insetRaw = offsetClosedContour(main, -thickness, false);
+  const innerSign = Math.sign(signedArea(insetRaw.nodes.map((n) => n.point))) || 1;
   const desiredInnerSign = -outerSign;
   // Reversing a smoothed contour also has to exchange each node's incoming
   // and outgoing handles. Reversing only the array leaves the handles
   // attached to the wrong side of the path and can reintroduce angular
   // corners or small folds in Outline Brush's inner counter.
   const innerNodes = innerSign !== desiredInnerSign
-    ? [...inner.nodes].reverse().map((node) => ({
+    ? [...insetRaw.nodes].reverse().map((node) => ({
         ...node,
         handleIn: node.handleOut,
         handleOut: node.handleIn,
       }))
-    : inner.nodes;
+    : insetRaw.nodes;
 
-  return [main, { ...inner, nodes: innerNodes }];
+  return [main, { ...insetRaw, id: shortId("contour"), nodes: innerNodes }];
 }
 
 /**

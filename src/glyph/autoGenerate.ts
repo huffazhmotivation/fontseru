@@ -64,7 +64,7 @@ function outwardNormal(tangent: Point, orientation: number): Point {
     : { x: -tangent.y, y: tangent.x };
 }
 
-function contourOffsetLimit(contour: Contour): number {
+export function contourOffsetLimit(contour: Contour): number {
   const points = flattenContour(contour, 8);
   if (points.length < 2) return Infinity;
   let minX = Infinity;
@@ -85,8 +85,15 @@ function contourOffsetLimit(contour: Contour): number {
  * Approximate a clean geometric offset while keeping the existing Bézier nodes
  * editable. Each node and its handles move together along a mitered local normal,
  * so curve tangents stay intact. Hole contours move inward instead of outward.
+ *
+ * Also reused by Outline Brush (see strokeToOutline.ts's
+ * outlineBrushOutlineContours) to inset its ring's inner hole boundary
+ * directly FROM the already-built outer boundary, instead of sweeping the
+ * nib a second time at a smaller size — see that call site's doc comment
+ * for why two independent sweeps drift apart into an uneven ring width on
+ * curves.
  */
-function offsetClosedContour(contour: Contour, amount: number, isHole: boolean): Contour {
+export function offsetClosedContour(contour: Contour, amount: number, isHole: boolean): Contour {
   if (!contour.closed || contour.nodes.length < 2 || amount === 0) return contour;
 
   const flattened = flattenContour(contour, 10);
