@@ -1027,6 +1027,64 @@ function checksum(bytes: Uint8Array): number {
 }
 function align4(n: number): number { return (n + 3) & ~3; }
 
+function findSfntTable(buffer: ArrayBuffer, tag: string): { offset: number; length: number } | null {
+  const view = new DataView(buffer);
+  const numTables = u16(view, 4);
+  for (let i = 0; i < numTables; i++) {
+    const d = 12 + i * 16;
+    if (tagAt(view, d) !== tag) continue;
+    return { offset: u32(view, d + 8), length: u32(view, d + 12) };
+  }
+  return null;
+}
+
+/**
+ * BUG FIX (OTF/CFF loses Bold/Italic family linking; post.italicAngle
+ * always 0): opentype.js@1.3.4's internal sfnt assembler builds the `head`
+ * table via `head.make({...})` with a hand-picked options object that never
+ * spreads `font.tables.head`, and builds `post` via a bare `post.make()`
+ * call with no options at all. That silently drops whatever this file
+ * assigns to `tables.head.macStyle` / `tables.post.italicAngle` right
+ * before `font.toArrayBuffer()` — the OS/2 table happens to merge
+ * `font.tables.os2` correctly, which is why `fsSelection` DOES make it into
+ * the file while `macStyle` never does. Desktop font managers (and
+ * Affinity) rely on head.macStyle together with nameID 1/2 to link
+ * Regular/Bold/Italic files into one installed family; without it, an
+ * Italic OTF has no way to announce it's the italic member of its family
+ * and registers as an unrelated font instead of style-linking with
+ * Regular — exactly the "TTF installs as one family, OTF doesn't" gap.
+ * TrueType is unaffected because `generateTTFBase` uses FontSeru's own
+ * `buildTrueTypeFont` writer (trueTypeWriter.ts), not opentype.js, and
+ * writes macStyle itself.
+ *
+ * Fixed here by patching the already-serialized OTF buffer's `head.macStyle`
+ * and `post.italicAngle` fields directly, reusing the same
+ * splice-and-recompute-checksums path (`spliceSfntTable`) already used for
+ * GSUB/GPOS — patch, don't touch the library's own (broken) table builder.
+ */
+function patchOtfHeadAndPost(buffer: ArrayBuffer, macStyle: number, italicAngle: number): ArrayBuffer {
+  let result = buffer;
+
+  const head = findSfntTable(result, "head");
+  if (head && head.length >= 46) {
+    const headBytes = new Uint8Array(result, head.offset, head.length).slice();
+    new DataView(headBytes.buffer).setUint16(44, macStyle & 0xffff, false);
+    result = spliceSfntTable(result, "head", headBytes);
+  }
+
+  const post = findSfntTable(result, "post");
+  if (post && post.length >= 8) {
+    const postBytes = new Uint8Array(result, post.offset, post.length).slice();
+    // post.italicAngle is a Fixed (16.16) value, matching opentype.js's own
+    // Fixed encoding elsewhere in this file.
+    const fixedAngle = Math.round(italicAngle * 65536);
+    new DataView(postBytes.buffer).setInt32(4, fixedAngle, false);
+    result = spliceSfntTable(result, "post", postBytes);
+  }
+
+  return result;
+}
+
 /** Shared sfnt table-directory splicing logic: replace-or-add one table by
  * tag, rebuild the directory (sorted by tag, as required), and recompute
  * the `head` table's checksum adjustment. Used by the `GSUB`/`GPOS`
@@ -1638,7 +1696,11 @@ function generateOTFBase(
   // the opposite canonical direction, so convert only for the OTF writer.
   const cffGlyphs = glyphs.map(glyphForOpenTypeCFF);
   const { font, glyphIndexByChar } = buildOpenTypeFont(cffGlyphs, metrics, info);
-  const buffer = font.toArrayBuffer();
+  // See patchOtfHeadAndPost's doc comment: opentype.js drops macStyle/
+  // italicAngle from the tables it actually writes, so they're patched
+  // into the serialized buffer directly rather than relying on the
+  // library's own (incomplete) head/post table builders.
+  const buffer = patchOtfHeadAndPost(font.toArrayBuffer(), info.macStyle, info.italicAngle);
   validateGeneratedFont(buffer, "otf", {
     familyName: info.legacyFamilyName,
     hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
@@ -1657,22 +1719,20 @@ function generateOTF(
   let buffer = base.buffer;
 
   // Kerning is an enhancement, never a reason to lose a valid base font.
+  //
+  // BUG FIX (double-applied kerning after install): this used to inject
+  // BOTH the legacy 'kern' table AND the modern GPOS 'kern' feature with
+  // the SAME full pair values. Per the OpenType spec a renderer should use
+  // GPOS and ignore legacy 'kern' when both exist, and that's exactly what
+  // browsers/HarfBuzz-based engines (e.g. Figma) do — but several native
+  // desktop text engines (notably Affinity's) read and SUM both tables,
+  // so every pair's adjustment was effectively doubled once the font was
+  // actually installed, even though Test Lab (which only ever simulates
+  // one set of values) looked correct. Fixed by writing GPOS first and
+  // only falling back to the legacy 'kern' table if GPOS injection fails,
+  // so a real exported font never carries both at once.
   if (Object.keys(kerningPairs ?? {}).length) {
-    try {
-      const withKerning = injectKernTable(buffer, kerningPairs, base.glyphIndexByChar);
-      validateGeneratedFont(withKerning, "otf", {
-        familyName: info.legacyFamilyName,
-        hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
-      });
-      buffer = withKerning;
-    } catch (error) {
-      console.warn("[FontSeru] Kerning export skipped; using the valid base OTF.", error);
-    }
-
-    // Same pairs, also written as a modern GPOS 'kern' feature — see the
-    // block comment above `injectGposTable`. Independent of the legacy
-    // table above: if this fails, the legacy kern table written a moment
-    // ago is untouched and the export still has working kerning.
+    let gposApplied = false;
     try {
       const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar);
       validateGeneratedFont(withGpos, "otf", {
@@ -1680,8 +1740,25 @@ function generateOTF(
         hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
       });
       buffer = withGpos;
+      gposApplied = true;
     } catch (error) {
-      console.warn("[FontSeru] GPOS kerning export skipped; kept the legacy kern table only.", error);
+      console.warn("[FontSeru] GPOS kerning export skipped.", error);
+    }
+
+    // Legacy 'kern' is only a fallback for apps that don't read GPOS at
+    // all (virtually none left). Never write it alongside a successful
+    // GPOS table — that's what caused the doubled kerning above.
+    if (!gposApplied) {
+      try {
+        const withKerning = injectKernTable(buffer, kerningPairs, base.glyphIndexByChar);
+        validateGeneratedFont(withKerning, "otf", {
+          familyName: info.legacyFamilyName,
+          hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
+        });
+        buffer = withKerning;
+      } catch (error) {
+        console.warn("[FontSeru] Kerning export skipped; using the valid base OTF.", error);
+      }
     }
   }
 
@@ -1788,20 +1865,16 @@ function generateTTF(
 
   // Kerning is optional. A valid base TTF always wins over a broken kern
   // injection, and the technical reason remains visible in the console.
+  //
+  // BUG FIX (double-applied kerning after install): see the identical fix
+  // in generateOTF above — writing both the legacy 'kern' table and the
+  // GPOS 'kern' feature with the same full values let engines that honor
+  // both (several native desktop apps) sum them, doubling every pair's
+  // adjustment versus what Test Lab previewed. GPOS is now tried first and
+  // legacy 'kern' is only written when GPOS injection fails, so the two
+  // are never both present at once.
   if (Object.keys(kerningPairs ?? {}).length) {
-    try {
-      const withKerning = injectKernTable(buffer, kerningPairs, base.glyphIndexByChar);
-      validateGeneratedFont(withKerning, "ttf", {
-        familyName: info.legacyFamilyName,
-        hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
-      });
-      buffer = withKerning;
-    } catch (error) {
-      console.warn("[FontSeru] Kerning export skipped; using the valid base TTF.", error);
-    }
-
-    // Same pairs, also written as a modern GPOS 'kern' feature — see
-    // generateOTF above for why both are written.
+    let gposApplied = false;
     try {
       const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar);
       validateGeneratedFont(withGpos, "ttf", {
@@ -1809,8 +1882,22 @@ function generateTTF(
         hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
       });
       buffer = withGpos;
+      gposApplied = true;
     } catch (error) {
-      console.warn("[FontSeru] GPOS kerning export skipped; kept the legacy kern table only.", error);
+      console.warn("[FontSeru] GPOS kerning export skipped.", error);
+    }
+
+    if (!gposApplied) {
+      try {
+        const withKerning = injectKernTable(buffer, kerningPairs, base.glyphIndexByChar);
+        validateGeneratedFont(withKerning, "ttf", {
+          familyName: info.legacyFamilyName,
+          hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
+        });
+        buffer = withKerning;
+      } catch (error) {
+        console.warn("[FontSeru] Kerning export skipped; using the valid base TTF.", error);
+      }
     }
   }
 
