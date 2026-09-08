@@ -177,7 +177,7 @@ export function mergeOutlineBrushStrokes(objects: VectorObject[]): { contours: C
     // so it can't be thrown off by a winding-convention mismatch, and it
     // naturally handles a self-crossing loop resolving into more than just
     // one outer + one hole.
-    const resolved = normalizeSelfIntersectingContours(contours);
+    const resolved = normalizeSelfIntersectingContours(contours).filter((c) => c.nodes.length > 0);
     const ringPoints = resolved.map((c) => c.nodes.map((n) => n.point));
     for (let i = 0; i < resolved.length; i++) {
       let containedCount = 0;
