@@ -45,6 +45,12 @@ export const MULTILINGUAL_MARK_SLOTS: { char: string; unicode: number }[] = [
   { char: "˘", unicode: 0x02d8 }, // breve
   { char: "˙", unicode: 0x02d9 }, // dot above
   { char: "˝", unicode: 0x02dd }, // double acute
+  // Vietnamese tone marks — previously missing entirely, which is why
+  // hook-above/dot-below vowels (ả ẻ ỉ ỏ ủ ỷ / ạ ẹ ị ọ ụ ỵ) and every
+  // layered combination built on top of them (ẩ ể ổ / ậ ệ ộ / ẳ / ặ /
+  // ở / ợ / ử / ự, etc.) never had a mark to compose from.
+  { char: "\u0309", unicode: 0x0309 }, // combining hook above
+  { char: "\u0323", unicode: 0x0323 }, // combining dot below
 ];
 
 // Arithmetic symbols that can't be safely formed by repositioning an
@@ -98,6 +104,15 @@ export const MULTILINGUAL_LETTER_SLOTS: { char: string; unicode: number }[] = [
   { char: "ß", unicode: 0x00df },
   { char: "İ", unicode: 0x0130 }, // Turkish dotted capital I
   { char: "ı", unicode: 0x0131 }, // Turkish dotless lowercase i
+  // Vietnamese horn letters — the horn is a distinct curl grafted onto the
+  // letter's own bowl, not a repositionable mark, so like Ø/Æ/ß above it
+  // needs genuine artwork. Without these, no ơ/ư-based tone letter (ớ ờ ở
+  // ỡ ợ / ứ ừ ử ữ ự) could ever be composed, since there was no base to
+  // compose them from.
+  { char: "Ơ", unicode: 0x01a0 },
+  { char: "ơ", unicode: 0x01a1 },
+  { char: "Ư", unicode: 0x01af },
+  { char: "ư", unicode: 0x01b0 },
 ];
 
 // base + mark → composite. `^` and `~` (circumflex/tilde) and `°` (ring,
@@ -148,6 +163,25 @@ const RECIPES: DiacriticRecipe[] = [
   ...pairs("CEGZcegz", "˙", "dotabove"),
   // Double acute — Hungarian
   ...pairs("OUou", "˝", "doubleacute"),
+
+  // --- Vietnamese tone marks -------------------------------------------
+  // Layer 1: hook-above / dot-below on the plain vowels (+ y), giving
+  // ả ẻ ỉ ỏ ủ ỷ and ạ ẹ ị ọ ụ ỵ.
+  ...pairs("AEIOUYaeiouy", "\u0309", "hookabove"),
+  ...pairs("AEIOUYaeiouy", "\u0323", "dotbelow", "below"),
+
+  // Layer 2: the same five tones (acute, grave, hook-above, tilde,
+  // dot-below) stacked on top of vowels that already carry a circumflex,
+  // breve, or horn. Placement is forced to "aboveGlyph" for the
+  // above-vowel marks so they sit above the existing circumflex/breve
+  // instead of colliding with it at the fixed cap-height/x-height line;
+  // dot-below is unaffected by the base's height so it keeps its normal
+  // "below" placement.
+  ...pairs("ÂÊÔâêôĂăƠơƯư", "´", "acute", "aboveGlyph"), // ấ ế ố ắ ớ ứ (+ caps)
+  ...pairs("ÂÊÔâêôĂăƠơƯư", "`", "grave", "aboveGlyph"), // ầ ề ồ ằ ờ ừ
+  ...pairs("ÂÊÔâêôĂăƠơƯư", "\u0309", "hookabove", "aboveGlyph"), // ẩ ể ổ ẳ ở ử
+  ...pairs("ÂÊÔâêôĂăƠơƯư", "~", "tilde", "aboveGlyph"), // ẫ ễ ỗ ẵ ỡ ữ
+  ...pairs("ÂÊÔâêôĂăƠơƯư", "\u0323", "dotbelow", "below"), // ậ ệ ộ ặ ợ ự
 ];
 
 function accentedCodepoint(base: string, markKind: string): number | null {
@@ -159,11 +193,24 @@ function accentedCodepoint(base: string, markKind: string): number | null {
       A: 0xc1, E: 0xc9, I: 0xcd, O: 0xd3, U: 0xda, Y: 0xdd, a: 0xe1, e: 0xe9, i: 0xed, o: 0xf3, u: 0xfa, y: 0xfd,
       // Polish/Slovak/Sorbian consonants that also take a plain acute.
       C: 0x0106, c: 0x0107, N: 0x0143, n: 0x0144, S: 0x015a, s: 0x015b, Z: 0x0179, z: 0x017a,
+      // Vietnamese "sắc" tone stacked on circumflex/breve/horn vowels.
+      "\u00c2": 0x1ea4, "\u00ca": 0x1ebe, "\u00d4": 0x1ed0, "\u00e2": 0x1ea5, "\u00ea": 0x1ebf, "\u00f4": 0x1ed1,
+      "\u0102": 0x1eae, "\u0103": 0x1eaf, "\u01a0": 0x1eda, "\u01a1": 0x1edb, "\u01af": 0x1ee8, "\u01b0": 0x1ee9,
     },
-    grave: { A: 0xc0, E: 0xc8, I: 0xcc, O: 0xd2, U: 0xd9, a: 0xe0, e: 0xe8, i: 0xec, o: 0xf2, u: 0xf9 },
+    grave: {
+      A: 0xc0, E: 0xc8, I: 0xcc, O: 0xd2, U: 0xd9, a: 0xe0, e: 0xe8, i: 0xec, o: 0xf2, u: 0xf9,
+      // Vietnamese "huyền" tone stacked on circumflex/breve/horn vowels.
+      "\u00c2": 0x1ea6, "\u00ca": 0x1ec0, "\u00d4": 0x1ed2, "\u00e2": 0x1ea7, "\u00ea": 0x1ec1, "\u00f4": 0x1ed3,
+      "\u0102": 0x1eb0, "\u0103": 0x1eb1, "\u01a0": 0x1edc, "\u01a1": 0x1edd, "\u01af": 0x1eea, "\u01b0": 0x1eeb,
+    },
     diaeresis: { A: 0xc4, E: 0xcb, I: 0xcf, O: 0xd6, U: 0xdc, Y: 0x0178, a: 0xe4, e: 0xeb, i: 0xef, o: 0xf6, u: 0xfc, y: 0xff },
     circumflex: { A: 0xc2, E: 0xca, I: 0xce, O: 0xd4, U: 0xdb, a: 0xe2, e: 0xea, i: 0xee, o: 0xf4, u: 0xfb },
-    tilde: { A: 0xc3, N: 0xd1, O: 0xd5, a: 0xe3, n: 0xf1, o: 0xf5 },
+    tilde: {
+      A: 0xc3, N: 0xd1, O: 0xd5, a: 0xe3, n: 0xf1, o: 0xf5,
+      // Vietnamese "ngã" tone stacked on circumflex/breve/horn vowels.
+      "\u00c2": 0x1eaa, "\u00ca": 0x1ec4, "\u00d4": 0x1ed6, "\u00e2": 0x1eab, "\u00ea": 0x1ec5, "\u00f4": 0x1ed7,
+      "\u0102": 0x1eb4, "\u0103": 0x1eb5, "\u01a0": 0x1ee0, "\u01a1": 0x1ee1, "\u01af": 0x1eee, "\u01b0": 0x1eef,
+    },
     ring: { A: 0xc5, a: 0xe5 },
     // Latin Extended-A additions below (Central/Eastern European, Baltic,
     // Nordic-adjacent, Hungarian, Turkish).
@@ -180,6 +227,22 @@ function accentedCodepoint(base: string, markKind: string): number | null {
     breve: { A: 0x0102, a: 0x0103, G: 0x011e, g: 0x011f },
     dotabove: { C: 0x010a, c: 0x010b, E: 0x0116, e: 0x0117, G: 0x0120, g: 0x0121, Z: 0x017b, z: 0x017c },
     doubleacute: { O: 0x0150, o: 0x0151, U: 0x0170, u: 0x0171 },
+    // Vietnamese "hỏi" tone (hook above): base vowels + the same vowels
+    // already wearing a circumflex, breve, or horn.
+    hookabove: {
+      A: 0x1ea2, E: 0x1eba, I: 0x1ec8, O: 0x1ece, U: 0x1ee6, Y: 0x1ef6,
+      a: 0x1ea3, e: 0x1ebb, i: 0x1ec9, o: 0x1ecf, u: 0x1ee7, y: 0x1ef7,
+      "\u00c2": 0x1ea8, "\u00ca": 0x1ec2, "\u00d4": 0x1ed4, "\u00e2": 0x1ea9, "\u00ea": 0x1ec3, "\u00f4": 0x1ed5,
+      "\u0102": 0x1eb2, "\u0103": 0x1eb3, "\u01a0": 0x1ede, "\u01a1": 0x1edf, "\u01af": 0x1eec, "\u01b0": 0x1eed,
+    },
+    // Vietnamese "nặng" tone (dot below): base vowels + the same vowels
+    // already wearing a circumflex, breve, or horn.
+    dotbelow: {
+      A: 0x1ea0, E: 0x1eb8, I: 0x1eca, O: 0x1ecc, U: 0x1ee4, Y: 0x1ef4,
+      a: 0x1ea1, e: 0x1eb9, i: 0x1ecb, o: 0x1ecd, u: 0x1ee5, y: 0x1ef5,
+      "\u00c2": 0x1eac, "\u00ca": 0x1ec6, "\u00d4": 0x1ed8, "\u00e2": 0x1ead, "\u00ea": 0x1ec7, "\u00f4": 0x1ed9,
+      "\u0102": 0x1eb6, "\u0103": 0x1eb7, "\u01a0": 0x1ee2, "\u01a1": 0x1ee3, "\u01af": 0x1ef0, "\u01b0": 0x1ef1,
+    },
   };
   return TABLE[markKind]?.[base] ?? null;
 }
