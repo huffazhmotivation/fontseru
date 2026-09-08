@@ -172,6 +172,17 @@ async function saveFontBlob(blob: Blob, filename: string, extension: SaveExportE
     return "saved";
   } catch (error) {
     if (isAbortError(error)) return "cancelled";
+    // showSaveFilePicker requires a still-active user gesture. The export
+    // flow does real async work (quota check on the server, font
+    // generation, zip packaging) between the click and this call, which
+    // routinely burns through that transient activation window — Chrome
+    // then throws a SecurityError here even though nothing about the
+    // export itself failed. Don't treat that as an export failure: just
+    // fall back to a normal browser download.
+    if (error instanceof DOMException && error.name === "SecurityError") {
+      downloadBlob(blob, filename);
+      return "downloaded";
+    }
     throw error;
   }
 }
@@ -584,14 +595,46 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const qaReport = useMemo(() => {
     const qaGlyphs = glyphsByStyle[qaFontStyle] ?? glyphsByStyle.regular ?? {};
     const effectiveKerning = effectiveKerningPairs(qaKerningPairs, qaKerningOverridesByStyle, qaFontStyle);
+    // Export dialog keeps its own draft (fontInfoForm/licenseInfoForm) that
+    // only gets written back into the store when Export actually runs (see
+    // runExport below). QA Check has to reflect what's on screen *right
+    // now*, not the stale store snapshot from before the dialog opened —
+    // otherwise fixes made in Font Info/License Info tabs never clear their
+    // own warnings until after export. Mirrors the merge nameTablePreview
+    // already does above.
+    const liveInfo: FontInfo = {
+      ...qaFontInfo,
+      familyName: fontInfoForm.familyName.trim() || qaFontInfo.familyName,
+      designer: fontInfoForm.designerName.trim(),
+      designerURL: fontInfoForm.designerURL.trim(),
+      manufacturer: fontInfoForm.foundry.trim(),
+      manufacturerURL: fontInfoForm.website.trim(),
+      trademark: fontInfoForm.trademark.trim(),
+      copyright: fontInfoForm.copyright.trim(),
+      version: fontInfoForm.version.trim(),
+      license: licenseInfoForm.licenseOwner.trim()
+        ? `${licenseInfoForm.licenseType || "Personal"} - ${licenseInfoForm.licenseOwner.trim()}`
+        : licenseInfoForm.licenseType || qaFontInfo.license,
+    };
     return runFontQA({
       glyphs: qaGlyphs,
       metrics: qaMetrics,
-      info: qaFontInfo,
+      info: liveInfo,
       kerningPairs: effectiveKerning,
       featureConfig: qaFeatureConfig,
     });
-  }, [glyphsByStyle, qaFontStyle, qaMetrics, qaFontInfo, qaKerningPairs, qaKerningOverridesByStyle, qaFeatureConfig]);
+  }, [
+    glyphsByStyle,
+    qaFontStyle,
+    qaMetrics,
+    qaFontInfo,
+    qaKerningPairs,
+    qaKerningOverridesByStyle,
+    qaFeatureConfig,
+    fontInfoForm,
+    licenseInfoForm.licenseOwner,
+    licenseInfoForm.licenseType,
+  ]);
 
   const dismissToast = useCallback(() => setToast(null), []);
   const showToast = useCallback((message: string, kind: ToastKind = "success") => {
