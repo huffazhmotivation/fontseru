@@ -5,7 +5,7 @@ import { MAX_CUSTOM_FAMILIES, hasOutline } from "@/types/glyph";
 import type { GlyphOutline, StrokeCap, VectorObject } from "@/types/geometry";
 import type { ToolId } from "@/types/tool";
 import type { BrushSettings, BrushType } from "@/types/brush";
-import { buildDefaultGlyphs, ensureSpaceGlyph } from "./defaultGlyphs";
+import { buildDefaultGlyphs, ensureSpaceGlyph, ensureDefaultSymbols } from "./defaultGlyphs";
 import { cloneGlyphMap, familyFromRegular, newCustomFamilyGlyphs } from "./family";
 import { generateBoldFromRegular, generateItalicFromRegular, generateCustomFromRegular, type FamilyGenerationResult } from "./autoGenerate";
 import { DEFAULT_METRICS, defaultFontInfo, type FontInfo, type FontMetrics } from "@/types/font";
@@ -2081,7 +2081,10 @@ export const useAppStore = create<AppState>()((set, get) => {
         // already has a real U+0020 mapping.
         const unitsPerEm = patch.metrics?.unitsPerEm ?? s.metrics.unitsPerEm;
         const familyWithSpace: GlyphFamily = Object.fromEntries(
-          Object.entries(family).map(([styleId, glyphs]) => [styleId, ensureSpaceGlyph(glyphs, unitsPerEm)])
+          Object.entries(family).map(([styleId, glyphs]) => [
+            styleId,
+            ensureDefaultSymbols(ensureSpaceGlyph(glyphs, unitsPerEm), unitsPerEm),
+          ])
         ) as GlyphFamily;
         const activeGlyphs = familyWithSpace[style];
         const activeChar = patch.activeChar && activeGlyphs[patch.activeChar]

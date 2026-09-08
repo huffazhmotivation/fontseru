@@ -6,7 +6,13 @@ const UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const LOWER = "abcdefghijklmnopqrstuvwxyz".split("");
 const DIGITS = "0123456789".split("");
 const PUNCT = ".,:;!?'\"-–—()[]{}/\\@#&*_%".split("");
-const SYMBOLS = "+=<>~^$€£¥§©®™°|".split("");
+// Math-operator symbols (Unicode Mathematical Operators block, not the
+// Greek-letter lookalikes — e.g. Σ/Π/Δ here are U+2211/220F/2206, not the
+// Greek capitals) so a font's default glyph set can actually render them
+// instead of silently falling back to the system font wherever they're
+// typed (Test Lab's free-type "Type Test" box surfaces this immediately).
+const MATH_SYMBOLS = "∞√Σ∏Δ∂∫±≠≈≤≥".split("");
+const SYMBOLS = "+=<>~^$€£¥§©®™°|".split("").concat(MATH_SYMBOLS);
 
 /**
  * Default advance width / LSB / RSB for a brand-new font, by glyph shape
@@ -156,4 +162,26 @@ export function ensureSpaceGlyph(glyphs: GlyphMap, unitsPerEm: number): GlyphMap
     ...glyphs,
     " ": { char: " ", unicode: 0x20, category: "spacing", advanceWidth, lsb, rsb, outline: emptyOutline(), components: [] },
   };
+}
+
+/**
+ * Migration for glyph maps saved before MATH_SYMBOLS (∞ √ Σ ∏ Δ ∂ ∫ ± ≠ ≈
+ * ≤ ≥) joined the base "symbols" group. Same shape as `ensureSpaceGlyph`:
+ * only ADDS a char that's genuinely missing (checked by unicode, not just
+ * the map key, so it never double-adds a glyph already reachable under a
+ * different key) and never touches one the user already has — imported
+ * font, older autosave, or older .fs project file alike.
+ */
+export function ensureDefaultSymbols(glyphs: GlyphMap, unitsPerEm: number): GlyphMap {
+  const haveUnicodes = new Set(
+    Object.values(glyphs).flatMap((g) => [g.unicode, ...(g.unicodes ?? [])])
+  );
+  const missing = MATH_SYMBOLS.filter((ch) => !haveUnicodes.has(ch.codePointAt(0) ?? 0) && !glyphs[ch]);
+  if (missing.length === 0) return glyphs;
+  const additions: GlyphMap = {};
+  for (const ch of missing) {
+    const { advanceWidth, lsb, rsb } = standardGlyphMetrics(ch, unitsPerEm);
+    additions[ch] = { char: ch, unicode: ch.codePointAt(0) ?? 0, category: "symbols", advanceWidth, lsb, rsb, outline: emptyOutline(), components: [] };
+  }
+  return { ...glyphs, ...additions };
 }

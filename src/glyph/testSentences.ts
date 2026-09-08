@@ -29,7 +29,8 @@ export const PUNCTUATION_TEST =
   "Save 50% (limited-time) [Terms apply] {no returns} \u2014 see pages 10\u201312 & item A/B @desk_1 *bonus* \u2014 don't forget: C:\\Data.";
 export const SYMBOL_TEST =
   "5 + 3 = 8, and 5 < 10 but 20 > 15 \u2014 x^2 rises ~10\u00b0 warmer than usual.\n" +
-  "Priced at $99 / \u20ac89 / \u00a379 / \u00a512,000, \u00a9 2026 Studio\u2122 \u00ae all rights | \u00a7 terms apply.";
+  "Priced at $99 / \u20ac89 / \u00a379 / \u00a512,000, \u00a9 2026 Studio\u2122 \u00ae all rights | \u00a7 terms apply.\n" +
+  "\u221e possibilities: \u2211 of parts \u2248 \u220f of factors, \u0394 \u2260 \u2202 \u2265 \u222b \u2264 \u00b1 \u221a2.";
 
 // One line per language/accent family so every character the "+ Multilingual
 // Glyphs" composer can produce (glyph/multilingual.ts: every RECIPES entry,
