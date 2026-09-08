@@ -621,6 +621,49 @@ export function centerlineToOutline(
   let startCap: { center: Point; tangentAngle: number; semiA: number; semiB: number } | null = null;
   let endCap: { center: Point; tangentAngle: number; semiA: number; semiB: number } | null = null;
 
+  // BUG FIX (width pinches thin at bends): every point used to get exactly
+  // ONE offset, placed along the AVERAGED tangent of its two neighboring
+  // segments (see `normal`/`normalAngle` below). That average is a fine
+  // approximation on a gently curving run, but at a genuinely sharp bend
+  // (a hand-drawn corner, or two straight segments meeting at an angle) it
+  // quietly cuts the corner: the single averaged-normal point sits roughly
+  // on the CHORD between where the incoming segment's true offset would
+  // land and where the outgoing segment's true offset would land, instead
+  // of following the nib all the way around the outside of the turn. That
+  // chord-cut is exactly what read as "tebal tipis" (the stroke visibly
+  // thinning right at a turn) — worse the sharper the bend, and most
+  // visible on wide/round nibs since the chord shortfall scales with size.
+  // (The self-intersection cleanup already handles the OTHER side of a
+  // sharp bend — the concave/inside fold — by trimming it back to a single
+  // point; there was never an equivalent fix for the convex/outside gap.)
+  //
+  // Fix: detect sharp bends locally (comparing the raw incoming/outgoing
+  // segment directions, not the blended average), and on the CONVEX side
+  // of the bend only, replace that single chord-cutting point with a real
+  // round-join arc swept through the nib's own ellipse boundary — the same
+  // `ellipseSupportVector` sweep every end cap already uses (see `capArc`
+  // below), just centered on an interior corner instead of a stroke tip.
+  // The concave side is left untouched; the existing self-intersection
+  // cleanup still collapses its fold correctly.
+  const JOIN_ANGLE_THRESHOLD = (28 * Math.PI) / 180;
+  const normalizeAngleDelta = (a: number): number => {
+    let d = a % (2 * Math.PI);
+    if (d > Math.PI) d -= 2 * Math.PI;
+    if (d < -Math.PI) d += 2 * Math.PI;
+    return d;
+  };
+  const cornerJoinArc = (center: Point, a0: number, a1: number, semiA: number, semiB: number): Point[] => {
+    const delta = normalizeAngleDelta(a1 - a0);
+    const segments = Math.max(2, Math.min(8, Math.ceil(Math.abs(delta) / (Math.PI / 8))));
+    const out: Point[] = [];
+    for (let k = 0; k <= segments; k++) {
+      const ang = a0 + (delta * k) / segments;
+      const v = ellipseSupportVector(ang, nibAngleRad, semiA, semiB);
+      out.push({ x: center.x + v.x, y: center.y + v.y });
+    }
+    return out;
+  };
+
   const left: Point[] = [];
   const right: Point[] = [];
   for (let i = 0; i < pts.length; i++) {
@@ -630,6 +673,36 @@ export function centerlineToOutline(
     const tLen = Math.hypot(tangent.x, tangent.y) || 1;
     const normal = { x: -tangent.y / tLen, y: tangent.x / tLen };
     const normalAngle = Math.atan2(normal.y, normal.x);
+
+    // Local sharp-bend detection for the round-join fix above: uses the
+    // RAW incoming/outgoing segment directions (not the blended `normal`
+    // above), so it catches exactly the corners that averaging papers over.
+    // Endpoints (i===0 / i===last) are excluded — those are the dedicated
+    // start/end caps, handled separately below.
+    let isJoinCorner = false;
+    let joinConvexSide: "left" | "right" = "left";
+    let joinInAngle = normalAngle;
+    let joinOutAngle = normalAngle;
+    if (i > 0 && i < pts.length - 1) {
+      const segInX = pts[i].x - prev.x, segInY = pts[i].y - prev.y;
+      const segOutX = next.x - pts[i].x, segOutY = next.y - pts[i].y;
+      const segInLen = Math.hypot(segInX, segInY) || 1;
+      const segOutLen = Math.hypot(segOutX, segOutY) || 1;
+      const cosTurn = Math.max(-1, Math.min(1, (segInX * segOutX + segInY * segOutY) / (segInLen * segOutLen)));
+      const turnAngle = Math.acos(cosTurn);
+      if (turnAngle > JOIN_ANGLE_THRESHOLD) {
+        const cross = segInX * segOutY - segInY * segOutX;
+        // Path turning left (cross>0) folds the LEFT side inward (concave)
+        // and opens a gap on the RIGHT side (convex), and vice versa — see
+        // the doc comment above.
+        joinConvexSide = cross > 0 ? "right" : "left";
+        const inTx = segInX / segInLen, inTy = segInY / segInLen;
+        const outTx = segOutX / segOutLen, outTy = segOutY / segOutLen;
+        joinInAngle = Math.atan2(inTx, -inTy);
+        joinOutAngle = Math.atan2(outTx, -outTy);
+        isJoinCorner = true;
+      }
+    }
 
     // `size` is always the width at full press (or the constant width when
     // pressure is off/unavailable) — pressureSensitivity only ever scales
@@ -763,6 +836,16 @@ export function centerlineToOutline(
       const rightMag = Math.max(mag * 0.95, mag + rightNoise * roughJitter * semiMajor * 0.055);
       left.push({ x: pts[i].x + ux * leftMag, y: pts[i].y + uy * leftMag });
       right.push({ x: pts[i].x - ux * rightMag, y: pts[i].y - uy * rightMag });
+    } else if (isJoinCorner) {
+      const curSemiA = semiMajor * scale;
+      const curSemiB = semiMinor * scale;
+      if (joinConvexSide === "left") {
+        left.push(...cornerJoinArc(pts[i], joinInAngle, joinOutAngle, curSemiA, curSemiB));
+        right.push(rightBase);
+      } else {
+        left.push(leftBase);
+        right.push(...cornerJoinArc(pts[i], joinInAngle + Math.PI, joinOutAngle + Math.PI, curSemiA, curSemiB));
+      }
     } else {
       left.push(leftBase);
       right.push(rightBase);
