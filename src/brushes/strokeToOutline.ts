@@ -5,6 +5,7 @@ import { simplifyPolyline } from "@/utils/simplify";
 import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor } from "./strokeSmoothing";
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
+import { offsetClosedContour } from "@/glyph/autoGenerate";
 
 /**
  * Correct offset vector for sweeping a fixed-orientation elliptical nib
@@ -1669,201 +1670,6 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
  * result is a constant-thickness border with the interior left open, like
  * tracing the stroke's shape with a pen instead of filling it with ink.
  */
-/**
- * Builds the Outline Brush's inner hole boundary as a genuine second sweep
- * along the EXACT SAME dense point stream/tangents as the outer boundary
- * (the same `pts`/`cumulative` from `precomputed` in
- * outlineBrushOutlineContours), just at a constant `thickness` less
- * half-width at every point — instead of insetting the outer boundary's
- * already-fitted Bezier nodes with the generic `offsetClosedContour`.
- *
- * BUG FIX ("garis melengkung nggak presisi, lebarnya naik-turun di
- * lengkungan"): `offsetClosedContour` moves each of the outer boundary's
- * (sparse, already Bezier-fitted) nodes along a mitered normal computed
- * only from THAT node's own in/out tangent, with its join clamped
- * (`scale = |distance| / max(0.34, dot)`) to avoid runaway spikes on sharp
- * turns — which lets the inset overshoot the intended `thickness` by up to
- * ~3x exactly where the boundary turns fastest. Those are exactly the
- * curved sections of a letterform (the bowls of B/R/O/etc.), which is why
- * the ring's border read as bulging in some curves and pinching in others
- * instead of a constant width. Sweeping the SAME per-point tangent/normal
- * data the outer boundary already used — just scaled down by a flat
- * `thickness` at every one of those dense points, not re-derived from a
- * handful of sparse fitted nodes — tracks curvature exactly as accurately
- * as the outer boundary does, everywhere along the stroke.
- *
- * BUG FIX ("garis dalam hilang kalau goresan menyilang dirinya sendiri"):
- * this now runs its own `removeSelfIntersectionLoops` pass, identical to
- * the one the outer boundary already gets, so a self-crossing or
- * tight-looping stroke's hole has its own folds resolved into a clean
- * simple polygon the same way the outer ring's are — instead of inheriting
- * whatever (possibly self-intersecting) shape the old node-by-node inset
- * happened to produce, which is what let the boolean union/subtract in
- * mergeOutlineBrushStrokes silently eat the inner border on a
- * self-crossing stroke.
- */
-function buildOutlineHoleRing(
-  pts: StrokeSample[],
-  cumulative: number[],
-  totalLength: number,
-  settings: BrushSettings,
-  thickness: number,
-  capForwardOverride: number
-): Contour | null {
-  if (pts.length < 2) return null;
-
-  const nibAngleRad = (settings.angle * Math.PI) / 180;
-  const semiMajor = Math.max(0.5, settings.size / 2);
-  const semiMinor = Math.max(0.3, (settings.size / 2) * settings.roundness);
-
-  const capMode: "round" | "square" | "none" =
-    settings.outlineCapStyle === "round" ? "round" : settings.outlineCapStyle === "open" ? "none" : "square";
-
-  let startCap: { center: Point; tangentAngle: number; semiA: number; semiB: number } | null = null;
-  let endCap: { center: Point; tangentAngle: number; semiA: number; semiB: number } | null = null;
-
-  const left: Point[] = [];
-  const right: Point[] = [];
-  for (let i = 0; i < pts.length; i++) {
-    const prev = pts[Math.max(0, i - 1)];
-    const next = pts[Math.min(pts.length - 1, i + 1)];
-    const tangent = { x: next.x - prev.x, y: next.y - prev.y };
-    const tLen = Math.hypot(tangent.x, tangent.y) || 1;
-    const normal = { x: -tangent.y / tLen, y: tangent.x / tLen };
-    const normalAngle = Math.atan2(normal.y, normal.x);
-
-    // Identical width derivation (pressure/taper) to the outer sweep in
-    // centerlineToOutline — Outline Brush never triggers the oilBrush/
-    // grunge/rough noise branches there, so this plain formula is the
-    // exact same one the outer boundary used for this same point.
-    const pressure = settings.pressureEnabled ? pts[i].pressure : 1;
-    const sensitivity = settings.pressureSensitivity ?? 0;
-    const widthFromPressure = settings.size * (1 - sensitivity * (1 - pressure));
-    const s = cumulative[i] / totalLength;
-    const taper = taperFactor(s, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd });
-    const halfWidthBase = (widthFromPressure / 2) * taper;
-    const scale = halfWidthBase / Math.max(0.001, semiMajor);
-    const { x: vx, y: vy } = ellipseSupportVector(normalAngle, nibAngleRad, semiMajor * scale, semiMinor * scale);
-
-    // Same direction as the outer boundary's offset at this exact point,
-    // just `thickness` shorter — this is what keeps the ring a constant
-    // width apart everywhere, without re-deriving direction from scratch.
-    const mag = Math.hypot(vx, vy) || 1;
-    const innerMag = Math.max(0, mag - thickness);
-    const ux = vx / mag;
-    const uy = vy / mag;
-    const ivx = ux * innerMag;
-    const ivy = uy * innerMag;
-
-    if (i === 0 && capMode !== "none") {
-      const tangentAngle = Math.atan2(tangent.y, tangent.x);
-      startCap = {
-        center: pts[i], tangentAngle,
-        semiA: Math.max(0.2, semiMajor * scale - thickness),
-        semiB: Math.max(0.2, semiMinor * scale - thickness),
-      };
-    }
-    if (i === pts.length - 1 && capMode !== "none") {
-      const tangentAngle = Math.atan2(tangent.y, tangent.x);
-      endCap = {
-        center: pts[i], tangentAngle,
-        semiA: Math.max(0.2, semiMajor * scale - thickness),
-        semiB: Math.max(0.2, semiMinor * scale - thickness),
-      };
-    }
-
-    left.push({ x: pts[i].x + ivx, y: pts[i].y + ivy });
-    right.push({ x: pts[i].x - ivx, y: pts[i].y - ivy });
-  }
-
-  const capArc = (cap: { center: Point; tangentAngle: number; semiA: number; semiB: number }, startAngle: number): Point[] => {
-    const segments = 10;
-    const arcPts: Point[] = [];
-    for (let k = 1; k < segments; k++) {
-      const ang = startAngle - (Math.PI * k) / segments;
-      const v = ellipseSupportVector(ang, nibAngleRad, cap.semiA, cap.semiB);
-      arcPts.push({ x: cap.center.x + v.x, y: cap.center.y + v.y });
-    }
-    return arcPts;
-  };
-  const capSquare = (cap: { center: Point; tangentAngle: number; semiA: number; semiB: number }, sideAngle: number, extensionAngle: number): Point[] => {
-    const sideV = ellipseSupportVector(sideAngle, nibAngleRad, cap.semiA, cap.semiB);
-    const oppositeV = ellipseSupportVector(sideAngle - Math.PI, nibAngleRad, cap.semiA, cap.semiB);
-    const forwardV = ellipseSupportVector(extensionAngle, nibAngleRad, capForwardOverride, capForwardOverride);
-    return [
-      { x: cap.center.x + sideV.x + forwardV.x, y: cap.center.y + sideV.y + forwardV.y },
-      { x: cap.center.x + oppositeV.x + forwardV.x, y: cap.center.y + oppositeV.y + forwardV.y },
-    ];
-  };
-
-  const endCapPts = endCap
-    ? capMode === "square"
-      ? capSquare(endCap, endCap.tangentAngle + Math.PI / 2, endCap.tangentAngle)
-      : capArc(endCap, endCap.tangentAngle + Math.PI / 2)
-    : [];
-  const startCapPts = startCap
-    ? capMode === "square"
-      ? capSquare(startCap, startCap.tangentAngle - Math.PI / 2, startCap.tangentAngle + Math.PI)
-      : capArc(startCap, startCap.tangentAngle - Math.PI / 2)
-    : [];
-
-  // Same self-intersection cleanup the outer boundary's edges already get
-  // (see removeSelfIntersectionLoops's doc comment) — this is the piece
-  // the old offsetClosedContour-based inset never had at all.
-  const cleanedLeft = removeSelfIntersectionLoops(left);
-  const cleanedRight = removeSelfIntersectionLoops(right);
-
-  const edgeSimplifyEpsilon = Math.max(0.5, Math.min(3, semiMajor * 0.055));
-  const simplifiedLeft = simplifyPolyline(cleanedLeft, edgeSimplifyEpsilon);
-  const simplifiedRight = simplifyPolyline(cleanedRight, edgeSimplifyEpsilon);
-
-  const polygon = [...simplifiedLeft, ...endCapPts, ...simplifiedRight.reverse(), ...startCapPts];
-  if (polygon.length < 3) return null;
-
-  const forceCornerIndices =
-    capMode === "square" || capMode === "none"
-      ? new Set<number>([
-          0,
-          simplifiedLeft.length - 1,
-          simplifiedLeft.length,
-          simplifiedLeft.length + endCapPts.length - 1,
-          simplifiedLeft.length + endCapPts.length,
-          simplifiedLeft.length + endCapPts.length + simplifiedRight.length - 1,
-          simplifiedLeft.length + endCapPts.length + simplifiedRight.length,
-          polygon.length - 1,
-        ])
-      : null;
-
-  const polygonNodes = polygon.map((point, i) => {
-    const prev = polygon[(i - 1 + polygon.length) % polygon.length];
-    const next = polygon[(i + 1) % polygon.length];
-    const inLen = Math.hypot(point.x - prev.x, point.y - prev.y) || 1;
-    const outLen = Math.hypot(next.x - point.x, next.y - point.y) || 1;
-    const inUx = (point.x - prev.x) / inLen, inUy = (point.y - prev.y) / inLen;
-    const outUx = (next.x - point.x) / outLen, outUy = (next.y - point.y) / outLen;
-    const dot = Math.max(-1, Math.min(1, inUx * outUx + inUy * outUy));
-    if (forceCornerIndices?.has(i) || Math.acos(dot) > (100 * Math.PI) / 180) {
-      return { id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const };
-    }
-    const dx = next.x - prev.x;
-    const dy = next.y - prev.y;
-    const dLen = Math.hypot(dx, dy) || 1;
-    const ux2 = dx / dLen;
-    const uy2 = dy / dLen;
-    const inHandleLen = Math.min(inLen / 3, inLen * 0.65);
-    const outHandleLen = Math.min(outLen / 3, outLen * 0.65);
-    return {
-      id: shortId("node"),
-      point,
-      handleIn: { x: point.x - ux2 * inHandleLen, y: point.y - uy2 * inHandleLen },
-      handleOut: { x: point.x + ux2 * outHandleLen, y: point.y + uy2 * outHandleLen },
-      type: "smooth" as const,
-    };
-  });
-
-  return { id: shortId("contour"), closed: true, nodes: polygonNodes };
-}
-
 function outlineBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
   if (centerline.length < 2) return [];
 
@@ -1929,21 +1735,6 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
   // open, uncapped tip because centerlineToOutline's capMode "none" for
   // "open" (see its doc comment) leaves both boundaries' ends as plain
   // flat, un-extended chords instead of a closed plate/bulge.
-  // BUG FIX (ring width "melenceng"/uneven on curved strokes, and the
-  // inner border vanishing on a self-crossing stroke): the inner hole
-  // used to be built two different ways over this file's history — first
-  // as an independent second nib sweep at a smaller size (which drifted
-  // out of sync with the outer boundary's own self-intersection cleanup
-  // on bends), then as a generic node-by-node inset of the ALREADY
-  // Bezier-fitted outer boundary via `offsetClosedContour` (which fixed
-  // the drift, but that function's per-node miter offset — built for
-  // bolding a glyph's sparse, already-drawn nodes — approximates real
-  // curvature poorly on Outline Brush's sparse fitted nodes, and never
-  // checked for self-intersection at all). `buildOutlineHoleRing` below
-  // sweeps the SAME dense point stream/tangents as the outer boundary
-  // (`pts`/`cumulative`, shared via `precomputed`) at a flat `thickness`
-  // less half-width per point, then runs the identical self-intersection
-  // cleanup the outer boundary gets — see that function's doc comment.
   const main = centerlineToOutline(centerline, settings, precomputed, capReach);
   if (!main) return [];
   const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
@@ -1953,24 +1744,43 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
   // degenerate/self-intersecting inner contour.
   if (innerSize < 1.5) return [main];
 
-  const innerCapForward = Math.max(0.3, capReach - thickness);
-  const innerRaw = buildOutlineHoleRing(pts, cumulative, totalLength, settings, thickness, innerCapForward);
-  if (!innerRaw) return [main];
-  const innerSign = Math.sign(signedArea(innerRaw.nodes.map((n) => n.point))) || 1;
+  // BUG FIX (ring width "melenceng"/uneven on curved strokes): the inner
+  // hole used to be built by sweeping the SAME centerline a second time at
+  // a smaller nib size (`innerSize`), independently from the outer
+  // boundary above. Each sweep runs its own `removeSelfIntersectionLoops`
+  // fold-cleanup on tight bends (see that function's doc comment) — and
+  // WHERE a bend folds depends on the sweep's own radius, so the outer
+  // sweep (bigger radius) and this inner sweep (smaller radius) folded at
+  // two DIFFERENT points along the same bend. The visible gap between them
+  // is the ring's actual width, so wherever those fold points diverged —
+  // any curved stretch of the stroke, not just extreme cusps — the border
+  // read as bulging or pinching instead of the constant `thickness` the
+  // straight sections show, exactly the reported "lebar line melenceng dan
+  // ga seimbang" symptom.
+  //
+  // Building the hole as a direct, constant-distance INSET of the outer
+  // boundary that's already been computed and cleaned (via
+  // `offsetClosedContour`, the same mitered-normal-with-clamp offset that
+  // keeps Bold/Light family generation from folding on itself) guarantees
+  // the two boundaries stay `thickness` apart everywhere by construction,
+  // including all the way around a curve — there's no second independent
+  // sweep left to drift out of sync with the first.
+  const insetRaw = offsetClosedContour(main, -thickness, false);
+  const innerSign = Math.sign(signedArea(insetRaw.nodes.map((n) => n.point))) || 1;
   const desiredInnerSign = -outerSign;
   // Reversing a smoothed contour also has to exchange each node's incoming
   // and outgoing handles. Reversing only the array leaves the handles
   // attached to the wrong side of the path and can reintroduce angular
   // corners or small folds in Outline Brush's inner counter.
   const innerNodes = innerSign !== desiredInnerSign
-    ? [...innerRaw.nodes].reverse().map((node) => ({
+    ? [...insetRaw.nodes].reverse().map((node) => ({
         ...node,
         handleIn: node.handleOut,
         handleOut: node.handleIn,
       }))
-    : innerRaw.nodes;
+    : insetRaw.nodes;
 
-  return [main, { ...innerRaw, id: shortId("contour"), nodes: innerNodes }];
+  return [main, { ...insetRaw, id: shortId("contour"), nodes: innerNodes }];
 }
 
 /**
