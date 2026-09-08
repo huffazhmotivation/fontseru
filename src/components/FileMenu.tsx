@@ -708,7 +708,15 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     const previewInfo: Partial<FontInfo> = {
       familyName,
       styleName,
-      fullName: `${fontName} ${styleName}`,
+      // BUG FIX: this used to build Full Name from `fontName` (the "Font
+      // Name" field) instead of `familyName` ("Family Name"). Those two
+      // fields can diverge — e.g. a leftover working title like "rough 2"
+      // in Font Name while Family Name was renamed to the real brand name
+      // — and Full Name silently kept the stale value, tripping the QA
+      // Check's "Full Name tidak diawali Family Name" warning with no way
+      // to fix it from the UI. Full Name must start with Family Name by
+      // OpenType convention, so derive it from `familyName`.
+      fullName: `${familyName} ${styleName}`,
       postscriptName: "",
       uniqueID: "",
       designer: fontInfoForm.designerName.trim(),
@@ -904,7 +912,11 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
           ...s.fontInfo,
           familyName,
           styleName,
-          fullName: `${fontName} ${styleName}`,
+          // Same fix as the preview above: Full Name must be derived from
+          // Family Name, not the separate "Font Name" field, or the two can
+          // drift apart and the exported font fails the Full-Name-starts-
+          // with-Family-Name check.
+          fullName: `${familyName} ${styleName}`,
           // Let normalization create a unique Family-Style PostScript name and
           // matching unique ID for every binary.
           postscriptName: "",
