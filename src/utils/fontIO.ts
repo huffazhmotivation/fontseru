@@ -1640,7 +1640,7 @@ function generateOTFBase(
   const { font, glyphIndexByChar } = buildOpenTypeFont(cffGlyphs, metrics, info);
   const buffer = font.toArrayBuffer();
   validateGeneratedFont(buffer, "otf", {
-    familyName: info.familyName,
+    familyName: info.legacyFamilyName,
     hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
   });
   return { buffer, glyphIndexByChar };
@@ -1661,7 +1661,7 @@ function generateOTF(
     try {
       const withKerning = injectKernTable(buffer, kerningPairs, base.glyphIndexByChar);
       validateGeneratedFont(withKerning, "otf", {
-        familyName: info.familyName,
+        familyName: info.legacyFamilyName,
         hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
       });
       buffer = withKerning;
@@ -1676,7 +1676,7 @@ function generateOTF(
     try {
       const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar);
       validateGeneratedFont(withGpos, "otf", {
-        familyName: info.familyName,
+        familyName: info.legacyFamilyName,
         hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
       });
       buffer = withGpos;
@@ -1692,7 +1692,7 @@ function generateOTF(
     try {
       const withFeatures = injectGsubTable(buffer, featureConfig, base.glyphIndexByChar);
       validateGeneratedFont(withFeatures, "otf", {
-        familyName: info.familyName,
+        familyName: info.legacyFamilyName,
         hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
       });
       buffer = withFeatures;
@@ -1769,7 +1769,7 @@ function generateTTFBase(
   }
 
   validateGeneratedFont(result.buffer, "ttf", {
-    familyName: info.familyName,
+    familyName: info.legacyFamilyName,
     hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
   });
 
@@ -1792,7 +1792,7 @@ function generateTTF(
     try {
       const withKerning = injectKernTable(buffer, kerningPairs, base.glyphIndexByChar);
       validateGeneratedFont(withKerning, "ttf", {
-        familyName: info.familyName,
+        familyName: info.legacyFamilyName,
         hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
       });
       buffer = withKerning;
@@ -1805,7 +1805,7 @@ function generateTTF(
     try {
       const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar);
       validateGeneratedFont(withGpos, "ttf", {
-        familyName: info.familyName,
+        familyName: info.legacyFamilyName,
         hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
       });
       buffer = withGpos;
@@ -1819,7 +1819,7 @@ function generateTTF(
     try {
       const withFeatures = injectGsubTable(buffer, featureConfig, base.glyphIndexByChar);
       validateGeneratedFont(withFeatures, "ttf", {
-        familyName: info.familyName,
+        familyName: info.legacyFamilyName,
         hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
       });
       buffer = withFeatures;
