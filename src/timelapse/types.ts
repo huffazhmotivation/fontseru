@@ -24,6 +24,7 @@ export type ScreenRecordingStatus =
   | "idle"
   | "requesting"
   | "recording"
+  | "paused"
   | "processing"
   | "ready"
   | "error";

@@ -5576,7 +5576,8 @@ input[type="number"]::-webkit-outer-spin-button {
   overflow-x: auto;
   padding: 6px 2px 10px;
 }
-.fm-lab-feature-preview-glyph { color: var(--labf-text); }
+.fm-lab-feature-preview-glyph { color: var(--labf-text); touch-action: none; }
+.fm-lab-feature-preview-glyph.kerning-active { color: var(--accent); }
 .fm-lab-feature-preview-note,
 .fm-lab-feature-preview-empty {
   font-size: 12px;
@@ -5729,6 +5730,26 @@ input[type="number"]::-webkit-outer-spin-button {
   z-index: 40;
   display: flex;
   align-items: center;
+  gap: 4px;
+  box-shadow: 0 6px 18px var(--shadow);
+}
+.fm-timelapse-badge-pause {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 999px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.fm-timelapse-badge-pause:hover { background: var(--panel-2); }
+.fm-timelapse-badge-label {
+  display: flex;
+  align-items: center;
   gap: 6px;
   border: 1px solid var(--line);
   background: var(--panel);
@@ -5739,11 +5760,16 @@ input[type="number"]::-webkit-outer-spin-button {
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: pointer;
-  box-shadow: 0 6px 18px var(--shadow);
 }
 .fm-timelapse-badge-dot {
   color: var(--danger);
   animation: fm-timelapse-pulse 1.4s ease-in-out infinite;
+}
+/* Paused: dot stops pulsing and drops to a neutral tone — the badge as a
+   whole should read "on hold", not "actively recording". */
+.fm-timelapse-badge.is-paused .fm-timelapse-badge-dot {
+  color: var(--text-faint);
+  animation: none;
 }
 .fm-timelapse-badge-count {
   color: var(--text-dim);

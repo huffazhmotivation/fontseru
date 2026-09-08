@@ -1309,12 +1309,59 @@ function buildLookupList(lookups: Uint8Array[]): Uint8Array {
   return w.toUint8Array();
 }
 
-/** One Feature table per entry — each references exactly one lookup, by
- * its global index into the LookupList. */
-function buildFeatureList(features: Array<{ tag: string; lookupIndex: number }>): Uint8Array {
+/** Splits ligature rules into ordered levels so a ligature built FROM
+ * another ligature — e.g. an "f_f"+"l"→"f_f_l" rule whose first input is
+ * the "ff" ligature's own glyph, not a plain typed letter — ends up in a
+ * LATER lookup than the rule that produces that input glyph. OpenType
+ * applies a feature's lookups in order, each one a full pass over the
+ * whole glyph run before the next lookup starts, so putting the "ff" rule
+ * in lookup level 0 and the "ff"+"l" rule in level 1 means that by the
+ * time level 1 runs, level 0 has already turned the two "f"s into a
+ * single "ff" glyph for it to match against — a single combined lookup
+ * (the old behavior) could never do this, since within one lookup's pass
+ * the newly-substituted glyph doesn't exist yet for a later rule in the
+ * same pass to match. A rule whose components don't depend on any other
+ * rule's target sits at level 0, same as before. Cycle-safe (falls back
+ * to level 0 for whichever rule closes the loop) since a font shouldn't
+ * ever actually have one, but a corrupt/cyclic config must never
+ * infinite-loop the export. */
+function ligatureLevels(
+  rules: Array<{ components: number[]; ligature: number }>
+): Array<Array<{ components: number[]; ligature: number }>> {
+  const byTarget = new Map<number, { components: number[]; ligature: number }>();
+  for (const r of rules) byTarget.set(r.ligature, r);
+  const levelCache = new Map<{ components: number[]; ligature: number }, number>();
+  function levelOf(rule: { components: number[]; ligature: number }, seen: Set<typeof rule>): number {
+    const cached = levelCache.get(rule);
+    if (cached != null) return cached;
+    if (seen.has(rule)) return 0;
+    seen.add(rule);
+    let depLevel = -1;
+    for (const c of rule.components) {
+      const dep = byTarget.get(c);
+      if (dep) depLevel = Math.max(depLevel, levelOf(dep, seen));
+    }
+    const level = depLevel + 1;
+    levelCache.set(rule, level);
+    return level;
+  }
+  const levels: Array<Array<{ components: number[]; ligature: number }>> = [];
+  for (const rule of rules) {
+    const level = levelOf(rule, new Set());
+    (levels[level] ??= []).push(rule);
+  }
+  return levels.filter((l) => l && l.length > 0);
+}
+
+/** One Feature table per entry — each references its lookups, by their
+ * global indices into the LookupList, in the order they should be
+ * applied (see `ligatureLevels` for why "liga" can need more than one,
+ * in dependency order). */
+function buildFeatureList(features: Array<{ tag: string; lookupIndices: number[] }>): Uint8Array {
   const featureTables = features.map((f) => {
     const w = new GsubByteWriter();
-    w.u16(0).u16(1).u16(f.lookupIndex); // no FeatureParams, one lookup
+    w.u16(0).u16(f.lookupIndices.length); // no FeatureParams
+    for (const idx of f.lookupIndices) w.u16(idx);
     return w.toUint8Array();
   });
   const headerSize = 2 + 6 * features.length;
@@ -1391,18 +1438,23 @@ function buildGsubTable(config: FeatureBuilderConfig, glyphIndexByChar: Map<stri
   if (!ligatureRules.length && !alternateRules.length && !swashRules.length) return null;
 
   const lookups: Uint8Array[] = [];
-  const features: Array<{ tag: string; lookupIndex: number }> = [];
+  const features: Array<{ tag: string; lookupIndices: number[] }> = [];
 
   if (ligatureRules.length) {
-    features.push({ tag: "liga", lookupIndex: lookups.length });
-    lookups.push(buildLookup(4, [buildLigatureSubstFormat1(ligatureRules)]));
+    const levels = ligatureLevels(ligatureRules);
+    const ligLookupIndices: number[] = [];
+    for (const level of levels) {
+      ligLookupIndices.push(lookups.length);
+      lookups.push(buildLookup(4, [buildLigatureSubstFormat1(level)]));
+    }
+    features.push({ tag: "liga", lookupIndices: ligLookupIndices });
   }
   if (alternateRules.length) {
-    features.push({ tag: "salt", lookupIndex: lookups.length });
+    features.push({ tag: "salt", lookupIndices: [lookups.length] });
     lookups.push(buildLookup(3, [buildAlternateSubstFormat1(alternateRules)]));
   }
   if (swashRules.length) {
-    features.push({ tag: "swsh", lookupIndex: lookups.length });
+    features.push({ tag: "swsh", lookupIndices: [lookups.length] });
     lookups.push(buildLookup(1, [buildSingleSubstFormat2(swashRules)]));
   }
 
@@ -1503,7 +1555,7 @@ function buildGposTable(pairs: KerningPairs, glyphIndexByChar: Map<string, numbe
   if (!format1) return null;
 
   const lookupListBytes = buildLookupList([buildLookup(2, [format1])]); // GPOS lookupType 2 = Pair Adjustment Positioning
-  const featureListBytes = buildFeatureList([{ tag: "kern", lookupIndex: 0 }]);
+  const featureListBytes = buildFeatureList([{ tag: "kern", lookupIndices: [0] }]);
   const scriptListBytes = buildScriptList(["DFLT", "latn"], [0]);
 
   const headerSize = 10;

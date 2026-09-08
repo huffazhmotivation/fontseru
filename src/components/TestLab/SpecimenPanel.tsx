@@ -1172,6 +1172,9 @@ function FeatureSentencePreview({
 }) {
   const metrics = useAppStore((s) => s.metrics);
   const kerningPairs = useAppStore((s) => s.kerningPairs);
+  const beginKerningDrag = useAppStore((s) => s.beginKerningDrag);
+  const setKerningPairLive = useAppStore((s) => s.setKerningPairLive);
+  const endKerningDrag = useAppStore((s) => s.endKerningDrag);
   const { ascender, descender, unitsPerEm } = metrics;
   const totalH = ascender - descender;
 
@@ -1196,6 +1199,88 @@ function FeatureSentencePreview({
   const pxPerUnit = fontSize / unitsPerEm;
   const width = Math.max(1, totalAdvance * pxPerUnit);
   const height = Math.max(1, totalH * pxPerUnit);
+
+  // Drag-to-kern directly on this preview's glyphs — the only place a pair
+  // involving a ligature/alternate/swash glyph (its own PUA-keyed glyph-map
+  // entry, see glyph/featureGlyphs.ts) can be reached at all, since the
+  // main Kerning Pairs tab only ever shows literal typed characters. Same
+  // gesture as that tab: press a glyph and drag left/right; a plain
+  // click (no movement) still opens it in the editor like before. Kerning
+  // is keyed by the actual rendered glyph (`token`), which is exactly what
+  // layoutTokens above now looks values up by too.
+  const KERN_DRAG_THRESHOLD_PX = 3;
+  type FeatureKernDrag = {
+    pointerId: number;
+    token: string;
+    leftToken: string | null;
+    rightToken: string | null;
+    leftValue: number;
+    rightValue: number;
+    startX: number;
+    dragging: boolean;
+  };
+  const dragRef = useRef<FeatureKernDrag | null>(null);
+  const [liveKern, setLiveKern] = useState<{ leftToken: string; rightToken: string; value: number } | null>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  const handlePointerDown = (e: ReactPointerEvent<SVGGElement>, index: number) => {
+    if (e.button !== 0) return;
+    const p = placed[index];
+    if (!p) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const leftToken = index > 0 ? placed[index - 1].token : null;
+    const rightToken = index < placed.length - 1 ? placed[index + 1].token : null;
+    const leftValue = leftToken ? kerningPairs[kerningKey(leftToken, p.token)] ?? 0 : 0;
+    const rightValue = rightToken ? kerningPairs[kerningKey(p.token, rightToken)] ?? 0 : 0;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { pointerId: e.pointerId, token: p.token, leftToken, rightToken, leftValue, rightValue, startX: e.clientX, dragging: false };
+    setActiveIndex(index);
+  };
+
+  const handlePointerMove = (e: ReactPointerEvent<SVGGElement>) => {
+    const d = dragRef.current;
+    if (!d || e.pointerId !== d.pointerId) return;
+    const deltaPx = e.clientX - d.startX;
+    if (!d.dragging && Math.abs(deltaPx) < KERN_DRAG_THRESHOLD_PX) return;
+    if (!d.dragging) {
+      d.dragging = true;
+      beginKerningDrag();
+    }
+    const deltaUnits = Math.round(deltaPx / Math.max(pxPerUnit, 0.0001));
+    if (d.leftToken) {
+      const value = d.leftValue + deltaUnits;
+      setKerningPairLive(d.leftToken, d.token, value);
+      setLiveKern({ leftToken: d.leftToken, rightToken: d.token, value });
+    } else if (d.rightToken) {
+      const value = d.rightValue - deltaUnits;
+      setKerningPairLive(d.token, d.rightToken, value);
+      setLiveKern({ leftToken: d.token, rightToken: d.rightToken, value });
+    }
+  };
+
+  const handlePointerUp = (e: ReactPointerEvent<SVGGElement>, index: number) => {
+    const d = dragRef.current;
+    if (!d || e.pointerId !== d.pointerId) return;
+    dragRef.current = null;
+    setActiveIndex(null);
+    if (d.dragging) {
+      endKerningDrag();
+      setLiveKern(null);
+    } else {
+      const p = placed[index];
+      if (p && glyphs[p.token]) onOpenGlyph(p.token);
+    }
+  };
+
+  const handlePointerCancel = (e: ReactPointerEvent<SVGGElement>) => {
+    const d = dragRef.current;
+    if (!d || e.pointerId !== d.pointerId) return;
+    dragRef.current = null;
+    setActiveIndex(null);
+    if (d.dragging) endKerningDrag();
+    setLiveKern(null);
+  };
 
   return (
     <div className="fm-lab-feature-preview" data-testid="lab-feature-sentence-preview">
@@ -1262,11 +1347,16 @@ function FeatureSentencePreview({
                     <g
                       key={i}
                       transform={`translate(${p.x} 0)`}
-                      className={`fm-lab-feature-preview-glyph${p.substituted ? " substituted" : ""}`}
-                      onClick={() => g && onOpenGlyph(p.token)}
-                      style={{ cursor: g ? "pointer" : "default" }}
+                      className={`fm-lab-feature-preview-glyph${p.substituted ? " substituted" : ""}${activeIndex === i ? " kerning-active" : ""}`}
+                      onPointerDown={(e) => handlePointerDown(e, i)}
+                      onPointerMove={handlePointerMove}
+                      onPointerUp={(e) => handlePointerUp(e, i)}
+                      onPointerCancel={handlePointerCancel}
+                      onLostPointerCapture={handlePointerCancel}
+                      style={{ cursor: g ? "ew-resize" : "default" }}
                       data-testid={`lab-feature-preview-glyph-${i}`}
                     >
+                      <title>{`Tarik untuk atur kerning · klik untuk buka di editor`}</title>
                       {paths.map((entry) =>
                         entry.kind === "stroke" ? (
                           <path
@@ -1289,14 +1379,16 @@ function FeatureSentencePreview({
             </svg>
           </div>
           <div className="fm-lab-feature-preview-note" data-testid="lab-feature-preview-note">
-            {substitutedCount > 0
-              ? `${substitutedCount} substitusi diterapkan — klik sebuah glyph untuk membukanya di editor.`
-              : "Belum ada substitusi yang cocok untuk teks ini. Coba kombinasi lain, atau nyalakan toggle Alternate/Swash di atas."}
+            {liveKern
+              ? `Kerning ${liveKern.leftToken} \u2192 ${liveKern.rightToken}: ${liveKern.value > 0 ? "+" : ""}${liveKern.value}u`
+              : substitutedCount > 0
+                ? `${substitutedCount} substitusi diterapkan — tarik sebuah glyph kiri/kanan untuk atur kerning-nya, atau klik untuk membukanya di editor.`
+                : "Belum ada substitusi yang cocok untuk teks ini. Coba kombinasi lain, atau nyalakan toggle Alternate/Swash di atas."}
           </div>
         </>
       ) : (
         <div className="fm-lab-feature-preview-empty">
-          Ketik untuk melihat Ligature, Alternate, atau Swash yang sudah kamu buat tampil di dalam kata atau kalimat sungguhan — bukan cuma satu per satu.
+          Ketik untuk melihat Ligature, Alternate, atau Swash yang sudah kamu buat tampil di dalam kata atau kalimat sungguhan — bukan cuma satu per satu. Setelah muncul, tarik sebuah glyph ke kiri/kanan untuk atur kerning-nya.
         </div>
       )}
     </div>

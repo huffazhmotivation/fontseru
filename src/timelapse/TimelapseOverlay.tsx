@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { X, Circle, Download, Film, Loader2, RotateCcw, MonitorPlay } from "lucide-react";
+import { X, Circle, Download, Film, Loader2, RotateCcw, MonitorPlay, Pause, Play } from "lucide-react";
 import { screenRecorder } from "./ScreenRecorder";
 import { useScreenRecorderState } from "./useTimelapse";
 import { useTimelapseUiStore } from "./timelapseUiStore";
@@ -172,12 +172,22 @@ export function TimelapseOverlay() {
             </div>
           )}
 
-          {status === "recording" && (
+          {(status === "recording" || status === "paused") && (
             <>
               <div className="fm-timelapse-stage">
                 <div className="fm-timelapse-empty">
-                  Recording in progress. Go do the work you want captured — you can close this panel, it keeps running
-                  until you hit <strong>Stop Recording</strong> (or stop sharing from your browser's own toolbar).
+                  {status === "paused" ? (
+                    <>
+                      Recording paused — nothing is being captured right now. Press <strong>Resume</strong> to keep going,
+                      or <strong>Stop Recording</strong> to finish with what you have so far.
+                    </>
+                  ) : (
+                    <>
+                      Recording in progress. Go do the work you want captured — you can close this panel, it keeps running
+                      until you hit <strong>Stop Recording</strong> (or stop sharing from your browser's own toolbar). Need
+                      a break? Hit <strong>Pause</strong> and it'll wait for you.
+                    </>
+                  )}
                 </div>
               </div>
               <div className="fm-timelapse-frame-meta">
@@ -198,12 +208,28 @@ export function TimelapseOverlay() {
               <div className="fm-timelapse-record-row">
                 <button
                   type="button"
-                  className="fm-timelapse-record-btn is-recording"
+                  className={`fm-timelapse-record-btn ${status === "recording" ? "is-recording" : ""}`}
                   onClick={() => screenRecorder.stop()}
                   data-testid="timelapse-record-toggle"
                 >
                   <Circle size={13} fill="currentColor" />
-                  Recording…
+                  {status === "paused" ? "Stop Recording" : "Recording…"}
+                </button>
+                <button
+                  type="button"
+                  className="fm-timelapse-icon-btn"
+                  onClick={() => (status === "paused" ? screenRecorder.resume() : screenRecorder.pause())}
+                  data-testid="timelapse-pause-toggle"
+                >
+                  {status === "paused" ? (
+                    <>
+                      <Play size={13} fill="currentColor" /> Resume
+                    </>
+                  ) : (
+                    <>
+                      <Pause size={13} fill="currentColor" /> Pause
+                    </>
+                  )}
                 </button>
                 <div className="fm-spacer" />
                 <div className="fm-timelapse-stats">

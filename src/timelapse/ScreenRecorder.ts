@@ -87,6 +87,13 @@ export class ScreenRecorder {
   private errorMessage: string | null = null;
   private startedAt: number | null = null;
   private elapsedMs = 0;
+  // Wall-clock ms spent paused so far, plus the timestamp pause() was last
+  // called at (null while not paused). Subtracted from `performance.now() -
+  // startedAt` everywhere elapsed time is computed, so the displayed clock
+  // — and, for "fast", the frame timeline — both freeze during a pause
+  // instead of jumping forward the moment recording resumes.
+  private totalPausedMs = 0;
+  private pausedAt: number | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private videoUrl: string | null = null;
   private strategy: TimelapseStrategy | null = null;
@@ -144,6 +151,8 @@ export class ScreenRecorder {
     this.outputWidth = null;
     this.outputHeight = null;
     this.frameCount = 0;
+    this.totalPausedMs = 0;
+    this.pausedAt = null;
     this.notify();
 
     let stream: MediaStream;
@@ -255,7 +264,7 @@ export class ScreenRecorder {
     this.elapsedMs = 0;
     this.status = "recording";
     this.tickTimer = setInterval(() => {
-      this.elapsedMs = performance.now() - (this.startedAt ?? performance.now());
+      this.elapsedMs = performance.now() - (this.startedAt ?? performance.now()) - this.totalPausedMs;
       this.notify();
     }, 250);
     this.notify();
@@ -327,16 +336,61 @@ export class ScreenRecorder {
     this.elapsedMs = 0;
     this.status = "recording";
     this.tickTimer = setInterval(() => {
-      this.elapsedMs = performance.now() - (this.startedAt ?? performance.now());
+      this.elapsedMs = performance.now() - (this.startedAt ?? performance.now()) - this.totalPausedMs;
       this.notify();
     }, 250);
+    this.notify();
+  }
+
+  /** Freezes the recording in place — timer stops, no more frames are
+   * captured/muxed (fast) or handed to the encoder (legacy) — without
+   * tearing down the display stream, so `resume()` continues the SAME
+   * recording (no re-prompting the "share this tab" picker, no gap
+   * spliced out of the final video's frame timeline). No-op unless
+   * currently "recording". */
+  pause(): void {
+    if (this.status !== "recording") return;
+    if (this.tickTimer !== null) {
+      clearInterval(this.tickTimer);
+      this.tickTimer = null;
+    }
+    if (this.strategy === "fast") {
+      if (this.captureTimeoutId !== null) {
+        clearTimeout(this.captureTimeoutId);
+        this.captureTimeoutId = null;
+      }
+    } else {
+      this.legacyRecorder?.pause();
+    }
+    this.pausedAt = performance.now();
+    this.status = "paused";
+    this.notify();
+  }
+
+  /** Undoes `pause()`: resumes the same recording, picking frame capture
+   * back up (fast) or un-pausing the MediaRecorder (legacy). No-op unless
+   * currently "paused". */
+  resume(): void {
+    if (this.status !== "paused") return;
+    this.totalPausedMs += performance.now() - (this.pausedAt ?? performance.now());
+    this.pausedAt = null;
+    this.status = "recording";
+    this.tickTimer = setInterval(() => {
+      this.elapsedMs = performance.now() - (this.startedAt ?? performance.now()) - this.totalPausedMs;
+      this.notify();
+    }, 250);
+    if (this.strategy === "fast") {
+      this.scheduleNextCapture();
+    } else {
+      this.legacyRecorder?.resume();
+    }
     this.notify();
   }
 
   /** Stops capture and starts finalizing the file (encoder flush + mux for
    * "fast", or MediaRecorder's own finalize for "legacy"). */
   stop(): void {
-    if (this.status !== "recording") return;
+    if (this.status !== "recording" && this.status !== "paused") return;
     if (this.tickTimer !== null) {
       clearInterval(this.tickTimer);
       this.tickTimer = null;
@@ -409,6 +463,8 @@ export class ScreenRecorder {
     this.outputWidth = null;
     this.outputHeight = null;
     this.frameCount = 0;
+    this.totalPausedMs = 0;
+    this.pausedAt = null;
     this.notify();
   }
 
