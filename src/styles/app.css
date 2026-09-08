@@ -5585,6 +5585,34 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .fm-lab-feature-preview-empty { line-height: 1.5; }
 
+/* Rule-level warnings for ligature rules that exist but can't fire yet —
+   shown proactively (not only after typing matching text) so a silently
+   skipped rule (empty target outline, or a chained-ligature component
+   whose source rule was removed) has a visible, specific reason instead of
+   just "nothing happened". */
+.fm-lab-feature-warning {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--warn-border, rgba(230, 180, 60, 0.35));
+  background: var(--warn-bg, rgba(230, 180, 60, 0.08));
+}
+.fm-lab-feature-warning-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.fm-lab-feature-warning-label {
+  font-weight: 600;
+  color: var(--labf-text);
+  white-space: nowrap;
+}
+.fm-lab-feature-warning-reason { color: var(--labf-text-dim); }
+
 /* ------------------------------------------------------------- QA CHECK */
 .fm-qa-tab-badge {
   display: inline-flex; align-items: center; justify-content: center;

@@ -52,7 +52,7 @@ interface RawToken {
  * multi-pass/iterative substitution engine — a single left-to-right scan
  * over literal chars still works, just with the correct match length.
  * `depth` guards against a rule chain that loops back on itself. */
-function resolveLigatureInputChars(
+export function resolveLigatureInputChars(
   component: string,
   allLigatureRules: FeatureBuilderConfig["ligatures"],
   depth = 0

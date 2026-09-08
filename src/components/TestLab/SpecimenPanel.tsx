@@ -10,7 +10,7 @@ import { GlyphThumbnail } from "@/components/GlyphThumbnail";
 import { caretX, fallbackAdvance, layoutLine, nearestCaretColumn, type LineLayout } from "@/editor/textLayout";
 import { useTypingCaret } from "@/editor/useTypingCaret";
 import { getGlyphPaths } from "@/editor/glyphPaths";
-import { applyFeatureSubstitution, layoutTokens, type FeatureToggles } from "@/editor/featureTextLayout";
+import { applyFeatureSubstitution, layoutTokens, resolveLigatureInputChars, type FeatureToggles } from "@/editor/featureTextLayout";
 import { FONT_STYLES, fontStyleLabel, hasOutline, type FontStyle, type GlyphMap } from "@/types/glyph";
 import type { FeatureBuilderConfig } from "@/types/opentypeFeatures";
 import {
@@ -1185,6 +1185,36 @@ function FeatureSentencePreview({
   const hasAlternates = featureConfig.alternates.length > 0;
   const hasSwashes = featureConfig.swashes.length > 0;
 
+  /** Ligature rules that exist in Feature Builder but can NEVER fire here,
+   * with why — so a rule that's silently excluded from applyFeatureSubstitution
+   * (e.g. its target glyph has no outline yet in the CURRENT style, or one of
+   * its components was built from another ligature whose rule got removed,
+   * e.g. an "f_f"+"l"→"f_f_l" rule left pointing at an "f_f" that no longer
+   * resolves to raw letters) shows up as a clear reason instead of just
+   * "nothing happened" when the person types a matching word. Mirrors the
+   * exact filter/resolve applyFeatureSubstitution itself uses, so a rule
+   * flagged here is guaranteed to be the one actually being skipped. */
+  const notReadyLigatures = useMemo(() => {
+    return featureConfig.ligatures
+      .filter((r) => r.components.length > 1)
+      .map((r) => {
+        const targetGlyph = glyphs[r.target];
+        if (!targetGlyph) {
+          return { rule: r, reason: `glyph "${r.target}" belum ada di style ini` };
+        }
+        if (!hasOutline(targetGlyph)) {
+          return { rule: r, reason: `glyph "${r.target}" masih kosong (belum digambar)` };
+        }
+        const literalChars = resolveLigatureInputChars(r.target, featureConfig.ligatures);
+        const brokenComponent = literalChars.find((c) => Array.from(c).length > 1);
+        if (brokenComponent) {
+          return { rule: r, reason: `komponen "${brokenComponent}" bukan huruf tunggal dan tidak cocok dengan rule ligature manapun — mungkin rule sumbernya sudah dihapus` };
+        }
+        return null;
+      })
+      .filter((x): x is { rule: (typeof featureConfig.ligatures)[number]; reason: string } => x !== null);
+  }, [featureConfig.ligatures, glyphs]);
+
   const tokens = useMemo(
     () => applyFeatureSubstitution(previewText, glyphs, featureConfig, toggles),
     [previewText, glyphs, featureConfig, toggles]
@@ -1328,6 +1358,17 @@ function FeatureSentencePreview({
           </div>
         )}
       </div>
+
+      {notReadyLigatures.length > 0 && (
+        <div className="fm-lab-feature-warning" data-testid="lab-feature-ligature-warnings">
+          {notReadyLigatures.map(({ rule, reason }) => (
+            <div className="fm-lab-feature-warning-row" key={rule.id}>
+              <span className="fm-lab-feature-warning-label">{rule.components.join(" + ")} → {rule.target}</span>
+              <span className="fm-lab-feature-warning-reason">belum aktif: {reason}.</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {previewText.trim() ? (
         <>
