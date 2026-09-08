@@ -602,9 +602,20 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     // otherwise fixes made in Font Info/License Info tabs never clear their
     // own warnings until after export. Mirrors the merge nameTablePreview
     // already does above.
+    const liveFamilyName = fontInfoForm.familyName.trim() || qaFontInfo.familyName;
+    // BUG FIX: this object used to spread `...qaFontInfo` and override
+    // familyName/designer/etc, but never touched `fullName` — so it stayed
+    // whatever stale value was last saved in the project (e.g. an old
+    // working title), even after the real export path was fixed to derive
+    // Full Name from Family Name. QA Check kept flagging "Full Name tidak
+    // diawali Family Name" forever, because it was checking a value this
+    // dialog never actually recomputes. Derive it live here the same way
+    // the real export/preview do.
     const liveInfo: FontInfo = {
       ...qaFontInfo,
-      familyName: fontInfoForm.familyName.trim() || qaFontInfo.familyName,
+      familyName: liveFamilyName,
+      styleName: fontStyleLabel(qaFontStyle, customFamilies),
+      fullName: `${liveFamilyName} ${fontStyleLabel(qaFontStyle, customFamilies)}`,
       designer: fontInfoForm.designerName.trim(),
       designerURL: fontInfoForm.designerURL.trim(),
       manufacturer: fontInfoForm.foundry.trim(),
@@ -634,6 +645,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     fontInfoForm,
     licenseInfoForm.licenseOwner,
     licenseInfoForm.licenseType,
+    customFamilies,
   ]);
 
   const dismissToast = useCallback(() => setToast(null), []);
