@@ -112,7 +112,23 @@ export function mergeOutlineBrushStrokes(objects: VectorObject[]): { contours: C
     // outlineBrushOutlineContours' doc comment for how the ring approach
     // fixes it while still reading as a genuinely open, uncapped tip.
     if (contours.length === 1) {
-      outerContours.push(contours);
+      // BUG FIX (open-end crossing strokes not merging): this branch used to
+      // push the raw contour straight into the outer pool with no
+      // self-intersection cleanup, on the assumption that only the
+      // two-contour (has-a-hole) case needed it. But a solid, no-hole
+      // stroke (e.g. a thick border, or Open end style with little room
+      // left for a hole) can just as easily come from a single continuous
+      // pen gesture that loops back over its own path — same root cause
+      // `normalizeSelfIntersectingContours` exists for below. Skipping it
+      // here left that stroke's own self-crossing tangle untouched, and
+      // handing a self-intersecting ring straight to `clipUnion` alongside
+      // other strokes is exactly the "not a valid simple polygon" case
+      // booleanOps.ts warns produces wrong/degenerate output — which reads
+      // as crossing strokes failing to fuse into one clean merged shape.
+      // Running it through the same normalizer as the two-contour branch
+      // fixes that while still being a no-op for a stroke that was already
+      // simple.
+      outerContours.push(normalizeSelfIntersectingContours(contours));
       continue;
     }
 

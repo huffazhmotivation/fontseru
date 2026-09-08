@@ -537,7 +537,8 @@ export function centerlineToOutline(
   centerline: StrokeSample[],
   settings: BrushSettings,
   precomputed?: { pts: StrokeSample[]; cumulative: number[]; totalLength: number },
-  capForwardOverride?: number
+  capForwardOverride?: number,
+  edgeSimplifyEpsilonOverride?: number
 ): Contour | null {
   if (centerline.length < 2 && !precomputed) return null;
 
@@ -965,7 +966,22 @@ export function centerlineToOutline(
   // without keeping so many near-collinear points that the node count
   // becomes unworkable. Sharp corners still survive (RDP never drops a
   // point that IS the corner between two segments).
-  const edgeSimplifyEpsilon = Math.max(0.5, Math.min(3, semiMajor * 0.055));
+  // BUG FIX (ring width inconsistent on curves, esp. Outline Brush): this
+  // used to always be derived from THIS call's own `semiMajor` — fine for a
+  // single solid stroke, but Outline Brush calls this function twice from
+  // outlineBrushOutlineContours (once for the outer boundary at the full
+  // nib size, once for the inner hole at a smaller size). The inner call's
+  // smaller `semiMajor` produced a smaller epsilon, so the outer and inner
+  // edges got Ramer-Douglas-Peucker-simplified to different point densities
+  // and then Bezier-refit independently — two curves meant to be a constant
+  // offset apart instead drifted non-parallel, worst exactly where fitting
+  // error is largest: through bends/curves. That's what read as the
+  // border's width visibly pulsing wide/thin around a curve. Accepting a
+  // shared override lets a caller building a matched boundary PAIR force
+  // identical simplification on both sides so they stay geometrically
+  // parallel; single-boundary callers are unaffected since the override is
+  // optional and falls back to the old per-call calculation.
+  const edgeSimplifyEpsilon = edgeSimplifyEpsilonOverride ?? Math.max(0.5, Math.min(3, semiMajor * 0.055));
   const simplifiedLeft = SELF_CLEAN_SKIP.includes(settings.type) ? cleanedLeft : simplifyPolyline(cleanedLeft, edgeSimplifyEpsilon);
   const simplifiedRight = SELF_CLEAN_SKIP.includes(settings.type) ? cleanedRight : simplifyPolyline(cleanedRight, edgeSimplifyEpsilon);
 
@@ -1797,6 +1813,15 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
   // unbounded full half-width the outer boundary used before.
   const capReach = thickness * 2;
 
+  // Shared simplification tolerance for BOTH boundaries below (see
+  // centerlineToOutline's edgeSimplifyEpsilonOverride doc comment): computed
+  // once from the OUTER nib size and reused for the inner hole too, instead
+  // of each call deriving its own from its own (smaller, for the hole)
+  // size. Keeps the two ring edges simplified/refit at matching density so
+  // they track a true constant offset — no more width pulsing through
+  // curves from the two sides drifting out of sync.
+  const sharedEdgeSimplifyEpsilon = Math.max(0.5, Math.min(3, (settings.size / 2) * 0.055));
+
   // NOTE: "open" cap style used to be built here as two independent side
   // strips (left rail pair, right rail pair) instead of a single ring that's
   // joined shut at both tips. That made a lone stroke's ends look right, but
@@ -1817,7 +1842,7 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
   // open, uncapped tip because centerlineToOutline's capMode "none" for
   // "open" (see its doc comment) leaves both boundaries' ends as plain
   // flat, un-extended chords instead of a closed plate/bulge.
-  const main = centerlineToOutline(centerline, settings, precomputed, capReach);
+  const main = centerlineToOutline(centerline, settings, precomputed, capReach, sharedEdgeSimplifyEpsilon);
   if (!main) return [];
   const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
 
@@ -1833,7 +1858,7 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
   // capForwardOverride = thickness: see centerlineToOutline's capSquare doc
   // comment above — keeps a "square"-capped hole from overshooting into a
   // different, overlapping stroke's ink at a deep join.
-  const inner = centerlineToOutline(centerline, innerSettings, precomputed, thickness);
+  const inner = centerlineToOutline(centerline, innerSettings, precomputed, thickness, sharedEdgeSimplifyEpsilon);
   if (!inner) return [main];
 
   const innerSign = Math.sign(signedArea(inner.nodes.map((n) => n.point))) || 1;
