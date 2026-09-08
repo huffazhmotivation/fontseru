@@ -2150,8 +2150,21 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
     right.push({ x: base.x - n.x * r, y: base.y - n.y * r });
   }
 
-  const leftNodes = smoothOffsetPolyline(left);
-  const rightNodes = smoothOffsetPolyline(right);
+  // BUG FIX: unlike `centerlineToOutline` (the round/marker/etc. brush
+  // family), this function never cleaned up self-intersection loops on its
+  // offset edges. Wherever the stroke's half-width is larger than the local
+  // curve radius — a tight bend, or two strokes/segments crossing close
+  // together (e.g. a diagonal accent crossing a stem) — the offset edge
+  // pinches into a small loop instead of staying a simple curve. Filled
+  // with nonzero/evenodd winding, that pinched loop becomes an unwanted
+  // hole (shows as a transparent/checkerboard cutout) instead of solid
+  // ink. Same fix as centerlineToOutline: collapse those loops before
+  // building nodes from the edge.
+  const cleanedLeft = removeSelfIntersectionLoops(left);
+  const cleanedRight = removeSelfIntersectionLoops(right);
+
+  const leftNodes = smoothOffsetPolyline(cleanedLeft);
+  const rightNodes = smoothOffsetPolyline(cleanedRight);
   const nodes: PathNode[] = [...leftNodes];
 
   if (cap === "round") {
@@ -2171,7 +2184,11 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
     nodes.push(rightNodes[rightNodes.length - 1]);
   }
 
-  for (let i = right.length - 2; i >= 0; i--) {
+  // BUG FIX: this used to loop against `right.length` (the pre-cleanup
+  // array). Once `removeSelfIntersectionLoops` can change the point count,
+  // that stale bound either walked off the end of `rightNodes` or skipped
+  // its last real point. Loop against `rightNodes.length` instead.
+  for (let i = rightNodes.length - 2; i >= 0; i--) {
     nodes.push(rightNodes[i]);
   }
 
