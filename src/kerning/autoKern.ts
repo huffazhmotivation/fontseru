@@ -61,7 +61,7 @@ const REFINE_SAMPLES = 16; // extra samples zoomed into the neighborhood of the 
 // used for rendering/selection — this is an offline, batched calculation,
 // not a per-frame one, so it can afford the extra precision needed to
 // actually find where two curved or diagonal strokes come closest.
-const KERN_FLATTEN_STEPS = 48;
+// (Value itself now lives in `INK_CONTOUR_STEPS`, shared with autoSpace.ts.)
 
 /** x-crossings of a closed, already-flattened polygon with the line y = height. */
 function polygonCrossings(points: Point[], y: number): number[] {
@@ -189,10 +189,28 @@ export function resolveInkContours(outline: GlyphOutline, steps = 16): Point[][]
  *  editor/glyphPaths.ts already relies on). `brushOutlineContours` runs a
  *  real geometry sweep per stroke object, so without this cache an n² auto-
  *  kern pass over the whole alphabet would redo that sweep for every glyph
- *  on every one of the ~2n pairs it appears in, instead of once. */
+ *  on every one of the ~2n pairs it appears in, instead of once.
+ *
+ *  Exported so `autoSpace.ts`'s `suggestGlyphSidebearings` can share this
+ *  SAME cache (both always resolve at `INK_CONTOUR_STEPS`, see that
+ *  constant) instead of calling `resolveInkContours` directly. Auto
+ *  Spacing's "toggle Auto Metrik on" flow always re-kerns immediately
+ *  afterward (`autoSpaceAllGlyphs`'s `reKernAfter`), so without sharing this
+ *  cache every glyph whose outline DIDN'T change across that combined pass
+ *  had its ink geometry resolved twice — once for the spacing suggestion,
+ *  once more for the kerning pass right after — for no reason, since the
+ *  measurement is identical either way. */
 const inkContoursCache = new WeakMap<GlyphOutline, Point[][]>();
 
-function cachedInkContours(outline: GlyphOutline, steps: number): Point[][] {
+/** Flatten resolution shared by BOTH Auto Spacing and Auto Kern's optical
+ *  measurements, and the cache key steps they must always agree on — a
+ *  single source of truth instead of two constants that merely happened to
+ *  be kept equal by convention (see `cachedInkContours`'s own doc comment
+ *  for why a steps mismatch between callers sharing this cache would be a
+ *  silent correctness bug, not just a missed optimization). */
+export const INK_CONTOUR_STEPS = 48;
+
+export function cachedInkContours(outline: GlyphOutline, steps: number = INK_CONTOUR_STEPS): Point[][] {
   const cached = inkContoursCache.get(outline);
   if (cached) return cached;
   const resolved = resolveInkContours(outline, steps);
@@ -254,8 +272,8 @@ function tightestGapInRange(
   // `cachedInkContours`), then reused for every scanline below — this is
   // both the accuracy fix (real stroke geometry, not a centerline
   // approximation) and what keeps an n² alphabet pass affordable.
-  const leftContours = cachedInkContours(l.outline, KERN_FLATTEN_STEPS);
-  const rightContours = cachedInkContours(r.outline, KERN_FLATTEN_STEPS);
+  const leftContours = cachedInkContours(l.outline);
+  const rightContours = cachedInkContours(r.outline);
 
   const gapAt = (y: number): number | null => {
     const leftInk = inkExtentAtY(leftContours, y);
@@ -372,7 +390,23 @@ function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-const CHUNK_SIZE = 400; // pairs processed per tick before yielding + reporting progress
+function now(): number {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+// How long a chunk is allowed to keep the main thread busy before it MUST
+// yield, regardless of how many pairs that turned out to be. A fixed pair
+// COUNT (the old `CHUNK_SIZE = 400`) assumes every pair costs about the
+// same — true for simple pen/shape glyphs, false for brush glyphs (Rough/Oil
+// Brush strokes resolve real stroke geometry, including up to ~220 pitting
+// holes per stroke; see `brushOutlineContours`). A font mixing a few heavy
+// brush glyphs into an otherwise light alphabet could blow well past a
+// fixed count's assumed per-pair cost and freeze the tab for multiple
+// seconds in a single chunk before ever reaching the yield check — this is
+// what read as "lag sangat lambat" when re-running Auto Kern/Auto Metrik on
+// an existing project. A TIME budget yields as soon as the browser has
+// actually been busy too long, however few or many pairs that took.
+const YIELD_BUDGET_MS = 12; // roughly one animation frame
 
 /**
  * Process every ordered pair in the currently available glyph set.
@@ -409,7 +443,7 @@ export async function autoKernAllAvailablePairs(
   let preservedManual = 0;
 
   const total = chars.length * chars.length;
-  let sinceYield = 0;
+  let chunkStart = now();
 
   for (const left of chars) {
     for (const right of chars) {
@@ -439,11 +473,10 @@ export async function autoKernAllAvailablePairs(
         }
       }
 
-      sinceYield++;
-      if (sinceYield >= CHUNK_SIZE) {
-        sinceYield = 0;
+      if (now() - chunkStart >= YIELD_BUDGET_MS) {
         onProgress?.(total > 0 ? processed / total : 1);
         await yieldToBrowser();
+        chunkStart = now();
       }
     }
   }

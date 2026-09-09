@@ -3,13 +3,15 @@ import type { GlyphOutline } from "@/types/geometry";
 import { hasOutline } from "@/types/glyph";
 import type { FontMetrics } from "@/types/font";
 import { outlineBounds, translateObject, skewObject } from "@/editor/objectOps";
-import { inkExtentAtY, resolveInkContours } from "./autoKern";
+import { inkExtentAtY, cachedInkContours, INK_CONTOUR_STEPS } from "./autoKern";
 
-// Same flatten resolution autoKern.ts uses for its optical scanline profile
-// (see KERN_FLATTEN_STEPS there) — kept in sync so a glyph's measured ink
-// edge is identically precise whether Auto Spacing or Auto Kern is doing
-// the measuring.
-const SPACING_FLATTEN_STEPS = 48;
+// Same flatten resolution — and the SAME shared cache, keyed by outline
+// identity — autoKern.ts uses for its optical scanline profile. Auto
+// Spacing's "toggle Auto Metrik on" flow always re-kerns immediately
+// afterward, so routing through the shared cache means a glyph whose
+// outline doesn't change across that combined pass gets its ink geometry
+// resolved once, not twice (see `cachedInkContours`'s doc comment).
+const SPACING_FLATTEN_STEPS = INK_CONTOUR_STEPS;
 
 /**
  * Optical, per-glyph sidebearing suggestions ("Auto Spacing").
@@ -134,8 +136,10 @@ export function suggestGlyphSidebearings(glyph: Glyph, metrics: FontMetrics): Gl
   // the active brush preset's own edge treatment — not a centerline
   // approximation; see resolveInkContours' doc comment in autoKern.ts for
   // why the old shortcut underestimated ink on near-horizontal strokes),
-  // then reused for every scanline below.
-  const contours = resolveInkContours(measureOutline, SPACING_FLATTEN_STEPS);
+  // then reused for every scanline below. Goes through the SAME cache
+  // autoKern.ts's pair loop uses (see import above) so a glyph that Auto
+  // Kern also touches in the same combined pass isn't resolved twice.
+  const contours = cachedInkContours(measureOutline, SPACING_FLATTEN_STEPS);
 
   let leftRecessSum = 0;
   let rightRecessSum = 0;
@@ -219,7 +223,17 @@ function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-const SPACE_CHUNK_SIZE = 60; // glyphs processed per tick before yielding + reporting progress
+function now(): number {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+// Same reasoning as autoKern.ts's `YIELD_BUDGET_MS`: a fixed glyph COUNT
+// (the old `SPACE_CHUNK_SIZE = 60`) assumes every glyph costs about the
+// same to measure, which isn't true once brush strokes with heavy hole/
+// texture counts are in the mix. Yielding by elapsed time instead keeps the
+// tab responsive regardless of how expensive any particular glyph turns
+// out to be.
+const YIELD_BUDGET_MS = 12; // roughly one animation frame
 
 /**
  * Applies `suggestGlyphSidebearings` across every glyph in `glyphs`.
@@ -253,7 +267,7 @@ export async function autoSpaceAllGlyphs(
   const entries = Object.entries(glyphs);
   const total = entries.length;
   let processed = 0;
-  let sinceYield = 0;
+  let chunkStart = now();
 
   for (const [char, glyph] of entries) {
     processed++;
@@ -284,11 +298,10 @@ export async function autoSpaceAllGlyphs(
       }
     }
 
-    sinceYield++;
-    if (sinceYield >= SPACE_CHUNK_SIZE) {
-      sinceYield = 0;
+    if (now() - chunkStart >= YIELD_BUDGET_MS) {
       onProgress?.(total > 0 ? processed / total : 1);
       await yieldToBrowser();
+      chunkStart = now();
     }
   }
 

@@ -1710,6 +1710,19 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
   const handleApplyTracking = useCallback(() => {
     if (tracking === 0) return;
     applyTrackingToAllGlyphs(tracking);
+    // "Apply" bakes the current tracking value permanently into every
+    // glyph's LSB/RSB — the font itself now IS that much more/less spaced.
+    // The Test Lab preview still renders with the `tracking` slider's value
+    // added live on top of the font's real glyph spacing (see layoutLine's
+    // `tracking + kerning` per-gap formula). Leaving the slider at its
+    // pre-apply value after baking meant the SAME amount got applied AGAIN
+    // on every render from that point on — spacing baked in once, then
+    // still added live a second time — which reads as the text suddenly
+    // tightening (or widening) further right after clicking Apply, with no
+    // further slider movement. Resetting to 0 here is what makes "Apply"
+    // actually mean "this is now the font's real spacing" instead of
+    // silently doubling it.
+    setTracking(0);
     setTrackingApplyFlash(true);
     window.setTimeout(() => setTrackingApplyFlash(false), 900);
   }, [applyTrackingToAllGlyphs, tracking]);
