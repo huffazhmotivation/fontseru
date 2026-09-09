@@ -1102,45 +1102,53 @@ function spliceSfntTable(buffer: ArrayBuffer, tag: string, data: Uint8Array): Ar
  * Classic `kern` (format-0) and GPOS PairPos-format-1 tables are both
  * built from "Common Table Format" structures whose internal offsets are
  * ALL Offset16 (unsigned 16-bit, max 65535) — the PairPos coverage/
- * pairSet offsets, the classic kern table's own `nPairs` field, even the
- * LookupList's offsets to each Lookup. This is a hard ceiling baked into
- * the OpenType 1.0 spec, not a bug we can configure around: once the
- * encoded bytes for a lookup's pair data cross ~64KB, any offset that
- * would need to point past it silently wraps back into range instead of
- * throwing — so the *file* looks fine (no exception, no console error)
- * but the actual pair data past the wraparound point is scrambled
- * garbage from that offset onward. Real engines (Windows, Affinity, most
- * browsers) either bail out on the malformed lookup (falling back to
- * plain, un-kerned advance widths) or read whatever garbage the wrapped
- * offset happens to point at — both of which look like "kerning got
- * randomly worse after export" despite Test Lab (which reads the live
- * `kerningPairs` object directly, never this binary) looking correct.
+ * pairSet offsets, the classic kern subtable's own `length`/`nPairs`
+ * fields, even the LookupList's offsets to each Lookup. This is a hard
+ * ceiling baked into the OpenType 1.0 spec, not a bug we can configure
+ * around: once the encoded bytes for a *single* subtable's pair data
+ * cross ~64KB, any offset that would need to point past it silently
+ * wraps back into range instead of throwing — so the *file* looks fine
+ * (no exception, no console error) but the actual pair data past the
+ * wraparound point is scrambled garbage from that offset onward. Real
+ * engines (Windows, Affinity, most browsers) either bail out on the
+ * malformed lookup (falling back to plain, un-kerned advance widths) or
+ * read whatever garbage the wrapped offset happens to point at — both of
+ * which look like "kerning got randomly worse after export" despite Test
+ * Lab (which reads the live `kerningPairs` object directly, never this
+ * binary) looking correct.
  *
  * FontSeru's "Auto Kerning" can legitimately produce a near-complete
  * matrix (essentially every left/right glyph combination in the font),
  * which for a ~370-glyph family is well over 100,000 pairs — 8-10x more
  * raw pair data than a single PairPos/kern subtable can ever address.
- * There is no purely additive fix (multiple lookups just hits the same
- * 64KB ceiling one level up, at the LookupList itself); the correct,
- * scalable fix is switching to class-based kerning (PairPos format 2),
- * but until that lands, the safe behavior is to keep exactly as many of
- * the most significant pairs as fit under the hard limit and drop the
- * rest, rather than silently emitting a corrupted table that looks
- * "successful" to the export code but is broken for every real
- * consumer. `budgetKerningPairs` below is that shared, size-aware
- * selection, used by both the legacy `kern` and the GPOS encoders so
- * they can never disagree about which pairs made the cut.
+ * The old code treated that ceiling as a hard cap on the *whole export*
+ * and silently dropped the smallest-magnitude pairs to fit one subtable.
+ * That's the wrong fix: the 64KB limit only ever applies to one subtable's
+ * own internal offsets, not to how much kerning data a font can carry in
+ * total. `chunkKerningRecords` below splits the full, un-truncated pair
+ * list into as many subtable-sized chunks as it takes (grouped by left
+ * glyph, so a glyph's whole pair set always lives in exactly one chunk —
+ * see buildLookup's docstring for why splitting a left glyph across
+ * subtables would silently strand its later pairs). Nothing is ever
+ * dropped; large fonts just get more chunks.
+ *
+ * For GPOS, those chunks are wrapped in Extension Positioning
+ * (lookupType 9) subtables — see `buildExtensionPosLookup` — which is the
+ * spec-defined, real-compiler way to reference subtable data of any size
+ * without the referencing structure itself (the Lookup/LookupList) ever
+ * exceeding 64KB. For the legacy `kern` table, each chunk becomes its own
+ * self-contained format-0 subtable; the classic `kern` header already
+ * natively supports any number of subtables via its own `nTables` count,
+ * so no extension trick is needed there.
  */
-export interface BudgetedKerning {
-  records: { left: number; right: number; value: number }[];
-  droppedCount: number;
-}
 
-function budgetKerningPairs(
+/** Parses, validates, and clamps every stored kerning pair into sorted-glyph
+ * records ready for layout. No budgeting or dropping happens here — every
+ * valid pair the user configured comes back out. */
+function resolveKerningRecords(
   pairs: KerningPairs,
-  glyphIndexByChar: Map<string, number>,
-  budgetBytes = 60000 // safety margin under the hard 65535 Offset16 ceiling
-): BudgetedKerning {
+  glyphIndexByChar: Map<string, number>
+): { left: number; right: number; value: number }[] {
   const all: { left: number; right: number; value: number }[] = [];
   for (const [key, rawValue] of Object.entries(pairs ?? {})) {
     const pair = parseKerningKey(key);
@@ -1151,60 +1159,206 @@ function budgetKerningPairs(
     const value = Math.max(-32768, Math.min(32767, Math.round(rawValue)));
     if (value) all.push({ left, right, value });
   }
-
-  // Biggest visual impact first, so if we must drop pairs we drop the
-  // smallest/least-noticeable adjustments, not a random tail of the map.
-  all.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
-
-  // Mirrors buildPairPosFormat1's own layout math so the budget check is
-  // exact, not a guess: header(10) + 2*L (pairSet offsets) + coverage(4+2*L)
-  // + per left-glyph pairSet(2 + 4*count) — i.e. total = 14 + 6*L + 4*P.
-  const perLeftCount = new Map<number, number>();
-  let runningTotal = 14;
-  const kept: { left: number; right: number; value: number }[] = [];
-
-  for (const rec of all) {
-    const isNewLeft = !perLeftCount.has(rec.left);
-    const projected = runningTotal + 4 + (isNewLeft ? 6 : 0);
-    if (projected > budgetBytes) continue; // skip this one, keep scanning smaller pairs
-    runningTotal = projected;
-    perLeftCount.set(rec.left, (perLeftCount.get(rec.left) ?? 0) + 1);
-    kept.push(rec);
-  }
-
-  const droppedCount = all.length - kept.length;
-  if (droppedCount > 0) {
-    console.warn(
-      `[FontSeru] Kerning export: ${all.length} pairs requested but only ${kept.length} fit inside the ` +
-        `OpenType Offset16 limit for a single PairPos/kern subtable; dropped the ${droppedCount} smallest-magnitude ` +
-        `pairs so the exported file's kerning stays internally consistent instead of silently corrupting past ~64KB.`
-    );
-  }
-  return { records: kept, droppedCount };
+  return all;
 }
 
-function makeKernTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
-  const { records } = budgetKerningPairs(pairs, glyphIndexByChar);
-  if (!records.length) return null;
-  records.sort((a, b) => a.left - b.left || a.right - b.right);
-  const nPairs = records.length;
+/**
+ * Groups kerning records by left glyph and packs whole left-groups into
+ * as many chunks as needed to keep each chunk's encoded byte size under
+ * `budgetBytes`. A left glyph's entire pair set is always kept in a single
+ * chunk — never split — because a Pair Adjustment lookup with multiple
+ * subtables applies only the *first* subtable whose coverage includes the
+ * current glyph (see buildLookup's docstring); splitting one left glyph's
+ * pairs across two subtables would make the second subtable's entries for
+ * that glyph permanently unreachable, even though they were technically
+ * "kept" rather than dropped.
+ *
+ * `costPerNewLeft`/`costPerPair`/`baseCost` describe the caller's own
+ * on-disk layout math (PairPos format 1 and classic kern format-0 cost
+ * pairs differently), so both encoders can reuse the same no-drop packer
+ * while staying comfortably inside their own actual byte ceilings.
+ *
+ * The only case that can't be perfectly bin-packed is a single left glyph
+ * whose own pair set alone exceeds the budget — that needs on the order of
+ * thousands of distinct right glyphs kerned against one left glyph, far
+ * beyond any realistic font's total glyph count. Rather than drop any of
+ * it, that oversized group is kept whole in its own (oversized) chunk.
+ */
+function chunkKerningRecords(
+  records: { left: number; right: number; value: number }[],
+  costPerNewLeft: number,
+  costPerPair: number,
+  baseCost: number,
+  budgetBytes = 60000 // safety margin under the hard 65535 Offset16 ceiling
+): { left: number; right: number; value: number }[][] {
+  const byLeft = new Map<number, Array<{ right: number; value: number }>>();
+  for (const { left, right, value } of records) {
+    const list = byLeft.get(left) ?? [];
+    list.push({ right, value });
+    byLeft.set(left, list);
+  }
+  const lefts = [...byLeft.keys()].sort((a, b) => a - b);
+
+  const chunks: { left: number; right: number; value: number }[][] = [];
+  let currentLefts: number[] = [];
+  let currentSize = baseCost;
+
+  const flush = () => {
+    if (!currentLefts.length) return;
+    chunks.push(
+      currentLefts.flatMap((left) => (byLeft.get(left) ?? []).map((r) => ({ left, right: r.right, value: r.value })))
+    );
+    currentLefts = [];
+    currentSize = baseCost;
+  };
+
+  for (const left of lefts) {
+    const group = byLeft.get(left) ?? [];
+    const addSize = costPerNewLeft + costPerPair * group.length;
+    if (currentLefts.length && currentSize + addSize > budgetBytes) flush();
+    currentLefts.push(left);
+    currentSize += addSize;
+  }
+  flush();
+
+  if (chunks.length > 1) {
+    console.info(
+      `[FontSeru] Kerning export: ${records.length} pairs split across ${chunks.length} subtables to stay under ` +
+        `the OpenType Offset16 limit per subtable; every pair is still exported.`
+    );
+  }
+  return chunks;
+}
+
+/** PairPos format 1 (explicit per-pair values) for a single already-sized
+ * chunk of records — no budgeting here, `chunkKerningRecords` already
+ * guaranteed this chunk fits. */
+function buildPairPosSubtable(records: { left: number; right: number; value: number }[]): Uint8Array {
+  const byLeft = new Map<number, Array<{ right: number; value: number }>>();
+  for (const { left, right, value } of records) {
+    const list = byLeft.get(left) ?? [];
+    list.push({ right, value });
+    byLeft.set(left, list);
+  }
+  const lefts = [...byLeft.keys()].sort((a, b) => a - b);
+  const coverage = buildCoverageFormat1(lefts);
+
+  const pairSets = lefts.map((left) => {
+    const recs = [...(byLeft.get(left) ?? [])].sort((a, b) => a.right - b.right);
+    const w = new GsubByteWriter();
+    w.u16(recs.length);
+    for (const rec of recs) { w.u16(rec.right); w.u16(rec.value); } // valueRecord1 = xAdvance only (int16); valueRecord2 is absent (valueFormat2 = 0)
+    return w.toUint8Array();
+  });
+
+  const headerSize = 10 + 2 * lefts.length; // posFormat + coverageOffset + valueFormat1 + valueFormat2 + pairSetCount + offsets[]
+  const coverageOffset = headerSize;
+  const pairSetOffsets: number[] = [];
+  let running = coverageOffset + coverage.length;
+  for (const set of pairSets) { pairSetOffsets.push(running); running += set.length; }
+
+  const w = new GsubByteWriter();
+  w.u16(1).u16(coverageOffset).u16(0x0004).u16(0x0000).u16(lefts.length);
+  for (const off of pairSetOffsets) w.u16(off);
+  w.raw(coverage);
+  for (const set of pairSets) w.raw(set);
+  return w.toUint8Array();
+}
+
+/**
+ * Wraps N already-chunked PairPos subtables (each independently under the
+ * 64KB Offset16 ceiling) in GPOS Extension Positioning (lookupType 9,
+ * ExtensionPosFormat1) wrappers, all inside a single Lookup, all under the
+ * same `kern` feature. This is the standard, spec-compliant mechanism
+ * OpenType provides for exactly this situation — real compilers (fontTools,
+ * Glyphs, FontLab) use it whenever a GSUB/GPOS data set is too large for a
+ * plain subtable.
+ *
+ * Each wrapper is a fixed 8 bytes: posFormat(2) + extensionLookupType(2) +
+ * extensionOffset(4, an Offset32). Crucially, `extensionOffset` is measured
+ * from the *wrapper's own start* — not from the Lookup, LookupList, or GPOS
+ * table start — so it can reach a PairPos subtable of essentially any size
+ * placed anywhere after it. That's what actually removes the ceiling
+ * instead of relocating it one level up: the Lookup itself only ever holds
+ * a handful of fixed 8-byte wrappers (subTableCount * 8 bytes total, which
+ * stays trivially inside Offset16 range no matter how many chunks exist),
+ * while the real PairPos payloads sit behind 32-bit reach.
+ */
+function buildExtensionPosLookup(subtables: Uint8Array[]): Uint8Array {
+  const count = subtables.length;
+  const headerSize = 6 + 2 * count; // lookupType + lookupFlag + subTableCount + offsets[]
+  const wrapperSize = 8; // ExtensionPosFormat1: posFormat(2) + extensionLookupType(2) + extensionOffset(4)
+
+  const wrapperOffsets: number[] = [];
+  let cursor = headerSize;
+  for (let i = 0; i < count; i++) { wrapperOffsets.push(cursor); cursor += wrapperSize; }
+
+  const payloadOffsets: number[] = [];
+  for (let i = 0; i < count; i++) { payloadOffsets.push(cursor); cursor += subtables[i].length; }
+
+  const w = new GsubByteWriter();
+  w.u16(9).u16(0).u16(count); // lookupType 9 = Extension Positioning
+  for (const off of wrapperOffsets) w.u16(off);
+  for (let i = 0; i < count; i++) {
+    const extensionOffset = payloadOffsets[i] - wrapperOffsets[i]; // relative to THIS wrapper's own start
+    w.u16(1).u16(2).u32(extensionOffset); // posFormat=1, extensionLookupType=2 (PairPos)
+  }
+  for (const st of subtables) w.raw(st);
+  return w.toUint8Array();
+}
+
+/** A single classic horizontal format-0 `kern` subtable for one already-
+ * sized chunk of records (flat, no left-grouping — coverage is implicit in
+ * the sorted [left, right] pair list itself). */
+function buildKernFormat0Subtable(records: { left: number; right: number; value: number }[]): Uint8Array {
+  const sorted = [...records].sort((a, b) => a.left - b.left || a.right - b.right);
+  const nPairs = sorted.length;
   const maxPow2 = 2 ** Math.floor(Math.log2(Math.max(1, nPairs)));
   const searchRange = maxPow2 * 6;
   const entrySelector = Math.floor(Math.log2(maxPow2));
   const rangeShift = nPairs * 6 - searchRange;
   const length = 14 + nPairs * 6;
-  const out = new Uint8Array(4 + length);
+  const out = new Uint8Array(length);
   const view = new DataView(out.buffer);
-  view.setUint16(0, 0, false); view.setUint16(2, 1, false);
-  view.setUint16(4, 0, false); view.setUint16(6, length, false); view.setUint16(8, 1, false);
-  view.setUint16(10, nPairs, false); view.setUint16(12, searchRange, false);
-  view.setUint16(14, entrySelector, false); view.setUint16(16, rangeShift, false);
-  records.forEach((rec, i) => {
-    const off = 18 + i * 6;
+  view.setUint16(0, 0, false); // subtable version
+  view.setUint16(2, length, false); // subtable length (includes this 14-byte header)
+  view.setUint16(4, 1, false); // coverage: format 0, horizontal
+  view.setUint16(6, nPairs, false);
+  view.setUint16(8, searchRange, false);
+  view.setUint16(10, entrySelector, false);
+  view.setUint16(12, rangeShift, false);
+  sorted.forEach((rec, i) => {
+    const off = 14 + i * 6;
     view.setUint16(off, rec.left, false);
     view.setUint16(off + 2, rec.right, false);
     view.setInt16(off + 4, rec.value, false);
   });
+  return out;
+}
+
+/** Builds a classic `kern` table containing one format-0 subtable per
+ * chunk. The top-level `kern` header's own `nTables` count natively
+ * supports any number of subtables, applied additively — since each pair
+ * lives in exactly one chunk/subtable, that "additive" behavior just means
+ * each pair's adjustment is applied once, from whichever subtable holds it. */
+function makeKernTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
+  const records = resolveKerningRecords(pairs, glyphIndexByChar);
+  if (!records.length) return null;
+
+  // Classic format-0 layout is flat: 14-byte subtable header + 6 bytes per
+  // pair, no per-left-glyph overhead (unlike PairPos's coverage+pairSet
+  // structure), so it gets its own cost constants here.
+  const chunks = chunkKerningRecords(records, 0, 6, 14);
+  const subtables = chunks.map(buildKernFormat0Subtable);
+
+  const header = new Uint8Array(4);
+  new DataView(header.buffer).setUint16(0, 0, false); // kern table version
+  new DataView(header.buffer).setUint16(2, subtables.length, false); // nTables
+  const total = 4 + subtables.reduce((n, s) => n + s.length, 0);
+  const out = new Uint8Array(total);
+  out.set(header, 0);
+  let cursor = 4;
+  for (const st of subtables) { out.set(st, cursor); cursor += st.length; }
   return out;
 }
 
@@ -1274,6 +1428,11 @@ class GsubByteWriter {
   private bytes: number[] = [];
   get length(): number { return this.bytes.length; }
   u16(value: number): this { const v = value & 0xffff; this.bytes.push((v >>> 8) & 0xff, v & 0xff); return this; }
+  u32(value: number): this {
+    const v = value >>> 0;
+    this.bytes.push((v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff);
+    return this;
+  }
   tag(value: string): this { for (let i = 0; i < 4; i++) this.bytes.push(value.charCodeAt(i) || 0x20); return this; }
   raw(bytes: Uint8Array): this { for (let i = 0; i < bytes.length; i++) this.bytes.push(bytes[i]); return this; }
   toUint8Array(): Uint8Array { return new Uint8Array(this.bytes); }
@@ -1590,59 +1749,27 @@ export function injectGsubTable(buffer: ArrayBuffer, config: FeatureBuilderConfi
 // data is present and correct. Both are written from the exact same
 // `kerningPairs`, so they can never disagree with each other.
 
-/** PairPos format 1 (explicit per-pair values, matching how kerning pairs
- * are already stored) for a single 'kern' lookup. `valueFormat1` is set to
- * XAdvance-only (0x0004) — plain horizontal kerning — with no adjustment
- * to the second glyph (`valueFormat2 = 0`), mirroring the legacy kern
- * table's semantics exactly. */
-function buildPairPosFormat1(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
-  const { records } = budgetKerningPairs(pairs, glyphIndexByChar);
+/** Compiles kerning pairs into a standard GPOS table (ScriptList +
+ * FeatureList with a single 'kern' feature + LookupList with one Extension
+ * Positioning lookup) — same header shape as `buildGsubTable`, since GSUB
+ * and GPOS share the same top-level "Common Tables" layout, they just
+ * point at different lookup subtable formats. The full, un-truncated pair
+ * list is chunked into as many PairPos format-1 subtables as needed (see
+ * `chunkKerningRecords`), each wrapped in an Extension Positioning
+ * subtable (see `buildExtensionPosLookup`) so no pair is ever dropped
+ * regardless of how large the kerning matrix gets. */
+function buildGposTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
+  const records = resolveKerningRecords(pairs ?? {}, glyphIndexByChar);
   if (!records.length) return null;
 
-  const byLeft = new Map<number, Array<{ right: number; value: number }>>();
-  for (const { left, right, value } of records) {
-    const list = byLeft.get(left) ?? [];
-    list.push({ right, value });
-    byLeft.set(left, list);
-  }
-  if (!byLeft.size) return null;
+  // PairPos format 1 layout: header(10) + 2*L (pairSet offsets) +
+  // coverage(4 + 2*L) + per-pair(4) — i.e. baseCost 14, +6 per new left
+  // glyph, +4 per pair. Matches buildPairPosSubtable's own byte layout.
+  const chunks = chunkKerningRecords(records, 6, 4, 14);
+  const pairPosSubtables = chunks.map(buildPairPosSubtable);
+  const extensionLookup = buildExtensionPosLookup(pairPosSubtables);
 
-  const lefts = [...byLeft.keys()].sort((a, b) => a - b);
-  const coverage = buildCoverageFormat1(lefts);
-
-  const pairSets = lefts.map((left) => {
-    const records = [...(byLeft.get(left) ?? [])].sort((a, b) => a.right - b.right);
-    const w = new GsubByteWriter();
-    w.u16(records.length);
-    for (const rec of records) { w.u16(rec.right); w.u16(rec.value); } // valueRecord1 = xAdvance only (int16); valueRecord2 is absent (valueFormat2 = 0)
-    return w.toUint8Array();
-  });
-
-  const headerSize = 10 + 2 * lefts.length; // posFormat + coverageOffset + valueFormat1 + valueFormat2 + pairSetCount + offsets[]
-  const coverageOffset = headerSize;
-  const pairSetOffsets: number[] = [];
-  let running = coverageOffset + coverage.length;
-  for (const set of pairSets) { pairSetOffsets.push(running); running += set.length; }
-
-  const w = new GsubByteWriter();
-  w.u16(1).u16(coverageOffset).u16(0x0004).u16(0x0000).u16(lefts.length);
-  for (const off of pairSetOffsets) w.u16(off);
-  w.raw(coverage);
-  for (const set of pairSets) w.raw(set);
-  return w.toUint8Array();
-}
-
-/** Compiles kerning pairs into a standard GPOS table (ScriptList +
- * FeatureList with a single 'kern' feature + LookupList with one
- * PairAdjustment lookup) — same header shape as `buildGsubTable`, since
- * GSUB and GPOS share the same top-level "Common Tables" layout, they
- * just point at different lookup subtable formats. Always a flat PairPos
- * format 1 (explicit pair) subtable — one row per glyph pair. */
-function buildGposTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
-  const format1 = buildPairPosFormat1(pairs ?? {}, glyphIndexByChar);
-  if (!format1) return null;
-
-  const lookupListBytes = buildLookupList([buildLookup(2, [format1])]); // GPOS lookupType 2 = Pair Adjustment Positioning
+  const lookupListBytes = buildLookupList([extensionLookup]);
   const featureListBytes = buildFeatureList([{ tag: "kern", lookupIndices: [0] }]);
   const scriptListBytes = buildScriptList(["DFLT", "latn"], [0]);
 
