@@ -1,6 +1,6 @@
 import * as opentype from "opentype.js";
 import { expandStrokeObject } from "@/brushes/strokeToOutline";
-import { applyBooleanOp, isBooleanEligible } from "@/editor/booleanOps";
+import { applyBooleanOp, isBooleanEligible, normalizeSelfIntersectingContours } from "@/editor/booleanOps";
 
 // Export's own "Remove Overlap" pass (below) reuses the same boolean-union
 // machinery as the interactive Boolean Select tool, but with a much tighter
@@ -715,16 +715,43 @@ function exportableObjects(glyph: Glyph): VectorObject[] {
   // safe to run unconditionally on every glyph, not just ones a designer
   // remembered to flatten by hand.
   const eligible = expanded.filter(isBooleanEligible);
+  const ineligible = expanded.filter((o) => !isBooleanEligible(o));
+
   if (eligible.length >= 2) {
     try {
       const merged = applyBooleanOp(eligible, "union", EXPORT_CURVE_FIDELITY_SCALE);
-      if (merged) {
-        const ineligible = expanded.filter((o) => !isBooleanEligible(o));
-        return [merged, ...ineligible];
-      }
+      if (merged) return [merged, ...ineligible];
     } catch (error) {
       console.warn(
         `[FontSeru] Remove Overlap failed for U+${glyph.unicode.toString(16).toUpperCase()}; exporting objects unmerged.`,
+        error
+      );
+    }
+  } else if (eligible.length === 1) {
+    // BUG FIX: a glyph built from a single filled object (the common case —
+    // one hand-drawn letterform, or a digit whose outer+counter live in one
+    // shape's own contours) used to skip Remove Overlap entirely, since the
+    // union pass above only ever ran for 2+ objects. That meant a single
+    // self-crossing contour, or a hole wound the wrong way, was never run
+    // through the exact clipper's self-intersection resolution — it went
+    // straight to the font writer raw. The browser's anti-aliased SVG
+    // preview forgives that kind of near-degenerate geometry and still
+    // looks clean; an OS font rasterizer computing an exact winding number
+    // per scanline does not, and shows it as scattered "pitting"/dropouts —
+    // exactly the corruption Test Lab never showed. Routing the lone
+    // object's own contours through the same self-intersection normalizer
+    // `applyBooleanOp` already applies internally to each input object
+    // closes that gap, so single- and multi-object glyphs get the same
+    // guarantee instead of only the multi-object ones.
+    try {
+      const obj = eligible[0];
+      const cleaned = normalizeSelfIntersectingContours(obj.contours);
+      if (cleaned.length > 0) {
+        return [{ id: obj.id, kind: "shape", contours: cleaned }, ...ineligible];
+      }
+    } catch (error) {
+      console.warn(
+        `[FontSeru] Remove Overlap (single-object) failed for U+${glyph.unicode.toString(16).toUpperCase()}; exporting object unmerged.`,
         error
       );
     }
