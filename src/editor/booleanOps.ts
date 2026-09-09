@@ -259,14 +259,17 @@ function ringToSmoothNodes(points: Point[], isCorner: boolean[]): PathNode[] {
 // small and round edges keep almost every sampled point (lots of nodes,
 // visually fine but heavy to edit); too large and small or detailed shapes
 // lose their form. Clamped to a sane range either way.
-function ringSimplifyTolerance(ring: Point[]): number {
+// `scale` lets a caller ask for a tighter (more faithful) or looser (more
+// editable) simplification than the interactive default without changing
+// that default for everyone. See EXPORT_CURVE_FIDELITY_SCALE in fontIO.ts.
+function ringSimplifyTolerance(ring: Point[], scale = 1): number {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of ring) {
     minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
     maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
   }
   const diag = Math.hypot(maxX - minX, maxY - minY);
-  return Math.min(10, Math.max(1.25, diag * 0.012));
+  return Math.min(10, Math.max(1.25, diag * 0.012)) * scale;
 }
 
 /**
@@ -277,7 +280,7 @@ function ringSimplifyTolerance(ring: Point[]): number {
  * cleanup) below, since both end with the exact same "raw clipped rings ->
  * editable contours" step.
  */
-function multiPolygonToContours(resultMulti: ClipMultiPolygon): Contour[] {
+function multiPolygonToContours(resultMulti: ClipMultiPolygon, toleranceScale = 1): Contour[] {
   if (!resultMulti || resultMulti.length === 0) return [];
 
   const rings: Point[][] = [];
@@ -305,7 +308,7 @@ function multiPolygonToContours(resultMulti: ClipMultiPolygon): Contour[] {
     const wantPositive = depths[idx] % 2 === 0;
     const area = polygonArea(ring);
     const oriented = (area > 0) === wantPositive ? ring : [...ring].reverse();
-    const { points, isCorner } = simplifyRingPreservingCorners(oriented, ringSimplifyTolerance(oriented));
+    const { points, isCorner } = simplifyRingPreservingCorners(oriented, ringSimplifyTolerance(oriented, toleranceScale));
     const nodes: PathNode[] = ringToSmoothNodes(points, isCorner);
     return { id: shortId("contour"), nodes, closed: true };
   });
@@ -319,7 +322,11 @@ function multiPolygonToContours(resultMulti: ClipMultiPolygon): Contour[] {
  * closed contours with smooth handles refitted from local curvature. Returns
  * null when fewer than 2 eligible objects are given or the result is empty.
  */
-export function applyBooleanOp(objectsInZOrder: VectorObject[], op: BooleanOp): VectorObject | null {
+export function applyBooleanOp(
+  objectsInZOrder: VectorObject[],
+  op: BooleanOp,
+  toleranceScale = 1,
+): VectorObject | null {
   const eligible = objectsInZOrder.filter(isBooleanEligible);
   if (eligible.length < 2) return null;
 
@@ -344,7 +351,7 @@ export function applyBooleanOp(objectsInZOrder: VectorObject[], op: BooleanOp): 
     return null;
   }
 
-  const contours = multiPolygonToContours(resultMulti);
+  const contours = multiPolygonToContours(resultMulti, toleranceScale);
   if (contours.length === 0) return null;
 
   return { id: shortId("obj"), kind: "shape", contours };

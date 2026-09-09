@@ -1,6 +1,21 @@
 import * as opentype from "opentype.js";
 import { expandStrokeObject } from "@/brushes/strokeToOutline";
 import { applyBooleanOp, isBooleanEligible } from "@/editor/booleanOps";
+
+// Export's own "Remove Overlap" pass (below) reuses the same boolean-union
+// machinery as the interactive Boolean Select tool, but with a much tighter
+// curve-refit tolerance. The interactive tool's default tolerance favors a
+// small, easy-to-edit node count after a manual union/subtract/intersect —
+// fine for a designer editing the result by hand. Export never hands the
+// result back for editing, though, and any refit deviation from the
+// original curve is exactly what makes a smooth/monoline outline drift
+// visibly from what Test Lab showed (small facets on an "N" leg join, a
+// slightly different "U" bowl), even though Rough/Grunge/Oil Brush textures
+// mask the same deviation. Scaling the tolerance down here keeps far more
+// of the original curve's sampled points, so the refit tracks the authored
+// bezier shape much more closely — at the cost of a few more on-curve nodes
+// in the exported outline, which only export ever sees.
+const EXPORT_CURVE_FIDELITY_SCALE = 0.12;
 import type { Contour, PathNode, VectorObject } from "@/types/geometry";
 import type { FontInfo, FontMetrics } from "@/types/font";
 import type { Glyph, GlyphCategory, GlyphMap } from "@/types/glyph";
@@ -702,7 +717,7 @@ function exportableObjects(glyph: Glyph): VectorObject[] {
   const eligible = expanded.filter(isBooleanEligible);
   if (eligible.length >= 2) {
     try {
-      const merged = applyBooleanOp(eligible, "union");
+      const merged = applyBooleanOp(eligible, "union", EXPORT_CURVE_FIDELITY_SCALE);
       if (merged) {
         const ineligible = expanded.filter((o) => !isBooleanEligible(o));
         return [merged, ...ineligible];

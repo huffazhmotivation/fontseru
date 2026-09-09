@@ -416,7 +416,19 @@ export function useSelectTool(hitScale: number) {
       setMarqueeRect(null);
       return;
     }
-    if (liveOutline) commitOutline(activeChar, liveOutline);
+    // Reached for move, resize, rotate, and skew drags of an already-
+    // existing selection — the exact same category useGlyphEditor.ts skips
+    // Auto Spacing for (move-selection, handle-drag, corner-round): no new
+    // ink is being drawn, an already-positioned object/glyph is just being
+    // repositioned/transformed. Without this, dragging a shape to align it
+    // to the baseline (or resizing/rotating it) nudges the outline's
+    // bounding box just enough to re-trigger live sidebearing centering,
+    // which visibly shifts the whole glyph sideways/vertically the instant
+    // the mouse is released — undoing the very alignment the drag was
+    // trying to make. Cmd/Ctrl+drag-to-duplicate also lands in "move" mode;
+    // treated the same way, since the duplicate is existing ink being
+    // repositioned, not a freshly hand-drawn stroke.
+    if (liveOutline) commitOutline(activeChar, liveOutline, { skipAutoSpacing: true });
     baseRef.current = null;
   }, [marqueeRect, outline, selectObjects, liveOutline, activeChar, commitOutline]);
 

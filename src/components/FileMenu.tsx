@@ -316,7 +316,14 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   // Real progress for the Export button: one step per selected style's font
   // generation, plus one final step for zipping the result — not a fake
   // timer, so it always reflects how much of `runExport` has actually run.
+  // Mirrors the Cloud Save flow's `{ percent, label }` progress shape so the
+  // export dialog can reuse the exact same progress-bar treatment.
   const [exportProgress, setExportProgress] = useState(0);
+  const [exportProgressLabel, setExportProgressLabel] = useState("Menyiapkan…");
+  // Set once `runExport` finishes successfully; drives the same style of
+  // confirmation dialog as `cloudSaveSuccess` below instead of an easy-to-
+  // miss toast, since a font export is a heavier action worth confirming.
+  const [exportSuccess, setExportSuccess] = useState<{ zipName: string; styleCount: number } | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const toastId = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -902,6 +909,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     // allowed=true here and are never counted.
     setBusy(true);
     setExportProgress(0);
+    setExportProgressLabel("Menyiapkan…");
     const quota = await consumeExport();
     if (!quota.allowed) {
       setBusy(false);
@@ -914,9 +922,10 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     // the final zip packaging (manifests + PDF + zip encoding).
     const totalExportSteps = styles.length + 1;
     let completedExportSteps = 0;
-    const advanceExportProgress = () => {
+    const advanceExportProgress = (nextLabel?: string) => {
       completedExportSteps++;
       setExportProgress(completedExportSteps / totalExportSteps);
+      if (nextLabel) setExportProgressLabel(nextLabel);
     };
 
     try {
@@ -984,6 +993,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
         const styleMetrics = styleWordSpacing !== undefined
           ? { ...s.metrics, wordSpacing: styleWordSpacing }
           : s.metrics;
+        setExportProgressLabel(multiStyle ? `Generating ${styleName}…` : "Generating font…");
         let generated: Awaited<ReturnType<typeof generateFontFiles>>;
         try {
           generated = await generateFontFiles(
@@ -1065,14 +1075,15 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
         { name: "License.txt", blob: textEncoder(licenseText) },
         { name: "License Summary.pdf", blob: licensePdfBlob },
       ];
+      setExportProgressLabel("Packaging ZIP…");
       const zipBlob = await createZipBlob(zipEntries);
-      advanceExportProgress();
+      advanceExportProgress("Menyimpan…");
       const zipName = styles.length > 1 ? `${baseName}-Family.zip` : `${baseName}.zip`;
       const result = await saveFontBlob(zipBlob, zipName, "zip");
       if (result === "cancelled") return;
 
       setExportOpen(false);
-      showToast(styles.length > 1 ? "Font family ZIP saved successfully" : "Font ZIP saved successfully");
+      setExportSuccess({ zipName, styleCount: styles.length });
     } catch (error) {
       console.error("[FontSeru] Export failed:", error);
       const detail = error instanceof Error ? error.message.trim() : "";
@@ -1586,6 +1597,21 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
               </p>
             )}
 
+            {busy && (
+              <div className="fm-export-progress" role="status" aria-live="polite">
+                <div className="fm-export-progress-row">
+                  <span>{exportProgressLabel}</span>
+                  <span className="fm-export-progress-pct">{Math.round(exportProgress * 100)}%</span>
+                </div>
+                <div className="fm-export-progress-bar">
+                  <div
+                    className="fm-export-progress-fill"
+                    style={{ width: `${Math.max(4, Math.min(100, Math.round(exportProgress * 100)))}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             <footer className="fm-export-actions">
               <button
                 type="button"
@@ -1593,7 +1619,8 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                 onClick={() => void runExport()}
                 disabled={busy || selectedStyleCount === 0}
               >
-                <Download size={15} /> {busy ? `Preparing… ${Math.round(exportProgress * 100)}%` : primaryExportLabel}
+                {busy ? <Loader2 size={15} className="fm-spin" /> : <Download size={15} />}
+                {busy ? "Exporting…" : primaryExportLabel}
               </button>
               <button type="button" className="fm-secondary-btn" onClick={() => setExportOpen(false)} disabled={busy}>
                 Cancel
@@ -1844,6 +1871,37 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
               >
                 {cloudSaving ? <Loader2 size={15} className="fm-spin" /> : <CloudUpload size={15} />}
                 {cloudSaving ? "Saving…" : "Save to Cloud"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {exportSuccess && (
+        <div
+          className="fm-export-backdrop"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setExportSuccess(null);
+          }}
+        >
+          <section
+            className="fm-export-dialog fm-cloud-dialog fm-cloud-success-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="export-success-title"
+          >
+            <div className="fm-cloud-success-icon" aria-hidden="true">
+              <Check size={26} strokeWidth={2.5} />
+            </div>
+            <h2 id="export-success-title">Export berhasil</h2>
+            <p className="fm-cloud-success-body">
+              <strong>&ldquo;{exportSuccess.zipName}&rdquo;</strong> berhasil dibuat
+              {exportSuccess.styleCount > 1 ? ` (${exportSuccess.styleCount} style)` : ""} dan sudah tersimpan/terunduh
+              ke perangkatmu.
+            </p>
+            <footer className="fm-export-actions fm-cloud-success-actions">
+              <button type="button" className="fm-primary-btn" onClick={() => setExportSuccess(null)} autoFocus>
+                OK, Mengerti
               </button>
             </footer>
           </section>
