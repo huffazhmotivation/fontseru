@@ -519,6 +519,12 @@ interface AppState {
    * focused in Test Lab. Meant for a project whose old hand-kerning is
    * now fighting the newer Auto Metrik-driven spacing. */
   resetAllKerningToAuto: (onProgress?: (fraction: number) => void) => Promise<void>;
+  /** True hard reset: wipes every kerning pair (auto-computed AND manual)
+   * in the Shared layer back to nothing at all — the state before Auto
+   * Kerning or any hand-tuning ever ran. `resetAllKerningToAuto` still
+   * leaves a full auto-computed pair table in place; this leaves an
+   * empty one, exactly like a brand new project's glyphs. */
+  clearAllKerningToBlank: () => void;
   /** Normalizes every glyph's LSB/RSB in the active style to a shared,
    * optically-balanced baseline margin. Fixes inconsistent hand-drawn
    * sidebearings; runs before Auto Kern refines specific pairs on top. */
@@ -542,6 +548,10 @@ interface AppState {
    * manual pair in `context`'s own layer (Shared, or one style's sparse
    * override layer) and recomputes all of them via Auto Kerning. */
   resetAllKerningToAutoForContext: (context: KerningContext, onProgress?: (fraction: number) => void) => Promise<void>;
+  /** Family-context version of `clearAllKerningToBlank`: empties only
+   * `context`'s own layer (Shared, or one style's sparse override layer)
+   * back to zero pairs, leaving Shared and every other style untouched. */
+  clearAllKerningToBlankForContext: (context: KerningContext) => void;
   /** Family-aware version of `autoSpaceAllGlyphs`: normalizes LSB/RSB for
    * the style selected as Test Lab's "Kerning Context" ("shared" maps to
    * Regular, the same baseline `autoKernAllPairsForContext` uses), instead
@@ -2184,6 +2194,12 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ autoKernLastRun: { processed: result.processed, updated: result.updated, preservedManual: result.preservedManual } });
     },
 
+    clearAllKerningToBlank: () => {
+      // No auto-kern pass at all — just an empty map, same as a project
+      // that has never run Auto Kerning or any manual kerning.
+      commitKerning({}, {});
+    },
+
     autoSpaceAllGlyphs: async (options, onProgress) => {
       const excludeManuallyKerned = options?.excludeManuallyKerned ?? true;
       const reKernAfter = options?.reKernAfter ?? true;
@@ -2461,6 +2477,17 @@ export const useAppStore = create<AppState>()((set, get) => {
       );
       commitFamilyStyleKerning(context, result.pairs, result.manual);
       set({ autoKernLastRun: { processed: result.processed, updated: result.updated, preservedManual: result.preservedManual } });
+    },
+
+    clearAllKerningToBlankForContext: (context) => {
+      if (context === "shared") {
+        get().clearAllKerningToBlank();
+        return;
+      }
+      // Empties only this style's own override layer — Shared and every
+      // other style's pairs are untouched, same scoping as
+      // resetAllKerningToAutoForContext.
+      commitFamilyStyleKerning(context, {}, {});
     },
 
     beginFamilyKerningDrag: (context) => {

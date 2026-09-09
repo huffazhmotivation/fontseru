@@ -1516,6 +1516,8 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
   const autoKernAllPairsForContext = useAppStore((s) => s.autoKernAllPairsForContext);
   const resetAllKerningToAuto = useAppStore((s) => s.resetAllKerningToAuto);
   const resetAllKerningToAutoForContext = useAppStore((s) => s.resetAllKerningToAutoForContext);
+  const clearAllKerningToBlank = useAppStore((s) => s.clearAllKerningToBlank);
+  const clearAllKerningToBlankForContext = useAppStore((s) => s.clearAllKerningToBlankForContext);
   const autoWordSpacing = useAppStore((s) => s.autoWordSpacing);
   const autoWordSpacingForContext = useAppStore((s) => s.autoWordSpacingForContext);
   const resetFamilyWordSpacing = useAppStore((s) => s.resetFamilyWordSpacing);
@@ -1651,6 +1653,15 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
       ).some(Boolean)
     : Object.values(kerningManual).some(Boolean);
 
+  // Broader than hasAnyManualKerningInScope: true if there's ANY pair at
+  // all in scope (auto-computed or manual) — used to enable "Clear All",
+  // which wipes back to zero pairs rather than just recomputing Auto.
+  const hasAnyKerningInScope = kerningMode === "family"
+    ? Object.keys(
+        familyContext === "shared" ? kerningPairs : (kerningOverridesByStyle[familyContext] ?? {})
+      ).length > 0
+    : Object.keys(kerningPairs).length > 0;
+
   const handleResetAllKerning = useCallback(async () => {
     if (autoKernRunning) return;
     setAutoKernProgress(0);
@@ -1667,6 +1678,21 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
       setAutoKernProgress("idle");
     }
   }, [autoKernRunning, resetAllKerningToAuto, resetAllKerningToAutoForContext, kerningMode, familyContext]);
+
+  const handleClearAllKerning = useCallback(() => {
+    if (autoKernRunning) return;
+    const confirmed = window.confirm(
+      kerningMode === "family"
+        ? `Wipe ALL kerning pairs (auto and manual) in ${familyContext === "shared" ? "Shared" : fontStyleLabel(familyContext, customFamilies)} back to zero? This can't be undone with Reset All — it removes the pairs entirely instead of recomputing them.`
+        : "Wipe ALL kerning pairs (auto and manual) back to zero? This can't be undone with Reset All — it removes the pairs entirely instead of recomputing them."
+    );
+    if (!confirmed) return;
+    if (kerningMode === "family") {
+      clearAllKerningToBlankForContext(familyContext);
+    } else {
+      clearAllKerningToBlank();
+    }
+  }, [autoKernRunning, clearAllKerningToBlank, clearAllKerningToBlankForContext, kerningMode, familyContext, customFamilies]);
 
   const [wordSpacingFlash, setWordSpacingFlash] = useState<number | null>(null);
 
@@ -2144,6 +2170,21 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
               >
                 <RotateCcw size={14} />{" "}
                 Reset All
+              </button>
+              <button
+                type="button"
+                className="fm-action-btn fm-kern-reset-btn"
+                disabled={autoKernRunning || !hasAnyKerningInScope}
+                onClick={(e) => { handleClearAllKerning(); e.currentTarget.blur(); }}
+                data-testid="kern-clear-all"
+                title={
+                  kerningMode === "family"
+                    ? `Wipe every pair — auto AND manual — in ${familyContext === "shared" ? "Shared" : fontStyleLabel(familyContext, customFamilies)} back to zero, the state before Auto Kerning ever ran`
+                    : "Wipe every pair — auto AND manual — back to zero, the state before Auto Kerning ever ran"
+                }
+              >
+                <RotateCcw size={14} />{" "}
+                Clear All
               </button>
             </div>
 

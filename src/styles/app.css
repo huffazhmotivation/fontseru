@@ -3745,6 +3745,29 @@ input[type="number"]::-webkit-outer-spin-button {
 
 .fm-export-style-option:hover:not(.disabled) { background: var(--panel); }
 
+.fm-export-style-row { display: flex; flex-direction: column; gap: 2px; }
+
+.fm-export-style-name-overrides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 0 9px 6px 36px;
+}
+
+.fm-export-style-name-override {
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.fm-export-style-name-override::placeholder { color: var(--text-dim); }
+
+
 .fm-export-style-option > input[type="checkbox"] {
   position: absolute;
   width: 1px;

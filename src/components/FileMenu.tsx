@@ -579,6 +579,27 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     regular: true,
   });
 
+  // Per-style manual overrides for the exported nameID 1/16 (Family Name)
+  // and nameID 2/17 (Style/Subfamily Name) — used in Family exports (2+
+  // styles at once) and for custom families, where the auto-generated
+  // label often isn't what the designer actually wants baked into the
+  // font (e.g. a custom family that's really its own distinct typeface,
+  // not a Bold/Italic variant of the main one). Blank = fall back to the
+  // existing automatic behavior for that field, so nothing changes for
+  // anyone who doesn't touch these.
+  const [styleNameOverrides, setStyleNameOverrides] = useState<
+    Record<string, { familyName: string; styleName: string }>
+  >({});
+  const setStyleNameOverride = useCallback(
+    (id: FontStyle, field: "familyName" | "styleName", value: string) => {
+      setStyleNameOverrides((current) => ({
+        ...current,
+        [id]: { familyName: current[id]?.familyName ?? "", styleName: current[id]?.styleName ?? "", [field]: value },
+      }));
+    },
+    [],
+  );
+
   const setFontInfoField = useCallback(<K extends keyof FontInfoFormState>(field: K, value: FontInfoFormState[K]) => {
     setFontInfoForm((current) => ({ ...current, [field]: value }));
   }, []);
@@ -909,9 +930,11 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       }> = [];
 
       // A user-entered Style name (FONT INFO tab) is honored for the common
-      // single-style export. For multi-style Family exports each binary
-      // still needs its own correct Regular/Bold/Italic subfamily name for
-      // OS font matching, so the automatic label is kept there.
+      // single-style export. For Family exports (2+ styles) and any custom
+      // family, `styleNameOverrides` (typed per-row in the Styles list)
+      // takes priority when the designer actually filled it in — falling
+      // back to the automatic Regular/Bold/Italic label (or the automatic
+      // family name) exactly like before when left blank.
       const styleOverride = fontInfoForm.style.trim();
 
       const { generateFontFiles } = await import("@/utils/fontIO");
@@ -919,16 +942,20 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       // Family export is orchestration only: each selected style still passes
       // through the existing font generator and its validation pipeline.
       for (const style of styles) {
-        const styleName = styles.length === 1 && styleOverride ? styleOverride : fontStyleLabel(style, s.customFamilies);
+        const override = styleNameOverrides[style];
+        const styleName =
+          override?.styleName.trim() ||
+          (styles.length === 1 && styleOverride ? styleOverride : fontStyleLabel(style, s.customFamilies));
+        const styleFamilyName = override?.familyName.trim() || familyName;
         const exportInfo: FontInfo = {
           ...s.fontInfo,
-          familyName,
+          familyName: styleFamilyName,
           styleName,
           // Same fix as the preview above: Full Name must be derived from
           // Family Name, not the separate "Font Name" field, or the two can
           // drift apart and the exported font fails the Full-Name-starts-
           // with-Family-Name check.
-          fullName: `${familyName} ${styleName}`,
+          fullName: `${styleFamilyName} ${styleName}`,
           // Let normalization create a unique Family-Style PostScript name and
           // matching unique ID for every binary.
           postscriptName: "",
@@ -1474,9 +1501,11 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                     // checkbox state some other way.
                     const locked = id !== "regular" && !isPro;
                     const checked = available && selectedStyles[id] && !locked;
+                    const isCustomFamily = !FONT_STYLES.some((s) => s.id === id);
+                    const override = styleNameOverrides[id];
                     return (
+                      <div key={id} className="fm-export-style-row">
                       <label
-                        key={id}
                         className={`fm-export-style-option${available ? "" : " disabled"}${locked ? " fm-export-style-locked" : ""}`}
                         title={locked ? `${label} (PRO)` : available ? `${label} vector glyphs detected` : `${label} has no vector glyphs`}
                         onClick={(event) => {
@@ -1501,6 +1530,27 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                         {locked && <Lock size={11} className="fm-lock-badge-inline" />}
                         {!locked && !available && <span className="fm-export-style-status">No vectors</span>}
                       </label>
+                      {checked && (selectedStyleCount > 1 || isCustomFamily) && (
+                        <div className="fm-export-style-name-overrides">
+                          <input
+                            className="fm-export-style-name-override"
+                            value={override?.familyName ?? ""}
+                            onChange={(event) => setStyleNameOverride(id, "familyName", event.target.value)}
+                            spellCheck={false}
+                            placeholder={`Family: ${fontInfoForm.familyName.trim() || fontInfoForm.fontName.trim() || "same as above"}`}
+                            title="Override the Family Name baked into this style's file only (nameID 1/16). Leave blank to use the Family Name above."
+                          />
+                          <input
+                            className="fm-export-style-name-override"
+                            value={override?.styleName ?? ""}
+                            onChange={(event) => setStyleNameOverride(id, "styleName", event.target.value)}
+                            spellCheck={false}
+                            placeholder={`Style: ${fontStyleLabel(id, customFamilies)}`}
+                            title="Override the Style/Subfamily Name baked into this file (nameID 2/17). Leave blank to use the automatic label."
+                          />
+                        </div>
+                      )}
+                      </div>
                     );
                   })}
                 </div>

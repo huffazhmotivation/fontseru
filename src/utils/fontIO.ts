@@ -1088,8 +1088,50 @@ function spliceSfntTable(buffer: ArrayBuffer, tag: string, data: Uint8Array): Ar
   return output.buffer;
 }
 
-function makeKernTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
-  const records: { left: number; right: number; value: number }[] = [];
+/**
+ * Classic `kern` (format-0) and GPOS PairPos-format-1 tables are both
+ * built from "Common Table Format" structures whose internal offsets are
+ * ALL Offset16 (unsigned 16-bit, max 65535) — the PairPos coverage/
+ * pairSet offsets, the classic kern table's own `nPairs` field, even the
+ * LookupList's offsets to each Lookup. This is a hard ceiling baked into
+ * the OpenType 1.0 spec, not a bug we can configure around: once the
+ * encoded bytes for a lookup's pair data cross ~64KB, any offset that
+ * would need to point past it silently wraps back into range instead of
+ * throwing — so the *file* looks fine (no exception, no console error)
+ * but the actual pair data past the wraparound point is scrambled
+ * garbage from that offset onward. Real engines (Windows, Affinity, most
+ * browsers) either bail out on the malformed lookup (falling back to
+ * plain, un-kerned advance widths) or read whatever garbage the wrapped
+ * offset happens to point at — both of which look like "kerning got
+ * randomly worse after export" despite Test Lab (which reads the live
+ * `kerningPairs` object directly, never this binary) looking correct.
+ *
+ * FontSeru's "Auto Kerning" can legitimately produce a near-complete
+ * matrix (essentially every left/right glyph combination in the font),
+ * which for a ~370-glyph family is well over 100,000 pairs — 8-10x more
+ * raw pair data than a single PairPos/kern subtable can ever address.
+ * There is no purely additive fix (multiple lookups just hits the same
+ * 64KB ceiling one level up, at the LookupList itself); the correct,
+ * scalable fix is switching to class-based kerning (PairPos format 2),
+ * but until that lands, the safe behavior is to keep exactly as many of
+ * the most significant pairs as fit under the hard limit and drop the
+ * rest, rather than silently emitting a corrupted table that looks
+ * "successful" to the export code but is broken for every real
+ * consumer. `budgetKerningPairs` below is that shared, size-aware
+ * selection, used by both the legacy `kern` and the GPOS encoders so
+ * they can never disagree about which pairs made the cut.
+ */
+export interface BudgetedKerning {
+  records: { left: number; right: number; value: number }[];
+  droppedCount: number;
+}
+
+function budgetKerningPairs(
+  pairs: KerningPairs,
+  glyphIndexByChar: Map<string, number>,
+  budgetBytes = 60000 // safety margin under the hard 65535 Offset16 ceiling
+): BudgetedKerning {
+  const all: { left: number; right: number; value: number }[] = [];
   for (const [key, rawValue] of Object.entries(pairs ?? {})) {
     const pair = parseKerningKey(key);
     if (!pair) continue;
@@ -1097,8 +1139,42 @@ function makeKernTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number
     const right = glyphIndexByChar.get(pair.right);
     if (left == null || right == null || !Number.isFinite(rawValue)) continue;
     const value = Math.max(-32768, Math.min(32767, Math.round(rawValue)));
-    if (value) records.push({ left, right, value });
+    if (value) all.push({ left, right, value });
   }
+
+  // Biggest visual impact first, so if we must drop pairs we drop the
+  // smallest/least-noticeable adjustments, not a random tail of the map.
+  all.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+
+  // Mirrors buildPairPosFormat1's own layout math so the budget check is
+  // exact, not a guess: header(10) + 2*L (pairSet offsets) + coverage(4+2*L)
+  // + per left-glyph pairSet(2 + 4*count) — i.e. total = 14 + 6*L + 4*P.
+  const perLeftCount = new Map<number, number>();
+  let runningTotal = 14;
+  const kept: { left: number; right: number; value: number }[] = [];
+
+  for (const rec of all) {
+    const isNewLeft = !perLeftCount.has(rec.left);
+    const projected = runningTotal + 4 + (isNewLeft ? 6 : 0);
+    if (projected > budgetBytes) continue; // skip this one, keep scanning smaller pairs
+    runningTotal = projected;
+    perLeftCount.set(rec.left, (perLeftCount.get(rec.left) ?? 0) + 1);
+    kept.push(rec);
+  }
+
+  const droppedCount = all.length - kept.length;
+  if (droppedCount > 0) {
+    console.warn(
+      `[FontSeru] Kerning export: ${all.length} pairs requested but only ${kept.length} fit inside the ` +
+        `OpenType Offset16 limit for a single PairPos/kern subtable; dropped the ${droppedCount} smallest-magnitude ` +
+        `pairs so the exported file's kerning stays internally consistent instead of silently corrupting past ~64KB.`
+    );
+  }
+  return { records: kept, droppedCount };
+}
+
+function makeKernTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
+  const { records } = budgetKerningPairs(pairs, glyphIndexByChar);
   if (!records.length) return null;
   records.sort((a, b) => a.left - b.left || a.right - b.right);
   const nPairs = records.length;
@@ -1510,15 +1586,11 @@ export function injectGsubTable(buffer: ArrayBuffer, config: FeatureBuilderConfi
  * to the second glyph (`valueFormat2 = 0`), mirroring the legacy kern
  * table's semantics exactly. */
 function buildPairPosFormat1(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
+  const { records } = budgetKerningPairs(pairs, glyphIndexByChar);
+  if (!records.length) return null;
+
   const byLeft = new Map<number, Array<{ right: number; value: number }>>();
-  for (const [key, rawValue] of Object.entries(pairs ?? {})) {
-    const pair = parseKerningKey(key);
-    if (!pair) continue;
-    const left = glyphIndexByChar.get(pair.left);
-    const right = glyphIndexByChar.get(pair.right);
-    if (left == null || right == null || !Number.isFinite(rawValue)) continue;
-    const value = Math.max(-32768, Math.min(32767, Math.round(rawValue)));
-    if (!value) continue;
+  for (const { left, right, value } of records) {
     const list = byLeft.get(left) ?? [];
     list.push({ right, value });
     byLeft.set(left, list);

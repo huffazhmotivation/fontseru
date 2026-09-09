@@ -250,10 +250,24 @@ export async function autoSpaceAllGlyphs(
       const suggestion = suggestGlyphSidebearings(glyph, metrics);
       if (!suggestion) {
         skipped++;
-      } else if (glyph.lsb !== suggestion.lsb || glyph.rsb !== suggestion.rsb) {
-        if (next === glyphs) next = { ...glyphs };
-        next[char] = applyPatch(glyph, suggestion);
-        updated++;
+      } else {
+        // Compare against the outline's ACTUAL current geometry, not the
+        // possibly-stale glyph.lsb/rsb fields — see applyOpticalSidebearings'
+        // own doc comment just above. A freshly drawn/pasted/imported glyph
+        // can have stored lsb/rsb that happen to already equal the target
+        // (leftover default template values, etc.) even though its ink was
+        // never actually moved there; trusting the stored fields here made
+        // Auto Spacing silently skip exactly those glyphs, leaving their
+        // real ink wherever it was drawn — the "metrics look right but it's
+        // still overlapping in Test Lab" bug.
+        const bounds = hasOutline(glyph) ? outlineBounds(glyph.outline) : null;
+        const currentLsb = bounds ? Math.round(bounds.minX) : glyph.lsb;
+        const currentRsb = bounds ? Math.round(glyph.advanceWidth - bounds.maxX) : glyph.rsb;
+        if (currentLsb !== suggestion.lsb || currentRsb !== suggestion.rsb) {
+          if (next === glyphs) next = { ...glyphs };
+          next[char] = applyPatch(glyph, suggestion);
+          updated++;
+        }
       }
     }
 
