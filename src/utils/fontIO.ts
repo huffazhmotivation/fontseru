@@ -745,7 +745,7 @@ function exportableObjects(glyph: Glyph): VectorObject[] {
     // guarantee instead of only the multi-object ones.
     try {
       const obj = eligible[0];
-      const cleaned = normalizeSelfIntersectingContours(obj.contours);
+      const cleaned = normalizeSelfIntersectingContours(obj.contours, EXPORT_CURVE_FIDELITY_SCALE);
       if (cleaned.length > 0) {
         return [{ id: obj.id, kind: "shape", contours: cleaned }, ...ineligible];
       }

@@ -279,39 +279,81 @@ function ringSimplifyTolerance(ring: Point[], scale = 1): number {
  * `normalizeSelfIntersectingContours` (single-shape self-intersection
  * cleanup) below, since both end with the exact same "raw clipped rings ->
  * editable contours" step.
+ *
+ * BUG FIX ("solid black glyphs" / vanished counters after Remove Overlap):
+ * `polygon-clipping`'s MultiPolygon result is not a flat bag of rings — by
+ * the library's own (GeoJSON-style) contract, `resultMulti[i]` is one
+ * top-level shape, whose ring 0 is THAT shape's exterior and every ring
+ * after it is a hole directly inside that exterior. That pairing is exact,
+ * computed by the clipper itself; it needs no guessing.
+ *
+ * The previous code threw that structure away — it flattened every ring
+ * from every polygon into one array and re-derived nesting from scratch by
+ * testing each ring's first vertex for point-in-polygon containment against
+ * every OTHER ring, exterior and hole alike. That re-derivation is exactly
+ * where it broke: a union/clip result's exterior and its own hole almost
+ * always share exactly-touching edges/vertices (that's what "the hole sits
+ * inside the shape it was cut from" means geometrically), so testing a
+ * hole's first point against its OWN exterior — or against a sibling hole —
+ * is a classic on-boundary case for ray-casting point-in-polygon: floating
+ * point puts it a hair inside or outside essentially at random. Get unlucky
+ * and a hole's computed depth comes out even instead of odd (or vice
+ * versa), `wantPositive` flips, the hole gets oriented the SAME winding as
+ * its exterior instead of the opposite one, and the sfnt nonzero-winding
+ * fill no longer punches it out — a counter (the inside of an "o", a
+ * digit's bowl, ...) silently fills in solid. That's exactly the "cacat"
+ * (solid black glyphs, blobby fused counters) reported after Remove
+ * Overlap/export: the more contours a glyph's union produces (typical for
+ * a multi-object hand-drawn "Clean" style letter), the more chances for
+ * one on-boundary test to land wrong.
+ *
+ * Fix: trust the library's exterior/hole pairing within each polygon
+ * outright (ring 0 = depth 0 relative to its own polygon, every other ring
+ * in that same polygon = depth 1 relative to it — no test needed). The only
+ * thing still genuinely ambiguous, and still requiring a containment check,
+ * is whether one whole top-level polygon sits nested inside a DIFFERENT
+ * polygon's hole (e.g. a dot/island resting inside a counter carved by a
+ * separate shape) — so that check now only ever compares one polygon's
+ * exterior against another polygon's exterior, never a hole against its own
+ * exterior or a sibling hole, which removes the exact-touching-edge case
+ * that was causing the misclassification.
  */
 function multiPolygonToContours(resultMulti: ClipMultiPolygon, toleranceScale = 1): Contour[] {
   if (!resultMulti || resultMulti.length === 0) return [];
 
-  const rings: Point[][] = [];
-  for (const poly of resultMulti) {
-    for (const ring of poly) {
-      const pts = ringToPoints(ring);
-      if (pts.length >= 3) rings.push(pts);
-    }
-  }
-  if (rings.length === 0) return [];
+  const polys = resultMulti
+    .map((poly) => poly.map((ring) => ringToPoints(ring)).filter((pts) => pts.length >= 3))
+    .filter((poly) => poly.length > 0 && poly[0].length >= 3);
+  if (polys.length === 0) return [];
 
-  // Nesting depth via containment against the other rings' first point —
-  // still needed because a single result can contain several disjoint
-  // exterior shapes plus their own holes.
-  const depths = rings.map((ring, idx) => {
+  // Depth of each top-level polygon's OWN exterior, relative to every other
+  // polygon's exterior only (never against holes — see doc comment above).
+  const polyDepth = polys.map((poly, idx) => {
     let depth = 0;
-    for (let k = 0; k < rings.length; k++) {
+    const p0 = poly[0][0];
+    for (let k = 0; k < polys.length; k++) {
       if (k === idx) continue;
-      if (pointInPolygon(ring[0], rings[k])) depth++;
+      if (pointInPolygon(p0, polys[k][0])) depth++;
     }
     return depth;
   });
 
-  return rings.map((ring, idx) => {
-    const wantPositive = depths[idx] % 2 === 0;
-    const area = polygonArea(ring);
-    const oriented = (area > 0) === wantPositive ? ring : [...ring].reverse();
-    const { points, isCorner } = simplifyRingPreservingCorners(oriented, ringSimplifyTolerance(oriented, toleranceScale));
-    const nodes: PathNode[] = ringToSmoothNodes(points, isCorner);
-    return { id: shortId("contour"), nodes, closed: true };
+  const contours: Contour[] = [];
+  polys.forEach((poly, polyIdx) => {
+    poly.forEach((ring, ringIdx) => {
+      // Ring 0 is this polygon's exterior (same depth as the polygon
+      // itself); every later ring is a hole one level deeper — both given
+      // directly by the clipper, not guessed.
+      const depth = polyDepth[polyIdx] + (ringIdx > 0 ? 1 : 0);
+      const wantPositive = depth % 2 === 0;
+      const area = polygonArea(ring);
+      const oriented = (area > 0) === wantPositive ? ring : [...ring].reverse();
+      const { points, isCorner } = simplifyRingPreservingCorners(oriented, ringSimplifyTolerance(oriented, toleranceScale));
+      const nodes: PathNode[] = ringToSmoothNodes(points, isCorner);
+      contours.push({ id: shortId("contour"), nodes, closed: true });
+    });
   });
+  return contours;
 }
 
 /**
@@ -376,11 +418,26 @@ export function applyBooleanOp(
  * straight through the loop instead of merging cleanly. Routing every
  * Outline Brush stroke's contours through this normalizer — even a lone
  * one — fixes that without needing a second stroke to trigger it.
+ *
+ * `toleranceScale` (default 1, i.e. the same fidelity the interactive
+ * editor/Test Lab has always used) lets a caller opt into a tighter refit —
+ * see `EXPORT_CURVE_FIDELITY_SCALE` in fontIO.ts.
+ *
+ * BUG FIX (export still didn't match Test Lab for single-object glyphs):
+ * `applyBooleanOp`'s export call site was previously the ONLY caller that
+ * passed a tightened `toleranceScale` — this function always refit at the
+ * loose interactive default. Export's Remove Overlap only reaches
+ * `applyBooleanOp` when a glyph has 2+ eligible objects; a glyph built from
+ * one hand-drawn object (the common case — a single letterform with its
+ * outer + counter as one shape's own contours) goes through THIS function
+ * instead, so it was quietly exempt from the export fidelity fix and kept
+ * reshaping smooth curves/joins on install even after that was fixed for
+ * multi-object glyphs.
  */
-export function normalizeSelfIntersectingContours(contours: Contour[]): Contour[] {
+export function normalizeSelfIntersectingContours(contours: Contour[], toleranceScale = 1): Contour[] {
   if (contours.length === 0) return [];
   const multi = objectToMultiPolygon({ id: "tmp-normalize", kind: "expanded", contours });
   if (multi.length === 0) return contours;
-  const cleaned = multiPolygonToContours(multi);
+  const cleaned = multiPolygonToContours(multi, toleranceScale);
   return cleaned.length > 0 ? cleaned : contours;
 }
