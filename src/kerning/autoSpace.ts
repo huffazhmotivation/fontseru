@@ -3,7 +3,13 @@ import type { GlyphOutline } from "@/types/geometry";
 import { hasOutline } from "@/types/glyph";
 import type { FontMetrics } from "@/types/font";
 import { outlineBounds, translateObject, skewObject } from "@/editor/objectOps";
-import { inkExtentAtY } from "./autoKern";
+import { inkExtentAtY, resolveInkContours } from "./autoKern";
+
+// Same flatten resolution autoKern.ts uses for its optical scanline profile
+// (see KERN_FLATTEN_STEPS there) — kept in sync so a glyph's measured ink
+// edge is identically precise whether Auto Spacing or Auto Kern is doing
+// the measuring.
+const SPACING_FLATTEN_STEPS = 48;
 
 /**
  * Optical, per-glyph sidebearing suggestions ("Auto Spacing").
@@ -124,13 +130,20 @@ export function suggestGlyphSidebearings(glyph: Glyph, metrics: FontMetrics): Gl
   const target = metrics.unitsPerEm * SIDE_MARGIN_RATIO;
   const minMargin = metrics.unitsPerEm * MIN_MARGIN_RATIO;
 
+  // Resolved once (real stroke geometry — nib shape, taper, pressure, and
+  // the active brush preset's own edge treatment — not a centerline
+  // approximation; see resolveInkContours' doc comment in autoKern.ts for
+  // why the old shortcut underestimated ink on near-horizontal strokes),
+  // then reused for every scanline below.
+  const contours = resolveInkContours(measureOutline, SPACING_FLATTEN_STEPS);
+
   let leftRecessSum = 0;
   let rightRecessSum = 0;
   let samples = 0;
   for (let i = 0; i < OPTICAL_SAMPLES; i++) {
     const t = OPTICAL_SAMPLES === 1 ? 0.5 : i / (OPTICAL_SAMPLES - 1);
     const y = bounds.minY + t * (bounds.maxY - bounds.minY);
-    const ink = inkExtentAtY(measureOutline, y);
+    const ink = inkExtentAtY(contours, y);
     if (!ink) continue;
     leftRecessSum += Math.max(0, ink.min - bounds.minX);
     rightRecessSum += Math.max(0, bounds.maxX - ink.max);

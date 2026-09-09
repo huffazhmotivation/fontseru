@@ -3,6 +3,7 @@ import type { FontMetrics } from "@/types/font";
 import type { GlyphOutline, Point } from "@/types/geometry";
 import { isFilledObject, isStrokeObject } from "@/types/geometry";
 import { outlineBounds, flattenContour } from "@/editor/objectOps";
+import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { kerningKey } from "@/types/kerning";
 
 /**
@@ -77,55 +78,145 @@ function polygonCrossings(points: Point[], y: number): number[] {
   return xs;
 }
 
-/** x-crossings of an open polyline (a stroke centerline) with the line y = height. */
-function polylineCrossings(points: Point[], y: number): number[] {
-  const xs: number[] = [];
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i];
-    const b = points[i + 1];
-    if (a.y === b.y) continue;
-    if ((y >= a.y && y < b.y) || (y >= b.y && y < a.y)) {
-      xs.push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
-    }
+/**
+ * Resolves every object in `outline` into the actual filled polygon(s) its
+ * ink occupies, flattened to `steps` resolution — the SAME shape that ends
+ * up on screen/in the exported font, not an approximation of it.
+ *
+ * This used to be two different code paths: filled objects were flattened
+ * directly, while "line"/"brush" stroke objects were reduced to their bare
+ * centerline plus a constant `strokeWidth/2` added in the X DIRECTION ONLY
+ * at each scanline crossing. That shortcut is only correct for a perfectly
+ * VERTICAL piece of stroke. For anything closer to horizontal — a "T"
+ * crossbar, a serif, a brush terminal, a nearly-flat hand-drawn stroke —
+ * the true horizontal footprint of a stroke of width `w` tilted `θ` from
+ * vertical is `w / cos(θ)`, which blows up as the stroke flattens out. A
+ * centerline crossing straight-up missing a strictly horizontal segment
+ * entirely (no x/y change to interpolate a crossing from) is the extreme
+ * case of the same bug. Since a hand-drawn "rough"-brush alphabet is full
+ * of exactly these near-horizontal strokes, this silently underestimated
+ * ink width was the actual cause of letters reading as touching/overlapping
+ * even though a "safety floor" already existed downstream — the floor was
+ * only ever as good as this measurement, and this measurement was wrong.
+ *
+ * The fix: reuse `brushOutlineContours`, the SAME stroke-to-outline sweep
+ * the app already uses to render/export brush and pen strokes (nib shape,
+ * pressure, taper, and the current brush preset's own edge treatment —
+ * e.g. Rough's jitter/pitting — all included), instead of a hand-rolled
+ * approximation of it. A stroke's true ink is then just another filled
+ * polygon, exactly like a "shape"/"expanded" object, so both cases can
+ * share one crossing test.
+ */
+interface Box {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+function polyBox(p: Point[]): Box {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const pt of p) {
+    if (pt.x < minX) minX = pt.x;
+    if (pt.x > maxX) maxX = pt.x;
+    if (pt.y < minY) minY = pt.y;
+    if (pt.y > maxY) maxY = pt.y;
   }
-  return xs;
+  return { minX, minY, maxX, maxY };
 }
 
 /**
- * Leftmost/rightmost ink x at one scanline, or null when the glyph has no
- * ink crossing that height at all (e.g. below "T"'s crossbar there's only
- * the stem — a sample taken off to the side contributes nothing rather
- * than inventing a false edge).
- *
- * `steps` controls how finely Bézier segments are flattened before being
- * scanned; callers hunting for an exact closest-approach point (auto-kern)
- * should pass a much finer value than the editor's default render/select
- * flatten, since a coarse flatten can round off exactly the bit of curve
- * that matters.
+ * Drops polygons whose bounding box sits strictly inside another polygon's
+ * (from the SAME object's resolved contours) — i.e. interior counters/holes
+ * (a rough/grunge brush's pitting, Outline Brush's hollow-ring inner edge,
+ * a glyph's own counter like "O"'s hole). A contour fully enclosed by
+ * another can, by construction, never reach further left/right at any
+ * height than its enclosing contour already does — so it can never be the
+ * one that determines an ink-extent min/max — but a naive scan still has
+ * to walk every one of its edges at every single scanline to find that out
+ * empirically. A "rough" brush stroke alone can carry 100+ tiny pitting
+ * holes (see roughBrushOutlineContours' `holeCount`), so across a whole
+ * alphabet's worth of auto-kern scanlines that dead weight adds up to the
+ * dominant cost. Pruning once, up front, is what keeps a full n² auto-kern
+ * pass tractable without changing the measured extent at all — disjoint
+ * regions (a stroke that crosses itself, separate strokes making up one
+ * letter) never satisfy strict containment, so they're always kept.
  */
-export function inkExtentAtY(outline: GlyphOutline, y: number, steps = 16): { min: number; max: number } | null {
+function pruneEnclosedPolys(polys: Point[][]): Point[][] {
+  if (polys.length <= 1) return polys;
+  const boxes = polys.map(polyBox);
+  const keep = polys.map(() => true);
+  for (let i = 0; i < polys.length; i++) {
+    const a = boxes[i];
+    for (let j = 0; j < polys.length; j++) {
+      if (i === j) continue;
+      const b = boxes[j];
+      const strictlyInside =
+        a.minX >= b.minX && a.maxX <= b.maxX && a.minY >= b.minY && a.maxY <= b.maxY &&
+        (a.minX > b.minX || a.maxX < b.maxX || a.minY > b.minY || a.maxY < b.maxY);
+      if (strictlyInside) {
+        keep[i] = false;
+        break;
+      }
+    }
+  }
+  return polys.filter((_, i) => keep[i]);
+}
+
+export function resolveInkContours(outline: GlyphOutline, steps = 16): Point[][] {
+  const polys: Point[][] = [];
+  for (const obj of outline.objects) {
+    const objPolys: Point[][] = [];
+    if (isFilledObject(obj)) {
+      for (const contour of obj.contours) {
+        const flat = flattenContour(contour, steps);
+        if (flat.length >= 3) objPolys.push(flat);
+      }
+    } else if (isStrokeObject(obj)) {
+      for (const contour of brushOutlineContours(obj)) {
+        const flat = flattenContour(contour, steps);
+        if (flat.length >= 3) objPolys.push(flat);
+      }
+    }
+    polys.push(...pruneEnclosedPolys(objPolys));
+  }
+  return polys;
+}
+
+/** Per-glyph-outline cache for `resolveInkContours`, keyed by the outline
+ *  object's own identity (a new glyph edit always produces a new `outline`
+ *  object in this app's store, matching the pattern `glyphPathCache` in
+ *  editor/glyphPaths.ts already relies on). `brushOutlineContours` runs a
+ *  real geometry sweep per stroke object, so without this cache an n² auto-
+ *  kern pass over the whole alphabet would redo that sweep for every glyph
+ *  on every one of the ~2n pairs it appears in, instead of once. */
+const inkContoursCache = new WeakMap<GlyphOutline, Point[][]>();
+
+function cachedInkContours(outline: GlyphOutline, steps: number): Point[][] {
+  const cached = inkContoursCache.get(outline);
+  if (cached) return cached;
+  const resolved = resolveInkContours(outline, steps);
+  inkContoursCache.set(outline, resolved);
+  return resolved;
+}
+
+/**
+ * Leftmost/rightmost ink x at one scanline through `contours` (pre-resolved
+ * via `resolveInkContours`/`cachedInkContours`), or null when nothing
+ * crosses that height at all (e.g. below "T"'s crossbar there's only the
+ * stem — a sample taken off to the side contributes nothing rather than
+ * inventing a false edge).
+ */
+export function inkExtentAtY(contours: Point[][], y: number): { min: number; max: number } | null {
   let min = Infinity;
   let max = -Infinity;
   let found = false;
 
-  for (const obj of outline.objects) {
-    if (isFilledObject(obj)) {
-      for (const contour of obj.contours) {
-        for (const x of polygonCrossings(flattenContour(contour, steps), y)) {
-          found = true;
-          if (x < min) min = x;
-          if (x > max) max = x;
-        }
-      }
-    } else if (isStrokeObject(obj)) {
-      const half = (obj.strokeWidth ?? 0) / 2;
-      for (const contour of obj.contours) {
-        for (const x of polylineCrossings(flattenContour(contour, steps), y)) {
-          found = true;
-          if (x - half < min) min = x - half;
-          if (x + half > max) max = x + half;
-        }
-      }
+  for (const poly of contours) {
+    for (const x of polygonCrossings(poly, y)) {
+      found = true;
+      if (x < min) min = x;
+      if (x > max) max = x;
     }
   }
 
@@ -159,9 +250,16 @@ function tightestGapInRange(
   let prevY = minY;
   let nextY = maxY;
 
+  // Resolved once per glyph (cached across the whole auto-kern pass, see
+  // `cachedInkContours`), then reused for every scanline below — this is
+  // both the accuracy fix (real stroke geometry, not a centerline
+  // approximation) and what keeps an n² alphabet pass affordable.
+  const leftContours = cachedInkContours(l.outline, KERN_FLATTEN_STEPS);
+  const rightContours = cachedInkContours(r.outline, KERN_FLATTEN_STEPS);
+
   const gapAt = (y: number): number | null => {
-    const leftInk = inkExtentAtY(l.outline, y, KERN_FLATTEN_STEPS);
-    const rightInk = inkExtentAtY(r.outline, y, KERN_FLATTEN_STEPS);
+    const leftInk = inkExtentAtY(leftContours, y);
+    const rightInk = inkExtentAtY(rightContours, y);
     if (!leftInk || !rightInk) return null;
     return l.advanceWidth - leftInk.max + rightInk.min;
   };
