@@ -241,6 +241,144 @@ export function inkExtentAtY(contours: Point[][], y: number): { min: number; max
   return found ? { min, max } : null;
 }
 
+interface IndexedEdge {
+  yLo: number;
+  yHi: number;
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+}
+
+export interface InkIndex {
+  minY: number;
+  maxY: number;
+  binSize: number;
+  bins: IndexedEdge[][];
+}
+
+// One bin roughly every this many edges — a plain "l" (a handful of edges)
+// gets the floor (MIN_INK_INDEX_BINS) since partitioning it further buys
+// nothing; a Rough/Oil brush glyph with 100+ pitting-hole contours (see
+// `pruneEnclosedPolys`'s doc comment) gets many more bins, so each one
+// still holds only a handful of edges to check.
+const MIN_INK_INDEX_BINS = 8;
+const MAX_INK_INDEX_BINS = 160;
+const EDGES_PER_BIN_TARGET = 6;
+
+/**
+ * Bins `contours`' edges by the horizontal band(s) of the glyph's own
+ * height range they actually span, so a scanline query only has to walk
+ * the edges near ITS height instead of the glyph's entire edge list.
+ *
+ * This changes nothing about which crossings are found or how their x is
+ * computed — `inkExtentAtYIndexed` below re-applies the exact same
+ * half-open test (`y >= yLo && y < yHi`, algebraically identical to
+ * `polygonCrossings`'s per-edge test: for an edge a→b it's equivalent to
+ * `y` lying in `[min(a.y,b.y), max(a.y,b.y))` regardless of which endpoint
+ * is "first") and the exact same crossing-x formula to whatever a bin
+ * contains. It's purely a "which edges are even worth looking at" index,
+ * not a change to the measurement — the set of crossings, and therefore
+ * every gap and every suggested kerning value, comes out identical to the
+ * unindexed version.
+ *
+ * An edge whose span touches more than one bin is registered in all of
+ * them (harmless duplication, since the exact test at query time is what
+ * actually decides a crossing, not bin membership) — this is what keeps a
+ * tall diagonal stroke's edge from being missed by whichever bin a query
+ * happens to land in.
+ */
+function buildInkIndex(contours: Point[][]): InkIndex {
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let edgeCount = 0;
+  for (const poly of contours) {
+    const n = poly.length;
+    for (let i = 0; i < n; i++) {
+      const pt = poly[i];
+      if (pt.y < minY) minY = pt.y;
+      if (pt.y > maxY) maxY = pt.y;
+      if (pt.y !== poly[(i + 1) % n].y) edgeCount++;
+    }
+  }
+
+  // No ink (or a degenerate zero-height glyph) — a single, effectively
+  // empty bin still answers every query with "nothing here", matching
+  // `inkExtentAtY`'s existing behavior for an ink-less glyph.
+  if (!Number.isFinite(minY)) {
+    minY = 0;
+    maxY = 0;
+  }
+
+  const span = Math.max(1e-6, maxY - minY);
+  const numBins = Math.min(
+    MAX_INK_INDEX_BINS,
+    Math.max(MIN_INK_INDEX_BINS, Math.round(edgeCount / EDGES_PER_BIN_TARGET))
+  );
+  const binSize = span / numBins;
+  const bins: IndexedEdge[][] = Array.from({ length: numBins }, () => []);
+
+  const binOf = (y: number): number => {
+    const idx = Math.floor((y - minY) / binSize);
+    return Math.min(numBins - 1, Math.max(0, idx));
+  };
+
+  for (const poly of contours) {
+    const n = poly.length;
+    for (let i = 0; i < n; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % n];
+      if (a.y === b.y) continue;
+      const yLo = Math.min(a.y, b.y);
+      const yHi = Math.max(a.y, b.y);
+      const edge: IndexedEdge = { yLo, yHi, ax: a.x, ay: a.y, bx: b.x, by: b.y };
+      const startBin = binOf(yLo);
+      const endBin = binOf(yHi);
+      for (let bi = startBin; bi <= endBin; bi++) bins[bi].push(edge);
+    }
+  }
+
+  return { minY, maxY, binSize, bins };
+}
+
+const inkIndexCache = new WeakMap<GlyphOutline, InkIndex>();
+
+/** Same cache-by-outline-identity pattern as `cachedInkContours` (built ON
+ *  TOP of it, so the two share one resolve of the raw contours), shared
+ *  between autoKern's pair loop and autoSpace's per-glyph pass exactly like
+ *  `cachedInkContours` already is. */
+export function cachedInkIndex(outline: GlyphOutline, steps: number = INK_CONTOUR_STEPS): InkIndex {
+  const cached = inkIndexCache.get(outline);
+  if (cached) return cached;
+  const contours = cachedInkContours(outline, steps);
+  const index = buildInkIndex(contours);
+  inkIndexCache.set(outline, index);
+  return index;
+}
+
+/** Indexed equivalent of `inkExtentAtY` — same result for the same query,
+ *  found by walking only the one bin `y` falls into instead of every
+ *  polygon's every edge. See `buildInkIndex`'s doc comment for why this
+ *  can never change which crossing wins the min/max. */
+export function inkExtentAtYIndexed(index: InkIndex, y: number): { min: number; max: number } | null {
+  const binIdx = Math.min(index.bins.length - 1, Math.max(0, Math.floor((y - index.minY) / index.binSize)));
+  const bin = index.bins[binIdx];
+  let min = Infinity;
+  let max = -Infinity;
+  let found = false;
+
+  for (const e of bin) {
+    if (y >= e.yLo && y < e.yHi) {
+      const x = e.ax + ((y - e.ay) / (e.by - e.ay)) * (e.bx - e.ax);
+      found = true;
+      if (x < min) min = x;
+      if (x > max) max = x;
+    }
+  }
+
+  return found ? { min, max } : null;
+}
+
 /**
  * Tightest optical gap between two glyphs (at zero kerning) across a given
  * height range. Runs a coarse, evenly-spaced pass first, then zooms in with
@@ -268,16 +406,20 @@ function tightestGapInRange(
   let prevY = minY;
   let nextY = maxY;
 
-  // Resolved once per glyph (cached across the whole auto-kern pass, see
-  // `cachedInkContours`), then reused for every scanline below — this is
-  // both the accuracy fix (real stroke geometry, not a centerline
-  // approximation) and what keeps an n² alphabet pass affordable.
-  const leftContours = cachedInkContours(l.outline);
-  const rightContours = cachedInkContours(r.outline);
+  // Resolved (and bin-indexed) once per glyph, cached across the whole
+  // auto-kern pass (see `cachedInkIndex`), then reused for every scanline
+  // below — both the accuracy fix (real stroke geometry, not a centerline
+  // approximation) and what keeps an n² alphabet pass affordable. Each
+  // query below only walks the one height-bin it falls into rather than
+  // every edge of the glyph (see `inkExtentAtYIndexed`'s doc comment) —
+  // same crossings found, same gap values, just fewer edges checked to
+  // find them.
+  const leftIndex = cachedInkIndex(l.outline);
+  const rightIndex = cachedInkIndex(r.outline);
 
   const gapAt = (y: number): number | null => {
-    const leftInk = inkExtentAtY(leftContours, y);
-    const rightInk = inkExtentAtY(rightContours, y);
+    const leftInk = inkExtentAtYIndexed(leftIndex, y);
+    const rightInk = inkExtentAtYIndexed(rightIndex, y);
     if (!leftInk || !rightInk) return null;
     return l.advanceWidth - leftInk.max + rightInk.min;
   };

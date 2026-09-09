@@ -3,7 +3,7 @@ import type { GlyphOutline } from "@/types/geometry";
 import { hasOutline } from "@/types/glyph";
 import type { FontMetrics } from "@/types/font";
 import { outlineBounds, translateObject, skewObject } from "@/editor/objectOps";
-import { inkExtentAtY, cachedInkContours, INK_CONTOUR_STEPS } from "./autoKern";
+import { inkExtentAtYIndexed, cachedInkIndex, INK_CONTOUR_STEPS } from "./autoKern";
 
 // Same flatten resolution — and the SAME shared cache, keyed by outline
 // identity — autoKern.ts uses for its optical scanline profile. Auto
@@ -139,7 +139,7 @@ export function suggestGlyphSidebearings(glyph: Glyph, metrics: FontMetrics): Gl
   // then reused for every scanline below. Goes through the SAME cache
   // autoKern.ts's pair loop uses (see import above) so a glyph that Auto
   // Kern also touches in the same combined pass isn't resolved twice.
-  const contours = cachedInkContours(measureOutline, SPACING_FLATTEN_STEPS);
+  const index = cachedInkIndex(measureOutline, SPACING_FLATTEN_STEPS);
 
   let leftRecessSum = 0;
   let rightRecessSum = 0;
@@ -147,7 +147,7 @@ export function suggestGlyphSidebearings(glyph: Glyph, metrics: FontMetrics): Gl
   for (let i = 0; i < OPTICAL_SAMPLES; i++) {
     const t = OPTICAL_SAMPLES === 1 ? 0.5 : i / (OPTICAL_SAMPLES - 1);
     const y = bounds.minY + t * (bounds.maxY - bounds.minY);
-    const ink = inkExtentAtY(contours, y);
+    const ink = inkExtentAtYIndexed(index, y);
     if (!ink) continue;
     leftRecessSum += Math.max(0, ink.min - bounds.minX);
     rightRecessSum += Math.max(0, bounds.maxX - ink.max);
