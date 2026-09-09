@@ -1,6 +1,6 @@
 import * as opentype from "opentype.js";
 import { expandStrokeObject } from "@/brushes/strokeToOutline";
-import { applyBooleanOp } from "@/editor/booleanOps";
+import { applyBooleanOp, isBooleanEligible } from "@/editor/booleanOps";
 import type { Contour, PathNode, VectorObject } from "@/types/geometry";
 import type { FontInfo, FontMetrics } from "@/types/font";
 import type { Glyph, GlyphCategory, GlyphMap } from "@/types/glyph";
@@ -654,58 +654,68 @@ function sanitizeContour(contour: Contour): Contour | null {
 function exportableObjects(glyph: Glyph): VectorObject[] {
   const objects = glyph.outline?.objects ?? [];
 
-  // Same reasoning as editor/glyphPaths.ts's mergeOutlineBrushStrokes: an
-  // Outline Brush stroke is a hollow ring, so two strokes that cross would
-  // otherwise export as two independent contour sets whose inner borders
-  // show straight through each other at the crossing. Union every Outline
-  // Brush stroke's expanded silhouette into one merged shape before export
-  // so the exported font glyph matches what's shown in the editor, instead
-  // of exporting the raw per-stroke tangle. Strokes that don't actually
-  // touch union into unaffected, separate disjoint contours, so this is
-  // safe to run over every Outline Brush stroke in the glyph unconditionally.
-  const outlineBrushIds = new Set(
-    objects.filter((o) => o.kind === "brush" && o.brushType === "outline").map((o) => o.id)
-  );
-  let mergedOutline: VectorObject | null = null;
-  if (outlineBrushIds.size >= 2) {
-    const expandedOutlineObjs: VectorObject[] = [];
-    for (const obj of objects) {
-      if (!outlineBrushIds.has(obj.id)) continue;
-      try {
-        const expanded = expandStrokeObject(obj);
-        if (expanded) expandedOutlineObjs.push(expanded);
-      } catch {
-        // Skipped below via the per-object try/catch on the normal path.
-      }
-    }
-    if (expandedOutlineObjs.length >= 2) {
-      mergedOutline = applyBooleanOp(expandedOutlineObjs, "union");
-    }
-  }
-
-  const out: VectorObject[] = [];
-  let mergedOutlineEmitted = false;
+  // Step 1: turn every object into its filled representation. Shape/
+  // expanded objects are already filled outlines; line/brush strokes are
+  // centerline + width and need expanding into their filled silhouette
+  // first before they can take part in any boolean/union math below.
+  const expanded: VectorObject[] = [];
   for (const obj of objects) {
     try {
-      if (mergedOutline && outlineBrushIds.has(obj.id)) {
-        // Only emit the merged shape once, at the first Outline Brush
-        // stroke's position, so it isn't duplicated per consumed stroke.
-        if (!mergedOutlineEmitted) {
-          out.push(mergedOutline);
-          mergedOutlineEmitted = true;
-        }
-        continue;
-      }
-      if (obj.kind === "shape" || obj.kind === "expanded") out.push(obj);
-      else {
-        const expanded = expandStrokeObject(obj);
-        if (expanded) out.push(expanded);
+      if (obj.kind === "shape" || obj.kind === "expanded") {
+        expanded.push(obj);
+      } else {
+        const exp = expandStrokeObject(obj);
+        if (exp) expanded.push(exp);
       }
     } catch (error) {
       console.warn(`[FontSeru] Skipping malformed stroke object in U+${glyph.unicode.toString(16).toUpperCase()}.`, error);
     }
   }
-  return out;
+
+  // Step 2: Remove Overlap. The editor draws each object as its OWN
+  // independent <path>, painted opaquely on top of the others (see
+  // VectorObject's doc comment in types/geometry.ts) — so two overlapping
+  // objects simply paint over each other on screen and never interact,
+  // and each object's own holes/counters only ever cut into that same
+  // object.
+  //
+  // An exported font glyph, however, is a SINGLE combined outline: every
+  // contour from every object is concatenated into one opentype.js path,
+  // and rasterizers resolve that whole path's fill with one nonzero
+  // winding count across ALL of it at once. That means a contour that's a
+  // hole in one object (e.g. the counter of an "o") can accidentally
+  // subtract from a completely different object sitting underneath it
+  // wherever the two happen to overlap — punching a bite/hole into the
+  // exported glyph that was never visible in the editor. The same kind of
+  // mismatch can happen the other way too: two solid objects overlapping
+  // with opposite winding can cancel out where they cross.
+  //
+  // Unioning every eligible filled object together first — exactly what a
+  // manual "Remove Overlap"/boolean-union pass does in a normal font
+  // editor — resolves the whole glyph into the same flattened, opaque
+  // silhouette already shown in the editor, so the exported OTF/TTF
+  // matches what was drawn regardless of how many separate objects, or
+  // what z-order/winding, it was built from. Objects that don't actually
+  // touch union into unaffected, separate disjoint contours, so this is
+  // safe to run unconditionally on every glyph, not just ones a designer
+  // remembered to flatten by hand.
+  const eligible = expanded.filter(isBooleanEligible);
+  if (eligible.length >= 2) {
+    try {
+      const merged = applyBooleanOp(eligible, "union");
+      if (merged) {
+        const ineligible = expanded.filter((o) => !isBooleanEligible(o));
+        return [merged, ...ineligible];
+      }
+    } catch (error) {
+      console.warn(
+        `[FontSeru] Remove Overlap failed for U+${glyph.unicode.toString(16).toUpperCase()}; exporting objects unmerged.`,
+        error
+      );
+    }
+  }
+
+  return expanded;
 }
 
 function sanitizeGlyph(glyph: Glyph, metrics: FontMetrics): Glyph | null {
