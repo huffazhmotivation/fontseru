@@ -305,7 +305,23 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
   const setFocus = useAppStore((s) => s.setGlyphMetricFocus);
   const isAuto = useAppStore((s) => s.autoSpacingEnabled);
   const setAutoSpacingEnabled = useAppStore((s) => s.setAutoSpacingEnabled);
+  const wordSpacingMetric = useAppStore((s) => s.metrics.wordSpacing);
+  const unitsPerEm = useAppStore((s) => s.metrics.unitsPerEm);
+  const setFontMetric = useAppStore((s) => s.setFontMetric);
   const refs = useRef<Partial<Record<GlyphMetricKey, HTMLInputElement | null>>>({});
+
+  // The space character's advance is never actually read from
+  // `glyph.advanceWidth` at render time — `layoutLine` always uses the
+  // dedicated Word Spacing font metric for " " instead (see textLayout.ts).
+  // Previously this section still showed and let you edit the space
+  // glyph's own `advanceWidth`, which (a) usually held a different number
+  // than Word Spacing, so the two fields looked "out of sync", and (b) had
+  // zero visible effect when changed, since nothing ever reads it. Routing
+  // this field through the same `wordSpacing` metric — for this one glyph
+  // only — makes the number always match Word Spacing below, and makes
+  // editing it here actually change how text spaces out.
+  const isSpaceGlyph = char === " ";
+  const wordSpacingValue = wordSpacingMetric ?? Math.round(unitsPerEm * 0.27);
 
   useEffect(() => {
     if (!focus) return;
@@ -317,7 +333,7 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
   }, [focus, setFocus]);
 
   const rows: { key: GlyphMetricKey; label: string; value: number; testid: string }[] = [
-    { key: "advanceWidth", label: "Advance Width", value: glyph.advanceWidth, testid: "advance-width" },
+    { key: "advanceWidth", label: "Advance Width", value: isSpaceGlyph ? wordSpacingValue : glyph.advanceWidth, testid: "advance-width" },
     { key: "lsb", label: "Left Side Bearing", value: glyph.lsb, testid: "lsb" },
     { key: "rsb", label: "Right Side Bearing", value: glyph.rsb, testid: "rsb" },
   ];
@@ -368,11 +384,13 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
 
       {rows.map(({ key, label, value, testid }) => {
         const isSidebearing = key === "lsb" || key === "rsb";
+        const isSpaceAdvance = key === "advanceWidth" && isSpaceGlyph;
         return (
           <div className="fm-field" key={key}>
             <label htmlFor={testid}>
               {label}
               {isAuto && isSidebearing && <span className="fm-spacing-auto-tag">Auto</span>}
+              {isSpaceAdvance && <span className="fm-spacing-auto-tag">= Word Spacing</span>}
             </label>
             <NumericInput
               id={testid}
@@ -380,6 +398,15 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
               value={value}
               onChange={(next) => {
                 if (!Number.isFinite(next)) return;
+                if (isSpaceAdvance) {
+                  // The space glyph's rendered advance always comes from
+                  // the Word Spacing font metric, never from its own
+                  // `advanceWidth` — write to that instead so this field
+                  // and "Word Spacing" below can never disagree, and so
+                  // typing here actually changes the on-canvas spacing.
+                  setFontMetric("wordSpacing", next);
+                  return;
+                }
                 // Typing a value by hand is the same "switch to Manual"
                 // signal as dragging the canvas handle — so a number the
                 // user just typed can never get silently overwritten by
@@ -395,7 +422,9 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
       })}
 
       <InfoTip>
-        {isAuto
+        {isSpaceGlyph
+          ? "The space glyph's Advance Width is always the same number as \"Word Spacing\" in Font Metrics below, and editing either one updates both — the space character has no ink of its own, so its width is controlled as one dedicated, font-wide setting instead of per-glyph LSB/RSB."
+          : isAuto
           ? "Auto Metrik is ON for the whole font: every glyph's horizontal position, LSB, RSB, and advance width are recomputed together from that glyph's own outline — using FontSeru's Pro optical-spacing standard — the instant you draw or edit it, so a glyph drawn off-center or off-size still lands correctly. Dragging a handle or typing a value switches back to Manual."
           : "Manual: drag the LSB / Advance / RSB handles on the canvas, or type exact values above. Switch back to Auto Metrik (here or in the bottom bar) to keep every glyph's position, spacing, and width in sync automatically as you draw."}
       </InfoTip>

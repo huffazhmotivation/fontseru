@@ -73,7 +73,22 @@ export function GlyphCanvas() {
   const showRuler = useAppStore((s) => s.showRuler);
   const rulerGuides = useAppStore((s) => s.rulerGuides);
   const removeRulerGuide = useAppStore((s) => s.removeRulerGuide);
-  const metrics = useAppStore((s) => s.metrics);
+  // Field-by-field selectors instead of `useAppStore((s) => s.metrics)`:
+  // the canvas only ever draws using the five guide values + unitsPerEm
+  // below, but `metrics` also carries `wordSpacing` (and other font-wide
+  // fields unrelated to this view). Subscribing to the whole object meant
+  // every keystroke in the Word Spacing field (RightPanel's Font Metrics
+  // section) produced a new `metrics` reference and forced this entire
+  // canvas — outline paths, handles, guides, ghost glyphs — to re-render,
+  // which is what made typing into Word Spacing feel laggy. Selecting each
+  // field individually means this component only re-renders when a value
+  // it actually uses changes.
+  const upm = useAppStore((s) => s.metrics.unitsPerEm);
+  const ascender = useAppStore((s) => s.metrics.ascender);
+  const baseline = useAppStore((s) => s.metrics.baseline);
+  const descender = useAppStore((s) => s.metrics.descender);
+  const capHeight = useAppStore((s) => s.metrics.capHeight);
+  const xHeight = useAppStore((s) => s.metrics.xHeight);
   const beginMetricDrag = useAppStore((s) => s.beginMetricDrag);
   const setFontMetricLive = useAppStore((s) => s.setFontMetricLive);
   const endMetricDrag = useAppStore((s) => s.endMetricDrag);
@@ -117,7 +132,6 @@ export function GlyphCanvas() {
   const [activeGlyphMetricGuide, setActiveGlyphMetricGuide] = useState<GlyphMetricKey | null>(null);
   const spacePanRef = useRef(false);
 
-  const { unitsPerEm: upm, ascender, baseline, descender, capHeight, xHeight } = metrics;
   const totalH = ascender - descender;
   // Default horizontal anchor for the "sample" and "image" ghost modes:
   // the center of this glyph's own standard advance box (lsb..advance-rsb),
@@ -543,15 +557,19 @@ export function GlyphCanvas() {
       e.stopPropagation();
       e.currentTarget.setPointerCapture(e.pointerId);
       beginMetricDrag();
+      // These are the only fields MetricGuideKey ever names, so this small
+      // local lookup replaces the old `metrics[key]` without needing the
+      // whole `metrics` object as a dependency (see the selector note above).
+      const guideValues: Record<MetricGuideKey, number> = { ascender, capHeight, xHeight, baseline, descender };
       metricDragRef.current = {
         key,
         startClientY: e.clientY,
-        startValue: metrics[key],
+        startValue: guideValues[key],
         startScale: sc,
       };
       setActiveMetricGuide(key);
     },
-    [tool, beginMetricDrag, metrics, sc]
+    [tool, beginMetricDrag, ascender, capHeight, xHeight, baseline, descender, sc]
   );
 
   const moveGuideDrag = useCallback(
