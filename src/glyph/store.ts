@@ -536,6 +536,11 @@ interface AppState {
    * active style. Unlike Test Lab's live Tracking preview, this is real
    * glyph data and is included in font export. */
   applyTrackingToAllGlyphs: (trackingUnits: number) => { updated: number };
+  /** Same bake as `applyTrackingToAllGlyphs`, but targets the family style
+   * selected by `context` (Test Lab's Kerning Context) instead of always
+   * the actively-edited style. "shared" bakes into Regular, the same
+   * convention autoKernAllPairsForContext/autoSpaceAllGlyphsForContext use. */
+  applyTrackingToAllGlyphsForContext: (context: KerningContext, trackingUnits: number) => { updated: number };
   beginKerningDrag: () => void;
   setKerningPairLive: (left: string, right: string, value: number) => void;
   endKerningDrag: () => void;
@@ -2352,6 +2357,32 @@ export const useAppStore = create<AppState>()((set, get) => {
         updated++;
       }
       if (updated > 0) commit(next);
+      set({ trackingApplyLastRun: { units: rounded, updated } });
+      return { updated };
+    },
+
+    applyTrackingToAllGlyphsForContext: (context, trackingUnits) => {
+      const rounded = Math.round(Number.isFinite(trackingUnits) ? trackingUnits : 0);
+      if (rounded === 0) {
+        set({ trackingApplyLastRun: { units: 0, updated: 0 } });
+        return { updated: 0 };
+      }
+      // "shared" has no glyph geometry of its own — Regular is the family
+      // baseline, the same convention autoKernAllPairsForContext and
+      // autoSpaceAllGlyphsForContext already use for their "shared" case.
+      const targetStyle = context === "shared" ? "regular" : context;
+      const state = get();
+      const styleGlyphs = state.glyphsByStyle[targetStyle] ?? {};
+      const half = rounded / 2;
+      let next = styleGlyphs;
+      let updated = 0;
+      for (const [char, glyph] of Object.entries(styleGlyphs)) {
+        if (!hasOutline(glyph)) continue;
+        if (next === styleGlyphs) next = { ...styleGlyphs };
+        next[char] = applyGlyphMetricPatch(glyph, { lsb: glyph.lsb + half, rsb: glyph.rsb + half });
+        updated++;
+      }
+      if (updated > 0) commitStyleGlyphs(targetStyle, next);
       set({ trackingApplyLastRun: { units: rounded, updated } });
       return { updated };
     },

@@ -1523,6 +1523,7 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
   const resetFamilyWordSpacing = useAppStore((s) => s.resetFamilyWordSpacing);
   const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
   const applyTrackingToAllGlyphs = useAppStore((s) => s.applyTrackingToAllGlyphs);
+  const applyTrackingToAllGlyphsForContext = useAppStore((s) => s.applyTrackingToAllGlyphsForContext);
   const trackingApplyLastRun = useAppStore((s) => s.trackingApplyLastRun);
   // "idle" | 0..1 while running | "done" briefly once the last chunk lands,
   // so the button can fill up like a progress bar and flash solid at 100%
@@ -1709,7 +1710,16 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
 
   const handleApplyTracking = useCallback(() => {
     if (tracking === 0) return;
-    applyTrackingToAllGlyphs(tracking);
+    // Family Test must bake tracking into the style selected in "Kerning
+    // Context" (Regular/Bold/Italic/custom), not always Regular — the same
+    // family/single split handleAutoSpace and handleAutoWordSpacing already
+    // make. Without this, Apply always wrote to the actively-edited style
+    // regardless of which family tab was selected in Test Lab.
+    if (kerningMode === "family") {
+      applyTrackingToAllGlyphsForContext(familyContext, tracking);
+    } else {
+      applyTrackingToAllGlyphs(tracking);
+    }
     // "Apply" bakes the current tracking value permanently into every
     // glyph's LSB/RSB — the font itself now IS that much more/less spaced.
     // The Test Lab preview still renders with the `tracking` slider's value
@@ -1725,7 +1735,7 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
     setTracking(0);
     setTrackingApplyFlash(true);
     window.setTimeout(() => setTrackingApplyFlash(false), 900);
-  }, [applyTrackingToAllGlyphs, tracking]);
+  }, [applyTrackingToAllGlyphs, applyTrackingToAllGlyphsForContext, kerningMode, familyContext, tracking]);
 
   const presetText = (id: TestId): string | null => {
     switch (id) {

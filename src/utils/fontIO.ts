@@ -1,6 +1,6 @@
 import * as opentype from "opentype.js";
 import { expandStrokeObject } from "@/brushes/strokeToOutline";
-import { applyBooleanOp, isBooleanEligible } from "@/editor/booleanOps";
+import { applyBooleanOp, isBooleanEligible, normalizeSelfIntersectingContours } from "@/editor/booleanOps";
 
 // Export's own "Remove Overlap" pass (below) reuses the same boolean-union
 // machinery as the interactive Boolean Select tool, but with a much tighter
@@ -552,6 +552,123 @@ function polygonSignedArea(points: { x: number; y: number }[]): number {
 }
 
 /**
+ * Rounds a contour's on-curve points AND its Bézier handles to whole font
+ * units — the exact same rounding opentype.js applies internally when it
+ * serializes a CFF charstring (and TrueType's glyf table is int16-only
+ * regardless). We do this ourselves, explicitly, instead of letting it
+ * happen implicitly inside opentype.js, so we can re-validate the geometry
+ * AFTER rounding instead of before it.
+ */
+function roundPointToFontGrid(p: { x: number; y: number } | null | undefined): { x: number; y: number } | null {
+  if (!p) return null;
+  return { x: Math.round(p.x), y: Math.round(p.y) };
+}
+
+function roundContourToFontGrid(contour: Contour): Contour {
+  return {
+    ...contour,
+    nodes: contour.nodes.map((node) => ({
+      ...node,
+      point: roundPointToFontGrid(node.point)!,
+      handleIn: roundPointToFontGrid(node.handleIn),
+      handleOut: roundPointToFontGrid(node.handleOut),
+    })),
+  };
+}
+
+function segmentsIntersectForExport(
+  p1: { x: number; y: number }, p2: { x: number; y: number },
+  p3: { x: number; y: number }, p4: { x: number; y: number },
+): boolean {
+  const cross = (a: typeof p1, b: typeof p1, c: typeof p1) => (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
+  const d1 = cross(p3, p4, p1);
+  const d2 = cross(p3, p4, p2);
+  const d3 = cross(p1, p2, p3);
+  const d4 = cross(p1, p2, p4);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+/**
+ * True if a contour, AFTER it's been flattened at export curve fidelity,
+ * crosses itself. Deliberately re-implemented here (rather than imported
+ * from fontQA.ts) because it must run on the export pipeline's OWN rounded
+ * output, not on the original editor geometry fontQA checks pre-flight.
+ */
+function contourSelfIntersectsForExport(contour: Contour, curveSteps = 24): boolean {
+  const points = flattenContourForExport(contour, curveSteps);
+  const n = points.length;
+  if (n < 4) return false;
+  for (let i = 0; i < n; i++) {
+    const a1 = points[i];
+    const a2 = points[(i + 1) % n];
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue;
+      const b1 = points[j];
+      const b2 = points[(j + 1) % n];
+      if (segmentsIntersectForExport(a1, a2, b1, b2)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * GUARANTEE STEP — this is what actually makes the installed OTF match Test
+ * Lab, not just "usually match".
+ *
+ * Every earlier cleanup pass (Remove Overlap's boolean union,
+ * normalizeObjectContourDirections, fontQA's self-intersection check) runs
+ * on float coordinates. But the coordinates that actually ship in the font
+ * file are rounded to whole units — glyf is int16-only, and opentype.js
+ * rounds every point when it encodes a CFF charstring too. That rounding
+ * happens deep inside opentype.js, AFTER all of the above, so nothing ever
+ * re-checks the geometry the rasterizer will actually receive.
+ *
+ * For dense point clouds — exactly what Rough/Grunge/speckle textures and a
+ * tight EXPORT_CURVE_FIDELITY_SCALE produce, with many samples less than a
+ * unit apart — independently rounding each point can snap previously-
+ * distinct points onto the same integer coordinate, or make a segment cross
+ * a neighboring one that didn't cross before. That's a NEW self-
+ * intersection Remove Overlap never produced and never had a chance to
+ * clean up, and it's exactly what shows up as "pitting" holes or a solid
+ * black glyph box once a strict desktop rasterizer (FreeType/CoreText —
+ * unlike the browser's forgiving preview) resolves winding on it.
+ *
+ * Fix: round every object's contours to the grid, check the ROUNDED result
+ * for self-intersection, and if rounding introduced one, repair it by
+ * re-running the exact same clip-based normalizer Remove Overlap already
+ * uses (on the pre-round float contours, where the clipper works best),
+ * then round again. A couple of iterations converge in practice since each
+ * pass only ever removes crossings; if a pathological glyph still doesn't
+ * converge, we ship the best rounded/repaired attempt and log which glyph
+ * so it can be flagged to the artist instead of silently shipping broken
+ * data.
+ */
+function repairObjectForFontGrid(obj: VectorObject, unicodeForLog: number): VectorObject {
+  let floatContours = obj.contours;
+  let rounded = floatContours.map(roundContourToFontGrid);
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const bad = rounded.some((c) => contourSelfIntersectsForExport(c));
+    if (!bad) return { ...obj, contours: rounded };
+
+    const repairedFloat = normalizeSelfIntersectingContours(floatContours);
+    if (repairedFloat.length === 0) break;
+    floatContours = repairedFloat;
+    rounded = floatContours.map(roundContourToFontGrid);
+  }
+
+  const stillBad = rounded.some((c) => contourSelfIntersectsForExport(c));
+  if (stillBad) {
+    console.warn(
+      `[FontSeru] U+${unicodeForLog.toString(16).toUpperCase()}: contour still self-intersects after rounding ` +
+      `to the font's integer grid even after repair — exporting best effort. This glyph's installed outline may ` +
+      `still differ from Test Lab; consider simplifying its geometry (fewer/larger texture speckles) or raising unitsPerEm.`
+    );
+  }
+  return { ...obj, contours: rounded };
+}
+
+/**
  * Reverse a contour without changing its curve. When traversal reverses,
  * incoming/outgoing Bézier handles swap roles at every node.
  */
@@ -758,11 +875,11 @@ function sanitizeGlyph(glyph: Glyph, metrics: FontMetrics): Glyph | null {
     if (!sanitizedContours.length) continue;
 
     const contours = normalizeObjectContourDirections(sanitizedContours);
+    const gridSafe = repairObjectForFontGrid({ ...obj, contours }, glyph.unicode);
     objects.push({
-      ...obj,
+      ...gridSafe,
       id: obj.id || shortId("obj"),
       kind: obj.kind === "expanded" ? "expanded" : "shape",
-      contours,
     });
   }
 
