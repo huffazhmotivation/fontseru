@@ -2202,6 +2202,27 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
 
   const r = Math.max(0.5, width / 2);
 
+  // TEMP DIAGNOSTIC (remove after debugging): logs why this contour did or
+  // didn't get treated as a closed loop, so we can see real project data
+  // instead of guessing. Safe no-op in terms of output geometry.
+  if (typeof console !== "undefined") {
+    const gap = Math.hypot(pts[pts.length - 1].x - pts[0].x, pts[pts.length - 1].y - pts[0].y);
+    let length = 0;
+    for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    console.log("[FontSeru DEBUG uniformCenterlineToOutline]", {
+      contourId: contour.id,
+      "contour.closed": contour.closed,
+      pointCount: pts.length,
+      width,
+      r,
+      gap: Math.round(gap * 100) / 100,
+      "gap threshold (r*1.9)": Math.round(r * 1.9 * 100) / 100,
+      strokeLength: Math.round(length * 100) / 100,
+      "length threshold (r*4)": Math.round(r * 4 * 100) / 100,
+      willTreatAsClosedLoop: contour.closed || strokeEndsPhysicallyOverlap(pts, r),
+    });
+  }
+
   if (contour.closed || strokeEndsPhysicallyOverlap(pts, r)) {
     // A near-touching pair of ends is only ever APPROXIMATELY coincident —
     // never pixel-exact the way an explicitly closed contour already is.
@@ -2402,6 +2423,19 @@ function uniformClosedLoopOutline(loopPts: Point[], r: number): Contour[] {
  */
 export function expandStrokeObject(obj: VectorObject): VectorObject | null {
   const width = obj.strokeWidth ?? 20;
+
+  // TEMP DIAGNOSTIC (remove after debugging).
+  if (typeof console !== "undefined") {
+    console.log("[FontSeru DEBUG expandStrokeObject]", {
+      objId: obj.id,
+      kind: obj.kind,
+      brushType: obj.brushType,
+      strokeWidth: obj.strokeWidth,
+      contourCount: obj.contours?.length,
+      contoursClosed: obj.contours?.map((c) => c.closed),
+      willUseUniformPath: obj.kind === "line" || (obj.kind === "brush" && obj.brushType === "monoline"),
+    });
+  }
 
   // Uniform centerlines (Pen Line + Monoline Brush) expand from the CURRENT
   // centerline, so node edits, width and cap appearance are all preserved.
