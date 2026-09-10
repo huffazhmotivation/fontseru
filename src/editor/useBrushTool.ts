@@ -249,6 +249,16 @@ export function useBrushTool(hitScale: number) {
     // Preserve the tool's normal default (open centerline, closeSmoothly
     // false) unless a held circle/ellipse QuickShape calls for a closed
     // loop; a held line stays open, same as any other Brush stroke.
+    //
+    // REVERTED: this used to also auto-close a freehand gesture whose end
+    // came back near its own start (isFreehandLoopClosed), to fix bowls
+    // that were technically saved as open strokes. That guess is not safe
+    // for every letterform — some letters (e.g. "C") are intentionally
+    // open with a narrow aperture that a geometry-only test cannot tell
+    // apart from an accidentally-unclosed bowl, and it ended up welding
+    // "C" shut into an "O". Do not reintroduce shape-based closing here;
+    // `closed` must come from an explicit signal (QuickShape, or the
+    // Pencil tool) instead.
     const closeSmoothly = heldShape ? heldShape.kind !== "line" : false;
     const centerline = centerlineToContour(centerlineSamples, !pixelSnap, closeSmoothly);
     const rawSamples = centerlineSamples.map((s) => ({ ...s }));

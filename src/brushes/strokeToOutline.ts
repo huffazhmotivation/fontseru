@@ -2144,15 +2144,55 @@ function smoothOffsetPolyline(points: Point[]): PathNode[] {
  * contour with their counter gone, while glyphs whose counter was its own
  * separate (already non-self-intersecting) contour — e.g. "d" — kept it.
  *
- * Fix: when the source centerline is closed, skip capping entirely and
- * return the LEFT and RIGHT offset curves as two independent closed rings
- * (an outer boundary and an inner hole boundary) instead of one welded
- * ring — see `uniformClosedLoopOutline` below. Which one ends up "outer"
- * vs "inner", and their final relative winding, doesn't need to be worked
- * out here: `objectToMultiPolygon`'s even-odd XOR of an object's own
- * contours (the same rule that already correctly resolves a hand-drawn
- * outer+hole pair — see "d" above) sorts that out downstream.
+ * Fix: when the source centerline is closed — OR when it's technically
+ * "open" but its own two ends would physically touch once capped, see
+ * `strokeEndsPhysicallyOverlap` below for why that case needs the same
+ * treatment — skip capping entirely and return the LEFT and RIGHT offset
+ * curves as two independent closed rings (an outer boundary and an inner
+ * hole boundary) instead of one welded ring — see `uniformClosedLoopOutline`
+ * below. Which one ends up "outer" vs "inner", and their final relative
+ * winding, doesn't need to be worked out here: `objectToMultiPolygon`'s
+ * even-odd XOR of an object's own contours (the same rule that already
+ * correctly resolves a hand-drawn outer+hole pair — see "d" above) sorts
+ * that out downstream.
  */
+ * Local, physical test for "would this open stroke's own two ends actually
+ * touch once capped" — i.e. does the ink overlap at the gap, the way it
+ * would with a real pen/brush — rather than a global guess about whether
+ * the overall shape "looks like a loop".
+ *
+ * BUG FIX ("lubang jadi tertutup" — holes closing up on export): an earlier
+ * version of this fix compared the gap to the shape's overall bounding
+ * diagonal (e.g. "gap is under 12% of how big the letter is"). That is
+ * exactly what broke "C": a deliberately narrow-but-real aperture on a
+ * fairly round letterform can easily be under 12% of its own diagonal, so
+ * that version welded "C" shut into an "O". A stroke's end caps are each
+ * `r` (half the stroke width) wide — physically, the ink from both ends
+ * can only actually meet or overlap when the gap between the two endpoints
+ * is smaller than roughly `2r`. That is a fact about the stroke itself, not
+ * about the letter it happens to be part of, so it can't be fooled by a
+ * big vs. small letterform the way a diagonal-relative test can: a real,
+ * legible open aperture is — by definition of being visible at all — wider
+ * than the ink around it, so this never fires for one. It only fires for
+ * the case that actually needs a fix: a hand-drawn bowl whose pen-up point
+ * landed within its own stroke width of its pen-down point.
+ */
+function strokeEndsPhysicallyOverlap(pts: Point[], r: number): boolean {
+  if (pts.length < 4) return false;
+
+  let length = 0;
+  for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  // Guard against a tiny dot/jab — require the stroke to actually have
+  // travelled a real distance, several times its own width, before its
+  // ends closing up means anything.
+  if (length < r * 4) return false;
+
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const gap = Math.hypot(last.x - first.x, last.y - first.y);
+  return gap < r * 1.9;
+}
+
 export function uniformCenterlineToOutline(contour: Contour, width: number, cap: StrokeCap): Contour[] {
   const flattened = flattenContour(contour, 8);
   if (flattened.length < 2) return [];
@@ -2161,8 +2201,15 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
 
   const r = Math.max(0.5, width / 2);
 
-  if (contour.closed) {
-    return uniformClosedLoopOutline(pts, r);
+  if (contour.closed || strokeEndsPhysicallyOverlap(pts, r)) {
+    // A near-touching pair of ends is only ever APPROXIMATELY coincident —
+    // never pixel-exact the way an explicitly closed contour already is.
+    // Snap the end back onto the start before building the two offset
+    // rings so the loop closes on a single shared point instead of leaving
+    // a near-miss gap of its own, which would just reintroduce the same
+    // kind of degenerate seam this fix exists to get rid of.
+    const loopPts = contour.closed ? pts : [...pts.slice(0, -1), { ...pts[pts.length - 1], x: pts[0].x, y: pts[0].y }];
+    return uniformClosedLoopOutline(loopPts, r);
   }
 
   const tangents = pts.map((p, i) => {
