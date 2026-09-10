@@ -2122,14 +2122,49 @@ function smoothOffsetPolyline(points: Point[]): PathNode[] {
  * Uses the editable centerline geometry, keeps node density bounded, and
  * represents round caps with cubic arcs so the expanded result stays smooth
  * without dozens of cap points.
+ *
+ * BUG FIX ("cacat"/solid-black closed letterforms — o, e, g, 8, 0, 6, 9,
+ * ... — after switching a glyph's objects to Monoline brush): this always
+ * built ONE ring — offset one side out, cap around the stroke's start/end,
+ * offset the other side back, cap around again — i.e. it unconditionally
+ * treated every centerline as an OPEN path with two ends that need capping.
+ * That's correct for an actual open stroke (a stem, a crossbar, ...), but a
+ * letterform whose stroke is a genuinely CLOSED loop — traced all the way
+ * back to its own start, `contour.closed === true`, e.g. the bowl of an
+ * "o"/"e"/"g", or a digit like "0"/"8" — has no real start/end to cap at
+ * all. Capping it anyway welds the outer and inner offset edges together
+ * right at that arbitrary seam point instead of leaving them as two
+ * separate boundaries, so the "hole" only ever existed as a razor-thin
+ * pinch at the seam — exactly the self-intersecting topology the exact
+ * clipper then resolves unreliably (see the doc comments on
+ * `multiPolygonToContours`/`objectToMultiPolygon` in editor/booleanOps.ts),
+ * commonly collapsing the whole counter away into solid ink. Confirmed
+ * directly against exported OTFs: glyphs built from an explicitly closed
+ * source contour ("0", "8", "e", "g", ...) came back as a single solid
+ * contour with their counter gone, while glyphs whose counter was its own
+ * separate (already non-self-intersecting) contour — e.g. "d" — kept it.
+ *
+ * Fix: when the source centerline is closed, skip capping entirely and
+ * return the LEFT and RIGHT offset curves as two independent closed rings
+ * (an outer boundary and an inner hole boundary) instead of one welded
+ * ring — see `uniformClosedLoopOutline` below. Which one ends up "outer"
+ * vs "inner", and their final relative winding, doesn't need to be worked
+ * out here: `objectToMultiPolygon`'s even-odd XOR of an object's own
+ * contours (the same rule that already correctly resolves a hand-drawn
+ * outer+hole pair — see "d" above) sorts that out downstream.
  */
-export function uniformCenterlineToOutline(contour: Contour, width: number, cap: StrokeCap): Contour | null {
+export function uniformCenterlineToOutline(contour: Contour, width: number, cap: StrokeCap): Contour[] {
   const flattened = flattenContour(contour, 8);
-  if (flattened.length < 2) return null;
+  if (flattened.length < 2) return [];
   const pts = simplifyPolyline(flattened, Math.max(0.5, width * 0.025));
-  if (pts.length < 2) return null;
+  if (pts.length < 2) return [];
 
   const r = Math.max(0.5, width / 2);
+
+  if (contour.closed) {
+    return uniformClosedLoopOutline(pts, r);
+  }
+
   const tangents = pts.map((p, i) => {
     const prev = pts[Math.max(0, i - 1)];
     const next = pts[Math.min(pts.length - 1, i + 1)];
@@ -2207,7 +2242,109 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
     nodes[0].type = "smooth";
   }
 
-  return { id: shortId("contour"), closed: true, nodes };
+  return [{ id: shortId("contour"), closed: true, nodes }];
+}
+
+// Same self-intersection cleanup `removeSelfIntersectionLoops` already does
+// for an open stroke edge, but for a ring: that function only scans
+// forward through the array, so a fold sitting right across the array's
+// arbitrary start/end point (very likely here — flattening always starts
+// at the source contour's own node 0, which has no special geometric
+// meaning on a closed loop) would never be seen. Running a second pass
+// after rotating the ring by half moves any such seam-straddling fold into
+// the middle of the array, where the same forward scan finds it like any
+// other. Where the ring starts afterward doesn't matter — it's a closed
+// ring either way.
+function cleanClosedOffsetRing(ring: Point[]): Point[] {
+  if (ring.length < 4) return ring;
+  const pass1 = removeSelfIntersectionLoops(ring);
+  if (pass1.length < 4) return pass1;
+  const half = Math.floor(pass1.length / 2);
+  const rotated = [...pass1.slice(half), ...pass1.slice(0, half)];
+  return removeSelfIntersectionLoops(rotated);
+}
+
+// Same tangent/corner-vs-smooth handle fit as `smoothOffsetPolyline`, but
+// wrapping every point's neighbors around the ring instead of forcing
+// index 0 and the last index to be plain corners — there's no start/end
+// on a closed loop, every point gets the same treatment.
+function smoothOffsetClosedPolyline(points: Point[]): PathNode[] {
+  const n = points.length;
+  return points.map((point, i) => {
+    const prev = points[(i - 1 + n) % n];
+    const next = points[(i + 1) % n];
+    const inLen = Math.hypot(point.x - prev.x, point.y - prev.y) || 1;
+    const outLen = Math.hypot(next.x - point.x, next.y - point.y) || 1;
+    const inUx = (point.x - prev.x) / inLen;
+    const inUy = (point.y - prev.y) / inLen;
+    const outUx = (next.x - point.x) / outLen;
+    const outUy = (next.y - point.y) / outLen;
+    const dot = Math.max(-1, Math.min(1, inUx * outUx + inUy * outUy));
+    if (Math.acos(dot) > (100 * Math.PI) / 180) {
+      return { id: shortId("node"), point, handleIn: null as Point | null, handleOut: null as Point | null, type: "corner" as const };
+    }
+    const dx = next.x - prev.x;
+    const dy = next.y - prev.y;
+    const dLen = Math.hypot(dx, dy) || 1;
+    const ux = dx / dLen;
+    const uy = dy / dLen;
+    const inHandleLen = Math.min(inLen / 3, inLen * 0.65);
+    const outHandleLen = Math.min(outLen / 3, outLen * 0.65);
+    return {
+      id: shortId("node"),
+      point,
+      handleIn: { x: point.x - ux * inHandleLen, y: point.y - uy * inHandleLen },
+      handleOut: { x: point.x + ux * outHandleLen, y: point.y + uy * outHandleLen },
+      type: "smooth" as const,
+    };
+  });
+}
+
+/**
+ * Builds the two independent offset rings (outer boundary + inner hole
+ * boundary) for a CLOSED monoline centerline — see the BUG FIX doc comment
+ * on `uniformCenterlineToOutline` above for why a closed loop needs this
+ * instead of the capped single-ring path.
+ */
+function uniformClosedLoopOutline(loopPts: Point[], r: number): Contour[] {
+  // `loopPts` comes from flattening a closed source contour, so its last
+  // sample lands back on (approximately) its first — drop that duplicate
+  // so the wrap-around tangent below uses the true neighboring point
+  // instead of a zero-length step onto itself.
+  const ring = [...loopPts];
+  if (ring.length > 2) {
+    const first = ring[0];
+    const last = ring[ring.length - 1];
+    if (Math.hypot(first.x - last.x, first.y - last.y) < 1e-6) ring.pop();
+  }
+  const n = ring.length;
+  if (n < 3) return [];
+
+  const tangents = ring.map((_, i) => {
+    const prev = ring[(i - 1 + n) % n];
+    const next = ring[(i + 1) % n];
+    return normalized(next.x - prev.x, next.y - prev.y);
+  });
+
+  const left: Point[] = [];
+  const right: Point[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = tangents[i];
+    const nrm = { x: -t.y, y: t.x };
+    left.push({ x: ring[i].x + nrm.x * r, y: ring[i].y + nrm.y * r });
+    right.push({ x: ring[i].x - nrm.x * r, y: ring[i].y - nrm.y * r });
+  }
+
+  const outlines: Contour[] = [];
+  const cleanedLeft = cleanClosedOffsetRing(left);
+  if (cleanedLeft.length >= 3) {
+    outlines.push({ id: shortId("contour"), closed: true, nodes: smoothOffsetClosedPolyline(cleanedLeft) });
+  }
+  const cleanedRight = cleanClosedOffsetRing(right);
+  if (cleanedRight.length >= 3) {
+    outlines.push({ id: shortId("contour"), closed: true, nodes: smoothOffsetClosedPolyline(cleanedRight) });
+  }
+  return outlines;
 }
 
 /**
@@ -2221,9 +2358,7 @@ export function expandStrokeObject(obj: VectorObject): VectorObject | null {
   // Uniform centerlines (Pen Line + Monoline Brush) expand from the CURRENT
   // centerline, so node edits, width and cap appearance are all preserved.
   if (obj.kind === "line" || (obj.kind === "brush" && obj.brushType === "monoline")) {
-    const contours = obj.contours
-      .map((c) => uniformCenterlineToOutline(c, width, obj.cap ?? "round"))
-      .filter((c): c is Contour => Boolean(c));
+    const contours = obj.contours.flatMap((c) => uniformCenterlineToOutline(c, width, obj.cap ?? "round"));
     return contours.length ? { id: shortId("obj"), kind: "expanded", contours } : null;
   }
 
