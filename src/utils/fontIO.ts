@@ -635,56 +635,6 @@ function normalizeObjectContourDirections(contours: Contour[], outerClockwise = 
   return contours.map((contour) => reverseContourForExport(contour));
 }
 
-// A glyph built from a single hand-drawn stroke (the common "1x gesutan"
-// case — one continuous brush gesture per letterform) routes through the
-// exact-clipper self-intersection normalizer below even when it never
-// visibly self-crosses in the editor preview. That clipper (`polygon-
-// clipping`, exact rational-arithmetic Martinez-Rueda) is precise, but real
-// hand-drawn curve data is dense with near-duplicate/near-collinear sampled
-// points (see COORD_SNAP's doc comment in booleanOps.ts) and near-tangent
-// self-touches from a loop that almost, but not quite, closes on itself.
-// Both are classic triggers for an exact clipper to spit out extra
-// microscopic sliver polygons alongside the real result — a few stray
-// points wide, duplicating coordinates that already exist on the main
-// contour, contributing zero visible ink at any normal size.
-//
-// BUG FIX ("lubang"/messy glyphs after export): confirmed against a real
-// exported font — glyphs built from one continuous gesture came back with
-// dozens of these sliver contours each (in one sampled font, ~85% of every
-// contour in the whole glyph set was this kind of noise), while every
-// genuine design feature (accent marks, numeral counters, the dot on an
-// "i") measured at least ~9,000 sq. units at 1000 UPM and real small-but-
-// intentional counters (e.g. a slab "A"'s triangular counter) measured
-// ~3,000+. The slivers themselves topped out well under 1,500. That's a
-// clean, wide gap to filter on: anything under this threshold at a given
-// glyph's UPM is clipper noise, never an intentional shape, so it's safe
-// to drop unconditionally right before a glyph is handed to the font
-// writer. The single largest contour of an object is always kept even if
-// it happens to fall under the threshold too, so a genuinely tiny glyph
-// (a stray mark, a lone dot) can never be erased down to nothing.
-const MIN_EXPORT_CONTOUR_AREA_AT_1000_UPM = 2000;
-
-function contourAbsArea(contour: Contour): number {
-  const polygon = flattenContourForExport(contour);
-  if (polygon.length < 3) return 0;
-  return Math.abs(polygonSignedArea(polygon));
-}
-
-function dropSliverContours(contours: Contour[], unitsPerEm: number): Contour[] {
-  if (contours.length <= 1) return contours;
-  const scale = (unitsPerEm || 1000) / 1000;
-  const minArea = MIN_EXPORT_CONTOUR_AREA_AT_1000_UPM * scale * scale;
-
-  const areas = contours.map(contourAbsArea);
-  let largestIdx = 0;
-  for (let i = 1; i < areas.length; i++) {
-    if (areas[i] > areas[largestIdx]) largestIdx = i;
-  }
-
-  const kept = contours.filter((_, i) => i === largestIdx || areas[i] >= minArea);
-  return kept.length > 0 ? kept : contours;
-}
-
 function sanitizeContour(contour: Contour): Contour | null {
   const nodes: PathNode[] = [];
   for (const node of contour.nodes ?? []) {
@@ -716,7 +666,7 @@ function sanitizeContour(contour: Contour): Contour | null {
   };
 }
 
-function exportableObjects(glyph: Glyph, unitsPerEm: number): VectorObject[] {
+function exportableObjects(glyph: Glyph): VectorObject[] {
   const objects = glyph.outline?.objects ?? [];
 
   // Step 1: turn every object into its filled representation. Shape/
@@ -770,9 +720,7 @@ function exportableObjects(glyph: Glyph, unitsPerEm: number): VectorObject[] {
   if (eligible.length >= 2) {
     try {
       const merged = applyBooleanOp(eligible, "union", EXPORT_CURVE_FIDELITY_SCALE);
-      if (merged) {
-        return [{ ...merged, contours: dropSliverContours(merged.contours, unitsPerEm) }, ...ineligible];
-      }
+      if (merged) return [merged, ...ineligible];
     } catch (error) {
       console.warn(
         `[FontSeru] Remove Overlap failed for U+${glyph.unicode.toString(16).toUpperCase()}; exporting objects unmerged.`,
@@ -799,7 +747,7 @@ function exportableObjects(glyph: Glyph, unitsPerEm: number): VectorObject[] {
       const obj = eligible[0];
       const cleaned = normalizeSelfIntersectingContours(obj.contours, EXPORT_CURVE_FIDELITY_SCALE);
       if (cleaned.length > 0) {
-        return [{ id: obj.id, kind: "shape", contours: dropSliverContours(cleaned, unitsPerEm) }, ...ineligible];
+        return [{ id: obj.id, kind: "shape", contours: cleaned }, ...ineligible];
       }
     } catch (error) {
       console.warn(
@@ -830,7 +778,7 @@ function sanitizeGlyph(glyph: Glyph, metrics: FontMetrics): Glyph | null {
       : Math.max(1, Math.min(65535, Math.round(rawAdvance != null && rawAdvance > 0 ? rawAdvance : fallbackAdvance)));
   const objects: VectorObject[] = [];
 
-  for (const obj of exportableObjects(glyph, metrics.unitsPerEm)) {
+  for (const obj of exportableObjects(glyph)) {
     const sanitizedContours = (obj.contours ?? [])
       .map(sanitizeContour)
       .filter((contour): contour is Contour => contour != null);

@@ -71,9 +71,41 @@ function dedupePoints(pts: Point[]): Point[] {
   return out;
 }
 
+// Extra pass BEFORE handing points to the exact clipper, on top of the
+// coordinate snapping above. Font curves flattened at CLIP_SAMPLE_STEPS
+// density carry long, nearly (but not exactly) straight runs of points —
+// snapping alone doesn't remove those, since consecutive samples along a
+// real curve genuinely sit at slightly different coordinates a few
+// hundredths of a unit apart, which is "real" geometry, not float noise.
+// Handing an exact rational-arithmetic clipper thousands of such
+// near-collinear vertices is a known trigger for it to report spurious
+// micro self-intersections along an otherwise perfectly smooth edge —
+// every one becomes a near-zero-area sliver "contour" in the result (see
+// MIN_CONTOUR_AREA below, and the doc comment on multiPolygonToContours).
+// A light Douglas-Peucker pass here — tight enough (a fraction of a font
+// unit) that it only removes points that don't change the visible shape at
+// all — thins those near-collinear runs out before they ever reach the
+// clipper, so there's far less raw material for it to misread as
+// self-crossings in the first place. This is intentionally much tighter
+// than the *post*-clip simplification in multiPolygonToContours, which is
+// refitting the final curve shape for editability, not just decimating
+// redundant polygon points.
+const PRECLIP_SIMPLIFY_EPSILON = 0.75; // font units
+
+function simplifyClosedRing(pts: Point[], epsilon: number): Point[] {
+  if (pts.length < 6) return pts;
+  // simplifyPolyline treats its first/last points as fixed anchors, so
+  // temporarily reopen the ring at its own start/end to run it, then drop
+  // the duplicated closing point it leaves behind.
+  const reopened = [...pts, pts[0]];
+  const simplified = simplifyPolyline(reopened, epsilon);
+  if (simplified.length > 3) simplified.pop();
+  return simplified.length >= 3 ? simplified : pts;
+}
+
 function objectPolys(obj: VectorObject): Point[][] {
   return obj.contours
-    .map((c) => dedupePoints(flattenContour(c, CLIP_SAMPLE_STEPS)))
+    .map((c) => simplifyClosedRing(dedupePoints(flattenContour(c, CLIP_SAMPLE_STEPS)), PRECLIP_SIMPLIFY_EPSILON))
     .filter((poly) => poly.length >= 3);
 }
 
@@ -317,13 +349,45 @@ function ringSimplifyTolerance(ring: Point[], scale = 1): number {
  * exterior against another polygon's exterior, never a hole against its own
  * exterior or a sibling hole, which removes the exact-touching-edge case
  * that was causing the misclassification.
+ *
+ * BUG FIX (stray black specks / "cacat" flecks scattered around otherwise
+ * correct letters): even with clean input, an exact clipper resolving a
+ * genuine self-intersection (two curves that actually cross, or nearly
+ * graze, somewhere along a hand-drawn stroke) can legitimately produce a
+ * handful of vanishingly small extra polygons right at the crossing —
+ * confirmed directly against the installed `polygon-clipping` build: a real
+ * self-crossing test shape came back with its main shape PLUS a separate
+ * ~1-square-unit sliver alongside it, and the actually-exported OTFs from
+ * this report have glyphs with a dozen-plus such sub-20-square-unit
+ * "contours" scattered around them. At a 1000-unit em a real design feature
+ * is always many orders of magnitude bigger than that (a serif tick or dot
+ * still measures in the thousands of square units), so a sliver this small
+ * is never intentional ink — it's exact-math fallout from a crossing that
+ * was only ever a rounding-level graze. Left in, each one becomes its own
+ * tiny filled (or hole) contour in the exported glyph. Dropping anything
+ * under MIN_CONTOUR_AREA, for both exteriors and holes, removes exactly
+ * that noise.
  */
+const MIN_CONTOUR_AREA = 10; // font units^2 — see doc comment above
+
 function multiPolygonToContours(resultMulti: ClipMultiPolygon, toleranceScale = 1): Contour[] {
   if (!resultMulti || resultMulti.length === 0) return [];
 
-  const polys = resultMulti
-    .map((poly) => poly.map((ring) => ringToPoints(ring)).filter((pts) => pts.length >= 3))
-    .filter((poly) => poly.length > 0 && poly[0].length >= 3);
+  const polys: Point[][][] = [];
+  for (const poly of resultMulti) {
+    if (poly.length === 0) continue;
+    const exterior = ringToPoints(poly[0]);
+    // A degenerate exterior means this whole top-level shape is clipper
+    // noise (see doc comment) — skip it entirely rather than keeping
+    // orphaned holes with nothing real left to cut into.
+    if (exterior.length < 3 || Math.abs(polygonArea(exterior)) < MIN_CONTOUR_AREA) continue;
+    const holes: Point[][] = [];
+    for (let i = 1; i < poly.length; i++) {
+      const pts = ringToPoints(poly[i]);
+      if (pts.length >= 3 && Math.abs(polygonArea(pts)) >= MIN_CONTOUR_AREA) holes.push(pts);
+    }
+    polys.push([exterior, ...holes]);
+  }
   if (polys.length === 0) return [];
 
   // Depth of each top-level polygon's OWN exterior, relative to every other
