@@ -5,6 +5,7 @@ import { simplifyPolyline } from "@/utils/simplify";
 import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor } from "./strokeSmoothing";
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
+import { normalizeSelfIntersectingContours } from "@/editor/booleanOps";
 
 /**
  * Correct offset vector for sweeping a fixed-orientation elliptical nib
@@ -2437,7 +2438,39 @@ export function expandStrokeObject(obj: VectorObject): VectorObject | null {
   // Uniform centerlines (Pen Line + Monoline Brush) expand from the CURRENT
   // centerline, so node edits, width and cap appearance are all preserved.
   if (obj.kind === "line" || (obj.kind === "brush" && obj.brushType === "monoline")) {
-    const contours = obj.contours.flatMap((c) => uniformCenterlineToOutline(c, width, obj.cap ?? "round"));
+    const raw = obj.contours.flatMap((c) => uniformCenterlineToOutline(c, width, obj.cap ?? "round"));
+    if (raw.length === 0) return null;
+
+    // BUG FIX ("hasil expand berantakan/ngaco" — Expand Stroke output
+    // scrambled into a self-crossing "bowtie" tangle instead of matching
+    // the stroke exactly, specific to Monoline/Pen Line and worst on
+    // closed-loop letterforms like "g", "e", "8"): `uniformClosedLoopOutline`
+    // above only cleans up self-intersections with a small forward-looking
+    // WINDOW (48 points) via `removeSelfIntersectionLoops`, plus one extra
+    // pass after rotating the ring halfway to catch a fold sitting across
+    // the array's arbitrary start/end seam. Both passes only ever find
+    // crossings between points that are close together in the array. A
+    // letterform like the bowl+tail of a "g" naturally brings two points
+    // that are FAR apart along the traced path physically close together
+    // (the neck where the tail curls back near the bowl) — exactly the case
+    // neither local pass can see, so a real self-intersection was silently
+    // left in the offset ring. Filled with nonzero/evenodd winding, that
+    // leftover crossing is what read as the tangled, wrong-shaped mess: the
+    // ring effectively folds part of itself inside-out instead of tracing a
+    // simple loop matching the original stroke.
+    //
+    // This is exactly the same class of bug `normalizeSelfIntersectingContours`
+    // (booleanOps.ts) already exists to fix for a single hand-drawn Outline
+    // Brush stroke that crosses itself near a "g"/"e" neck — see its doc
+    // comment. Unlike the local point-removal heuristic above, it resolves
+    // self-crossings through the exact polygon clipper (a real nonzero
+    // union/XOR), which has no "how far apart in the array" limitation at
+    // all and always returns a valid, simple set of contours. Routing every
+    // Monoline/Pen Line expand result through it — the outer boundary and
+    // inner hole ring together — guarantees the exported shape is exactly
+    // the filled silhouette of the current stroke, on any geometry, matching
+    // how the other brush presets' Expand already comes out clean below.
+    const contours = normalizeSelfIntersectingContours(raw);
     return contours.length ? { id: shortId("obj"), kind: "expanded", contours } : null;
   }
 
@@ -2445,9 +2478,15 @@ export function expandStrokeObject(obj: VectorObject): VectorObject | null {
     // Variable-profile brushes also expand from their current editable
     // centerline. brushOutlineContours resamples captured pressure onto the
     // edited path, avoiding the old "snap back to raw samples" behavior.
-    const contours = brushOutlineContours(obj);
-    if (contours.length) return { id: shortId("obj"), kind: "expanded", contours };
-    return null;
+    const raw = brushOutlineContours(obj);
+    if (raw.length === 0) return null;
+    // Same fix as above, applied for consistency: a freehand gesture with
+    // any other preset can trace the same close-neck geometry (a "g" drawn
+    // with Round/Marker/etc.), so it deserves the same guarantee of a
+    // clean, non-self-intersecting expanded result. (normalizeSelfIntersectingContours
+    // itself falls back to the raw contours if the clip step ever comes back empty.)
+    const contours = normalizeSelfIntersectingContours(raw);
+    return { id: shortId("obj"), kind: "expanded", contours };
   }
 
   return null;
