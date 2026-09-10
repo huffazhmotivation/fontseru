@@ -2202,27 +2202,6 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
 
   const r = Math.max(0.5, width / 2);
 
-  // TEMP DIAGNOSTIC (remove after debugging): logs why this contour did or
-  // didn't get treated as a closed loop, so we can see real project data
-  // instead of guessing. Safe no-op in terms of output geometry.
-  if (typeof console !== "undefined") {
-    const gap = Math.hypot(pts[pts.length - 1].x - pts[0].x, pts[pts.length - 1].y - pts[0].y);
-    let length = 0;
-    for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
-    console.log("[FontSeru DEBUG uniformCenterlineToOutline]", {
-      contourId: contour.id,
-      "contour.closed": contour.closed,
-      pointCount: pts.length,
-      width,
-      r,
-      gap: Math.round(gap * 100) / 100,
-      "gap threshold (r*1.9)": Math.round(r * 1.9 * 100) / 100,
-      strokeLength: Math.round(length * 100) / 100,
-      "length threshold (r*4)": Math.round(r * 4 * 100) / 100,
-      willTreatAsClosedLoop: contour.closed || strokeEndsPhysicallyOverlap(pts, r),
-    });
-  }
-
   if (contour.closed || strokeEndsPhysicallyOverlap(pts, r)) {
     // A near-touching pair of ends is only ever APPROXIMATELY coincident —
     // never pixel-exact the way an explicitly closed contour already is.
@@ -2404,12 +2383,43 @@ function uniformClosedLoopOutline(loopPts: Point[], r: number): Contour[] {
     right.push({ x: ring[i].x - nrm.x * r, y: ring[i].y - nrm.y * r });
   }
 
-  const outlines: Contour[] = [];
   const cleanedLeft = cleanClosedOffsetRing(left);
+  const cleanedRight = cleanClosedOffsetRing(right);
+
+  // BUG FIX ("kontur luar dan lubang muter ke arah yang sama" — outer and
+  // hole ring wound the same direction, e.g. CCW-CCW, instead of opposite):
+  // `left` and `right` above are both walked in the SAME index order as the
+  // source loop (`for i in 0..n`), so regardless of which one physically
+  // ends up being the outer boundary vs. the inner hole, they always come
+  // out with the SAME signed-area sign as each other — offsetting to the
+  // other side of the centerline doesn't reverse traversal direction. A
+  // rasterizer's nonzero fill rule (what the OTF/TTF writers ultimately
+  // target — see `normalizeObjectContourDirections` in utils/fontIO.ts)
+  // needs a hole's winding to be OPPOSITE its outer boundary's winding to
+  // read as a hole rather than more ink. Test Lab's own preview never
+  // caught this because it renders objects as SVG `evenodd`, which resolves
+  // holes correctly regardless of relative winding direction — so the shape
+  // looked right in-app while exporting wrong. And downstream
+  // `normalizeObjectContourDirections` only performs ONE uniform flip of
+  // every contour in an object together (to match the target sfnt
+  // convention) — it can't fix a same-sign outer/inner pair authored here,
+  // since flipping both together preserves their (wrong) relative winding.
+  // Fix it at the source: whichever ring encloses the larger area is the
+  // outer boundary; if the smaller (hole) ring's winding sign matches it,
+  // reverse the hole ring's point order so the two are always opposite.
+  if (cleanedLeft.length >= 3 && cleanedRight.length >= 3) {
+    const leftArea = signedArea(cleanedLeft);
+    const rightArea = signedArea(cleanedRight);
+    const holePts = Math.abs(leftArea) >= Math.abs(rightArea) ? cleanedRight : cleanedLeft;
+    const outerSign = Math.sign(Math.abs(leftArea) >= Math.abs(rightArea) ? leftArea : rightArea) || 1;
+    const holeSign = Math.sign(Math.abs(leftArea) >= Math.abs(rightArea) ? rightArea : leftArea) || 1;
+    if (outerSign === holeSign) holePts.reverse();
+  }
+
+  const outlines: Contour[] = [];
   if (cleanedLeft.length >= 3) {
     outlines.push({ id: shortId("contour"), closed: true, nodes: smoothOffsetClosedPolyline(cleanedLeft) });
   }
-  const cleanedRight = cleanClosedOffsetRing(right);
   if (cleanedRight.length >= 3) {
     outlines.push({ id: shortId("contour"), closed: true, nodes: smoothOffsetClosedPolyline(cleanedRight) });
   }
@@ -2423,19 +2433,6 @@ function uniformClosedLoopOutline(loopPts: Point[], r: number): Contour[] {
  */
 export function expandStrokeObject(obj: VectorObject): VectorObject | null {
   const width = obj.strokeWidth ?? 20;
-
-  // TEMP DIAGNOSTIC (remove after debugging).
-  if (typeof console !== "undefined") {
-    console.log("[FontSeru DEBUG expandStrokeObject]", {
-      objId: obj.id,
-      kind: obj.kind,
-      brushType: obj.brushType,
-      strokeWidth: obj.strokeWidth,
-      contourCount: obj.contours?.length,
-      contoursClosed: obj.contours?.map((c) => c.closed),
-      willUseUniformPath: obj.kind === "line" || (obj.kind === "brush" && obj.brushType === "monoline"),
-    });
-  }
 
   // Uniform centerlines (Pen Line + Monoline Brush) expand from the CURRENT
   // centerline, so node edits, width and cap appearance are all preserved.
