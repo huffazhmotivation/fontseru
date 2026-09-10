@@ -2156,6 +2156,7 @@ function smoothOffsetPolyline(points: Point[]): PathNode[] {
  * correctly resolves a hand-drawn outer+hole pair — see "d" above) sorts
  * that out downstream.
  */
+/**
  * Local, physical test for "would this open stroke's own two ends actually
  * touch once capped" — i.e. does the ink overlap at the gap, the way it
  * would with a real pen/brush — rather than a global guess about whether
