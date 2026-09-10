@@ -2220,18 +2220,93 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
     return normalized(next.x - prev.x, next.y - prev.y);
   });
 
+  // BUG FIX ("hasil expand ada notch/loncatan di sudut tajam" — a visible
+  // notch/step right at a hard corner of a Pen Line / Monoline Brush stroke,
+  // e.g. the stem/foot corner of "L"): every interior vertex used to be
+  // offset along a SINGLE averaged tangent (`next - prev`, blended across
+  // both flanking segments) with no actual corner-join geometry. On a
+  // smooth curve that average is a fine approximation of the local tangent,
+  // but at a genuinely sharp vertex it is neither a correct miter nor a
+  // bevel: on the convex (outer) side it UNDERSHOOTS, slicing a flat notch
+  // across what should be a clean point; on the concave (inner) side the
+  // two segments' true offset lines cross somewhere else entirely, so the
+  // shape only looked right because `removeSelfIntersectionLoops` (a
+  // generic forward-window crossing cleanup, not a real join) happened to
+  // patch over it — and can leave a stray/misplaced vertex exactly at the
+  // joint when the geometry doesn't fit its assumptions. That single wrong
+  // vertex is what reads as "hasil jauh dari sebelum expand" right at a
+  // node.
+  //
+  // Fix: compute each segment's OWN normal, and at any interior vertex
+  // whose turn angle is sharp enough to matter, emit a proper join instead
+  // of one averaged point — a miter (segment offset lines extended to their
+  // real intersection) when the corner isn't too acute, falling back to a
+  // bevel (two points, one per segment) when a miter would spike out
+  // unreasonably far. Gentle bends keep the previous single-point-per-side
+  // averaged offset, which is already correct there and keeps node count
+  // low.
+  const HARD_JOIN_ANGLE = (25 * Math.PI) / 180;
+  const MAX_MITER_RATIO = 4; // clamp miter spike length to at most 4x stroke radius
+
+  const segNormals: Point[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const t = normalized(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+    segNormals.push({ x: -t.y, y: t.x });
+  }
+
   const left: Point[] = [];
   const right: Point[] = [];
   for (let i = 0; i < pts.length; i++) {
-    const t = tangents[i];
     let base = pts[i];
     if (cap === "square") {
+      const t = tangents[i];
       if (i === 0) base = { x: base.x - t.x * r, y: base.y - t.y * r };
       if (i === pts.length - 1) base = { x: base.x + t.x * r, y: base.y + t.y * r };
     }
-    const n = { x: -t.y, y: t.x };
-    left.push({ x: base.x + n.x * r, y: base.y + n.y * r });
-    right.push({ x: base.x - n.x * r, y: base.y - n.y * r });
+
+    if (i === 0) {
+      const n = segNormals[0];
+      left.push({ x: base.x + n.x * r, y: base.y + n.y * r });
+      right.push({ x: base.x - n.x * r, y: base.y - n.y * r });
+      continue;
+    }
+    if (i === pts.length - 1) {
+      const n = segNormals[segNormals.length - 1];
+      left.push({ x: base.x + n.x * r, y: base.y + n.y * r });
+      right.push({ x: base.x - n.x * r, y: base.y - n.y * r });
+      continue;
+    }
+
+    const nIn = segNormals[i - 1];
+    const nOut = segNormals[i];
+    const dot = Math.max(-1, Math.min(1, nIn.x * nOut.x + nIn.y * nOut.y));
+    const turn = Math.acos(dot);
+
+    if (turn <= HARD_JOIN_ANGLE) {
+      // Gentle bend: previous behavior — single averaged normal.
+      const n = normalized(nIn.x + nOut.x, nIn.y + nOut.y);
+      left.push({ x: base.x + n.x * r, y: base.y + n.y * r });
+      right.push({ x: base.x - n.x * r, y: base.y - n.y * r });
+      continue;
+    }
+
+    // Sharp corner: build a real join. `bisector` direction/length gives a
+    // true miter point; clamp it and fall back to a bevel (two points) when
+    // the corner is too acute for a reasonable miter spike.
+    const bisector = normalized(nIn.x + nOut.x, nIn.y + nOut.y);
+    const halfAngle = turn / 2;
+    const miterLen = r / Math.max(0.05, Math.cos(halfAngle));
+    const useMiter = miterLen <= r * MAX_MITER_RATIO;
+
+    if (useMiter) {
+      left.push({ x: base.x + bisector.x * miterLen, y: base.y + bisector.y * miterLen });
+      right.push({ x: base.x - bisector.x * miterLen, y: base.y - bisector.y * miterLen });
+    } else {
+      left.push({ x: base.x + nIn.x * r, y: base.y + nIn.y * r });
+      left.push({ x: base.x + nOut.x * r, y: base.y + nOut.y * r });
+      right.push({ x: base.x - nIn.x * r, y: base.y - nIn.y * r });
+      right.push({ x: base.x - nOut.x * r, y: base.y - nOut.y * r });
+    }
   }
 
   // BUG FIX: unlike `centerlineToOutline` (the round/marker/etc. brush
