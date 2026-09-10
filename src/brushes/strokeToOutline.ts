@@ -2153,55 +2153,6 @@ function smoothOffsetPolyline(points: Point[]): PathNode[] {
  * contours (the same rule that already correctly resolves a hand-drawn
  * outer+hole pair — see "d" above) sorts that out downstream.
  */
-/**
- * Geometry-only test for "this centerline is really a closed loop", used as
- * a fallback when `contour.closed` wasn't set at draw time (see the BUG FIX
- * doc comment on `uniformCenterlineToOutline` above). Deliberately requires
- * BOTH signals before calling something a loop:
- *  - it travelled a real distance relative to the stroke's own half-width
- *    (`r`) — a tiny dot or short jab never counts;
- *  - it travelled roughly 1.6x its own bounding diagonal or more — a simple
- *    open stroke, even a curved one, doesn't fold back on itself that far,
- *    only a genuine bowl/loop gesture does;
- * before checking that the end actually lands back close to the start. That
- * keeps a deliberately open shape (a "c", a hook, a simple curve whose ends
- * happen to be near each other) from being misread as a loop.
- */
-function looksLikeClosedLoop(pts: Point[], r: number): boolean {
-  if (pts.length < 4) return false;
-  const first = pts[0];
-  const last = pts[pts.length - 1];
-  const gap = Math.hypot(last.x - first.x, last.y - first.y);
-
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  let length = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const p = pts[i];
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-    if (i > 0) length += Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y);
-  }
-  const diagonal = Math.hypot(maxX - minX, maxY - minY);
-
-  if (diagonal < r * 3) return false;
-  if (length < diagonal * 1.6) return false;
-
-  const closeThreshold = Math.max(r * 2.5, diagonal * 0.12);
-  return gap <= closeThreshold;
-}
-
-/** Replaces a near-closed polyline's last point with its exact first point. */
-function snapLoopEndpoints(pts: Point[]): Point[] {
-  if (pts.length < 2) return pts;
-  const first = pts[0];
-  return [...pts.slice(0, -1), { x: first.x, y: first.y }];
-}
-
 export function uniformCenterlineToOutline(contour: Contour, width: number, cap: StrokeCap): Contour[] {
   const flattened = flattenContour(contour, 8);
   if (flattened.length < 2) return [];
@@ -2210,36 +2161,8 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
 
   const r = Math.max(0.5, width / 2);
 
-  // BUG FIX (export-only "holes closing up" — see isFreehandLoopClosed in
-  // useBrushTool.ts for the sibling draw-time fix): `contour.closed` alone
-  // is not a reliable signal that a centerline is a loop. A freehand
-  // Monoline gesture that traces a bowl and comes back near its own start
-  // is stored as `closed: false` unless the user held still for QuickShape
-  // to snap it — which is most bowls, since real letterforms are rarely
-  // perfect circles. That data was never wrong to LOOK at: Test Lab's SVG
-  // preview renders the raw, still-open, self-crossing capped ring with the
-  // browser's forgiving nonzero fill, which happens to still show the
-  // counter as empty at the crossing. Export's exact polygon clipper is not
-  // forgiving of that same self-intersecting topology and collapses the
-  // counter into solid ink instead (see the doc comments on
-  // `objectToMultiPolygon`/`multiPolygonToContours` in booleanOps.ts) —
-  // exactly the mismatch reported: correct in-app, broken only after
-  // export. Since the flattened centerline itself already carries every bit
-  // of geometry needed to tell a real loop apart from a genuine open stroke
-  // (it travelled a real distance AND its end already sits right on top of
-  // its start), detecting that directly here fixes already-drawn, already-
-  // saved glyphs at export/expand time — no redraw needed — instead of only
-  // strokes drawn after a draw-time fix.
-  const treatAsClosedLoop = contour.closed || looksLikeClosedLoop(pts, r);
-  if (treatAsClosedLoop) {
-    // A freehand loop's start and end are only ever APPROXIMATELY coincident
-    // (unlike an explicitly closed contour, or a QuickShape's generated
-    // polyline, which already meet exactly). Snap the end back onto the
-    // start before building the two offset rings so the loop closes on a
-    // single point instead of leaving a razor-thin near-miss gap — the same
-    // self-intersecting topology this fix exists to avoid.
-    const loopPts = contour.closed ? pts : snapLoopEndpoints(pts);
-    return uniformClosedLoopOutline(loopPts, r);
+  if (contour.closed) {
+    return uniformClosedLoopOutline(pts, r);
   }
 
   const tangents = pts.map((p, i) => {

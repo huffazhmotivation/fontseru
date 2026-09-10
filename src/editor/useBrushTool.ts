@@ -33,69 +33,6 @@ export function snapToGridCell(p: Point, size: number): Point {
 }
 
 /**
- * Detects an ordinary freehand Monoline/Brush gesture that the user clearly
- * meant as a closed loop — the bowl of an "a"/"e"/"g"/"p"/"q", the counter of
- * a "B"/"R", etc. — WITHOUT requiring the explicit hold-still QuickShape
- * circle/ellipse snap.
- *
- * BUG FIX ("lubang jadi tertutup" / holes closing up on export): `pointerUp`
- * previously only ever set `closeSmoothly` (which becomes `contour.closed`)
- * to true when a held QuickShape kicked in, and QuickShape only recognizes a
- * handful of clean primitive shapes (line, circle/ellipse, ...). Any other
- * hand-drawn loop — which is most bowls, since real letterforms are rarely
- * perfect circles — always got `closed: false`, no matter how obviously the
- * user traced back to their own starting point. `uniformCenterlineToOutline`
- * (strokeToOutline.ts) branches on that exact flag: a *closed* centerline
- * gets its two offset edges kept as independent outer/inner rings (a real
- * hole), but an *open* one gets both ends capped and welded into a single
- * ring, which is only correct for a genuine open stroke (a stem, a
- * crossbar). Capping a stroke whose start and end already sit on top of
- * each other pinches the weld into a razor-thin, self-intersecting seam —
- * exactly the topology the exact clipper resolves unreliably, per the doc
- * comments on `objectToMultiPolygon`/`multiPolygonToContours` in
- * booleanOps.ts — which is what was silently collapsing counters like "e"
- * and "g" into solid ink, and squeezing others (e.g. "a") down to a
- * hairline sliver, in exported OTFs despite looking fine in the live
- * preview's forgiving anti-aliased render.
- *
- * This only fires for a gesture that both (a) travelled a real distance —
- * so a tiny jitter/dot never counts — and (b) ends up back close to its own
- * start relative to that travelled size, so a genuine open stroke (whose
- * ends are naturally far apart) is never affected.
- */
-function isFreehandLoopClosed(samples: { x: number; y: number }[], strokeWidth: number): boolean {
-  if (samples.length < 4) return false;
-  const first = samples[0];
-  const last = samples[samples.length - 1];
-  const gap = Math.hypot(last.x - first.x, last.y - first.y);
-
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  let length = 0;
-  for (let i = 0; i < samples.length; i++) {
-    const p = samples[i];
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-    if (i > 0) length += Math.hypot(p.x - samples[i - 1].x, p.y - samples[i - 1].y);
-  }
-  const diagonal = Math.hypot(maxX - minX, maxY - minY);
-
-  // Too small to be a meaningful loop (a dot, a short jab) — leave it open.
-  if (diagonal < strokeWidth * 1.5) return false;
-  // A real loop travels out and all the way back — a simple open stroke
-  // (even a curved one) never approaches ~2x its own bounding diagonal in
-  // travelled length the way a closed bowl does.
-  if (length < diagonal * 1.6) return false;
-
-  const closeThreshold = Math.max(strokeWidth * 1.25, diagonal * 0.12);
-  return gap <= closeThreshold;
-}
-
-/**
  * Brush Stabilizer shares the same underlying engine as the Pencil tool's
  * Stabilizer (see `brushes/strokeSmoothing.ts`), but the two moments in a
  * stroke's life use it differently:
@@ -311,25 +248,9 @@ export function useBrushTool(hitScale: number) {
     // smoothing+RDP pass is worth paying for, since it only runs once.
     // Preserve the tool's normal default (open centerline, closeSmoothly
     // false) unless a held circle/ellipse QuickShape calls for a closed
-    // loop (a held line stays open, same as any other Brush stroke), OR the
-    // freehand gesture itself already reads as a closed loop — see
-    // isFreehandLoopClosed's doc comment for why this matters for Monoline
-    // bowls/counters that never trigger QuickShape.
-    const closeSmoothly = heldShape
-      ? heldShape.kind !== "line"
-      : isFreehandLoopClosed(centerlineSamples, brush.size);
-    // A freehand loop's start and end are only ever APPROXIMATELY on top of
-    // each other — never pixel-exact like a QuickShape's generated polyline
-    // already is. Snap the last sample exactly onto the first before
-    // building the contour so the closed ring gets a perfectly coincident
-    // seam instead of a near-miss razor-thin gap, which is the same
-    // self-intersecting topology this fix exists to avoid in the first
-    // place (see isFreehandLoopClosed's doc comment).
-    const closedCenterlineSamples =
-      closeSmoothly && !heldShape
-        ? [...centerlineSamples.slice(0, -1), { ...centerlineSamples[centerlineSamples.length - 1], x: centerlineSamples[0].x, y: centerlineSamples[0].y }]
-        : centerlineSamples;
-    const centerline = centerlineToContour(closedCenterlineSamples, !pixelSnap, closeSmoothly);
+    // loop; a held line stays open, same as any other Brush stroke.
+    const closeSmoothly = heldShape ? heldShape.kind !== "line" : false;
+    const centerline = centerlineToContour(centerlineSamples, !pixelSnap, closeSmoothly);
     const rawSamples = centerlineSamples.map((s) => ({ ...s }));
     rawSamplesRef.current = [];
     samplesRef.current = [];
