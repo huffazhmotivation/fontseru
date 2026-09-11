@@ -5,7 +5,7 @@ import { simplifyPolyline } from "@/utils/simplify";
 import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor } from "./strokeSmoothing";
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
-import { normalizeSelfIntersectingContours } from "@/editor/booleanOps";
+import { normalizeSelfIntersectingContours, TIGHT_CURVE_FIDELITY_SCALE } from "@/editor/booleanOps";
 
 /**
  * Correct offset vector for sweeping a fixed-orientation elliptical nib
@@ -656,7 +656,20 @@ export function centerlineToOutline(
   };
   const cornerJoinArc = (center: Point, a0: number, a1: number, semiA: number, semiB: number): Point[] => {
     const delta = normalizeAngleDelta(a1 - a0);
-    const segments = Math.max(2, Math.min(8, Math.ceil(Math.abs(delta) / (Math.PI / 8))));
+    // BUG FIX ("hasil expand belum presisi" at a round join): these sample
+    // points get turned into a curve afterward by the same generic chord-
+    // based Bezier handle fit every offset edge uses (see the `smoothEdges`
+    // block below) rather than an exact circular-arc formula — that generic
+    // fit's deviation from the true circle shrinks roughly with the SQUARE
+    // of the angular step between samples. The previous 22.5°-per-segment
+    // sampling (8 segments max, i.e. capped well short of a full 180°
+    // corner) left a small but measurable gap between the fitted curve and
+    // the actual swept nib boundary, most visible on a wide stroke at a
+    // sharp corner. Sampling every 7.5° instead (with the cap raised so a
+    // full U-turn still gets this same density all the way around, not just
+    // the first 180°) cuts that fit error by roughly an order of magnitude
+    // for a trivial cost — a handful of extra nodes at each hard corner.
+    const segments = Math.max(2, Math.min(24, Math.ceil(Math.abs(delta) / (Math.PI / 24))));
     const out: Point[] = [];
     for (let k = 0; k <= segments; k++) {
       const ang = a0 + (delta * k) / segments;
@@ -758,7 +771,46 @@ export function centerlineToOutline(
     const leftBase = { x: pts[i].x + vx, y: pts[i].y + vy };
     const rightBase = { x: pts[i].x - vx, y: pts[i].y - vy };
 
-    if (settings.type === "oilBrush" && (settings.jitter ?? 0) > 0) {
+    if (isJoinCorner) {
+      // BUG FIX ("hasil expand belum presisi di sudut" — Expand output
+      // visibly deviating from the pre-expand reference right at a hard
+      // corner, worst on Rough/Oil Brush/Grunge): this branch used to sit
+      // LAST in the chain, after the three texture-edge branches above, so
+      // a textured brush type NEVER reached it — a hard corner on a Rough/
+      // Oil Brush/Grunge stroke fell through to that brush's own noisy-edge
+      // formula instead, which offsets purely from the (chord-averaged)
+      // `vx/vy` computed earlier with no corner-join geometry at all. On the
+      // convex side that under-shoots into a flat notch (the same chord-cut
+      // every other brush family was fixed for — see the BUG FIX comment
+      // above this loop); on the concave side the two flanking segments'
+      // true offset lines cross somewhere the noise formula never accounts
+      // for, producing a genuine self-crossing fold right at the corner.
+      // `SELF_INTERSECTION_LOOP_SKIP` (below) deliberately skips the
+      // generic self-intersection cleanup for Grunge/Oil Brush (so it
+      // doesn't iron out their texture) — which means a fold at a hard
+      // corner on one of those two was never getting cleaned up in THIS
+      // function at all, only papered over later
+      // by Expand's downstream exact-clipper pass, at a loose tolerance
+      // that reshapes/rounds the corner well past what the original stroke
+      // actually looked like (confirmed directly: tens of font units of
+      // drift at a sharp corner on a textured stroke). Checking `isJoinCorner`
+      // FIRST — before any brush-specific texture branch — guarantees a
+      // genuinely sharp corner always gets the correct, fold-free round-join
+      // arc/miter geometry, on every brush type. Texture noise is simply not
+      // applied at that one vertex; over an otherwise densely-textured
+      // stroke this is not visible, and it's what stops the fold from ever
+      // being created in the first place instead of relying on later cleanup
+      // to paper over it.
+      const curSemiA = semiMajor * scale;
+      const curSemiB = semiMinor * scale;
+      if (joinConvexSide === "left") {
+        left.push(...cornerJoinArc(pts[i], joinInAngle, joinOutAngle, curSemiA, curSemiB));
+        right.push(rightBase);
+      } else {
+        left.push(leftBase);
+        right.push(...cornerJoinArc(pts[i], joinInAngle + Math.PI, joinOutAngle + Math.PI, curSemiA, curSemiB));
+      }
+    } else if (settings.type === "oilBrush" && (settings.jitter ?? 0) > 0) {
       // Torn dry-brush edge: each side gets its own broad, coherent scallop
       // offset added along the same (already support-correct) direction as
       // vx/vy, independently for left/right so the tear isn't symmetric.
@@ -838,16 +890,6 @@ export function centerlineToOutline(
       const rightMag = Math.max(mag * 0.95, mag + rightNoise * roughJitter * semiMajor * 0.055);
       left.push({ x: pts[i].x + ux * leftMag, y: pts[i].y + uy * leftMag });
       right.push({ x: pts[i].x - ux * rightMag, y: pts[i].y - uy * rightMag });
-    } else if (isJoinCorner) {
-      const curSemiA = semiMajor * scale;
-      const curSemiB = semiMinor * scale;
-      if (joinConvexSide === "left") {
-        left.push(...cornerJoinArc(pts[i], joinInAngle, joinOutAngle, curSemiA, curSemiB));
-        right.push(rightBase);
-      } else {
-        left.push(leftBase);
-        right.push(...cornerJoinArc(pts[i], joinInAngle + Math.PI, joinOutAngle + Math.PI, curSemiA, curSemiB));
-      }
     } else {
       left.push(leftBase);
       right.push(rightBase);
@@ -941,8 +983,30 @@ export function centerlineToOutline(
   // Brush, Rough): their edges are SUPPOSED to weave in and out locally,
   // and this pass would iron that texture back out.
   const SELF_CLEAN_SKIP: BrushType[] = ["grunge", "oilBrush", "rough"];
-  const cleanedLeft = SELF_CLEAN_SKIP.includes(settings.type) ? left : removeSelfIntersectionLoops(left);
-  const cleanedRight = SELF_CLEAN_SKIP.includes(settings.type) ? right : removeSelfIntersectionLoops(right);
+  // BUG FIX ("hasil expand belum presisi" — a Rough-brush stroke with a
+  // hard corner coming out of Expand visibly reshaped, tens of font units
+  // off, right around the bend): the corner's own vertex is correctly
+  // fold-free now that `isJoinCorner` runs before the texture branches
+  // above — but its IMMEDIATE NEIGHBORS on either side are still ordinary
+  // texture-edge points (this vertex's turn is sharp; theirs isn't), each
+  // offset independently from its own local, nearly-straight tangent with
+  // no awareness of the upcoming/just-passed hard turn. Confirmed directly
+  // against a real Rough-brush "L" corner: the incoming segment's edge
+  // point right before the corner and the outgoing segment's edge point
+  // right after it cross each other a few samples apart — a genuine local
+  // fold, exactly what `removeSelfIntersectionLoops`'s bounded forward
+  // window exists to catch and collapse. Rough's own edge noise is much
+  // too gentle (a smooth, low-amplitude coherent wave — see
+  // `coherentNoise1D`'s doc comment) to ever trigger a real crossing on its
+  // own, so it doesn't need protecting from this pass the way Grunge's
+  // sharp, near-every-sample spikes and Oil Brush's much larger scallop
+  // tears plausibly do — those two stay skipped. `EDGE_SIMPLIFY_SKIP`
+  // (below) still covers all three for the SEPARATE post-cleanup RDP
+  // simplification step, which is the pass that would actually flatten
+  // Rough's fine texture away if it ran.
+  const SELF_INTERSECTION_LOOP_SKIP: BrushType[] = ["grunge", "oilBrush"];
+  const cleanedLeft = SELF_INTERSECTION_LOOP_SKIP.includes(settings.type) ? left : removeSelfIntersectionLoops(left);
+  const cleanedRight = SELF_INTERSECTION_LOOP_SKIP.includes(settings.type) ? right : removeSelfIntersectionLoops(right);
 
   // The edges above are built from the DENSE catmullRomResample points
   // (spaced every ~0.06x brush size) so the nib's width tracks the gesture
@@ -2101,7 +2165,18 @@ function sampleRoundJoinArc(base: Point, r: number, nA: Point, nB: Point): Point
   let delta = rawA1 - a0;
   while (delta > Math.PI) delta -= Math.PI * 2;
   while (delta < -Math.PI) delta += Math.PI * 2;
-  const steps = Math.max(2, Math.ceil(Math.abs(delta) / (Math.PI / 9)));
+  // BUG FIX ("hasil expand belum presisi" at a Pen Line / Monoline round
+  // join): same fix as `cornerJoinArc`'s doc comment above — these points
+  // get refit into a curve afterward by a generic chord-based Bezier handle
+  // formula (`smoothOffsetPolyline`/`smoothOffsetClosedPolyline`), whose
+  // deviation from the true circle shrinks with the square of the angular
+  // gap between samples. 20°-per-step (the previous `Math.PI / 9`) left a
+  // small but measurable gap between the fitted curve and the actual round
+  // join the live editor preview already renders exactly (native SVG
+  // `stroke-linejoin: round`). Sampling every 7.5° instead, with the cap
+  // raised so a near-U-turn corner keeps this same density all the way
+  // around, cuts that fit error by roughly an order of magnitude.
+  const steps = Math.max(2, Math.min(24, Math.ceil(Math.abs(delta) / (Math.PI / 24))));
   const out: Point[] = [];
   for (let s = 0; s <= steps; s++) {
     const a = a0 + (delta * s) / steps;
@@ -2652,7 +2727,25 @@ export function expandStrokeObject(obj: VectorObject): VectorObject | null {
     // inner hole ring together — guarantees the exported shape is exactly
     // the filled silhouette of the current stroke, on any geometry, matching
     // how the other brush presets' Expand already comes out clean below.
-    const contours = normalizeSelfIntersectingContours(raw);
+    //
+    // BUG FIX ("hasil expand belum presisi dg line yg sblm expand"): this
+    // used to call `normalizeSelfIntersectingContours(raw)` at its default
+    // (loose, interactive-editing) tolerance — the same one a manual Boolean
+    // Select op uses, chosen there so a designer gets a small, easy-to-edit
+    // node count back. "Expand Stroke" is a one-shot, user-invoked
+    // conversion, not an intermediate editing step: the user clicked it
+    // specifically to turn their exact stroke into a filled shape, and
+    // expects that shape to match what they were just looking at. Passing
+    // `TIGHT_CURVE_FIDELITY_SCALE` — the same export-grade fidelity Export
+    // already uses for precisely this reason (see its doc comment in
+    // fontIO.ts) — makes Expand Stroke match its own live preview instead of
+    // silently reshaping through a loose refit tolerance meant for a
+    // different, editing-focused workflow. Combined with the fast path
+    // `normalizeSelfIntersectingContours` now takes when nothing actually
+    // self-intersects (see its doc comment in booleanOps.ts), this only ever
+    // matters for the genuinely-self-crossing case — the common case is now
+    // untouched entirely.
+    const contours = normalizeSelfIntersectingContours(raw, TIGHT_CURVE_FIDELITY_SCALE);
     return contours.length ? { id: shortId("obj"), kind: "expanded", contours } : null;
   }
 
@@ -2665,9 +2758,12 @@ export function expandStrokeObject(obj: VectorObject): VectorObject | null {
     // Same fix as above, applied for consistency: a freehand gesture with
     // any other preset can trace the same close-neck geometry (a "g" drawn
     // with Round/Marker/etc.), so it deserves the same guarantee of a
-    // clean, non-self-intersecting expanded result. (normalizeSelfIntersectingContours
-    // itself falls back to the raw contours if the clip step ever comes back empty.)
-    const contours = normalizeSelfIntersectingContours(raw);
+    // clean, non-self-intersecting expanded result — at the same tight,
+    // export-grade fidelity, and with the same "skip entirely when nothing
+    // needs resolving" fast path (see the doc comments above and in
+    // booleanOps.ts). (normalizeSelfIntersectingContours itself falls back
+    // to the raw contours if the clip step ever comes back empty.)
+    const contours = normalizeSelfIntersectingContours(raw, TIGHT_CURVE_FIDELITY_SCALE);
     return { id: shortId("obj"), kind: "expanded", contours };
   }
 

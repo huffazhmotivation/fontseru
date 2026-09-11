@@ -19,6 +19,17 @@ export function isBooleanEligible(obj: VectorObject): boolean {
   return isFilledObject(obj) && obj.contours.length > 0;
 }
 
+// Shared "how faithfully should a refit curve track the original" knob for
+// every caller of `normalizeSelfIntersectingContours`/`applyBooleanOp` that
+// wants export-grade fidelity instead of the loose interactive default (see
+// `ringSimplifyTolerance`'s doc comment for what the scale actually does).
+// Previously duplicated as a private constant inside fontIO.ts (export's own
+// call sites) — pulled out here as the single source of truth so any other
+// caller that wants the SAME "don't visibly reshape my curve" guarantee
+// (e.g. `expandStrokeObject` in strokeToOutline.ts) uses the exact same
+// value instead of drifting out of sync with export's.
+export const TIGHT_CURVE_FIDELITY_SCALE = 0.12;
+
 function pointInPolygon(p: Point, poly: Point[]): boolean {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -485,7 +496,7 @@ export function applyBooleanOp(
  *
  * `toleranceScale` (default 1, i.e. the same fidelity the interactive
  * editor/Test Lab has always used) lets a caller opt into a tighter refit —
- * see `EXPORT_CURVE_FIDELITY_SCALE` in fontIO.ts.
+ * see `TIGHT_CURVE_FIDELITY_SCALE` above.
  *
  * BUG FIX (export still didn't match Test Lab for single-object glyphs):
  * `applyBooleanOp`'s export call site was previously the ONLY caller that
@@ -497,9 +508,125 @@ export function applyBooleanOp(
  * instead, so it was quietly exempt from the export fidelity fix and kept
  * reshaping smooth curves/joins on install even after that was fixed for
  * multi-object glyphs.
+ *
+ * BUG FIX ("hasil expand belum presisi dg line yg sblm expand" — a freshly
+ * Expanded/Generated shape visibly drifting from the un-normalized preview
+ * shown right before it, worst at a hard corner or a dense Rough-brush
+ * texture): this function used to run EVERY input through the full
+ * flatten -> exact-clip -> RDP-simplify -> generic-curve-refit round trip
+ * unconditionally — even a single already-simple, non-self-crossing contour
+ * (`objectToMultiPolygon` unions a lone ring with itself "to force the same
+ * self-intersection resolution", per its own doc comment). That round trip
+ * is lossy REGARDLESS of `toleranceScale`: `multiPolygonToContours` always
+ * throws away the original Bezier handles and rebuilds new ones from a
+ * simplified point cloud, which is a real curve-shape change even when the
+ * simplification tolerance is tight. Confirmed directly against a real
+ * hand-drawn glyph: a clean, non-self-intersecting stroke boundary came
+ * back from this function with its point count collapsed and corner
+ * position shifted by tens of font units — never bit-identical to the input
+ * even though nothing about it actually needed resolving.
+ *
+ * Fix: cheaply test first whether the input actually contains any genuine
+ * topology problem — a contour crossing itself, or two of this object's own
+ * contours crossing each other (NOT simply one nesting cleanly inside
+ * another, e.g. an ordinary hole inside its exterior, which is already
+ * correct and must not trigger a re-clip). If nothing is found, return the
+ * input completely unchanged — same object references, same Bezier handles,
+ * zero drift. The exact-clipper round trip below still runs, unchanged,
+ * whenever a real crossing IS found; this only skips it when it was never
+ * needed in the first place, which is the common case for an ordinary
+ * letterform corner or an evenly-spaced texture scatter.
  */
+/** Proper segment intersection test: true only for a genuine crossing —
+ * NOT a shared/touching endpoint or a collinear graze. Two contours that
+ * merely touch at a single point (common, valid, and already correct)
+ * must never be misclassified as needing the exact clipper, or the fast
+ * path below would almost never fire. */
+function segmentsProperlyCross(a0: Point, a1: Point, b0: Point, b1: Point): boolean {
+  const d1x = a1.x - a0.x, d1y = a1.y - a0.y;
+  const d2x = b1.x - b0.x, d2y = b1.y - b0.y;
+  const denom = d1x * d2y - d1y * d2x;
+  if (Math.abs(denom) < 1e-9) return false; // parallel/collinear — never a "proper" crossing
+  const t = ((b0.x - a0.x) * d2y - (b0.y - a0.y) * d2x) / denom;
+  const u = ((b0.x - a0.x) * d1y - (b0.y - a0.y) * d1x) / denom;
+  const eps = 1e-7;
+  return t > eps && t < 1 - eps && u > eps && u < 1 - eps;
+}
+
+interface RingBounds { minX: number; minY: number; maxX: number; maxY: number }
+
+function ringBounds(ring: Point[]): RingBounds {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of ring) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function boundsOverlap(a: RingBounds, b: RingBounds): boolean {
+  return a.minX <= b.maxX && b.minX <= a.maxX && a.minY <= b.maxY && b.minY <= a.maxY;
+}
+
+/** True if this closed polygon crosses itself anywhere. */
+function ringSelfIntersects(ring: Point[]): boolean {
+  const n = ring.length;
+  if (n < 4) return false;
+  for (let i = 0; i < n; i++) {
+    const a0 = ring[i], a1 = ring[(i + 1) % n];
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue; // adjacent through the wrap-around
+      if (segmentsProperlyCross(a0, a1, ring[j], ring[(j + 1) % n])) return true;
+    }
+  }
+  return false;
+}
+
+/** True if two different closed polygons' boundaries actually cross —
+ * NOT simply "one sits inside the other" (a hole cleanly nested inside its
+ * exterior, or one hole nested inside another, is a perfectly valid,
+ * already-resolved relationship that must not trigger a re-clip). A cheap
+ * bounding-box rejection keeps this fast for the common case of many small,
+ * well-separated contours (e.g. Rough brush's texture holes). */
+function ringsCross(a: Point[], b: Point[]): boolean {
+  if (!boundsOverlap(ringBounds(a), ringBounds(b))) return false;
+  const na = a.length, nb = b.length;
+  for (let i = 0; i < na; i++) {
+    const a0 = a[i], a1 = a[(i + 1) % na];
+    for (let j = 0; j < nb; j++) {
+      if (segmentsProperlyCross(a0, a1, b[j], b[(j + 1) % nb])) return true;
+    }
+  }
+  return false;
+}
+
+/** Cheap pre-check for `normalizeSelfIntersectingContours`: does this set of
+ * contours contain any ACTUAL topology problem that genuinely requires the
+ * exact clipper to resolve? Flattens each contour once (same density the
+ * clip path itself uses, so this never misses a crossing the clip path
+ * would have found) and tests for self-crossings and cross-contour
+ * crossings; ordinary clean nesting (holes inside an exterior) is not a
+ * problem and correctly returns false. */
+function contoursNeedIntersectionResolution(contours: Contour[]): boolean {
+  if (contours.length === 0) return false;
+  const rings = contours.map((c) => dedupePoints(flattenContour(c, CLIP_SAMPLE_STEPS)));
+  for (const ring of rings) {
+    if (ring.length < 3) return true; // degenerate — let the clip path's own handling deal with it
+    if (ringSelfIntersects(ring)) return true;
+  }
+  for (let i = 0; i < rings.length; i++) {
+    for (let j = i + 1; j < rings.length; j++) {
+      if (ringsCross(rings[i], rings[j])) return true;
+    }
+  }
+  return false;
+}
+
 export function normalizeSelfIntersectingContours(contours: Contour[], toleranceScale = 1): Contour[] {
   if (contours.length === 0) return [];
+  if (!contoursNeedIntersectionResolution(contours)) return contours;
   const multi = objectToMultiPolygon({ id: "tmp-normalize", kind: "expanded", contours });
   if (multi.length === 0) return contours;
   const cleaned = multiPolygonToContours(multi, toleranceScale);

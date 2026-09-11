@@ -1,21 +1,27 @@
 import * as opentype from "opentype.js";
 import { expandStrokeObject } from "@/brushes/strokeToOutline";
-import { applyBooleanOp, isBooleanEligible, normalizeSelfIntersectingContours } from "@/editor/booleanOps";
+import {
+  applyBooleanOp,
+  isBooleanEligible,
+  normalizeSelfIntersectingContours,
+  TIGHT_CURVE_FIDELITY_SCALE as EXPORT_CURVE_FIDELITY_SCALE,
+} from "@/editor/booleanOps";
 
 // Export's own "Remove Overlap" pass (below) reuses the same boolean-union
 // machinery as the interactive Boolean Select tool, but with a much tighter
-// curve-refit tolerance. The interactive tool's default tolerance favors a
-// small, easy-to-edit node count after a manual union/subtract/intersect —
-// fine for a designer editing the result by hand. Export never hands the
-// result back for editing, though, and any refit deviation from the
-// original curve is exactly what makes a smooth/monoline outline drift
-// visibly from what Test Lab showed (small facets on an "N" leg join, a
-// slightly different "U" bowl), even though Rough/Grunge/Oil Brush textures
-// mask the same deviation. Scaling the tolerance down here keeps far more
-// of the original curve's sampled points, so the refit tracks the authored
-// bezier shape much more closely — at the cost of a few more on-curve nodes
-// in the exported outline, which only export ever sees.
-const EXPORT_CURVE_FIDELITY_SCALE = 0.12;
+// curve-refit tolerance (`TIGHT_CURVE_FIDELITY_SCALE`, defined in
+// booleanOps.ts so `expandStrokeObject` can share the exact same value —
+// see that constant's doc comment). The interactive tool's default
+// tolerance favors a small, easy-to-edit node count after a manual union/
+// subtract/intersect — fine for a designer editing the result by hand.
+// Export never hands the result back for editing, though, and any refit
+// deviation from the original curve is exactly what makes a smooth/monoline
+// outline drift visibly from what Test Lab showed (small facets on an "N"
+// leg join, a slightly different "U" bowl), even though Rough/Grunge/Oil
+// Brush textures mask the same deviation. Scaling the tolerance down here
+// keeps far more of the original curve's sampled points, so the refit
+// tracks the authored bezier shape much more closely — at the cost of a few
+// more on-curve nodes in the exported outline, which only export ever sees.
 import type { Contour, PathNode, VectorObject } from "@/types/geometry";
 import type { FontInfo, FontMetrics } from "@/types/font";
 import type { Glyph, GlyphCategory, GlyphMap } from "@/types/glyph";
