@@ -2060,6 +2060,74 @@ function arcControl(center: Point, radius: number, a0: number, a1: number) {
   };
 }
 
+// Shared corner-join geometry for uniform-width (Pen Line / Monoline Brush)
+// expansion, used by both the open-path (`uniformCenterlineToOutline`) and
+// closed-loop (`uniformClosedLoopOutline`) offset builders below.
+//
+// BUG FIX ("editor preview menunjukkan round join, hasil export jadi
+// runcing/miring/patah" — every Pen Line / Monoline Brush stroke is created
+// and always kept at `join: "round"` — see `useGlyphEditor.ts` and
+// `useBrushTool.ts`, and the app never exposes any other join choice — and
+// the live editor preview genuinely renders that as a true round join via
+// native SVG `stroke-linejoin: round` in `glyphPaths.ts`. But the export
+// path's corner handling here only ever built a MITERED spike or a flat
+// BEVEL cut at a sharp corner, never an actual round arc, regardless of the
+// object's join setting — a plain polygon-join approximation, not the
+// constant-width round-joined stroke the editor was already showing. That
+// mismatch is exactly why a sharp corner (e.g. the joint of a hand-drawn
+// "V"/"L"/corner glyph) could look correct in the editor and come out
+// spiked or flattened after export.
+//
+// A stroke join only needs real rounding on the OUTER (convex) side of a
+// turn — the inner (concave) side is just where the two offset edges
+// naturally cross, which the existing miter-point formula already computes
+// exactly (and `removeSelfIntersectionLoops`/the exact-clipper Remove
+// Overlap pass downstream already resolve any inner overlap correctly), so
+// that side is left exactly as before. Only the convex side is switched
+// from a single spike/bevel point to a densely-sampled true circular arc.
+const HARD_JOIN_ANGLE = (25 * Math.PI) / 180;
+const MAX_MITER_RATIO = 4; // clamp miter spike length to at most 4x stroke radius
+
+/** Sample points along a true circular arc of radius `r` around `base`,
+ * sweeping from the direction of `nA` to the direction of `nB` the short
+ * way (their actual turn), at roughly 20° per sample. Downstream bezier
+ * fitting (`smoothOffsetPolyline`/`smoothOffsetClosedPolyline`) turns this
+ * dense, evenly-spaced point set into a smooth curve that closely matches
+ * the true circle — this is what gives a real round join instead of a
+ * faceted polygon corner. */
+function sampleRoundJoinArc(base: Point, r: number, nA: Point, nB: Point): Point[] {
+  const a0 = Math.atan2(nA.y, nA.x);
+  const rawA1 = Math.atan2(nB.y, nB.x);
+  let delta = rawA1 - a0;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  const steps = Math.max(2, Math.ceil(Math.abs(delta) / (Math.PI / 9)));
+  const out: Point[] = [];
+  for (let s = 0; s <= steps; s++) {
+    const a = a0 + (delta * s) / steps;
+    out.push({ x: base.x + Math.cos(a) * r, y: base.y + Math.sin(a) * r });
+  }
+  return out;
+}
+
+/** The concave (inner) side of a sharp join: the exact intersection point
+ * of the two offset edges (a true miter), falling back to a two-point
+ * bevel only when the corner is too acute for that spike to stay
+ * reasonable. `nSideIn`/`nSideOut` must already be the correctly-signed
+ * normals for the side being built (left: +n, right: -n). */
+function sidedMiterBevelPoints(base: Point, r: number, nSideIn: Point, nSideOut: Point, turn: number): Point[] {
+  const bisector = normalized(nSideIn.x + nSideOut.x, nSideIn.y + nSideOut.y);
+  const halfAngle = turn / 2;
+  const miterLen = r / Math.max(0.05, Math.cos(halfAngle));
+  if (miterLen <= r * MAX_MITER_RATIO) {
+    return [{ x: base.x + bisector.x * miterLen, y: base.y + bisector.y * miterLen }];
+  }
+  return [
+    { x: base.x + nSideIn.x * r, y: base.y + nSideIn.y * r },
+    { x: base.x + nSideOut.x * r, y: base.y + nSideOut.y * r },
+  ];
+}
+
 /**
  * Fit smooth Bézier handles through an OPEN offset-edge polyline (one side
  * of a uniform-width stroke), matching the Catmull-Rom-to-Bezier fit already
@@ -2239,15 +2307,20 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
   //
   // Fix: compute each segment's OWN normal, and at any interior vertex
   // whose turn angle is sharp enough to matter, emit a proper join instead
-  // of one averaged point — a miter (segment offset lines extended to their
-  // real intersection) when the corner isn't too acute, falling back to a
-  // bevel (two points, one per segment) when a miter would spike out
-  // unreasonably far. Gentle bends keep the previous single-point-per-side
-  // averaged offset, which is already correct there and keeps node count
-  // low.
-  const HARD_JOIN_ANGLE = (25 * Math.PI) / 180;
-  const MAX_MITER_RATIO = 4; // clamp miter spike length to at most 4x stroke radius
-
+  // of one averaged point.
+  //
+  // FOLLOW-UP FIX ("editor round join vs export miter/bevel mismatch" — see
+  // `sampleRoundJoinArc`/`sidedMiterBevelPoints` doc comment above): every
+  // Pen Line / Monoline Brush object is always created and kept at
+  // `join: "round"`, and the live editor already renders that as a true
+  // round join via native SVG stroking — so the export side must match:
+  // the OUTER (convex) side of a sharp corner now gets a real circular arc
+  // instead of a miter spike or flat bevel; the INNER (concave) side, which
+  // has no visible "roundness" to show either way, keeps the exact
+  // miter-intersection point (falling back to a bevel only when that spike
+  // would be unreasonably long). Gentle bends keep the previous
+  // single-point-per-side averaged offset, which is already correct there
+  // and keeps node count low.
   const segNormals: Point[] = [];
   for (let i = 0; i < pts.length - 1; i++) {
     const t = normalized(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
@@ -2290,22 +2363,21 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
       continue;
     }
 
-    // Sharp corner: build a real join. `bisector` direction/length gives a
-    // true miter point; clamp it and fall back to a bevel (two points) when
-    // the corner is too acute for a reasonable miter spike.
-    const bisector = normalized(nIn.x + nOut.x, nIn.y + nOut.y);
-    const halfAngle = turn / 2;
-    const miterLen = r / Math.max(0.05, Math.cos(halfAngle));
-    const useMiter = miterLen <= r * MAX_MITER_RATIO;
+    // Sharp corner: round join on the convex (outer) side, true miter
+    // (clamped to a bevel fallback) on the concave (inner) side. Which side
+    // is convex flips with the turn direction — a CCW (left) turn's outer
+    // side is the right (-n) offset, and vice versa.
+    const crossN = nIn.x * nOut.y - nIn.y * nOut.x;
+    const leftIsConvex = crossN < 0;
+    const nInR = { x: -nIn.x, y: -nIn.y };
+    const nOutR = { x: -nOut.x, y: -nOut.y };
 
-    if (useMiter) {
-      left.push({ x: base.x + bisector.x * miterLen, y: base.y + bisector.y * miterLen });
-      right.push({ x: base.x - bisector.x * miterLen, y: base.y - bisector.y * miterLen });
+    if (leftIsConvex) {
+      right.push(...sidedMiterBevelPoints(base, r, nInR, nOutR, turn));
+      left.push(...sampleRoundJoinArc(base, r, nIn, nOut));
     } else {
-      left.push({ x: base.x + nIn.x * r, y: base.y + nIn.y * r });
-      left.push({ x: base.x + nOut.x * r, y: base.y + nOut.y * r });
-      right.push({ x: base.x - nIn.x * r, y: base.y - nIn.y * r });
-      right.push({ x: base.x - nOut.x * r, y: base.y - nOut.y * r });
+      left.push(...sidedMiterBevelPoints(base, r, nIn, nOut, turn));
+      right.push(...sampleRoundJoinArc(base, r, nInR, nOutR));
     }
   }
 
@@ -2444,19 +2516,54 @@ function uniformClosedLoopOutline(loopPts: Point[], r: number): Contour[] {
   const n = ring.length;
   if (n < 3) return [];
 
-  const tangents = ring.map((_, i) => {
-    const prev = ring[(i - 1 + n) % n];
-    const next = ring[(i + 1) % n];
-    return normalized(next.x - prev.x, next.y - prev.y);
-  });
+  // BUG FIX ("notch di sudut tajam pada closed loop" — the same sharp-corner
+  // notch/spike bug already found and fixed for OPEN Pen Line / Monoline
+  // strokes in `uniformCenterlineToOutline` above also applies here: this
+  // used a single per-point tangent averaged across both flanking segments,
+  // with no real join geometry at all. A closed loop with a genuinely sharp
+  // vertex — a hand-drawn closed shape with a hard corner, not just smooth
+  // bowls like "o"/"e" — got the same undershooting flat notch on its outer
+  // side. Fixed the same way: per-segment normals, a hard-corner threshold,
+  // and a true round join on the convex side (matching every Pen Line /
+  // Monoline Brush object's `join: "round"` setting and what the editor's
+  // native SVG stroke preview already shows) with the exact miter
+  // intersection (clamped to a bevel) on the concave side.
+  const segNormals: Point[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % n];
+    const t = normalized(b.x - a.x, b.y - a.y);
+    segNormals.push({ x: -t.y, y: t.x });
+  }
 
   const left: Point[] = [];
   const right: Point[] = [];
   for (let i = 0; i < n; i++) {
-    const t = tangents[i];
-    const nrm = { x: -t.y, y: t.x };
-    left.push({ x: ring[i].x + nrm.x * r, y: ring[i].y + nrm.y * r });
-    right.push({ x: ring[i].x - nrm.x * r, y: ring[i].y - nrm.y * r });
+    const base = ring[i];
+    const nIn = segNormals[(i - 1 + n) % n];
+    const nOut = segNormals[i];
+    const dot = Math.max(-1, Math.min(1, nIn.x * nOut.x + nIn.y * nOut.y));
+    const turn = Math.acos(dot);
+
+    if (turn <= HARD_JOIN_ANGLE) {
+      const nrm = normalized(nIn.x + nOut.x, nIn.y + nOut.y);
+      left.push({ x: base.x + nrm.x * r, y: base.y + nrm.y * r });
+      right.push({ x: base.x - nrm.x * r, y: base.y - nrm.y * r });
+      continue;
+    }
+
+    const crossN = nIn.x * nOut.y - nIn.y * nOut.x;
+    const leftIsConvex = crossN < 0;
+    const nInR = { x: -nIn.x, y: -nIn.y };
+    const nOutR = { x: -nOut.x, y: -nOut.y };
+
+    if (leftIsConvex) {
+      right.push(...sidedMiterBevelPoints(base, r, nInR, nOutR, turn));
+      left.push(...sampleRoundJoinArc(base, r, nIn, nOut));
+    } else {
+      left.push(...sidedMiterBevelPoints(base, r, nIn, nOut, turn));
+      right.push(...sampleRoundJoinArc(base, r, nInR, nOutR));
+    }
   }
 
   const cleanedLeft = cleanClosedOffsetRing(left);
