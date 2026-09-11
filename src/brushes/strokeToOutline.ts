@@ -256,43 +256,7 @@ function segmentIntersection(a0: Point, a1: Point, b0: Point, b1: Point): Point 
  * the corner that caused them, so this keeps the cost close to linear on
  * long, mostly-straight strokes instead of scanning every distant pair.
  */
-/**
- * `minLoopSpan` (font units, default 0 = old behavior: collapse every fold
- * found): lets a caller tell this pass "a fold that reaches farther than
- * this from its own crossing point isn't offset-math noise — it's a real
- * feature, leave it for the exact clipper downstream to resolve into a
- * proper outer+hole split, don't erase it here."
- *
- * BUG FIX ("lubang/counter di tengah loop malah jadi ketutup solid" — a
- * genuinely LOOPED Pen Line / Monoline stroke, e.g. a hand-drawn "8"/"e"/"6"
- * whose tight curl is meant to leave a real hollow counter, exported/
- * expanded with the counter filled solid instead of hollow): this pass was
- * applied to the offset chain with no size limit at all, so it could not
- * tell a genuine, sizable loop (the fold that traces the actual boundary of
- * an intended counter) apart from a tiny degenerate pinch (offset-math noise
- * on a curve tighter than the stroke's own half-width, with no letterform
- * meaning). Both look identical to this function — a fold in a 1D point
- * chain — but only the tiny one is safe to erase THIS EARLY: erasing it here
- * happens *before* the two chain sides are even joined into one ring, at a
- * stage that has no way to represent a hole at all (a single chain can only
- * be simplified, it can't split into an outer ring plus a separate inner
- * ring). A genuine, sizable loop erased at this stage is gone for good —
- * `normalizeSelfIntersectingContours`'s exact clipper never even gets a
- * chance to see the crossing and split it correctly, no matter how good its
- * own self-intersection handling is downstream (see `expandStrokeObject`'s
- * doc comment on that function).
- *
- * Fix: give the two Pen Line/Monoline call sites (the only ones where a
- * fold this size plausibly IS a real counter, not brush noise) a size
- * threshold derived from the stroke's own half-width `r` — comfortably
- * bigger than any offset-math artifact, comfortably smaller than a real
- * hand-drawn loop — so this pass keeps collapsing genuine noise exactly as
- * before while leaving a real loop's crossing intact for the ring assembly
- * and exact clipper to turn into a proper hole. The other call sites (the
- * round/marker/etc. brush family, and each side's own local cleanup) keep
- * the old no-threshold behavior untouched.
- */
-function removeSelfIntersectionLoops(chain: Point[], minLoopSpan = 0): Point[] {
+function removeSelfIntersectionLoops(chain: Point[]): Point[] {
   if (chain.length < 4) return chain;
   const pts = chain.slice();
   const window = 48;
@@ -304,15 +268,6 @@ function removeSelfIntersectionLoops(chain: Point[], minLoopSpan = 0): Point[] {
       for (let j = i + 2; j < jMax; j++) {
         const hit = segmentIntersection(pts[i], pts[i + 1], pts[j], pts[j + 1]);
         if (hit) {
-          if (minLoopSpan > 0) {
-            let span = 0;
-            for (let k = i + 1; k <= j; k++) {
-              span = Math.max(span, Math.hypot(pts[k].x - hit.x, pts[k].y - hit.y));
-            }
-            // A fold that reaches this far out is a real loop, not noise —
-            // skip collapsing it and keep scanning for other crossings.
-            if (span >= minLoopSpan) continue;
-          }
           pts.splice(i + 1, j - i, hit);
           found = true;
           break;
@@ -2309,28 +2264,7 @@ function strokeEndsPhysicallyOverlap(pts: Point[], r: number): boolean {
 }
 
 export function uniformCenterlineToOutline(contour: Contour, width: number, cap: StrokeCap): Contour[] {
-  // BUG FIX ("lekukan/bend jadi menyudut kaku, bukan melengkung" — a
-  // legitimately smooth, tightly-curved bend in a Pen Line / Monoline
-  // stroke — e.g. the curl of a loop, not a real authored corner — coming
-  // out of expand with a hard, faceted join instead of staying smooth):
-  // this only ever flattened each bezier segment into a fixed 8 straight
-  // steps. For a gentle curve that's plenty, but for a TIGHT bend (a small
-  // loop, the kind a hand-drawn "e"/"g"/"8" curls into) 8 fixed steps can
-  // land more than `HARD_JOIN_ANGLE` (25°) of turn between two consecutive
-  // sampled points even though the source curve has no actual corner there
-  // at all — nothing but flattening coarseness. The corner-join logic below
-  // has no way to tell "the source curve really has a kink here" apart from
-  // "flattening was too coarse to represent this bend smoothly", so it
-  // treated the coarse artifact as a real hard corner and gave it a
-  // round-join arc / miter point instead of the smooth curve fit
-  // `smoothOffsetPolyline` would otherwise have produced.
-  //
-  // Fix: sample curved segments far more densely (64 steps) before doing
-  // any turn-angle-based corner classification, so a genuinely smooth bend
-  // reads as smooth right up to very tight radii, and only an actual
-  // authored corner (a real, isolated direction change, not smoothed out by
-  // denser sampling) still crosses the hard-join threshold.
-  const flattened = flattenContour(contour, 64);
+  const flattened = flattenContour(contour, 8);
   if (flattened.length < 2) return [];
   const pts = simplifyPolyline(flattened, Math.max(0.5, width * 0.025));
   if (pts.length < 2) return [];
@@ -2457,16 +2391,8 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
   // hole (shows as a transparent/checkerboard cutout) instead of solid
   // ink. Same fix as centerlineToOutline: collapse those loops before
   // building nodes from the edge.
-  //
-  // FOLLOW-UP FIX: only collapse a fold that's small relative to the
-  // stroke's own half-width `r` — a bigger fold is a real letterform loop
-  // (e.g. the counter of a hand-drawn "e"/"8"/"6"), not offset noise, and
-  // erasing it here (before the ring is even assembled) would permanently
-  // lose the hole no matter how well `normalizeSelfIntersectingContours`
-  // resolves crossings downstream. See `removeSelfIntersectionLoops`'s doc
-  // comment for the full reasoning.
-  const cleanedLeft = removeSelfIntersectionLoops(left, r * 1.5);
-  const cleanedRight = removeSelfIntersectionLoops(right, r * 1.5);
+  const cleanedLeft = removeSelfIntersectionLoops(left);
+  const cleanedRight = removeSelfIntersectionLoops(right);
 
   const leftNodes = smoothOffsetPolyline(cleanedLeft);
   const rightNodes = smoothOffsetPolyline(cleanedRight);
@@ -2525,13 +2451,13 @@ export function uniformCenterlineToOutline(contour: Contour, width: number, cap:
 // the middle of the array, where the same forward scan finds it like any
 // other. Where the ring starts afterward doesn't matter — it's a closed
 // ring either way.
-function cleanClosedOffsetRing(ring: Point[], minLoopSpan = 0): Point[] {
+function cleanClosedOffsetRing(ring: Point[]): Point[] {
   if (ring.length < 4) return ring;
-  const pass1 = removeSelfIntersectionLoops(ring, minLoopSpan);
+  const pass1 = removeSelfIntersectionLoops(ring);
   if (pass1.length < 4) return pass1;
   const half = Math.floor(pass1.length / 2);
   const rotated = [...pass1.slice(half), ...pass1.slice(0, half)];
-  return removeSelfIntersectionLoops(rotated, minLoopSpan);
+  return removeSelfIntersectionLoops(rotated);
 }
 
 // Same tangent/corner-vs-smooth handle fit as `smoothOffsetPolyline`, but
@@ -2640,8 +2566,8 @@ function uniformClosedLoopOutline(loopPts: Point[], r: number): Contour[] {
     }
   }
 
-  const cleanedLeft = cleanClosedOffsetRing(left, r * 1.5);
-  const cleanedRight = cleanClosedOffsetRing(right, r * 1.5);
+  const cleanedLeft = cleanClosedOffsetRing(left);
+  const cleanedRight = cleanClosedOffsetRing(right);
 
   // BUG FIX ("kontur luar dan lubang muter ke arah yang sama" — outer and
   // hole ring wound the same direction, e.g. CCW-CCW, instead of opposite):
