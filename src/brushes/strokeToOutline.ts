@@ -6,7 +6,7 @@ import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor 
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
 import { cubicPoint } from "@/editor/bezier";
-import { normalizeSelfIntersectingContours, unionPolygonsToContours, TIGHT_CURVE_FIDELITY_SCALE, EXPAND_FIDELITY_SCALE } from "@/editor/booleanOps";
+import { normalizeSelfIntersectingContours, unionPolygonsToContours, resolveTexturedBrushFill, TIGHT_CURVE_FIDELITY_SCALE, EXPAND_FIDELITY_SCALE } from "@/editor/booleanOps";
 
 /**
  * Correct offset vector for sweeping a fixed-orientation elliptical nib
@@ -260,25 +260,31 @@ function segmentIntersection(a0: Point, a1: Point, b0: Point, b1: Point): Point 
 function removeSelfIntersectionLoops(chain: Point[]): Point[] {
   if (chain.length < 4) return chain;
   const pts = chain.slice();
-  // PRECISION FIX: the window used to be a fixed 48 points. Since the
-  // Monoline/Pen Line expand path now flattens the centerline adaptively to
-  // a tiny flatness tolerance, an offset edge can carry many more points per
-  // unit length than before, so a local concave-side fold that used to span
-  // a handful of points can now span far more than 48 — pushing it outside a
-  // fixed window and leaving the fold un-resolved (visible as the expanded
-  // "8"/"g" neck not matching its pre-expand preview). Scale the window with
-  // the chain length so the same physical fold is always seen regardless of
-  // how densely the curve was sampled, with a floor so short chains behave
-  // exactly as before. (The genuinely FAR-apart figure-8 neck crossing is
-  // still resolved separately and exactly by the downstream polygon clipper
-  // in `expandStrokeObject`; this pass only needs to catch the local folds.)
+  // This removes only SMALL, LOCAL concave-side offset folds — the little
+  // self-overlap an offset rail makes on the inside of a sharp bend. It must
+  // NOT remove large, intentional loops (the bowls of an "&"/"8"/looped "e"
+  // drawn in one gesture): those are real ink, and splicing them out
+  // collapses the body to just the non-looping part, leaving the loops as
+  // nothing but scattered edge texture — the "yang muncul cuma lubangnya,
+  // kebalikannya" bug. So a crossing is only treated as a removable fold when
+  // the span it would remove is SHORT (a local artifact); a crossing that
+  // encloses a large span is a genuine loop and is left for the downstream
+  // exact polygon clipper (resolveTexturedBrushFill / Remove Overlap) to
+  // resolve into solid ink correctly.
   const window = Math.max(48, Math.ceil(pts.length * 0.5));
+  // A fold is "local" when it spans at most this many points OR this
+  // fraction of the whole chain, whichever is larger — anything bigger is a
+  // real loop and must be preserved.
+  const maxFoldSpan = Math.max(24, Math.ceil(pts.length * 0.12));
   const maxPasses = 200;
   for (let pass = 0; pass < maxPasses; pass++) {
     let found = false;
     for (let i = 0; i < pts.length - 1; i++) {
       const jMax = Math.min(pts.length - 1, i + window);
       for (let j = i + 2; j < jMax; j++) {
+        // Only collapse the crossing if the enclosed span is small (a local
+        // fold). A large enclosed span is an intentional loop — skip it.
+        if (j - i > maxFoldSpan) continue;
         const hit = segmentIntersection(pts[i], pts[i + 1], pts[j], pts[j + 1]);
         if (hit) {
           pts.splice(i + 1, j - i, hit);
@@ -3055,15 +3061,13 @@ export function expandStrokeObject(obj: VectorObject): VectorObject | null {
     // edited path, avoiding the old "snap back to raw samples" behavior.
     const raw = brushOutlineContours(obj);
     if (raw.length === 0) return null;
-    // Same fix as above, applied for consistency: a freehand gesture with
-    // any other preset can trace the same close-neck geometry (a "g" drawn
-    // with Round/Marker/etc.), so it deserves the same guarantee of a
-    // clean, non-self-intersecting expanded result — at the same tight,
-    // export-grade fidelity, and with the same "skip entirely when nothing
-    // needs resolving" fast path (see the doc comments above and in
-    // booleanOps.ts). (normalizeSelfIntersectingContours itself falls back
-    // to the raw contours if the clip step ever comes back empty.)
-    const contours = normalizeSelfIntersectingContours(raw, TIGHT_CURVE_FIDELITY_SCALE);
+    // resolveTexturedBrushFill (not the plain self-intersection normalizer)
+    // so a self-crossing textured gesture — "&", "8", a looped "e" drawn in
+    // one stroke — comes out SOLID with its texture holes carved, instead of
+    // inverting to just the specks. It resolves the body's self-crossing to
+    // uniform solid first, then subtracts the small texture pieces. For a
+    // non-self-crossing / non-textured stroke it behaves like the normalizer.
+    const contours = resolveTexturedBrushFill(raw, TIGHT_CURVE_FIDELITY_SCALE);
     return { id: shortId("obj"), kind: "expanded", contours };
   }
 

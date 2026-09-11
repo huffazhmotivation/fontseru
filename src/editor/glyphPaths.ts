@@ -2,7 +2,7 @@ import type { Glyph } from "@/types/glyph";
 import type { Contour, VectorObject } from "@/types/geometry";
 import { objectFillPath, objectStrokePath, contourToPath } from "./pathBuilder";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
-import { applyBooleanOp, normalizeSelfIntersectingContours } from "./booleanOps";
+import { applyBooleanOp, normalizeSelfIntersectingContours, resolveTexturedBrushFill, TIGHT_CURVE_FIDELITY_SCALE } from "./booleanOps";
 
 /**
  * Rendering a glyph's outline (fill paths, brush stroke-to-outline
@@ -239,10 +239,16 @@ export function getGlyphPaths(glyph: Glyph, ascender: number): GlyphPathEntry[] 
       continue;
     }
     if (obj.kind === "brush" && obj.brushType !== "monoline") {
+      // Textured brushes (Rough/Grunge/etc.) that self-cross must have their
+      // solid body resolved and texture holes carved, or a looping gesture
+      // ("&", "8", looped "e") renders inverted — only the texture specks
+      // show, the solid middle turns transparent. resolveTexturedBrushFill
+      // fixes that; it's a no-op-ish fast path for non-self-crossing strokes.
+      const resolved = resolveTexturedBrushFill(brushOutlineContours(obj), TIGHT_CURVE_FIDELITY_SCALE);
       entries.push({
         kind: "brushFill",
         id: obj.id,
-        d: brushOutlineContours(obj).map((c) => contourToPath(c, ascender)).join(" "),
+        d: resolved.map((c) => contourToPath(c, ascender)).join(" "),
       });
       continue;
     }

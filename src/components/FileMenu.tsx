@@ -1059,15 +1059,18 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
         const override = styleNameOverrides[style];
         const styleName =
           override?.styleName.trim() ||
-          (styles.length === 1 && styleOverride ? styleOverride : fontStyleLabel(style, s.customFamilies));
+          (styles.length === 1 && styleOverride ? styleOverride : fontStyleLabel(style, s.customFamilies)) ||
+          // Never allow an empty style label — an empty nameID 2/17 (and the
+          // empty grouping subfamily it produces) crashes the font writer.
+          (style === "regular" ? "Regular" : String(style));
         // When grouping, every file's Family Name is the shared typographic
         // family; otherwise keep the per-style family (old behavior).
-        const styleFamilyName = groupAsFamily
+        const styleFamilyName = (groupAsFamily
           ? sharedTypographicFamily
-          : (override?.familyName.trim() || familyName);
+          : (override?.familyName.trim() || familyName)) || familyName || "Untitled Font";
         const grouping = groupAsFamily
           ? {
-              typographicFamily: sharedTypographicFamily,
+              typographicFamily: sharedTypographicFamily || familyName || "Untitled Font",
               typographicSubfamily: styleName,
               faceIndex: styleIdx,
               faceCount: styles.length,

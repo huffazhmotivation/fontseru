@@ -750,3 +750,69 @@ export function unionObjectsHoleAware(objects: VectorObject[], toleranceScale = 
   }
   return multiPolygonToContours(resultMulti, toleranceScale);
 }
+
+/**
+ * Correct fill for a TEXTURED brush (Rough / Grunge / etc.) whose stroke
+ * self-crosses — fixes the "yang muncul malah cuma lubangnya, kebalikannya"
+ * bug.
+ *
+ * A textured brush emits ONE big solid body contour plus many tiny texture
+ * contours (edge grit / interior specks) that should carve OUT of the body.
+ * The body is a single ring that follows the whole pen gesture, so when the
+ * gesture crosses itself (an "&", "8", a looped "e"), that body ring
+ * self-intersects. Resolved with a plain nonzero/even-odd winding count, the
+ * fill FLIPS inside the self-crossing region — the solid middle of the glyph
+ * turns transparent and only the little texture pieces stay opaque, which is
+ * exactly the inverted look reported.
+ *
+ * Fix: treat body and texture separately, the same way the Outline Brush
+ * merge already does. Union all the SOLID body pieces together first — a
+ * self-union resolves the ring's own self-crossing into one uniformly solid
+ * region (no flipped interior) — then subtract the union of all the texture
+ * pieces from it. The result is a solid glyph with its texture holes intact,
+ * regardless of how many times the stroke crossed itself.
+ *
+ * Body vs texture is decided by area: the body pieces are the dominant
+ * shape, texture is everything much smaller. A contour is treated as "body"
+ * if its absolute area is at least `bodyFraction` of the largest contour's.
+ */
+export function resolveTexturedBrushFill(contours: Contour[], toleranceScale = 1, bodyFraction = 0.25): Contour[] {
+  if (contours.length <= 1) return normalizeSelfIntersectingContours(contours, toleranceScale);
+
+  const withArea = contours.map((c) => {
+    const pts = flattenContour(c, 6);
+    return { c, absArea: Math.abs(polygonArea(pts)) };
+  });
+  const maxArea = withArea.reduce((m, x) => Math.max(m, x.absArea), 0);
+  if (maxArea <= 0) return normalizeSelfIntersectingContours(contours, toleranceScale);
+
+  const bodyContours: Contour[] = [];
+  const textureContours: Contour[] = [];
+  const threshold = maxArea * bodyFraction;
+  for (const { c, absArea } of withArea) {
+    (absArea >= threshold ? bodyContours : textureContours).push(c);
+  }
+  if (textureContours.length === 0) return normalizeSelfIntersectingContours(contours, toleranceScale);
+
+  const toPolys = (cs: Contour[]): ClipPolygon[] => {
+    const out: ClipPolygon[] = [];
+    for (const c of cs) {
+      const ring = toRing(dedupePoints(flattenContour(c, 6)));
+      if (ring.length >= 3) out.push([[...ring, ring[0]] as unknown as [number, number][]]);
+    }
+    return out;
+  };
+  const bodyPolys = toPolys(bodyContours);
+  const texturePolys = toPolys(textureContours);
+  if (bodyPolys.length === 0) return normalizeSelfIntersectingContours(contours, toleranceScale);
+
+  try {
+    const bodySolid = bodyPolys.length === 1 ? clipUnion(bodyPolys[0]) : clipUnion(bodyPolys[0], ...bodyPolys.slice(1));
+    if (texturePolys.length === 0) return multiPolygonToContours(bodySolid, toleranceScale);
+    const textureSolid = texturePolys.length === 1 ? clipUnion(texturePolys[0]) : clipUnion(texturePolys[0], ...texturePolys.slice(1));
+    const carved = clipDifference(bodySolid, textureSolid);
+    return multiPolygonToContours(carved, toleranceScale);
+  } catch {
+    return normalizeSelfIntersectingContours(contours, toleranceScale);
+  }
+}

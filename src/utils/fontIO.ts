@@ -315,7 +315,11 @@ export function normalizeFontMetadata(
   // the SAME for every style, so ignore it and always derive a unique
   // family+style PS name instead. Outside grouping, honor a requested name.
   const postscriptName = grouping
-    ? sanitizePostScriptName(grouping.typographicFamily, grouping.typographicSubfamily, "")
+    ? sanitizePostScriptName(
+        asText(grouping.typographicFamily) || familyName,
+        asText(grouping.typographicSubfamily) || styleName,
+        "",
+      )
     : sanitizePostScriptName(familyName, styleName, asText(info?.postscriptName));
   const uniqueID = asText(info?.uniqueID) && !grouping
     ? asText(info?.uniqueID)
@@ -329,8 +333,14 @@ export function normalizeFontMetadata(
   let typographicFamilyOverride: string | undefined;
   let typographicSubfamilyOverride: string | undefined;
   if (grouping) {
-    typographicFamilyOverride = grouping.typographicFamily;
-    typographicSubfamilyOverride = grouping.typographicSubfamily;
+    // Never let an empty grouping value through — an empty nameID 1/16 makes
+    // opentype.js crash while serializing ("Cannot read properties of
+    // undefined (reading 'fontFamily')"), which is the "export malah ga jalan,
+    // notif merah, stuck 0%" bug. Fall back to the resolved family/style.
+    const groupFamily = asText(grouping.typographicFamily) || familyName;
+    const groupSubfamily = asText(grouping.typographicSubfamily) || styleName;
+    typographicFamilyOverride = groupFamily;
+    typographicSubfamilyOverride = groupSubfamily;
     // ONE-FAMILY GROUPING (the fix for "diinstall jadi font masing-masing"):
     // Font Book, Affinity, Adobe, Office etc. group faces primarily by the
     // legacy Family Name (nameID 1). The old code folded the distinct style
@@ -345,8 +355,8 @@ export function normalizeFontMetadata(
     // is fine here: apps group by nameID 1 and simply list nameID 2 as the
     // member name. The OS/2 disambiguation below guarantees no two members
     // collide into one slot.
-    legacyFamilyName = grouping.typographicFamily;
-    legacySubfamilyName = grouping.typographicSubfamily;
+    legacyFamilyName = groupFamily;
+    legacySubfamilyName = groupSubfamily;
 
     // Disambiguate OS/2 so Font Book / Windows never dedupe two faces that
     // would otherwise read as identical (same italic + same weight). Only
@@ -355,17 +365,17 @@ export function normalizeFontMetadata(
     // separate members of the one family rather than duplicates. Weights are
     // spread within 400–600 only, so a plain custom style never accidentally
     // trips the BOLD style-link bit (>=700) unless its own name says "bold".
-    const italic = /\b(italic|oblique)\b/.test(normalizedStyleWords(grouping.typographicSubfamily));
+    const italic = /\b(italic|oblique)\b/.test(normalizedStyleWords(groupSubfamily));
     const baseItalic = italic;
     const nameSaysBold = /\b(bold|black|heavy|extra bold|ultra bold|semibold|demibold)\b/.test(
-      normalizedStyleWords(grouping.typographicSubfamily),
+      normalizedStyleWords(groupSubfamily),
     );
     const italicBit = baseItalic ? 0x0001 : 0;
     // Non-reference faces get distinct weights 450,500,550,600,650 (all < 700
     // so no accidental bold), unless the name itself is a bold weight.
     const spread = [450, 500, 550, 600, 650];
     const synthWeight = nameSaysBold
-      ? weightClassForStyle(grouping.typographicSubfamily)
+      ? weightClassForStyle(groupSubfamily)
       : grouping.isRegularReference
         ? 400
         : spread[Math.min(spread.length - 1, Math.max(0, grouping.faceIndex - 1))];
