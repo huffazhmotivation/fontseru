@@ -5,6 +5,7 @@ import { simplifyPolyline } from "@/utils/simplify";
 import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor } from "./strokeSmoothing";
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
+import { cubicPoint } from "@/editor/bezier";
 import { normalizeSelfIntersectingContours, TIGHT_CURVE_FIDELITY_SCALE } from "@/editor/booleanOps";
 
 /**
@@ -2338,13 +2339,131 @@ function strokeEndsPhysicallyOverlap(pts: Point[], r: number): boolean {
   return gap < r * 1.9;
 }
 
+/**
+ * PRECISION FIX ("hasil expand stroke monoline/pentool ga presisi dg sblm
+ * di-expand"): adaptively flatten one cubic Bézier segment so every emitted
+ * polyline vertex lies within `tol` font units of the TRUE curve, subdividing
+ * only where curvature actually demands it.
+ *
+ * The old path used `flattenContour(contour, 8)` — a FIXED 8 straight chords
+ * per segment no matter how long or how curved the segment is. On a long or
+ * tightly-curved centerline that chord can sit several font units off the
+ * real curve, and since Expand offsets THIS polyline (not the real Bézier),
+ * that error is baked straight into the expanded outline: the filled shape
+ * visibly departs from the constant-width stroke the live editor draws with
+ * native SVG `stroke` (which strokes the exact Bézier). Flattening
+ * adaptively to a sub-tenth-of-a-unit flatness instead makes the polyline
+ * track the true curve so closely that its constant-width offset is, to
+ * within a small fraction of a unit, identical to the pre-expand preview —
+ * i.e. the expand becomes exact.
+ *
+ * Flatness is measured as the largest distance from the two interior control
+ * points to the chord p0->p3 (the standard cubic flatness metric); a segment
+ * flatter than `tol` is emitted as a single chord, otherwise it's split at
+ * t=0.5 and each half is recursed. `MAX_DEPTH` bounds the recursion so a
+ * pathological (e.g. cusp) segment can't subdivide forever.
+ */
+function flattenCubicAdaptive(
+  p0: Point, c1: Point, c2: Point, p3: Point,
+  tol: number, out: Point[], depth = 0,
+): void {
+  const MAX_DEPTH = 18;
+  // Distance of each control point from the chord p0->p3.
+  const dx = p3.x - p0.x;
+  const dy = p3.y - p0.y;
+  const chordLen = Math.hypot(dx, dy);
+  let flatness: number;
+  if (chordLen < 1e-9) {
+    // Degenerate chord (p0 ~ p3): fall back to raw control-point spread.
+    flatness = Math.max(
+      Math.hypot(c1.x - p0.x, c1.y - p0.y),
+      Math.hypot(c2.x - p3.x, c2.y - p3.y),
+    );
+  } else {
+    const d1 = Math.abs((c1.x - p0.x) * dy - (c1.y - p0.y) * dx) / chordLen;
+    const d2 = Math.abs((c2.x - p0.x) * dy - (c2.y - p0.y) * dx) / chordLen;
+    flatness = Math.max(d1, d2);
+  }
+  if (flatness <= tol || depth >= MAX_DEPTH) {
+    out.push({ x: p3.x, y: p3.y });
+    return;
+  }
+  // Subdivide at t = 0.5 (de Casteljau).
+  const ab = { x: (p0.x + c1.x) / 2, y: (p0.y + c1.y) / 2 };
+  const bc = { x: (c1.x + c2.x) / 2, y: (c1.y + c2.y) / 2 };
+  const cd = { x: (c2.x + p3.x) / 2, y: (c2.y + p3.y) / 2 };
+  const abc = { x: (ab.x + bc.x) / 2, y: (ab.y + bc.y) / 2 };
+  const bcd = { x: (bc.x + cd.x) / 2, y: (bc.y + cd.y) / 2 };
+  const mid = { x: (abc.x + bcd.x) / 2, y: (abc.y + bcd.y) / 2 };
+  flattenCubicAdaptive(p0, ab, abc, mid, tol, out, depth + 1);
+  flattenCubicAdaptive(mid, bcd, cd, p3, tol, out, depth + 1);
+}
+
+/**
+ * High-precision replacement for `flattenContour(contour, 8)` used ONLY by
+ * the uniform-width (Pen Line / Monoline Brush) Expand path. Walks the real
+ * Bézier segments and flattens each to `tol` font units of the true curve
+ * (see `flattenCubicAdaptive`), so the polyline that Expand offsets is a
+ * faithful sample of the exact centerline instead of a coarse 8-chord
+ * approximation. Straight segments (no handles) are emitted as a single
+ * exact edge.
+ */
+function flattenContourPrecise(contour: Contour, tol: number): Point[] {
+  const nodes = contour.nodes;
+  const n = nodes.length;
+  const pts: Point[] = [];
+  if (n === 0) return pts;
+  pts.push({ x: nodes[0].point.x, y: nodes[0].point.y });
+  const segCount = contour.closed ? n : n - 1;
+  for (let i = 0; i < segCount; i++) {
+    const from = nodes[i];
+    const to = nodes[(i + 1) % n];
+    if (from.handleOut || to.handleIn) {
+      const c1 = from.handleOut ?? from.point;
+      const c2 = to.handleIn ?? to.point;
+      flattenCubicAdaptive(from.point, c1, c2, to.point, tol, pts);
+    } else {
+      pts.push({ x: to.point.x, y: to.point.y });
+    }
+  }
+  return pts;
+}
+
+/**
+ * Collapse only points that are essentially coincident (within `eps`) —
+ * used after adaptive flattening to drop exact/near-duplicate vertices
+ * (segment joins, degenerate steps) WITHOUT the geometric detail loss of a
+ * Ramer–Douglas–Peucker `simplifyPolyline`. This keeps the centerline
+ * faithful to the true curve while still preventing zero-length steps that
+ * would make the per-vertex normal undefined.
+ */
+function dedupeClosePoints(points: Point[], eps: number): Point[] {
+  if (points.length < 2) return points;
+  const out: Point[] = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const prev = out[out.length - 1];
+    if (Math.hypot(points[i].x - prev.x, points[i].y - prev.y) > eps) out.push(points[i]);
+  }
+  return out;
+}
+
 export function uniformCenterlineToOutline(contour: Contour, width: number, cap: StrokeCap): Contour[] {
-  const flattened = flattenContour(contour, 8);
+  const r0 = Math.max(0.5, width / 2);
+  // PRECISION FIX: flatten the ACTUAL Bézier centerline adaptively to a tiny
+  // fraction of a font unit instead of a fixed 8 chords per segment, and do
+  // NOT run a lossy RDP `simplifyPolyline` before offsetting — only drop
+  // exact duplicates. The offset built from this faithful polyline matches
+  // the pre-expand native-stroke preview to well under a font unit, which is
+  // what makes Monoline/Pen Line Expand come out exact. Flatness tolerance is
+  // capped small in absolute terms and also relative to stroke radius so a
+  // very heavy stroke doesn't loosen it.
+  const flatTol = Math.min(0.05, Math.max(0.01, r0 * 0.002));
+  const flattened = flattenContourPrecise(contour, flatTol);
   if (flattened.length < 2) return [];
-  const pts = simplifyPolyline(flattened, Math.max(0.5, width * 0.025));
+  const pts = dedupeClosePoints(flattened, Math.max(0.02, width * 0.001));
   if (pts.length < 2) return [];
 
-  const r = Math.max(0.5, width / 2);
+  const r = r0;
 
   if (contour.closed || strokeEndsPhysicallyOverlap(pts, r)) {
     // A near-touching pair of ends is only ever APPROXIMATELY coincident —
