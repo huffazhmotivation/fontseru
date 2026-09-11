@@ -2839,7 +2839,13 @@ function uniformClosedLoopOutline(loopPts: Point[], r: number): Contour[] {
  * round join/cap is smooth. A closed source loop simply omits caps and
  * unions the ring of quads+discs all the way around.
  */
-function buildUniformStrokePrimitives(pts: Point[], r: number, closed: boolean, cap: StrokeCap): Point[][] {
+function buildUniformStrokePrimitives(
+  pts: Point[],
+  r: number,
+  closed: boolean,
+  cap: StrokeCap,
+  endTangents?: { start: Point; end: Point },
+): Point[][] {
   const rings: Point[][] = [];
   const n = pts.length;
   if (n < 2) return rings;
@@ -2861,10 +2867,15 @@ function buildUniformStrokePrimitives(pts: Point[], r: number, closed: boolean, 
     ]);
   }
 
-  // Round-join disc at every vertex that has segments on both sides. This
-  // both rounds the convex outer corner (matching stroke-linejoin: round)
-  // and completely fills the concave inner corner exactly.
-  const discSteps = Math.max(16, Math.ceil((2 * Math.PI) / (4 * Math.PI / 180)));
+  // Round-join disc ONLY at vertices that are actual corners (a meaningful
+  // direction change). Placing a disc at EVERY flattened vertex — hundreds
+  // along a smooth curve — added tens of thousands of redundant union points
+  // per stroke (the "export sangat lama" bottleneck) with no visual benefit:
+  // consecutive segment quads along a smooth curve already overlap and cover
+  // the joint. A disc is only needed where two segments meet at an angle
+  // (convex corner needs rounding, concave corner needs filling). Detect
+  // those by turn angle; along the smooth parts, skip the disc entirely.
+  const discSteps = Math.max(12, Math.ceil((2 * Math.PI) / (6 * Math.PI / 180)));
   const disc = (c: Point): Point[] => {
     const out: Point[] = [];
     for (let s = 0; s < discSteps; s++) {
@@ -2873,37 +2884,67 @@ function buildUniformStrokePrimitives(pts: Point[], r: number, closed: boolean, 
     }
     return out;
   };
+  const CORNER_MIN_TURN = 8 * Math.PI / 180; // radians; below this the quads already cover it
+  const turnAt = (i: number): number => {
+    const prev = pts[(i - 1 + n) % n], cur = pts[i], next = pts[(i + 1) % n];
+    const a1 = Math.atan2(cur.y - prev.y, cur.x - prev.x);
+    const a2 = Math.atan2(next.y - cur.y, next.x - cur.x);
+    let d = Math.abs(a2 - a1);
+    if (d > Math.PI) d = 2 * Math.PI - d;
+    return d;
+  };
   const jointStart = closed ? 0 : 1;
   const jointEnd = closed ? n : n - 1; // exclusive
   for (let i = jointStart; i < jointEnd; i++) {
-    rings.push(disc(pts[i]));
+    if (turnAt(i) >= CORNER_MIN_TURN) rings.push(disc(pts[i]));
   }
 
   if (!closed) {
-    // Caps at the two open ends.
-    const addRoundCap = (c: Point) => rings.push(disc(c));
-    const addSquareCap = (end: Point, dirx: number, diry: number) => {
-      // project a rectangle r beyond the endpoint along the outward tangent
-      const nx = -diry, ny = dirx;
-      const ex = end.x + dirx * r, ey = end.y + diry * r;
+    // Outward end tangents. Prefer the TRUE Bézier tangent (from the source
+    // handles) when supplied — the flattened micro-segment at the very tip
+    // can be a hair off, which is what made a square/butt terminal read
+    // subtly rounded/skewed instead of a clean flat edge. Fall back to the
+    // flattened direction when no true tangent is available.
+    const startDir = (() => {
+      if (endTangents) { const l = Math.hypot(endTangents.start.x, endTangents.start.y) || 1; return { x: endTangents.start.x / l, y: endTangents.start.y / l }; }
+      const dx = pts[0].x - pts[1].x, dy = pts[0].y - pts[1].y; const l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l };
+    })();
+    const endDir = (() => {
+      if (endTangents) { const l = Math.hypot(endTangents.end.x, endTangents.end.y) || 1; return { x: endTangents.end.x / l, y: endTangents.end.y / l }; }
+      const dx = pts[n - 1].x - pts[n - 2].x, dy = pts[n - 1].y - pts[n - 2].y; const l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l };
+    })();
+
+    // A flat cap quad perpendicular to the true tangent. It extends OUTWARD
+    // by `out` (0 for butt, r for square) and INWARD by `r` so it always
+    // overlaps the end segment's own quad and the union yields one clean,
+    // unambiguous flat edge exactly perpendicular to the tangent — never a
+    // rounded or skewed tip.
+    const flatCap = (end: Point, dir: Point, out: number) => {
+      const nx = -dir.y, ny = dir.x;
+      const inx = end.x - dir.x * r, iny = end.y - dir.y * r;   // r inward
+      const ex = end.x + dir.x * out, ey = end.y + dir.y * out; // out outward
       rings.push([
-        { x: end.x + nx * r, y: end.y + ny * r },
+        { x: inx + nx * r, y: iny + ny * r },
         { x: ex + nx * r, y: ey + ny * r },
         { x: ex - nx * r, y: ey - ny * r },
-        { x: end.x - nx * r, y: end.y - ny * r },
+        { x: inx - nx * r, y: iny - ny * r },
       ]);
     };
+
     if (cap === "round") {
-      addRoundCap(pts[0]);
-      addRoundCap(pts[n - 1]);
+      rings.push(disc(pts[0]));
+      rings.push(disc(pts[n - 1]));
     } else if (cap === "square") {
-      // outward tangent at each end
-      const d0 = (() => { const dx = pts[0].x - pts[1].x, dy = pts[0].y - pts[1].y; const l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l }; })();
-      const d1 = (() => { const dx = pts[n - 1].x - pts[n - 2].x, dy = pts[n - 1].y - pts[n - 2].y; const l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l }; })();
-      addSquareCap(pts[0], d0.x, d0.y);
-      addSquareCap(pts[n - 1], d1.x, d1.y);
+      flatCap(pts[0], startDir, r);
+      flatCap(pts[n - 1], endDir, r);
+    } else {
+      // "butt": explicit flat cap flush at the endpoint (out = 0). Making it
+      // explicit (rather than relying on the last quad's edge) guarantees a
+      // clean perpendicular flat terminal even when the final flattened
+      // segment is short or slightly angled.
+      flatCap(pts[0], startDir, 0);
+      flatCap(pts[n - 1], endDir, 0);
     }
-    // "butt": no extra primitive — the first/last quads already end flush.
   }
 
   return rings;
@@ -2917,10 +2958,16 @@ function buildUniformStrokePrimitives(pts: Point[], r: number, closed: boolean, 
  */
 function uniformCenterlineToOutlineExact(contour: Contour, width: number, cap: StrokeCap): Contour[] {
   const r = Math.max(0.5, width / 2);
-  const flatTol = Math.min(0.05, Math.max(0.01, r * 0.002));
+  // Flatness tolerance for the centerline before it's swept into primitives.
+  // Was r*0.002 capped at 0.05u — so tight it produced 400–1200 nodes per
+  // glyph and made Expand/export the slowest phase. 0.15u is still far below
+  // one font unit (imperceptible at any real text size on a 1000 UPM em),
+  // but cuts the primitive/point count several-fold, which is the dominant
+  // export-speed win. The downstream union + refit smooth everything anyway.
+  const flatTol = Math.min(0.15, Math.max(0.05, r * 0.006));
   const flattened = flattenContourPrecise(contour, flatTol);
   if (flattened.length < 2) return [];
-  let pts = dedupeClosePoints(flattened, Math.max(0.02, width * 0.001));
+  let pts = dedupeClosePoints(flattened, Math.max(0.05, width * 0.002));
   if (pts.length < 2) return [];
 
   // Detect an explicitly-closed contour, or an open one whose ends touch
@@ -2935,12 +2982,47 @@ function uniformCenterlineToOutlineExact(contour: Contour, width: number, cap: S
     }
   }
 
-  const rings = buildUniformStrokePrimitives(pts, r, closed, cap);
+  const rings = buildUniformStrokePrimitives(pts, r, closed, cap, closed ? undefined : endTangentsFromContour(contour, pts));
   if (rings.length === 0) return [];
   const contours = unionPolygonsToContours(rings, EXPAND_FIDELITY_SCALE);
   if (contours.length > 0) return contours;
   // Fallback: legacy builder (should essentially never be needed).
   return uniformCenterlineToOutline(contour, width, cap);
+}
+
+/**
+ * True outward tangents at an open contour's two ends, taken from the source
+ * Bézier's own handles (falling back to the node-to-node chord when a handle
+ * is absent). Using the real tangent — instead of the last flattened
+ * micro-segment — makes butt/square caps sit exactly perpendicular to the
+ * stroke direction, so a terminal reads as a clean flat edge instead of a
+ * subtly rounded/skewed one.
+ */
+function endTangentsFromContour(contour: Contour, pts: Point[]): { start: Point; end: Point } {
+  const nodes = contour.nodes;
+  const n = nodes.length;
+  // Start: outward = from just-inside toward the first point.
+  let start: Point;
+  if (n >= 2) {
+    const p0 = nodes[0].point;
+    const nextRef = nodes[0].handleOut ?? nodes[1].handleIn ?? nodes[1].point;
+    start = { x: p0.x - nextRef.x, y: p0.y - nextRef.y };
+  } else {
+    start = { x: pts[0].x - pts[1].x, y: pts[0].y - pts[1].y };
+  }
+  // End: outward = from just-inside toward the last point.
+  let end: Point;
+  if (n >= 2) {
+    const pN = nodes[n - 1].point;
+    const prevRef = nodes[n - 1].handleIn ?? nodes[n - 2].handleOut ?? nodes[n - 2].point;
+    end = { x: pN.x - prevRef.x, y: pN.y - prevRef.y };
+  } else {
+    end = { x: pts[pts.length - 1].x - pts[pts.length - 2].x, y: pts[pts.length - 1].y - pts[pts.length - 2].y };
+  }
+  // Guard against degenerate zero-length tangents.
+  if (Math.hypot(start.x, start.y) < 1e-6) start = { x: pts[0].x - pts[1].x, y: pts[0].y - pts[1].y };
+  if (Math.hypot(end.x, end.y) < 1e-6) end = { x: pts[pts.length - 1].x - pts[pts.length - 2].x, y: pts[pts.length - 1].y - pts[pts.length - 2].y };
+  return { start, end };
 }
 
 /**

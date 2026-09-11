@@ -1181,9 +1181,69 @@ function FeatureSentencePreview({
   const [previewText, setPreviewText] = useState("");
   const [toggles, setToggles] = useState<FeatureToggles>({ ligatures: true, alternates: false, swashes: false });
 
+  // On first open, if the user hasn't typed anything yet, pre-fill the auto
+  // sample so the feature tab is immediately useful (shows real
+  // substitutions from the glyphs they built) instead of an empty box. Only
+  // runs while the field is still empty, so it never clobbers user text.
+  const didAutoFill = useRef(false);
+
   const hasLigatures = featureConfig.ligatures.length > 0;
   const hasAlternates = featureConfig.alternates.length > 0;
   const hasSwashes = featureConfig.swashes.length > 0;
+
+  // AUTO SAMPLE: build a specimen string that actually exercises the
+  // features the user has built, so they don't have to guess which letters
+  // to type. For each ligature we insert the literal characters that trigger
+  // it (resolved down to real letters, e.g. an "f_f_l" ligature → "ffl"),
+  // wrapped in a short real-ish word when possible; for each alternate/swash
+  // we include its base letter. Everything is de-duplicated and only
+  // includes features whose target glyph actually exists & is drawn, so the
+  // preview always shows something that can really fire.
+  const autoSampleText = useMemo(() => {
+    const parts: string[] = [];
+    const seen = new Set<string>();
+    const push = (s: string) => { const t = s.trim(); if (t && !seen.has(t)) { seen.add(t); parts.push(t); } };
+
+    for (const r of featureConfig.ligatures) {
+      const target = glyphs[r.target];
+      if (!target || !hasOutline(target)) continue;
+      const literal = resolveLigatureInputChars(r.target, featureConfig.ligatures).join("");
+      if (!literal) continue;
+      // Common ligature clusters read best inside a word.
+      const word =
+        literal === "ff" ? "off" :
+        literal === "fi" ? "fine" :
+        literal === "fl" ? "flow" :
+        literal === "ffi" ? "office" :
+        literal === "ffl" ? "waffle" :
+        literal === "th" ? "the" :
+        literal === "ct" ? "act" :
+        literal === "st" ? "best" :
+        literal;
+      push(word);
+    }
+    for (const r of featureConfig.alternates) {
+      const b = glyphs[r.base];
+      if (b && hasOutline(b) && r.alternates.some((a) => glyphs[a] && hasOutline(glyphs[a]!))) push(r.base);
+    }
+    for (const r of featureConfig.swashes) {
+      const b = glyphs[r.base];
+      const sw = glyphs[r.swash];
+      if (b && hasOutline(b) && sw && hasOutline(sw)) push(r.base);
+    }
+    return parts.join("  ");
+  }, [featureConfig, glyphs]);
+
+  useEffect(() => {
+    if (didAutoFill.current) return;
+    if (previewText.trim()) { didAutoFill.current = true; return; }
+    if (autoSampleText) {
+      setPreviewText(autoSampleText);
+      setToggles({ ligatures: hasLigatures, alternates: hasAlternates, swashes: hasSwashes });
+      didAutoFill.current = true;
+    }
+  }, [autoSampleText, previewText, hasLigatures, hasAlternates, hasSwashes]);
+
 
   /** Ligature rules that exist in Feature Builder but can NEVER fire here,
    * with why — so a rule that's silently excluded from applyFeatureSubstitution
@@ -1323,6 +1383,22 @@ function FeatureSentencePreview({
           onChange={(e) => setPreviewText(e.target.value)}
           data-testid="lab-feature-preview-input"
         />
+        {autoSampleText && (
+          <button
+            type="button"
+            className="fm-lab-feature-auto-btn"
+            onClick={() => {
+              setPreviewText(autoSampleText);
+              // Turn on every feature that has drawn glyphs so the sample
+              // visibly shows the substitutions right away.
+              setToggles({ ligatures: hasLigatures, alternates: hasAlternates, swashes: hasSwashes });
+            }}
+            title="Isi otomatis dengan kata/huruf yang memakai feature yang sudah kamu buat"
+            data-testid="lab-feature-auto-sample"
+          >
+            <Wand2 size={13} /> Auto
+          </button>
+        )}
         {(hasLigatures || hasAlternates || hasSwashes) && (
           <div className="fm-lab-feature-preview-toggles">
             {hasLigatures && (

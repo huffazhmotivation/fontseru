@@ -4,6 +4,7 @@ import {
   applyBooleanOp,
   isBooleanEligible,
   normalizeSelfIntersectingContours,
+  unionObjectsHoleAware,
   EXPAND_FIDELITY_SCALE as EXPORT_CURVE_FIDELITY_SCALE,
 } from "@/editor/booleanOps";
 
@@ -307,8 +308,18 @@ export function normalizeFontMetadata(
   const licenseURL = asText(info?.licenseURL);
   const copyright = asText(info?.copyright) || `Copyright © ${new Date().getFullYear()} ${familyName}`;
   const description = asText(info?.description);
-  const postscriptName = sanitizePostScriptName(familyName, styleName, asText(info?.postscriptName));
-  const uniqueID = asText(info?.uniqueID) || `${manufacturer}:${postscriptName}:Version ${version}`;
+  // PostScript name (nameID 6) must be UNIQUE per installed face — two faces
+  // sharing one PS name collide on install (the OS treats them as the same
+  // font and one silently overwrites the other). When grouping a family, the
+  // project's single stored postscriptName (e.g. "UntitledFont-Regular") is
+  // the SAME for every style, so ignore it and always derive a unique
+  // family+style PS name instead. Outside grouping, honor a requested name.
+  const postscriptName = grouping
+    ? sanitizePostScriptName(grouping.typographicFamily, grouping.typographicSubfamily, "")
+    : sanitizePostScriptName(familyName, styleName, asText(info?.postscriptName));
+  const uniqueID = asText(info?.uniqueID) && !grouping
+    ? asText(info?.uniqueID)
+    : `${manufacturer}:${postscriptName}:Version ${version}`;
   let styleLink = fontStyleLinkMetadata(styleName);
   let { legacyFamilyName, legacySubfamilyName } = legacyStyleLinkNames(familyName, styleName);
 
@@ -320,12 +331,22 @@ export function normalizeFontMetadata(
   if (grouping) {
     typographicFamilyOverride = grouping.typographicFamily;
     typographicSubfamilyOverride = grouping.typographicSubfamily;
-    // Legacy (nameID 1/2) must stay installable per face. Fold the distinct
-    // subfamily into the legacy family so old apps list them next to each
-    // other under one prefix, and keep subfamily RIBBI-legal.
-    const italic = /\b(italic|oblique)\b/.test(normalizedStyleWords(grouping.typographicSubfamily));
-    legacyFamilyName = `${grouping.typographicFamily} ${grouping.typographicSubfamily}`.trim();
-    legacySubfamilyName = italic ? "Italic" : "Regular";
+    // ONE-FAMILY GROUPING (the fix for "diinstall jadi font masing-masing"):
+    // Font Book, Affinity, Adobe, Office etc. group faces primarily by the
+    // legacy Family Name (nameID 1). The old code folded the distinct style
+    // INTO nameID 1 ("Ajeba Regular Clean", "Ajeba Regular Rough", …) and set
+    // nameID 2 to a bare "Regular"/"Italic" — so every face had a DIFFERENT
+    // nameID 1 and the apps correctly showed them as separate families.
+    //
+    // Correct grouping: nameID 1 is the SHARED family for every face, and the
+    // distinct, human-readable style goes in nameID 2 (its full label, e.g.
+    // "Regular Clean"). nameID 16/17 mirror them for modern apps. This is
+    // exactly how real multi-style custom families ship. A non-RIBBI nameID 2
+    // is fine here: apps group by nameID 1 and simply list nameID 2 as the
+    // member name. The OS/2 disambiguation below guarantees no two members
+    // collide into one slot.
+    legacyFamilyName = grouping.typographicFamily;
+    legacySubfamilyName = grouping.typographicSubfamily;
 
     // Disambiguate OS/2 so Font Book / Windows never dedupe two faces that
     // would otherwise read as identical (same italic + same weight). Only
@@ -334,6 +355,7 @@ export function normalizeFontMetadata(
     // separate members of the one family rather than duplicates. Weights are
     // spread within 400–600 only, so a plain custom style never accidentally
     // trips the BOLD style-link bit (>=700) unless its own name says "bold".
+    const italic = /\b(italic|oblique)\b/.test(normalizedStyleWords(grouping.typographicSubfamily));
     const baseItalic = italic;
     const nameSaysBold = /\b(bold|black|heavy|extra bold|ultra bold|semibold|demibold)\b/.test(
       normalizedStyleWords(grouping.typographicSubfamily),
@@ -391,21 +413,6 @@ export function normalizeFontMetadata(
  * throws ('Name table entry "en" does not exist...'), so OTF export never
  * produced a file at all before this fix.
  */
-/**
- * The legacy Macintosh platform (1,0,0) name record predates Unicode and
- * only supports the MacRoman single-byte charset. Non-ASCII characters
- * (accents, curly quotes, etc.) have no safe 1:1 mapping here, so they're
- * dropped rather than risk mis-encoded bytes in old Mac font pickers —
- * those apps only ever read this record as a fallback anyway.
- */
-function macRomanSafe(value: string): string {
-  const stripped = value
-    .normalize("NFKD")
-    .replace(/[^\x20-\x7E]/g, "")
-    .trim();
-  return stripped || value.replace(/[^\x20-\x7E]/g, "?") || " ";
-}
-
 export interface NameTablePreviewRecord {
   id: number;
   label: string;
@@ -471,14 +478,21 @@ export function previewNameTableRecords(info: NormalizedFontMetadata): NameTable
     .map(([id, value]) => ({ id, label: NAME_TABLE_ID_LABELS[id] ?? `nameID ${id}`, value }));
 }
 
-function toOpenTypeNames(info: NormalizedFontMetadata): Record<string, Record<string, Record<string, string>>> {
+function toOpenTypeNames(info: NormalizedFontMetadata): Record<string, Record<string, string>> {
+  // opentype.js expects a FLAT map of { nameKey: { lang: text } } and emits
+  // BOTH the Macintosh (1,0,0) and Windows (3,1,0x409) platform records for
+  // every entry itself (see tables/name.js makeNameTable). The previous
+  // shape nested everything under { windows, macintosh }, which this build
+  // of opentype.js does NOT understand: it read `font.names.fontFamily` as
+  // undefined and then crashed on `englishFamilyName.replace(...)` while
+  // serializing the CFF/sfnt — the "export sering error" bug. Returning the
+  // flat shape fixes the crash and still produces the dual-platform name
+  // records automatically.
+  //
   // nameID 1/2 (Font Family / Subfamily): RIBBI-safe legacy strings, so
   // GDI-era apps and Mac Font Book still install/select non-RIBBI custom
-  // families (e.g. "Light", "Black") correctly.
-  // nameID 16/17 (Preferred/Typographic Family / Subfamily): the font's
-  // true family/style, read by every modern app. Only written when they'd
-  // actually differ from 1/2 — the OpenType spec says they may be omitted
-  // otherwise.
+  // families correctly. nameID 16/17 (Preferred/Typographic Family /
+  // Subfamily): the font's true family/style, written only when they differ.
   const fields: Record<string, Record<string, string>> = {
     fontFamily: localized(info.legacyFamilyName),
     fontSubfamily: localized(info.legacySubfamilyName),
@@ -503,15 +517,7 @@ function toOpenTypeNames(info: NormalizedFontMetadata): Record<string, Record<st
   if (info.trademark) fields.trademark = localized(info.trademark);
   if (info.designerURL) fields.designerURL = localized(info.designerURL);
 
-  // Also write a Macintosh (1,0,0) platform copy of every field so fonts
-  // still identify themselves correctly in legacy Mac font tools that never
-  // learned to read the Windows/Unicode platform records.
-  const macFields: Record<string, Record<string, string>> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    macFields[key] = localized(macRomanSafe(value.en ?? ""));
-  }
-
-  return { windows: fields, macintosh: macFields };
+  return fields;
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -801,6 +807,14 @@ function exportableObjects(glyph: Glyph): VectorObject[] {
 
   if (eligible.length >= 2) {
     try {
+      // Hole-aware union (preserves each object's own counters — e.g. a
+      // slashed "0" built from an oval ring + a diagonal slash keeps its two
+      // counters instead of filling solid). Falls back to the plain union if
+      // the hole-aware pass returns nothing.
+      const holeAware = unionObjectsHoleAware(eligible, EXPORT_CURVE_FIDELITY_SCALE);
+      if (holeAware.length > 0) {
+        return [{ id: shortId("obj"), kind: "shape", contours: holeAware }, ...ineligible];
+      }
       const merged = applyBooleanOp(eligible, "union", EXPORT_CURVE_FIDELITY_SCALE);
       if (merged) return [merged, ...ineligible];
     } catch (error) {
@@ -1036,7 +1050,9 @@ function localized(value: string): Record<string, string> {
 
 function setNames(font: opentype.Font, info: NormalizedFontMetadata): void {
   // Replace, rather than mutate, the table. This guarantees that a malformed
-  // imported/project name object cannot leak into the generated OTF.
+  // imported/project name object cannot leak into the generated OTF. The
+  // value is the FLAT { nameKey: { lang } } shape opentype.js reads directly
+  // (see toOpenTypeNames) — the previously-nested shape crashed export.
   (font as any).names = toOpenTypeNames(info);
 }
 
@@ -2210,8 +2226,9 @@ export function exportOTF(
   info: FontInfo,
   kerningPairs: KerningPairs,
   featureConfig?: FeatureBuilderConfig,
+  grouping?: FontFamilyGrouping,
 ): ArrayBuffer {
-  const data = normalizeExportFontData({ glyphs, metrics, info, fontName: info?.familyName, kerningPairs });
+  const data = normalizeExportFontData({ glyphs, metrics, info, fontName: info?.familyName, kerningPairs, grouping });
   return generateOTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
 }
 
@@ -2221,8 +2238,9 @@ export async function exportTTF(
   info: FontInfo,
   kerningPairs: KerningPairs,
   featureConfig?: FeatureBuilderConfig,
+  grouping?: FontFamilyGrouping,
 ): Promise<ArrayBuffer> {
-  const data = normalizeExportFontData({ glyphs, metrics, info, fontName: info?.familyName, kerningPairs });
+  const data = normalizeExportFontData({ glyphs, metrics, info, fontName: info?.familyName, kerningPairs, grouping });
   return generateTTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
 }
 

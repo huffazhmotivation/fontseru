@@ -598,6 +598,11 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   // its own independent family.
   const [combineFamily, setCombineFamily] = useState(true);
 
+  // Which style's rename inputs are currently expanded. Overrides are hidden
+  // behind a small "Rename" toggle so the Styles panel stays clean by
+  // default — the two raw inputs per style made it look cluttered.
+  const [renameOpenStyle, setRenameOpenStyle] = useState<FontStyle | null>(null);
+
   // Per-style manual overrides for the exported nameID 1/16 (Family Name)
   // and nameID 2/17 (Style/Subfamily Name) — used in Family exports (2+
   // styles at once) and for custom families, where the auto-generated
@@ -1662,28 +1667,55 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                           }}
                         />
                         <span className="fm-export-checkmark" aria-hidden="true" />
-                        <span className="fm-export-style-name">{label}</span>
+                        <span className="fm-export-style-main">
+                          <span className="fm-export-style-name">{label}</span>
+                          {checked && (selectedStyleCount > 1 || isCustomFamily) && (
+                            <span className="fm-export-style-sub">
+                              {(override?.styleName?.trim() || fontStyleLabel(id, customFamilies))}
+                            </span>
+                          )}
+                        </span>
                         {locked && <Lock size={11} className="fm-lock-badge-inline" />}
                         {!locked && !available && <span className="fm-export-style-status">No vectors</span>}
+                        {checked && !locked && available && (selectedStyleCount > 1 || isCustomFamily) && (
+                          <button
+                            type="button"
+                            className={`fm-export-rename-toggle${renameOpenStyle === id ? " active" : ""}`}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setRenameOpenStyle((cur) => (cur === id ? null : id));
+                            }}
+                            title="Ganti nama Family/Style khusus untuk file ini"
+                          >
+                            {renameOpenStyle === id ? "Done" : "Rename"}
+                          </button>
+                        )}
                       </label>
-                      {checked && (selectedStyleCount > 1 || isCustomFamily) && (
+                      {checked && renameOpenStyle === id && (selectedStyleCount > 1 || isCustomFamily) && (
                         <div className="fm-export-style-name-overrides">
-                          <input
-                            className="fm-export-style-name-override"
-                            value={override?.familyName ?? ""}
-                            onChange={(event) => setStyleNameOverride(id, "familyName", event.target.value)}
-                            spellCheck={false}
-                            placeholder={`Family: ${fontInfoForm.familyName.trim() || fontInfoForm.fontName.trim() || "same as above"}`}
-                            title="Override the Family Name baked into this style's file only (nameID 1/16). Leave blank to use the Family Name above."
-                          />
-                          <input
-                            className="fm-export-style-name-override"
-                            value={override?.styleName ?? ""}
-                            onChange={(event) => setStyleNameOverride(id, "styleName", event.target.value)}
-                            spellCheck={false}
-                            placeholder={`Style: ${fontStyleLabel(id, customFamilies)}`}
-                            title="Override the Style/Subfamily Name baked into this file (nameID 2/17). Leave blank to use the automatic label."
-                          />
+                          <label className="fm-export-override-field">
+                            <span>Family</span>
+                            <input
+                              className="fm-export-style-name-override"
+                              value={override?.familyName ?? ""}
+                              onChange={(event) => setStyleNameOverride(id, "familyName", event.target.value)}
+                              spellCheck={false}
+                              placeholder={fontInfoForm.familyName.trim() || fontInfoForm.fontName.trim() || "same as above"}
+                              title="Override the Family Name baked into this style's file only (nameID 1/16). Leave blank to use the Family Name above."
+                            />
+                          </label>
+                          <label className="fm-export-override-field">
+                            <span>Style</span>
+                            <input
+                              className="fm-export-style-name-override"
+                              value={override?.styleName ?? ""}
+                              onChange={(event) => setStyleNameOverride(id, "styleName", event.target.value)}
+                              spellCheck={false}
+                              placeholder={fontStyleLabel(id, customFamilies)}
+                              title="Override the Style/Subfamily Name baked into this file (nameID 2/17). Leave blank to use the automatic label."
+                            />
+                          </label>
                         </div>
                       )}
                       </div>

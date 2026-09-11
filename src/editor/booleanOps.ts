@@ -126,7 +126,18 @@ function simplifyClosedRing(pts: Point[], epsilon: number): Point[] {
 
 function objectPolys(obj: VectorObject): Point[][] {
   return obj.contours
-    .map((c) => simplifyClosedRing(dedupePoints(flattenContour(c, CLIP_SAMPLE_STEPS)), PRECLIP_SIMPLIFY_EPSILON))
+    .map((c) => {
+      // Flatten at a resolution that scales DOWN as the contour already has
+      // more nodes. An expanded stroke contour can carry hundreds of Bézier
+      // nodes; re-flattening every segment at the full CLIP_SAMPLE_STEPS
+      // (48) then produced tens of thousands of points, which overwhelmed
+      // the exact clipper and made it emit degenerate/empty rings — the
+      // slashed-"0" counter vanished because its polygon came back broken.
+      // Fewer steps on an already-dense contour keeps the point budget sane
+      // while staying well within the pre-clip simplify tolerance below.
+      const steps = c.nodes.length > 40 ? 4 : c.nodes.length > 16 ? 8 : CLIP_SAMPLE_STEPS;
+      return simplifyClosedRing(dedupePoints(flattenContour(c, steps)), PRECLIP_SIMPLIFY_EPSILON);
+    })
     .filter((poly) => poly.length >= 3);
 }
 
@@ -241,11 +252,19 @@ function simplifyRingPreservingCorners(ring: Point[], epsilon: number): { points
     if (turnAngleDeg(prev, ring[i], next) > CORNER_TURN_DEG) cornerIdx.push(i);
   }
 
-  if (cornerIdx.length === 0) {
-    // No sharp turns anywhere (e.g. a circle/blob untouched by the cut) —
-    // simplify the whole loop as one run, all points stay "smooth".
+  // Zero OR one corner can't partition the loop into corner-to-corner runs
+  // (one corner makes a single run from itself back to itself, which the
+  // run builder below collapses to nothing — that dropped a real hole/
+  // counter entirely, e.g. the two counters of a slashed "0", turning them
+  // into empty contours). Treat "too few corners to partition" the same as
+  // the no-corner case: simplify the whole loop as one smooth run. The lone
+  // corner (if any) is preserved as smooth; a single vertex out of a
+  // ~100-point counter reading smooth instead of hard is imperceptible and
+  // far better than losing the counter.
+  if (cornerIdx.length < 2) {
     const simplified = simplifyPolyline(ring, epsilon);
-    return { points: simplified, isCorner: simplified.map(() => false) };
+    const pts = simplified.length >= 3 ? simplified : ring;
+    return { points: pts, isCorner: pts.map(() => false) };
   }
 
   const outPoints: Point[] = [];
@@ -265,6 +284,14 @@ function simplifyRingPreservingCorners(ring: Point[], epsilon: number): { points
       outPoints.push(simplifiedRun[j]);
       outCorner.push(j === 0);
     }
+  }
+  // Safety net: never return a degenerate ring — if the corner-run walk
+  // somehow produced < 3 points, fall back to a plain simplify of the
+  // whole loop so a real contour is never silently dropped.
+  if (outPoints.length < 3) {
+    const simplified = simplifyPolyline(ring, epsilon);
+    const pts = simplified.length >= 3 ? simplified : ring;
+    return { points: pts, isCorner: pts.map(() => false) };
   }
   return { points: outPoints, isCorner: outCorner };
 }
@@ -621,7 +648,16 @@ function ringsCross(a: Point[], b: Point[]): boolean {
  * problem and correctly returns false. */
 function contoursNeedIntersectionResolution(contours: Contour[]): boolean {
   if (contours.length === 0) return false;
-  const rings = contours.map((c) => dedupePoints(flattenContour(c, CLIP_SAMPLE_STEPS)));
+  // Flatten at a resolution that scales DOWN with node count. A rough-brush
+  // glyph carries many dense texture contours; flattening every one at the
+  // full CLIP_SAMPLE_STEPS then running an O(n²) self-intersection test on
+  // each was a big chunk of export time. A coarser sample still reliably
+  // detects a genuine crossing (a real crossing spans far more than one
+  // coarse segment) while cutting the point budget dramatically.
+  const rings = contours.map((c) => {
+    const steps = c.nodes.length > 40 ? 3 : c.nodes.length > 16 ? 6 : 12;
+    return dedupePoints(flattenContour(c, steps));
+  });
   for (const ring of rings) {
     if (ring.length < 3) return true; // degenerate — let the clip path's own handling deal with it
     if (ringSelfIntersects(ring)) return true;
@@ -676,6 +712,39 @@ export function unionPolygonsToContours(rings: Point[][], toleranceScale = 1): C
   let resultMulti: ClipMultiPolygon;
   try {
     resultMulti = polys.length === 1 ? clipUnion(polys[0]) : clipUnion(polys[0], ...polys.slice(1));
+  } catch {
+    return [];
+  }
+  return multiPolygonToContours(resultMulti, toleranceScale);
+}
+
+/**
+ * HOLE-AWARE union of several already-filled objects into one clean shape —
+ * the correct "Remove Overlap" for a glyph whose objects individually have
+ * counters/holes (e.g. a slashed "0": an oval RING plus a diagonal slash).
+ *
+ * The plain `unionPolygonsToContours`/`applyBooleanOp` path treats every
+ * contour as a solid ring to OR together, so the moment two ring-shaped
+ * (annulus) expansions are unioned, the inner counter of one gets filled by
+ * the solid body of the other and the hole vanishes — the "angka 0 jadi
+ * gepeng/hitam penuh" bug. The fix is to keep each object's body/hole
+ * structure intact: convert every object into a proper exterior+holes
+ * MultiPolygon (via the even-odd resolver `objectToMultiPolygon`, which
+ * already pairs an object's own outer contour with its own counters), then
+ * union those hole-aware MultiPolygons together with polygon-clipping, which
+ * correctly keeps a counter open unless another object's real ink actually
+ * covers it. This matches what the live editor shows.
+ */
+export function unionObjectsHoleAware(objects: VectorObject[], toleranceScale = 1): Contour[] {
+  const multiPolys = objects
+    .map(objectToMultiPolygon)
+    .filter((mp) => mp.length > 0);
+  if (multiPolys.length === 0) return [];
+  let resultMulti: ClipMultiPolygon;
+  try {
+    resultMulti = multiPolys.length === 1
+      ? multiPolys[0]
+      : clipUnion(multiPolys[0], ...multiPolys.slice(1));
   } catch {
     return [];
   }
