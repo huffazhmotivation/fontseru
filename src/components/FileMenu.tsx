@@ -386,6 +386,8 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const qaFontStyle = useAppStore((s) => s.fontStyle);
   const qaMetrics = useAppStore((s) => s.metrics);
   const qaFontInfo = useAppStore((s) => s.fontInfo);
+  const setFontInfo = useAppStore((s) => s.setFontInfo);
+  const setFontName = useAppStore((s) => s.setFontName);
   const qaKerningPairs = useAppStore((s) => s.kerningPairs);
   const qaKerningOverridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
   const qaFeatureConfig = useAppStore((s) => s.featureConfig);
@@ -586,6 +588,16 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     regular: true,
   });
 
+  // "Combine as one family": when 2+ styles are exported, group them all
+  // under ONE typographic family (nameID 16) with distinct subfamilies
+  // (nameID 17) plus per-face OS/2 disambiguation, so a set like
+  // "Regular Clean / Regular Rough / Italic Clean / Italic Rough" installs
+  // and shows up as a single family on Mac (Font Book) and Windows instead
+  // of four separate families. Defaults ON — that's what a designer building
+  // a family almost always wants; can be turned off to keep every style as
+  // its own independent family.
+  const [combineFamily, setCombineFamily] = useState(true);
+
   // Per-style manual overrides for the exported nameID 1/16 (Family Name)
   // and nameID 2/17 (Style/Subfamily Name) — used in Family exports (2+
   // styles at once) and for custom families, where the auto-generated
@@ -719,6 +731,47 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     onExportButtonReady?.(beginExport);
   }, [beginExport, onExportButtonReady]);
 
+  // Persist the current FONT INFO / LICENSE INFO drafts into the project
+  // store WITHOUT running an export, so the data isn't lost if the user
+  // closes the dialog (or the app) before exporting. Mirrors exactly the
+  // field mapping runExport uses to build its FontInfo, so a later export
+  // produces identical name-table records. Called by the "Save Info" button.
+  const [infoSaved, setInfoSaved] = useState(false);
+  const saveFontInfoDraft = useCallback(() => {
+    const fontName = fontInfoForm.fontName.trim();
+    if (!fontName) {
+      showToast("Font Name wajib diisi sebelum menyimpan.", "error");
+      setExportTab("fontinfo");
+      return;
+    }
+    const familyName = fontInfoForm.familyName.trim() || fontName;
+    const styleName = fontInfoForm.style.trim() || qaFontInfo.styleName || "Regular";
+    const resolvedLicense = licenseInfoForm.licenseOwner.trim()
+      ? `${licenseInfoForm.licenseType || "Personal"} - ${licenseInfoForm.licenseOwner.trim()}`
+      : (licenseInfoForm.licenseType || qaFontInfo.license || "");
+    const patch: Partial<FontInfo> = {
+      familyName,
+      styleName,
+      fullName: `${familyName} ${styleName}`.trim(),
+      designer: fontInfoForm.designerName.trim(),
+      designerURL: fontInfoForm.designerURL.trim(),
+      manufacturer: fontInfoForm.foundry.trim(),
+      manufacturerURL: fontInfoForm.website.trim(),
+      trademark: fontInfoForm.trademark.trim(),
+      copyright: fontInfoForm.copyright.trim(),
+      version: fontInfoForm.version.trim() || "1.000",
+      license: resolvedLicense,
+      licenseURL: fontInfoForm.website.trim(),
+    };
+    setFontInfo(patch);
+    // Keep the project's display name in sync with the family name the way
+    // renaming the font elsewhere does, so the two never drift apart.
+    if (familyName) setFontName(familyName);
+    setInfoSaved(true);
+    window.setTimeout(() => setInfoSaved(false), 2000);
+    showToast("Font Info & License tersimpan.", "success");
+  }, [fontInfoForm, licenseInfoForm, qaFontInfo, setFontInfo, setFontName, showToast]);
+
   useEffect(() => {
     if (!exportOpen || nameTableTools) return;
     let cancelled = false;
@@ -772,6 +825,33 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     const normalized = nameTableTools.normalizeFontMetadata(previewInfo, fontName);
     return nameTableTools.previewNameTableRecords(normalized);
   }, [nameTableTools, fontInfoForm, licenseInfoForm.licenseOwner, licenseInfoForm.licenseType]);
+
+  // Family-aware summary: when more than one style is selected for export
+  // (Regular + Bold/Italic, or any custom family), the name table preview
+  // should show EACH style's Family Name (nameID 1) and Subfamily (nameID 2)
+  // that will be written to its own file — not just the first style — so a
+  // designer building a family can confirm the whole set before exporting.
+  // Each row mirrors the exact family/subfamily resolution runExport uses
+  // (per-row override first, else the automatic style label / family name).
+  const familyNameTablePreview = useMemo(() => {
+    const baseFamily = fontInfoForm.familyName.trim() || fontInfoForm.fontName.trim();
+    if (!baseFamily) return null;
+    const selected = selectedExportStyles(
+      selectedStyles,
+      detectExportableStyles(glyphsByStyle, customFamilies),
+      customFamilies,
+    );
+    if (selected.length <= 1) return null; // not a family — single-style preview already covers it
+    const styleOverride = fontInfoForm.style.trim();
+    return selected.map((style) => {
+      const override = styleNameOverrides[style];
+      const subfamily =
+        override?.styleName.trim() ||
+        (selected.length === 1 && styleOverride ? styleOverride : fontStyleLabel(style, customFamilies));
+      const family = override?.familyName.trim() || baseFamily;
+      return { style, family, subfamily, fullName: `${family} ${subfamily}`.trim() };
+    });
+  }, [fontInfoForm, selectedStyles, glyphsByStyle, customFamilies, styleNameOverrides]);
 
   const save = () => {
     try {
@@ -948,25 +1028,52 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
 
       const { generateFontFiles } = await import("@/utils/fontIO");
 
+      // FAMILY GROUPING: when the user asks to combine 2+ styles into one
+      // family, pick a shared typographic family name (nameID 16) — the base
+      // Family Name field — and hand each face a distinct subfamily + a
+      // disambiguated OS/2 identity so Font Book / Windows treat them as one
+      // family with several members. The reference (Regular) face is the
+      // first non-italic style, else the first style.
+      const groupAsFamily = combineFamily && styles.length > 1;
+      const sharedTypographicFamily = familyName;
+      const styleLabelFor = (style: FontStyle) => {
+        const ov = styleNameOverrides[style];
+        return (
+          ov?.styleName.trim() ||
+          (styles.length === 1 && styleOverride ? styleOverride : fontStyleLabel(style, s.customFamilies))
+        );
+      };
+      const regularRefStyle = groupAsFamily
+        ? (styles.find((st) => !/\b(italic|oblique)\b/i.test(styleLabelFor(st))) ?? styles[0])
+        : null;
+
       // Family export is orchestration only: each selected style still passes
       // through the existing font generator and its validation pipeline.
-      for (const style of styles) {
+      for (let styleIdx = 0; styleIdx < styles.length; styleIdx++) {
+        const style = styles[styleIdx];
         const override = styleNameOverrides[style];
         const styleName =
           override?.styleName.trim() ||
           (styles.length === 1 && styleOverride ? styleOverride : fontStyleLabel(style, s.customFamilies));
-        const styleFamilyName = override?.familyName.trim() || familyName;
+        // When grouping, every file's Family Name is the shared typographic
+        // family; otherwise keep the per-style family (old behavior).
+        const styleFamilyName = groupAsFamily
+          ? sharedTypographicFamily
+          : (override?.familyName.trim() || familyName);
+        const grouping = groupAsFamily
+          ? {
+              typographicFamily: sharedTypographicFamily,
+              typographicSubfamily: styleName,
+              faceIndex: styleIdx,
+              faceCount: styles.length,
+              isRegularReference: style === regularRefStyle,
+            }
+          : undefined;
         const exportInfo: FontInfo = {
           ...s.fontInfo,
           familyName: styleFamilyName,
           styleName,
-          // Same fix as the preview above: Full Name must be derived from
-          // Family Name, not the separate "Font Name" field, or the two can
-          // drift apart and the exported font fails the Full-Name-starts-
-          // with-Family-Name check.
           fullName: `${styleFamilyName} ${styleName}`,
-          // Let normalization create a unique Family-Style PostScript name and
-          // matching unique ID for every binary.
           postscriptName: "",
           uniqueID: "",
           designer: designerName,
@@ -1003,6 +1110,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
             effectiveKerning,
             formats,
             s.featureConfig,
+            grouping,
           );
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error);
@@ -1420,6 +1528,23 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                         <p className="fm-hint">Isi Font Name dulu untuk lihat preview name table.</p>
                       ) : (
                         <>
+                          {familyNameTablePreview && (
+                            <div className="fm-nametable-family">
+                              <div className="fm-nametable-family-head">
+                                Family: <strong>{fontInfoForm.familyName.trim() || fontInfoForm.fontName.trim()}</strong>
+                                <span className="fm-nametable-preview-count">{familyNameTablePreview.length} styles</span>
+                              </div>
+                              <div className="fm-nametable-preview-list">
+                                {familyNameTablePreview.map((row) => (
+                                  <div className="fm-nametable-preview-row" key={row.style}>
+                                    <span className="fm-nametable-preview-label">{row.subfamily}</span>
+                                    <span className="fm-nametable-preview-value">{row.fullName}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="fm-nametable-family-note">Record di bawah ini contoh untuk style pertama; tiap style di atas ditulis ke file-nya sendiri.</div>
+                            </div>
+                          )}
                           <div className="fm-nametable-preview-list">
                             {nameTablePreview.map((record) => (
                               <div className="fm-nametable-preview-row" key={record.id}>
@@ -1567,6 +1692,26 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
                 </div>
               </div>
 
+              {selectedStyleCount > 1 && (
+                <div className="fm-export-field">
+                  <label className="fm-export-combine-family" title="Gabungkan semua style jadi SATU family di Mac & Windows (nameID 16/17 + OS/2 dibedakan per style). Matikan kalau tiap style mau jadi family sendiri.">
+                    <input
+                      type="checkbox"
+                      checked={combineFamily}
+                      disabled={busy}
+                      onChange={(event) => setCombineFamily(event.target.checked)}
+                    />
+                    <span className="fm-export-checkmark" aria-hidden="true" />
+                    <span className="fm-export-style-name">Combine as one family</span>
+                  </label>
+                  <p className="fm-hint">
+                    {combineFamily
+                      ? `Semua style dikenal sebagai satu family "${fontInfoForm.familyName.trim() || fontInfoForm.fontName.trim() || "—"}" waktu diinstall.`
+                      : "Tiap style jadi family terpisah waktu diinstall."}
+                  </p>
+                </div>
+              )}
+
               <div className="fm-export-field">
                 <span>Format</span>
                 <div className="fm-format-segment" role="group" aria-label="Font format">
@@ -1621,6 +1766,16 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
               >
                 {busy ? <Loader2 size={15} className="fm-spin" /> : <Download size={15} />}
                 {busy ? "Exporting…" : primaryExportLabel}
+              </button>
+              <button
+                type="button"
+                className="fm-secondary-btn"
+                onClick={saveFontInfoDraft}
+                disabled={busy}
+                title="Simpan Font Info & License ke project tanpa export, agar data tidak hilang"
+              >
+                {infoSaved ? <Check size={15} /> : <Save size={15} />}
+                {infoSaved ? "Saved" : "Save Info"}
               </button>
               <button type="button" className="fm-secondary-btn" onClick={() => setExportOpen(false)} disabled={busy}>
                 Cancel

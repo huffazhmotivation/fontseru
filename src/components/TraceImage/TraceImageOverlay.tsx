@@ -581,7 +581,7 @@ export function TraceImageOverlay() {
               <div className="fm-field">
                 <label>Detail</label>
                 <div className="fm-trace-detail-toggle" role="group" aria-label="Tingkat detail tracing">
-                  {(["low", "medium", "high"] as TraceDetail[]).map((level) => (
+                  {(["low", "medium", "high", "ultra"] as TraceDetail[]).map((level) => (
                     <button
                       key={level}
                       type="button"
@@ -590,11 +590,11 @@ export function TraceImageOverlay() {
                       onClick={() => setSettings((s) => ({ ...s, detail: level }))}
                       data-testid={`trace-detail-${level}`}
                     >
-                      {level === "low" ? "Rendah" : level === "medium" ? "Sedang" : "Tinggi"}
+                      {level === "low" ? "Rendah" : level === "medium" ? "Sedang" : level === "high" ? "Tinggi" : "Ultra"}
                     </button>
                   ))}
                 </div>
-                <InfoTip>Rendah = node paling sedikit &amp; paling halus. Tinggi = mengikuti garis tipis lebih ketat &amp; presisi.</InfoTip>
+                <InfoTip>Rendah = node paling sedikit &amp; paling halus. Tinggi = mengikuti garis tipis lebih ketat. Ultra = presisi sub-pixel, 100% ikut tepi gambar asli (node paling banyak).</InfoTip>
               </div>
 
               <Slider

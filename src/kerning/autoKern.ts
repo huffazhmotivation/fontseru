@@ -456,7 +456,72 @@ function tightestGapInRange(
   return tightest;
 }
 
-export function suggestKerningPair(glyphs: GlyphMap, metrics: FontMetrics, left: string, right: string): number {
+/**
+ * Font-level spacing rhythm calibration ("pro" auto-kern).
+ *
+ * A single hardcoded target optical gap (the old `TARGET_GAP_RATIO`) spaces
+ * every font the same regardless of how tightly or loosely it was actually
+ * drawn — so a condensed face and an airy display face both get pushed
+ * toward the same 9%-of-em gap, which reads as wrong (too loose or too
+ * tight) for one of them. Professional spacing sets the between-letter gap
+ * from the font's OWN rhythm instead.
+ *
+ * This measures that rhythm directly: for a set of straight-sided control
+ * pairs the designer has actually drawn (n-n, o-o, H-H, …), it takes the
+ * real optical gap each pair sits at with zero kerning, and uses their
+ * MEDIAN as the font's characteristic letter distance. Kerning then nudges
+ * every other pair toward that same characteristic gap, so the whole font
+ * keeps one consistent rhythm — the "spacing by area / equal perceived
+ * distance" idea pro tools (HT Letterspacer, etc.) are built on — rather
+ * than an arbitrary constant. Falls back to the old constant when there
+ * aren't enough drawn control pairs to measure a rhythm yet.
+ */
+const CALIBRATION_PAIRS: Array<[string, string]> = [
+  ["n", "n"], ["o", "o"], ["n", "o"], ["o", "n"],
+  ["H", "H"], ["H", "O"], ["O", "O"], ["m", "n"],
+  ["u", "n"], ["e", "o"],
+];
+
+export function calibrateTargetGap(glyphs: GlyphMap, metrics: FontMetrics): number {
+  const fallback = metrics.unitsPerEm * TARGET_GAP_RATIO;
+  const gaps: number[] = [];
+  for (const [left, right] of CALIBRATION_PAIRS) {
+    const l = glyphs[left];
+    const r = glyphs[right];
+    if (!l || !r) continue;
+    const lBounds = outlineBounds(l.outline);
+    const rBounds = outlineBounds(r.outline);
+    if (!lBounds || !rBounds) continue;
+    const leftGap = Math.max(0, l.advanceWidth - lBounds.maxX);
+    const rightGap = Math.max(0, rBounds.minX);
+    let gap = leftGap + rightGap;
+    const overlapMinY = Math.max(lBounds.minY, rBounds.minY);
+    const overlapMaxY = Math.min(lBounds.maxY, rBounds.maxY);
+    if (overlapMinY <= overlapMaxY) {
+      const tightest = tightestGapInRange(l, r, overlapMinY, overlapMaxY, metrics.unitsPerEm);
+      if (Number.isFinite(tightest)) gap = tightest;
+    }
+    if (Number.isFinite(gap) && gap > 0) gaps.push(gap);
+  }
+  if (gaps.length < 3) return fallback; // not enough drawn rhythm to trust
+  gaps.sort((a, b) => a - b);
+  const mid = Math.floor(gaps.length / 2);
+  const median = gaps.length % 2 ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2;
+  // Keep the calibrated target within a sane band around the constant so a
+  // couple of oddly-drawn control glyphs can't push the whole font to an
+  // extreme; the median just tunes WITHIN that band to the font's rhythm.
+  const lo = metrics.unitsPerEm * 0.04;
+  const hi = metrics.unitsPerEm * 0.16;
+  return Math.max(lo, Math.min(hi, median));
+}
+
+export function suggestKerningPair(
+  glyphs: GlyphMap,
+  metrics: FontMetrics,
+  left: string,
+  right: string,
+  targetGapOverride?: number,
+): number {
   const l = glyphs[left];
   const r = glyphs[right];
   if (!l || !r) return 0;
@@ -487,7 +552,10 @@ export function suggestKerningPair(glyphs: GlyphMap, metrics: FontMetrics, left:
     if (Number.isFinite(tightest)) naturalGap = tightest;
   }
 
-  const targetGap = metrics.unitsPerEm * TARGET_GAP_RATIO;
+  // PRO: target the font's own calibrated rhythm when provided, else the
+  // legacy constant. Every pair is nudged toward the SAME characteristic
+  // gap, so spacing stays consistent across the whole typeface.
+  const targetGap = targetGapOverride ?? metrics.unitsPerEm * TARGET_GAP_RATIO;
   const minSafeGap = metrics.unitsPerEm * MIN_SAFE_GAP_RATIO;
 
   const min = metrics.unitsPerEm * MIN_KERN_RATIO;
@@ -584,6 +652,11 @@ export async function autoKernAllAvailablePairs(
   let updated = 0;
   let preservedManual = 0;
 
+  // PRO: measure the font's own spacing rhythm ONCE up front, then space
+  // every pair against that shared target so the whole typeface reads with
+  // one consistent, proportional rhythm instead of a fixed constant.
+  const targetGap = calibrateTargetGap(glyphs, metrics);
+
   const total = chars.length * chars.length;
   let chunkStart = now();
 
@@ -594,7 +667,7 @@ export async function autoKernAllAvailablePairs(
       if (manual[key]) {
         preservedManual++;
       } else {
-        const suggestion = suggestKerningPair(glyphs, metrics, left, right);
+        const suggestion = suggestKerningPair(glyphs, metrics, left, right, targetGap);
         if (suggestion === 0) {
           const needsExplicitZero = (fallbackPairs?.[key] ?? 0) !== 0;
           if (needsExplicitZero) {

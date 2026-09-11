@@ -30,6 +30,16 @@ export function isBooleanEligible(obj: VectorObject): boolean {
 // value instead of drifting out of sync with export's.
 export const TIGHT_CURVE_FIDELITY_SCALE = 0.12;
 
+/**
+ * Even tighter refit fidelity used ONLY for the exact stroke-Expand union
+ * (`unionPolygonsToContours`). Expand is a one-shot user action whose whole
+ * point is a filled shape that matches the pre-expand preview exactly, so we
+ * refit the union boundary at ~a third of the already-tight export tolerance
+ * — pushing the boundary deviation well under a quarter font unit — at the
+ * cost of a few more nodes, which is the right trade for a final conversion.
+ */
+export const EXPAND_FIDELITY_SCALE = 0.04;
+
 function pointInPolygon(p: Point, poly: Point[]): boolean {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -631,4 +641,43 @@ export function normalizeSelfIntersectingContours(contours: Contour[], tolerance
   if (multi.length === 0) return contours;
   const cleaned = multiPolygonToContours(multi, toleranceScale);
   return cleaned.length > 0 ? cleaned : contours;
+}
+
+/**
+ * PRECISION EXPAND: exact union of a set of already-simple polygon rings
+ * (each an array of {x,y} points) into clean, hole-aware closed contours.
+ *
+ * Unlike `normalizeSelfIntersectingContours`/`objectToMultiPolygon`, this
+ * does NOT re-flatten Béziers (there are none — the caller passes finished
+ * polygon rings) and does NOT run the lossy `PRECLIP_SIMPLIFY_EPSILON`
+ * (0.75u) pre-clip simplification. The rings go into the exact
+ * `polygon-clipping` union verbatim, so the union boundary is the exact
+ * outline of the swept stroke to clipper precision.
+ *
+ * This is the robust way to expand a Monoline / Pen Line stroke so the
+ * result is IDENTICAL to the constant-width native SVG stroke the editor
+ * draws (round joins, round/butt/square caps, sharp inner corners): the
+ * caller decomposes the stroke into a union of simple primitives — one
+ * convex quad per centerline segment plus a round-join disc (or an explicit
+ * cap wedge) at each vertex — none of which individually self-intersects,
+ * and their exact union is precisely the region every point within the
+ * stroke half-width of the centerline (i.e. the true stroke fill).
+ */
+export function unionPolygonsToContours(rings: Point[][], toleranceScale = 1): Contour[] {
+  const polys: ClipPolygon[] = [];
+  for (const r of rings) {
+    if (r.length < 3) continue;
+    const ring = toRing(dedupePoints(r));
+    if (ring.length < 3) continue;
+    // Each primitive is a single-ring polygon.
+    polys.push([[...ring, ring[0]] as unknown as [number, number][]]);
+  }
+  if (polys.length === 0) return [];
+  let resultMulti: ClipMultiPolygon;
+  try {
+    resultMulti = polys.length === 1 ? clipUnion(polys[0]) : clipUnion(polys[0], ...polys.slice(1));
+  } catch {
+    return [];
+  }
+  return multiPolygonToContours(resultMulti, toleranceScale);
 }

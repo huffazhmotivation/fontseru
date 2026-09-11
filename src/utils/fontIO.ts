@@ -4,7 +4,7 @@ import {
   applyBooleanOp,
   isBooleanEligible,
   normalizeSelfIntersectingContours,
-  TIGHT_CURVE_FIDELITY_SCALE as EXPORT_CURVE_FIDELITY_SCALE,
+  EXPAND_FIDELITY_SCALE as EXPORT_CURVE_FIDELITY_SCALE,
 } from "@/editor/booleanOps";
 
 // Export's own "Remove Overlap" pass (below) reuses the same boolean-union
@@ -259,9 +259,40 @@ export function legacyStyleLinkNames(
   };
 }
 
+/**
+ * Optional grouping spec so several exported styles install and are
+ * recognized as ONE family on Mac (Font Book) and Windows — even when their
+ * style names are outside the four RIBBI values (e.g. "Regular Clean",
+ * "Italic Rough").
+ *
+ * How it works:
+ *  - `typographicFamily` becomes nameID 16 for EVERY member, so every modern
+ *    app groups them under one family menu entry.
+ *  - `typographicSubfamily` becomes nameID 17 — the distinct face label the
+ *    app shows inside that one family ("Regular Clean", "Italic Rough", …).
+ *  - nameID 1/2 (the legacy RIBBI pair) is still made unique-and-installable
+ *    per face, but derived from the SAME typographic family so old apps at
+ *    least keep them adjacent.
+ *  - `faceIndex`/`faceCount` let the writer hand each face a DISTINCT
+ *    usWeightClass when two faces would otherwise be OS-identical (same
+ *    italic bit, same weight) — the real reason a 4-style custom family used
+ *    to collide down to 2 visible faces. Only the single designated Regular
+ *    face keeps the OS/2 REGULAR bit; the others clear it, so the OS never
+ *    sees two "Regular"s fighting for the same slot in one family.
+ */
+export interface FontFamilyGrouping {
+  typographicFamily: string;
+  typographicSubfamily: string;
+  faceIndex: number;
+  faceCount: number;
+  /** True for exactly one face in the family (the reference/Regular face). */
+  isRegularReference: boolean;
+}
+
 export function normalizeFontMetadata(
   info: Partial<FontInfo> | null | undefined,
   fallbackFamily = "Untitled Font",
+  grouping?: FontFamilyGrouping,
 ): NormalizedFontMetadata {
   const familyName = asText(info?.familyName) || asText(fallbackFamily) || "Untitled Font";
   const styleName = asText(info?.styleName) || "Regular";
@@ -278,12 +309,57 @@ export function normalizeFontMetadata(
   const description = asText(info?.description);
   const postscriptName = sanitizePostScriptName(familyName, styleName, asText(info?.postscriptName));
   const uniqueID = asText(info?.uniqueID) || `${manufacturer}:${postscriptName}:Version ${version}`;
-  const styleLink = fontStyleLinkMetadata(styleName);
-  const { legacyFamilyName, legacySubfamilyName } = legacyStyleLinkNames(familyName, styleName);
+  let styleLink = fontStyleLinkMetadata(styleName);
+  let { legacyFamilyName, legacySubfamilyName } = legacyStyleLinkNames(familyName, styleName);
+
+  // FAMILY GROUPING: force every member to share one typographic family
+  // (nameID 16) and carry a distinct subfamily (nameID 17), and disambiguate
+  // the OS/2 face identity so no two members collapse into the same slot.
+  let typographicFamilyOverride: string | undefined;
+  let typographicSubfamilyOverride: string | undefined;
+  if (grouping) {
+    typographicFamilyOverride = grouping.typographicFamily;
+    typographicSubfamilyOverride = grouping.typographicSubfamily;
+    // Legacy (nameID 1/2) must stay installable per face. Fold the distinct
+    // subfamily into the legacy family so old apps list them next to each
+    // other under one prefix, and keep subfamily RIBBI-legal.
+    const italic = /\b(italic|oblique)\b/.test(normalizedStyleWords(grouping.typographicSubfamily));
+    legacyFamilyName = `${grouping.typographicFamily} ${grouping.typographicSubfamily}`.trim();
+    legacySubfamilyName = italic ? "Italic" : "Regular";
+
+    // Disambiguate OS/2 so Font Book / Windows never dedupe two faces that
+    // would otherwise read as identical (same italic + same weight). Only
+    // the designated reference face keeps the REGULAR bit; every other face
+    // gets a unique synthetic usWeightClass so the OS treats them as
+    // separate members of the one family rather than duplicates. Weights are
+    // spread within 400–600 only, so a plain custom style never accidentally
+    // trips the BOLD style-link bit (>=700) unless its own name says "bold".
+    const baseItalic = italic;
+    const nameSaysBold = /\b(bold|black|heavy|extra bold|ultra bold|semibold|demibold)\b/.test(
+      normalizedStyleWords(grouping.typographicSubfamily),
+    );
+    const italicBit = baseItalic ? 0x0001 : 0;
+    // Non-reference faces get distinct weights 450,500,550,600,650 (all < 700
+    // so no accidental bold), unless the name itself is a bold weight.
+    const spread = [450, 500, 550, 600, 650];
+    const synthWeight = nameSaysBold
+      ? weightClassForStyle(grouping.typographicSubfamily)
+      : grouping.isRegularReference
+        ? 400
+        : spread[Math.min(spread.length - 1, Math.max(0, grouping.faceIndex - 1))];
+    const boldBit = synthWeight >= 700 ? 0x0020 : 0;
+    const regularBit = grouping.isRegularReference && !baseItalic ? 0x0040 : 0;
+    styleLink = {
+      weightClass: synthWeight,
+      fsSelection: italicBit | boldBit | regularBit || (baseItalic ? 0x0001 : 0),
+      macStyle: (boldBit ? 0x0001 : 0) | (baseItalic ? 0x0002 : 0),
+      italicAngle: baseItalic ? -12 : 0,
+    };
+  }
 
   return {
-    familyName,
-    styleName,
+    familyName: typographicFamilyOverride ?? familyName,
+    styleName: typographicSubfamilyOverride ?? styleName,
     fullName,
     postscriptName,
     designer,
@@ -853,9 +929,10 @@ export function normalizeExportFontData(input: {
   info: Partial<FontInfo> | null | undefined;
   fontName?: string;
   kerningPairs?: KerningPairs;
+  grouping?: FontFamilyGrouping;
 }): NormalizedExportFontData {
   const metrics = normalizeFontMetrics(input.metrics);
-  const info = normalizeFontMetadata(input.info, input.fontName || input.info?.familyName || "Untitled Font");
+  const info = normalizeFontMetadata(input.info, input.fontName || input.info?.familyName || "Untitled Font", input.grouping);
   const glyphs = prepareGlyphs(input.glyphs, metrics);
   return {
     familyName: info.familyName,
@@ -2164,6 +2241,7 @@ export async function generateFontFiles(
   kerningPairs: KerningPairs,
   formats: ExportFontFormat[],
   featureConfig?: FeatureBuilderConfig,
+  grouping?: FontFamilyGrouping,
 ): Promise<GeneratedFontFile[]> {
   const data = normalizeExportFontData({
     glyphs,
@@ -2171,6 +2249,7 @@ export async function generateFontFiles(
     info,
     fontName: info?.familyName,
     kerningPairs,
+    grouping,
   });
   const files: GeneratedFontFile[] = [];
   const wanted = new Set(formats);

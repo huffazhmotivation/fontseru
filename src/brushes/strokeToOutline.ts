@@ -6,7 +6,7 @@ import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor 
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
 import { cubicPoint } from "@/editor/bezier";
-import { normalizeSelfIntersectingContours, TIGHT_CURVE_FIDELITY_SCALE } from "@/editor/booleanOps";
+import { normalizeSelfIntersectingContours, unionPolygonsToContours, TIGHT_CURVE_FIDELITY_SCALE, EXPAND_FIDELITY_SCALE } from "@/editor/booleanOps";
 
 /**
  * Correct offset vector for sweeping a fixed-orientation elliptical nib
@@ -260,7 +260,19 @@ function segmentIntersection(a0: Point, a1: Point, b0: Point, b1: Point): Point 
 function removeSelfIntersectionLoops(chain: Point[]): Point[] {
   if (chain.length < 4) return chain;
   const pts = chain.slice();
-  const window = 48;
+  // PRECISION FIX: the window used to be a fixed 48 points. Since the
+  // Monoline/Pen Line expand path now flattens the centerline adaptively to
+  // a tiny flatness tolerance, an offset edge can carry many more points per
+  // unit length than before, so a local concave-side fold that used to span
+  // a handful of points can now span far more than 48 — pushing it outside a
+  // fixed window and leaving the fold un-resolved (visible as the expanded
+  // "8"/"g" neck not matching its pre-expand preview). Scale the window with
+  // the chain length so the same physical fold is always seen regardless of
+  // how densely the curve was sampled, with a floor so short chains behave
+  // exactly as before. (The genuinely FAR-apart figure-8 neck crossing is
+  // still resolved separately and exactly by the downstream polygon clipper
+  // in `expandStrokeObject`; this pass only needs to catch the local folds.)
+  const window = Math.max(48, Math.ceil(pts.length * 0.5));
   const maxPasses = 200;
   for (let pass = 0; pass < maxPasses; pass++) {
     let found = false;
@@ -2804,6 +2816,134 @@ function uniformClosedLoopOutline(loopPts: Point[], r: number): Contour[] {
 }
 
 /**
+ * EXACT uniform-stroke expansion (Monoline Brush / Pen Line).
+ *
+ * Builds the stroke fill as the exact UNION of simple primitives instead of
+ * the older per-vertex offset + fold-cleanup heuristic:
+ *   - one convex quad per centerline segment (the segment swept sideways by
+ *     ±r), and
+ *   - a round-join polygon (a dense regular disc) at every interior vertex,
+ *     which is exactly a `stroke-linejoin: round` join and also correctly
+ *     fills the concave inner corner, and
+ *   - a cap primitive at each open end: a half-disc for `round`, a
+ *     projecting rectangle for `square`, nothing extra for `butt`.
+ * None of these primitives self-intersects, and their exact polygon-clipping
+ * union is, by construction, the set of all points within `r` of the
+ * centerline extended by the caps — i.e. precisely the region the browser
+ * fills when it strokes the same Bézier with the same width/cap/join. That
+ * makes Expand match the pre-expand preview (and the exported OTF/TTF) to
+ * clipper precision, with no notch/miter/fold approximation anywhere.
+ *
+ * The centerline is the adaptively-flattened (sub-0.1u) polyline, so the
+ * quads track the true curve faithfully; discs are sampled at ~4° so a
+ * round join/cap is smooth. A closed source loop simply omits caps and
+ * unions the ring of quads+discs all the way around.
+ */
+function buildUniformStrokePrimitives(pts: Point[], r: number, closed: boolean, cap: StrokeCap): Point[][] {
+  const rings: Point[][] = [];
+  const n = pts.length;
+  if (n < 2) return rings;
+
+  const segCount = closed ? n : n - 1;
+  // Per-segment quads.
+  for (let i = 0; i < segCount; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-9) continue;
+    const nx = -dy / len, ny = dx / len;
+    rings.push([
+      { x: a.x + nx * r, y: a.y + ny * r },
+      { x: b.x + nx * r, y: b.y + ny * r },
+      { x: b.x - nx * r, y: b.y - ny * r },
+      { x: a.x - nx * r, y: a.y - ny * r },
+    ]);
+  }
+
+  // Round-join disc at every vertex that has segments on both sides. This
+  // both rounds the convex outer corner (matching stroke-linejoin: round)
+  // and completely fills the concave inner corner exactly.
+  const discSteps = Math.max(16, Math.ceil((2 * Math.PI) / (4 * Math.PI / 180)));
+  const disc = (c: Point): Point[] => {
+    const out: Point[] = [];
+    for (let s = 0; s < discSteps; s++) {
+      const ang = (2 * Math.PI * s) / discSteps;
+      out.push({ x: c.x + Math.cos(ang) * r, y: c.y + Math.sin(ang) * r });
+    }
+    return out;
+  };
+  const jointStart = closed ? 0 : 1;
+  const jointEnd = closed ? n : n - 1; // exclusive
+  for (let i = jointStart; i < jointEnd; i++) {
+    rings.push(disc(pts[i]));
+  }
+
+  if (!closed) {
+    // Caps at the two open ends.
+    const addRoundCap = (c: Point) => rings.push(disc(c));
+    const addSquareCap = (end: Point, dirx: number, diry: number) => {
+      // project a rectangle r beyond the endpoint along the outward tangent
+      const nx = -diry, ny = dirx;
+      const ex = end.x + dirx * r, ey = end.y + diry * r;
+      rings.push([
+        { x: end.x + nx * r, y: end.y + ny * r },
+        { x: ex + nx * r, y: ey + ny * r },
+        { x: ex - nx * r, y: ey - ny * r },
+        { x: end.x - nx * r, y: end.y - ny * r },
+      ]);
+    };
+    if (cap === "round") {
+      addRoundCap(pts[0]);
+      addRoundCap(pts[n - 1]);
+    } else if (cap === "square") {
+      // outward tangent at each end
+      const d0 = (() => { const dx = pts[0].x - pts[1].x, dy = pts[0].y - pts[1].y; const l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l }; })();
+      const d1 = (() => { const dx = pts[n - 1].x - pts[n - 2].x, dy = pts[n - 1].y - pts[n - 2].y; const l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l }; })();
+      addSquareCap(pts[0], d0.x, d0.y);
+      addSquareCap(pts[n - 1], d1.x, d1.y);
+    }
+    // "butt": no extra primitive — the first/last quads already end flush.
+  }
+
+  return rings;
+}
+
+/**
+ * Exact Monoline / Pen Line stroke outline for one source contour, via the
+ * union-of-primitives method above. Returns clean, hole-aware closed
+ * contours ready to be an expanded object. Falls back to the legacy
+ * per-vertex offset builder only if the exact union somehow returns nothing.
+ */
+function uniformCenterlineToOutlineExact(contour: Contour, width: number, cap: StrokeCap): Contour[] {
+  const r = Math.max(0.5, width / 2);
+  const flatTol = Math.min(0.05, Math.max(0.01, r * 0.002));
+  const flattened = flattenContourPrecise(contour, flatTol);
+  if (flattened.length < 2) return [];
+  let pts = dedupeClosePoints(flattened, Math.max(0.02, width * 0.001));
+  if (pts.length < 2) return [];
+
+  // Detect an explicitly-closed contour, or an open one whose ends touch
+  // within the ink (same rule as the legacy builder) — either way, no caps.
+  let closed = contour.closed;
+  if (!closed && strokeEndsPhysicallyOverlap(pts, r)) closed = true;
+  if (closed) {
+    // Drop a duplicated closing point if present.
+    if (pts.length > 2) {
+      const f = pts[0], l = pts[pts.length - 1];
+      if (Math.hypot(f.x - l.x, f.y - l.y) < Math.max(0.02, width * 0.001) * 2) pts = pts.slice(0, -1);
+    }
+  }
+
+  const rings = buildUniformStrokePrimitives(pts, r, closed, cap);
+  if (rings.length === 0) return [];
+  const contours = unionPolygonsToContours(rings, EXPAND_FIDELITY_SCALE);
+  if (contours.length > 0) return contours;
+  // Fallback: legacy builder (should essentially never be needed).
+  return uniformCenterlineToOutline(contour, width, cap);
+}
+
+/**
  * "Expand Stroke": convert a centerline stroke object (line or brush) into a
  * closed, filled "expanded" object. Non-destructive source stays editable
  * until this is invoked.
@@ -2814,57 +2954,16 @@ export function expandStrokeObject(obj: VectorObject): VectorObject | null {
   // Uniform centerlines (Pen Line + Monoline Brush) expand from the CURRENT
   // centerline, so node edits, width and cap appearance are all preserved.
   if (obj.kind === "line" || (obj.kind === "brush" && obj.brushType === "monoline")) {
-    const raw = obj.contours.flatMap((c) => uniformCenterlineToOutline(c, width, obj.cap ?? "round"));
-    if (raw.length === 0) return null;
-
-    // BUG FIX ("hasil expand berantakan/ngaco" — Expand Stroke output
-    // scrambled into a self-crossing "bowtie" tangle instead of matching
-    // the stroke exactly, specific to Monoline/Pen Line and worst on
-    // closed-loop letterforms like "g", "e", "8"): `uniformClosedLoopOutline`
-    // above only cleans up self-intersections with a small forward-looking
-    // WINDOW (48 points) via `removeSelfIntersectionLoops`, plus one extra
-    // pass after rotating the ring halfway to catch a fold sitting across
-    // the array's arbitrary start/end seam. Both passes only ever find
-    // crossings between points that are close together in the array. A
-    // letterform like the bowl+tail of a "g" naturally brings two points
-    // that are FAR apart along the traced path physically close together
-    // (the neck where the tail curls back near the bowl) — exactly the case
-    // neither local pass can see, so a real self-intersection was silently
-    // left in the offset ring. Filled with nonzero/evenodd winding, that
-    // leftover crossing is what read as the tangled, wrong-shaped mess: the
-    // ring effectively folds part of itself inside-out instead of tracing a
-    // simple loop matching the original stroke.
-    //
-    // This is exactly the same class of bug `normalizeSelfIntersectingContours`
-    // (booleanOps.ts) already exists to fix for a single hand-drawn Outline
-    // Brush stroke that crosses itself near a "g"/"e" neck — see its doc
-    // comment. Unlike the local point-removal heuristic above, it resolves
-    // self-crossings through the exact polygon clipper (a real nonzero
-    // union/XOR), which has no "how far apart in the array" limitation at
-    // all and always returns a valid, simple set of contours. Routing every
-    // Monoline/Pen Line expand result through it — the outer boundary and
-    // inner hole ring together — guarantees the exported shape is exactly
-    // the filled silhouette of the current stroke, on any geometry, matching
-    // how the other brush presets' Expand already comes out clean below.
-    //
-    // BUG FIX ("hasil expand belum presisi dg line yg sblm expand"): this
-    // used to call `normalizeSelfIntersectingContours(raw)` at its default
-    // (loose, interactive-editing) tolerance — the same one a manual Boolean
-    // Select op uses, chosen there so a designer gets a small, easy-to-edit
-    // node count back. "Expand Stroke" is a one-shot, user-invoked
-    // conversion, not an intermediate editing step: the user clicked it
-    // specifically to turn their exact stroke into a filled shape, and
-    // expects that shape to match what they were just looking at. Passing
-    // `TIGHT_CURVE_FIDELITY_SCALE` — the same export-grade fidelity Export
-    // already uses for precisely this reason (see its doc comment in
-    // fontIO.ts) — makes Expand Stroke match its own live preview instead of
-    // silently reshaping through a loose refit tolerance meant for a
-    // different, editing-focused workflow. Combined with the fast path
-    // `normalizeSelfIntersectingContours` now takes when nothing actually
-    // self-intersects (see its doc comment in booleanOps.ts), this only ever
-    // matters for the genuinely-self-crossing case — the common case is now
-    // untouched entirely.
-    const contours = normalizeSelfIntersectingContours(raw, TIGHT_CURVE_FIDELITY_SCALE);
+    // PRECISION FIX ("hasil expand blm presis, yg paling kiri"): build the
+    // outline as the EXACT polygon-clipping union of the stroke's swept
+    // primitives (segment quads + round-join discs + caps) — see
+    // `uniformCenterlineToOutlineExact`. This reproduces the constant-width
+    // native SVG stroke (round joins, sharp inner corners, caps) exactly,
+    // fixing the residual corner/neck deviation the older per-vertex offset
+    // builder left — including on closed loops and self-crossing figures
+    // like "8"/"g"/"e". The union output is already clean, simple and
+    // hole-aware, so no further self-intersection normalization is needed.
+    const contours = obj.contours.flatMap((c) => uniformCenterlineToOutlineExact(c, width, obj.cap ?? "round"));
     return contours.length ? { id: shortId("obj"), kind: "expanded", contours } : null;
   }
 

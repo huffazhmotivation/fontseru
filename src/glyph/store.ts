@@ -19,7 +19,7 @@ import { applyBooleanOp, type BooleanOp } from "@/editor/booleanOps";
 import { composeMultilingualGlyphs, type MultilingualResult } from "@/glyph/multilingual";
 import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext, WordSpacingOverridesByStyle } from "@/types/kerning";
 import { kerningKey, decodeKerningKey, effectiveWordSpacing } from "@/types/kerning";
-import { suggestKerningPair, autoKernAllAvailablePairs } from "@/kerning/autoKern";
+import { suggestKerningPair, autoKernAllAvailablePairs, calibrateTargetGap } from "@/kerning/autoKern";
 import { autoSpaceAllGlyphs as computeAutoSpaceAllGlyphs, suggestGlyphSidebearings, suggestWordSpacing, applyOpticalSidebearings, type AutoSpaceResult } from "@/kerning/autoSpace";
 import type { FeatureBuilderConfig, LigatureRule, AlternateRule, SwashRule, FeatureGlyphRef } from "@/types/opentypeFeatures";
 import { emptyFeatureConfig, nextFeatureRuleId } from "@/types/opentypeFeatures";
@@ -2162,7 +2162,10 @@ export const useAppStore = create<AppState>()((set, get) => {
     applyKerningSuggestion: (left, right) => {
       const { glyphs, metrics, kerningPairs, kerningManual } = get();
       const key = kerningKey(left, right);
-      const suggestion = suggestKerningPair(glyphs, metrics, left, right);
+      // Use the font's calibrated rhythm target so a single applied
+      // suggestion matches what a full Auto Kern pass would produce.
+      const targetGap = calibrateTargetGap(glyphs, metrics);
+      const suggestion = suggestKerningPair(glyphs, metrics, left, right, targetGap);
       // Applying the computed suggestion is explicitly NOT a manual override,
       // so a later global auto-kerning pass is still free to refine it.
       commitKerning({ ...kerningPairs, [key]: suggestion }, { ...kerningManual, [key]: false });

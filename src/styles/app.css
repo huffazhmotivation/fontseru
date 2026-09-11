@@ -5748,6 +5748,26 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-nametable-preview-row { grid-template-columns: 1fr; gap: 2px; }
 }
 
+/* Family-aware name table preview (multi-style export) */
+.fm-nametable-family {
+  display: grid; gap: 8px;
+  padding: 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel-2));
+}
+.fm-nametable-family-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11.5px; color: var(--text-dim);
+}
+.fm-nametable-family-head strong { color: var(--text); font-weight: 700; }
+.fm-nametable-family-note { font-size: 10.5px; color: var(--text-dim); opacity: .8; }
+
+.fm-export-combine-family {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; user-select: none;
+  font-size: 12.5px; color: var(--text);
+}
+.fm-export-combine-family input { position: absolute; opacity: 0; width: 0; height: 0; }
+
 /* Chromium performance fallback -----------------------------------------
    Chrome can promote a full-screen backdrop-filter to a readback surface.
    With the editor's live SVG canvas underneath, moving across buttons then

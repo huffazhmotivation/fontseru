@@ -4,7 +4,7 @@ import type { Contour, GlyphOutline, PathNode, Point, VectorObject } from "@/typ
 import type { FontMetrics } from "@/types/font";
 import { shortId } from "@/utils/id";
 
-export type TraceDetail = "low" | "medium" | "high";
+export type TraceDetail = "low" | "medium" | "high" | "ultra";
 
 export interface TraceSettings {
   /** Luminance (0–255) below which a pixel is treated as ink. */
@@ -38,6 +38,11 @@ const MAX_DIMENSION_BY_DETAIL: Record<TraceDetail, number> = {
   // curves in the original artwork don't get lost to downscaling before
   // imagetracer ever sees them.
   high: 2200,
+  // Ultra: near-pixel-exact. Keeps essentially all of a normal source's
+  // resolution (and supersamples small ones — see binarizeSupersampled) so
+  // the traced outline follows the ORIGINAL image's anti-aliased edges to
+  // sub-pixel accuracy instead of a hard pixel-grid staircase.
+  ultra: 4000,
 };
 
 // Calibrated against imagetracerjs's own defaults (ltres:1, qtres:1,
@@ -75,6 +80,13 @@ const DETAIL_PRESETS: Record<
   // little of that pixel-perfect tightness for meaningfully fewer nodes and
   // visibly smoother curves, while staying well below `medium`.
   high: { ltres: 1.0, qtres: 1.0, pathomit: 7, blurradius: 3, blurdelta: 26 },
+  // Ultra: the tightest curve fit the fitter allows, with only the lightest
+  // pre-blur — because edges are already sub-pixel-accurate from
+  // supersampled binarization (see binarizeSupersampled), so there is no
+  // hard pixel staircase left for the fitter to chase. This is the
+  // "100% match the original" tier: it follows the source art's true edges,
+  // not the pixel grid, at the cost of more nodes.
+  ultra: { ltres: 0.35, qtres: 0.35, pathomit: 3, blurradius: 0, blurdelta: 20 },
 };
 
 /** Minimum connected-component area (in source px, post-downscale) kept as ink. Smaller specks — JPEG ringing, dust, stray pixels — are scrubbed before tracing so they never become tiny noise shapes. */
@@ -82,6 +94,10 @@ const DESPECKLE_MIN_AREA: Record<TraceDetail, number> = {
   low: 14,
   medium: 9,
   high: 5,
+  // Ultra runs at higher/supersampled resolution, so a genuine speck spans
+  // more pixels; scale the floor up so real fine detail is never scrubbed
+  // while true dust/JPEG-ringing still is.
+  ultra: 8,
 };
 
 export class TraceError extends Error {}
@@ -144,12 +160,73 @@ export function imageToCanvas(img: HTMLImageElement, detail: TraceDetail = "medi
 }
 
 /**
- * Reduces the canvas to pure black/white ImageData based on a luminance
- * threshold (transparent pixels always count as background). Binarizing
- * ourselves — instead of letting imagetracer's own color quantization pick
- * a palette — keeps the result deterministic and gives the user a single,
- * predictable "Threshold" control.
+ * Sub-pixel-accurate binarization for the "ultra" tier.
+ *
+ * A plain hard threshold (see `binarize`) snaps every anti-aliased edge
+ * pixel fully to ink or background, so the traced boundary can sit up to
+ * half a source pixel off the true edge and shows the pixel-grid staircase.
+ * The original artwork's edge actually lives where its luminance crosses
+ * the threshold — which, thanks to anti-aliasing, is encoded in the smooth
+ * gradient across edge pixels.
+ *
+ * This recovers that: it draws the source at `ss`× resolution WITH
+ * smoothing (bilinear), so each original edge pixel's gradient is resampled
+ * into `ss`×`ss` finer pixels whose individual threshold decisions place
+ * the binary edge close to the true crossing. Tracing that finer bitmap and
+ * scaling the coordinates back down yields an outline that follows the
+ * source's real edge to roughly 1/`ss` of a source pixel — visually
+ * indistinguishable from the original — instead of the coarse pixel grid.
+ *
+ * Returns both the finer ImageData and the supersample factor so the caller
+ * can divide the traced coordinates back into source-pixel space.
  */
+export function binarizeSupersampled(
+  img: HTMLImageElement,
+  settings: TraceSettings,
+  detail: TraceDetail,
+): { imgd: ImageData; scaleBack: number } {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  if (!w || !h) throw new TraceError("Gambar tidak valid atau kosong.");
+
+  // Choose a working resolution: honor the tier ceiling, then supersample
+  // on top so edges get sub-pixel treatment. The product (working ×
+  // supersample) is capped so memory stays bounded on huge inputs.
+  const ceiling = MAX_DIMENSION_BY_DETAIL[detail];
+  const maxDim = Math.max(w, h);
+  const baseScale = maxDim > ceiling ? ceiling / maxDim : 1;
+  const SS = 2; // 2× supersample → up to ~4000×2 internal, capped below
+  const HARD_CAP = 6000; // internal working dimension ceiling (px)
+  let scale = baseScale * SS;
+  if (maxDim * scale > HARD_CAP) scale = HARD_CAP / maxDim;
+
+  const cw = Math.max(1, Math.round(w * scale));
+  const ch = Math.max(1, Math.round(h * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = cw;
+  canvas.height = ch;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new TraceError("Canvas 2D tidak didukung di browser ini.");
+  ctx.imageSmoothingEnabled = true;
+  if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0, cw, ch);
+
+  const imgd = ctx.getImageData(0, 0, cw, ch);
+  const data = imgd.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+    let isInk = a > 32 && luminance < settings.threshold;
+    if (settings.invert) isInk = !isInk;
+    if (isInk) { data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = 255; }
+    else { data[i] = 255; data[i + 1] = 255; data[i + 2] = 255; data[i + 3] = 255; }
+  }
+  // scaleBack maps traced (internal) px → source px, so the final outline is
+  // reported in the same coordinate space every other tier uses.
+  return { imgd, scaleBack: 1 / scale };
+}
+
+
 export function binarize(canvas: HTMLCanvasElement, settings: TraceSettings): ImageData {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new TraceError("Canvas 2D tidak didukung di browser ini.");
@@ -458,7 +535,7 @@ function pathsToVectorObjects(paths: TracePath[]): VectorObject[] {
 }
 
 /** Runs imagetracer against already-binarized (pure black/white) ImageData and returns the ink shapes, in raw pixel space (Y-down, origin top-left). */
-export function traceBinaryImage(imgd: ImageData, detail: TraceDetail): VectorObject[] {
+export function traceBinaryImage(imgd: ImageData, detail: TraceDetail, scaleBack = 1): VectorObject[] {
   const preset = DETAIL_PRESETS[detail];
   const tracedata: Tracedata = ImageTracer.imagedataToTracedata(imgd, {
     ltres: preset.ltres,
@@ -491,7 +568,27 @@ export function traceBinaryImage(imgd: ImageData, detail: TraceDetail): VectorOb
     ],
   });
   const inkPaths = tracedata.layers[1] ?? [];
-  return pathsToVectorObjects(inkPaths);
+  const objects = pathsToVectorObjects(inkPaths);
+  // When the bitmap was supersampled (ultra tier), map every coordinate back
+  // into source-pixel space so the outline lines up with the original image
+  // and every downstream consumer (fit-to-glyph, preview) sees the same
+  // coordinate system as the other tiers.
+  if (scaleBack !== 1) scaleObjectsInPlace(objects, scaleBack);
+  return objects;
+}
+
+/** Scale every node point/handle of every contour in place (used to map a
+ * supersampled trace back into source-pixel coordinates). */
+function scaleObjectsInPlace(objects: VectorObject[], k: number): void {
+  for (const obj of objects) {
+    for (const c of obj.contours) {
+      for (const n of c.nodes) {
+        n.point.x *= k; n.point.y *= k;
+        if (n.handleIn) { n.handleIn.x *= k; n.handleIn.y *= k; }
+        if (n.handleOut) { n.handleOut.x *= k; n.handleOut.y *= k; }
+      }
+    }
+  }
 }
 
 function fmtPx(n: number): string {
@@ -730,10 +827,26 @@ export async function traceImageFile(
   settings: TraceSettings
 ): Promise<{ objects: VectorObject[]; letters: TraceLetterGroup[]; canvas: HTMLCanvasElement }> {
   const img = await loadImageFile(file);
+  // Display/preview canvas is always in source-pixel space (the coordinate
+  // system every traced object is ultimately reported in).
   const canvas = imageToCanvas(img, settings.detail);
-  const imgd = binarize(canvas, settings);
-  despeckleBinary(imgd, DESPECKLE_MIN_AREA[settings.detail]);
-  const objects = traceBinaryImage(imgd, settings.detail);
+
+  let objects: VectorObject[];
+  if (settings.detail === "ultra") {
+    // Ultra: trace a supersampled bitmap for sub-pixel-accurate edges, then
+    // map the result back into the preview canvas's source-pixel space.
+    const { imgd, scaleBack } = binarizeSupersampled(img, settings, settings.detail);
+    despeckleBinary(imgd, DESPECKLE_MIN_AREA[settings.detail]);
+    // scaleBack is internal→source-px; the preview canvas is at
+    // imageToCanvas scale, so also fold in that ratio.
+    const previewScale = canvas.width / (img.naturalWidth || img.width);
+    objects = traceBinaryImage(imgd, settings.detail, scaleBack * previewScale);
+  } else {
+    const imgd = binarize(canvas, settings);
+    despeckleBinary(imgd, DESPECKLE_MIN_AREA[settings.detail]);
+    objects = traceBinaryImage(imgd, settings.detail);
+  }
+
   if (objects.length === 0) {
     throw new TraceError("Tidak ada garis yang terdeteksi. Coba sesuaikan Threshold atau gunakan gambar lain.");
   }
