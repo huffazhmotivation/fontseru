@@ -2259,7 +2259,18 @@ function generateTTF(
 }
 
 function technicalMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (!(error instanceof Error)) return String(error);
+  // Include the first stack frame so a failure that happens deep inside the
+  // font writer (or inside opentype.js) identifies ITSELF in the UI toast,
+  // instead of only showing an opaque message like "Cannot read properties
+  // of undefined (reading 'fontFamily')" that gives no clue where it came
+  // from. This makes a report actionable without needing the dev console.
+  const firstFrame = (error.stack ?? "")
+    .split("\n")
+    .slice(1)
+    .map((l) => l.trim())
+    .find((l) => l.startsWith("at "));
+  return firstFrame ? `${error.message} [${firstFrame.replace(/^at\s+/, "")}]` : error.message;
 }
 
 export function exportOTF(
