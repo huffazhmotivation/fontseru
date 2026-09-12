@@ -1,8 +1,7 @@
 import React from "react";
-import { Grid3x3, Ruler, Ghost, Magnet, Wand2, Maximize2, RotateCcw, Minus, Plus, Eye, AlignCenter, SlidersHorizontal, Info } from "lucide-react";
+import { Grid3x3, Ruler, Ghost, Magnet, Wand2, Maximize2, RotateCcw, Minus, Plus, Eye, AlignCenter, SlidersHorizontal } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { NumericInput } from "./NumericInput";
-import { AboutModal } from "@/components/AboutModal";
 
 export function BottomBar() {
   // --- "Settings" overflow menu (tablet/phone widths, see
@@ -204,10 +203,6 @@ export function BottomBar() {
       </div>
 
       <div className="fm-hint-inline">
-        {/* Moved here from the top bar — sits right next to Fit, visible at
-            every width. Bare trigger class so it inherits the bottom bar's
-            own button styling instead of the top bar's fm-topbtn look. */}
-        <AboutModal triggerClassName="" triggerIcon={<Info size={13} />} triggerLabel="About Us" />
         <button onClick={() => fitGlyph()} title="Fit Glyph" data-testid="fit-btn"><Maximize2 size={13} /> Fit</button>
         <button onClick={() => resetView()} title="Reset View" data-testid="reset-btn"><RotateCcw size={13} /> Reset</button>
         <span className="fm-upm fm-bottombar-more-hide">UPM {upm}</span>

@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import "./styles/app.css";
-import "./mode/modeTabs.css";
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {
