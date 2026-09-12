@@ -2897,7 +2897,19 @@ function buildUniformStrokePrimitives(
   };
   const jointStart = closed ? 0 : 1;
   const jointEnd = closed ? n : n - 1; // exclusive
+  // A flat terminal (butt/square) must stay FLAT. Because the centerline is
+  // finely flattened, the first/last interior joints sit only a fraction of a
+  // unit from the endpoint — and a full round join disc of radius r centered
+  // there bulges out past the cap plane, which is exactly what made a
+  // butt-cap terminal render as a rounded one after Expand. Near a flat cap
+  // the segment quads plus the cap quad already cover the ink, so any joint
+  // within r of that endpoint simply doesn't get a disc. (Round caps keep
+  // their discs — there the bulge IS the intended shape.)
+  const flatCapEnds: Point[] = !closed && cap !== "round" ? [pts[0], pts[n - 1]] : [];
+  const nearFlatCap = (p: Point) =>
+    flatCapEnds.some((e) => Math.hypot(p.x - e.x, p.y - e.y) < r);
   for (let i = jointStart; i < jointEnd; i++) {
+    if (nearFlatCap(pts[i])) continue;
     rings.push(disc(pts[i]));
   }
 

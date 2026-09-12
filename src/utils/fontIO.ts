@@ -955,6 +955,30 @@ function prepareGlyphs(glyphs: GlyphMap, metrics: FontMetrics): Glyph[] {
   return [...byUnicode.values()].sort((a, b) => a.unicode - b.unicode);
 }
 
+/**
+ * Same as `prepareGlyphs`, but yields back to the event loop every few
+ * glyphs so the browser tab stays responsive during export.
+ *
+ * Preparing a glyph is the expensive part of export (expand strokes + the
+ * boolean Remove-Overlap pass). Doing all ~370 of them in one synchronous
+ * loop blocks the main thread for tens of seconds, which is what triggered
+ * Chrome's "Page Unresponsive" dialog and made exports appear stuck at 0% or
+ * fail outright. Breaking the loop with periodic yields keeps the UI (and the
+ * progress bar) alive; total work is the same.
+ */
+async function prepareGlyphsAsync(glyphs: GlyphMap, metrics: FontMetrics): Promise<Glyph[]> {
+  const byUnicode = new Map<number, Glyph>();
+  const entries = Object.values(glyphs ?? {});
+  const YIELD_EVERY = 8;
+  for (let i = 0; i < entries.length; i++) {
+    const clean = sanitizeGlyph(entries[i], metrics);
+    if (clean && !byUnicode.has(clean.unicode)) byUnicode.set(clean.unicode, clean);
+    if ((i + 1) % YIELD_EVERY === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  if (!byUnicode.has(0x20)) byUnicode.set(0x20, syntheticSpace(metrics));
+  return [...byUnicode.values()].sort((a, b) => a.unicode - b.unicode);
+}
+
 export function normalizeExportFontData(input: {
   glyphs: GlyphMap;
   metrics: Partial<FontMetrics> | null | undefined;
@@ -966,6 +990,37 @@ export function normalizeExportFontData(input: {
   const metrics = normalizeFontMetrics(input.metrics);
   const info = normalizeFontMetadata(input.info, input.fontName || input.info?.familyName || "Untitled Font", input.grouping);
   const glyphs = prepareGlyphs(input.glyphs, metrics);
+  return {
+    familyName: info.familyName,
+    subfamilyName: info.styleName,
+    fullName: info.fullName,
+    postScriptName: info.postscriptName,
+    version: info.version,
+    creator: info.designer || "FontSeru",
+    license: info.license,
+    unitsPerEm: metrics.unitsPerEm,
+    ascender: metrics.ascender,
+    descender: metrics.descender,
+    glyphs,
+    metrics,
+    info,
+    kerningPairs: input.kerningPairs ?? {},
+  };
+}
+
+/** Async twin of `normalizeExportFontData` that prepares glyphs with periodic
+ * yields (see `prepareGlyphsAsync`) so a big export never freezes the tab. */
+export async function normalizeExportFontDataAsync(input: {
+  glyphs: GlyphMap;
+  metrics: Partial<FontMetrics> | null | undefined;
+  info: Partial<FontInfo> | null | undefined;
+  fontName?: string;
+  kerningPairs?: KerningPairs;
+  grouping?: FontFamilyGrouping;
+}): Promise<NormalizedExportFontData> {
+  const metrics = normalizeFontMetrics(input.metrics);
+  const info = normalizeFontMetadata(input.info, input.fontName || input.info?.familyName || "Untitled Font", input.grouping);
+  const glyphs = await prepareGlyphsAsync(input.glyphs, metrics);
   return {
     familyName: info.familyName,
     subfamilyName: info.styleName,
@@ -1319,20 +1374,33 @@ function spliceSfntTable(buffer: ArrayBuffer, tag: string, data: Uint8Array): Ar
  * so no extension trick is needed there.
  */
 
+/**
+ * Maximum kerning pairs written into an exported font.
+ *
+ * Auto Kern can emit a pair for nearly EVERY glyph combination — on a 371
+ * glyph font that's ~131,000 pairs. Encoding that many into GPOS builds
+ * enormous in-memory structures, which is what made the browser tab go
+ * "Page Unresponsive" and the OTF writer fail (TTF sometimes squeaked
+ * through, hence "berhasil tapi harus ngulang 3x"). Real-world fonts ship
+ * hundreds to a few thousand pairs; keeping the strongest ones by absolute
+ * adjustment preserves everything a reader can actually perceive while
+ * making export fast and reliable.
+ */
+const MAX_EXPORT_KERN_PAIRS = 6000;
+
 /** Parses, validates, and clamps every stored kerning pair into sorted-glyph
- * records ready for layout. No budgeting or dropping happens here — every
- * valid pair the user configured comes back out. */
+ * records ready for layout, then keeps the most significant ones within the
+ * export budget above. */
 function resolveKerningRecords(
   pairs: KerningPairs,
   glyphIndexByChar: Map<string, number>
 ): { left: number; right: number; value: number }[] {
   const all: { left: number; right: number; value: number }[] = [];
-  // Drop negligible pairs: a kern of just ±1–2 font units on a 1000 UPM em
-  // is far below what any reader can see, but auto-kern can emit tens of
-  // thousands of them, which bloats the font and makes export slow. Dropping
-  // sub-threshold pairs keeps every meaningful kern while cutting the pair
-  // count (and export time) dramatically. 2 units ≈ 0.2% of em — invisible.
-  const NEGLIGIBLE = 2;
+  // Drop negligible pairs: a kern of just a few font units on a 1000 UPM em
+  // is below what any reader can see, but auto-kern emits tens of thousands
+  // of them. 4 units = 0.4% of em — invisible, but removes a huge amount of
+  // pure bloat.
+  const NEGLIGIBLE = 4;
   for (const [key, rawValue] of Object.entries(pairs ?? {})) {
     const pair = parseKerningKey(key);
     if (!pair) continue;
@@ -1341,6 +1409,15 @@ function resolveKerningRecords(
     if (left == null || right == null || !Number.isFinite(rawValue)) continue;
     const value = Math.max(-32768, Math.min(32767, Math.round(rawValue)));
     if (Math.abs(value) > NEGLIGIBLE) all.push({ left, right, value });
+  }
+  if (all.length > MAX_EXPORT_KERN_PAIRS) {
+    // Keep the strongest adjustments — those are the ones that visibly fix
+    // spacing; the long tail of tiny tweaks is what bloats the font.
+    all.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+    all.length = MAX_EXPORT_KERN_PAIRS;
+    console.warn(
+      `[FontSeru] Kerning export: keeping the ${MAX_EXPORT_KERN_PAIRS} strongest pairs of ${Object.keys(pairs ?? {}).length} to keep the font compact and the export responsive.`
+    );
   }
   return all;
 }
@@ -2338,7 +2415,7 @@ export async function generateFontFiles(
   featureConfig?: FeatureBuilderConfig,
   grouping?: FontFamilyGrouping,
 ): Promise<GeneratedFontFile[]> {
-  const data = normalizeExportFontData({
+  const data = await normalizeExportFontDataAsync({
     glyphs,
     metrics,
     info,
