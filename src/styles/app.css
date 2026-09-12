@@ -3656,11 +3656,12 @@ input[type="number"]::-webkit-outer-spin-button {
   background: var(--panel-2);
   overflow-y: auto;
 }
-/* Keep the primary action reachable at the bottom of the sidebar without
-   forcing a large gap: it only pushes down as far as the main column's
-   own content makes the dialog grow (see .fm-export-body/.fm-export-main
-   above), not to an arbitrary fixed height. */
-.fm-export-sidebar .fm-export-actions { margin-top: auto; }
+/* The action buttons sit directly under the Styles/Format group (separated
+   by a divider) instead of being pushed to the very bottom of the sidebar —
+   that avoids a large dead gap in the middle on the tall Font Info tab and
+   keeps Export within easy reach without scrolling. Any leftover sidebar
+   space now falls at the bottom as clean padding. */
+.fm-export-sidebar .fm-export-actions { margin-top: 4px; }
 
 .fm-export-tabs {
   display: flex; gap: 4px;
@@ -3902,9 +3903,14 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-export-actions .fm-secondary-btn { width: 100%; }
 .fm-primary-btn,
 .fm-secondary-btn {
-  height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  padding: 0 14px; border-radius: 8px; font: inherit; font-weight: 700; cursor: pointer;
+  min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 8px 16px; border-radius: 8px; font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer;
+  /* Long labels ("Export All Family ZIP") wrap into clean centered lines
+     instead of a cramped, clipped fixed-height button. */
+  white-space: normal; text-align: center; line-height: 1.25;
 }
+.fm-primary-btn > svg,
+.fm-secondary-btn > svg { flex: none; }
 .fm-primary-btn { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
 .fm-primary-btn:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
 .fm-secondary-btn { border: 1px solid var(--line); background: transparent; color: var(--text-dim); }

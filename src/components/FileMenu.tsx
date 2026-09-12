@@ -192,6 +192,7 @@ function snapshotFromStore() {
   return createFontSeruProject({
     fontName: s.fontName,
     fontInfo: s.fontInfo,
+    exportInfo: s.exportInfo,
     metrics: s.metrics,
     glyphs: s.glyphsByStyle.regular,
     glyphsByStyle: s.glyphsByStyle,
@@ -222,6 +223,7 @@ function hydrateProject(project: ReturnType<typeof parseFontSeruProject>, filena
     customFamilies: project.font.customFamilies,
     fontName: project.font.name,
     fontInfo: project.font.info,
+    exportInfo: project.font.exportInfo,
     projectFileName: filename,
     metrics: project.font.metrics,
     kerningPairs: project.font.kerningPairs,
@@ -387,6 +389,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const qaMetrics = useAppStore((s) => s.metrics);
   const qaFontInfo = useAppStore((s) => s.fontInfo);
   const setFontInfo = useAppStore((s) => s.setFontInfo);
+  const setExportInfo = useAppStore((s) => s.setExportInfo);
   const setFontName = useAppStore((s) => s.setFontName);
   const qaKerningPairs = useAppStore((s) => s.kerningPairs);
   const qaKerningOverridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
@@ -705,24 +708,29 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     const existingLicense = s.fontInfo.license?.trim() || "";
     const knownLicenseType = LICENSE_TYPE_OPTIONS.find((option) => existingLicense.toLowerCase().startsWith(option.toLowerCase()));
 
+    // Prefer the RAW saved form (from a prior "Save Info") so every field —
+    // including License fields not stored in the name table — returns exactly
+    // as the user last typed it. Fall back to deriving from the font info when
+    // the project has no saved draft (older project, or never saved info).
+    const saved = s.exportInfo;
     setFontInfoForm({
-      fontName: initialFontName,
-      familyName: s.fontInfo.familyName?.trim() || initialFontName,
-      style: fontStyleLabel(s.fontStyle, s.customFamilies),
-      designerName: s.fontInfo.designer?.trim() || "",
-      designerURL: s.fontInfo.designerURL?.trim() || "",
-      foundry: s.fontInfo.manufacturer?.trim() || "",
-      copyright: s.fontInfo.copyright?.trim() || (initialFontName ? `Copyright © ${new Date().getFullYear()} ${initialFontName}` : ""),
-      version: s.fontInfo.version?.trim() || "1.000",
-      website: s.fontInfo.manufacturerURL?.trim() || "",
-      trademark: s.fontInfo.trademark?.trim() || "",
+      fontName: saved?.fontInfo?.fontName ?? initialFontName,
+      familyName: saved?.fontInfo?.familyName ?? (s.fontInfo.familyName?.trim() || initialFontName),
+      style: saved?.fontInfo?.style ?? fontStyleLabel(s.fontStyle, s.customFamilies),
+      designerName: saved?.fontInfo?.designerName ?? (s.fontInfo.designer?.trim() || ""),
+      designerURL: saved?.fontInfo?.designerURL ?? (s.fontInfo.designerURL?.trim() || ""),
+      foundry: saved?.fontInfo?.foundry ?? (s.fontInfo.manufacturer?.trim() || ""),
+      copyright: saved?.fontInfo?.copyright ?? (s.fontInfo.copyright?.trim() || (initialFontName ? `Copyright © ${new Date().getFullYear()} ${initialFontName}` : "")),
+      version: saved?.fontInfo?.version ?? (s.fontInfo.version?.trim() || "1.000"),
+      website: saved?.fontInfo?.website ?? (s.fontInfo.manufacturerURL?.trim() || ""),
+      trademark: saved?.fontInfo?.trademark ?? (s.fontInfo.trademark?.trim() || ""),
     });
     setLicenseInfoForm({
-      licenseType: knownLicenseType ?? "",
-      licenseOwner: s.fontInfo.designer?.trim() || "",
-      permission: "",
-      restriction: "",
-      note: "",
+      licenseType: (saved?.license?.licenseType as LicenseType | undefined) ?? knownLicenseType ?? "",
+      licenseOwner: saved?.license?.licenseOwner ?? (s.fontInfo.designer?.trim() || ""),
+      permission: saved?.license?.permission ?? "",
+      restriction: saved?.license?.restriction ?? "",
+      note: saved?.license?.note ?? "",
     });
     setFormats(["ttf"]);
     setSelectedStyles(detectExportableStyles(s.glyphsByStyle, s.customFamilies));
@@ -769,13 +777,21 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       licenseURL: fontInfoForm.website.trim(),
     };
     setFontInfo(patch);
+    // Also stash the RAW form (both tabs) on the project so every field the
+    // user typed — including License fields that don't map into the OpenType
+    // name table (owner, type, permission, restriction, note) — stays
+    // attached to the project and comes back exactly on reopen.
+    setExportInfo({
+      fontInfo: { ...fontInfoForm },
+      license: { ...licenseInfoForm },
+    });
     // Keep the project's display name in sync with the family name the way
     // renaming the font elsewhere does, so the two never drift apart.
     if (familyName) setFontName(familyName);
     setInfoSaved(true);
     window.setTimeout(() => setInfoSaved(false), 2000);
     showToast("Font Info & License tersimpan.", "success");
-  }, [fontInfoForm, licenseInfoForm, qaFontInfo, setFontInfo, setFontName, showToast]);
+  }, [fontInfoForm, licenseInfoForm, qaFontInfo, setFontInfo, setExportInfo, setFontName, showToast]);
 
   useEffect(() => {
     if (!exportOpen || nameTableTools) return;

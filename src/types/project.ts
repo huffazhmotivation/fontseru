@@ -1,5 +1,5 @@
 import type { BrushSettings } from "./brush";
-import type { FontInfo, FontMetrics } from "./font";
+import type { ExportInfoDraft, FontInfo, FontMetrics } from "./font";
 import type { CustomFamily, FontStyle, GlyphFamily, GlyphMap } from "./glyph";
 import type { KerningManualFlags, KerningPairs, KerningOverridesByStyle, KerningOverrideManualByStyle, WordSpacingOverridesByStyle } from "./kerning";
 import type { FeatureBuilderConfig } from "./opentypeFeatures";
@@ -33,6 +33,10 @@ export interface FontSeruProjectV1 {
     /** OpenType Feature Builder config. Optional so older .fs files without
      * this field still open fine. */
     featureConfig?: FeatureBuilderConfig;
+    /** Raw Export-dialog form (Font Info + License Info) saved via "Save
+     * Info" so it stays attached to the project. Optional so older .fs files
+     * without it still open fine. */
+    exportInfo?: ExportInfoDraft;
   };
   editor: {
     activeChar: string;

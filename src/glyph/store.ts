@@ -8,7 +8,7 @@ import type { BrushSettings, BrushType } from "@/types/brush";
 import { buildDefaultGlyphs, ensureSpaceGlyph, ensureDefaultSymbols } from "./defaultGlyphs";
 import { cloneGlyphMap, familyFromRegular, newCustomFamilyGlyphs } from "./family";
 import { generateBoldFromRegular, generateItalicFromRegular, generateCustomFromRegular, type FamilyGenerationResult } from "./autoGenerate";
-import { DEFAULT_METRICS, defaultFontInfo, type FontInfo, type FontMetrics } from "@/types/font";
+import { DEFAULT_METRICS, defaultFontInfo, type ExportInfoDraft, type FontInfo, type FontMetrics } from "@/types/font";
 import { BRUSH_PRESETS } from "@/brushes/presets";
 import { cloneObject, deleteNodes } from "@/editor/nodeOps";
 import { cloneObjectWithNewIds, translateObject, objectBounds, objectsBounds, scaleObject, alignOffset, type AlignMode } from "@/editor/objectOps";
@@ -199,6 +199,9 @@ interface AppState {
   theme: Theme;
   fontName: string;
   fontInfo: FontInfo;
+  /** Raw Export-dialog form (Font Info + License Info) saved via "Save Info"
+   * so everything typed there stays attached to the project. */
+  exportInfo?: ExportInfoDraft;
   projectFileName: string;
   /** Sketch Mode: an additive canvas mode for tablet/pen drawing. Does not
    * replace or alter normal mode; toggling it back off restores the usual UI. */
@@ -369,6 +372,7 @@ interface AppState {
    * on blur (or Enter) of the name field — see `setFontName`. */
   commitFontNameEdit: () => void;
   setFontInfo: (patch: Partial<FontInfo>) => void;
+  setExportInfo: (draft: ExportInfoDraft) => void;
   setProjectFileName: (name: string) => void;
   newProject: () => void;
   setTool: (tool: ToolId) => void;
@@ -506,7 +510,7 @@ interface AppState {
   // history / persistence
   undo: () => void;
   redo: () => void;
-  hydrate: (patch: { glyphs?: GlyphMap; glyphsByStyle?: Partial<GlyphFamily>; fontStyle?: FontStyle; customFamilies?: CustomFamily[]; fontName?: string; fontInfo?: Partial<FontInfo>; projectFileName?: string; metrics?: Partial<FontMetrics>; kerningPairs?: KerningPairs; kerningManual?: KerningManualFlags; kerningOverridesByStyle?: KerningOverridesByStyle; kerningOverrideManualByStyle?: KerningOverrideManualByStyle; wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle; featureConfig?: FeatureBuilderConfig; activeChar?: string; gridSize?: number; showGrid?: boolean; showGuides?: boolean; snapEnabled?: boolean; ghost?: Partial<GhostSettings>; brush?: BrushSettings }) => void;
+  hydrate: (patch: { glyphs?: GlyphMap; glyphsByStyle?: Partial<GlyphFamily>; fontStyle?: FontStyle; customFamilies?: CustomFamily[]; fontName?: string; fontInfo?: Partial<FontInfo>; exportInfo?: ExportInfoDraft; projectFileName?: string; metrics?: Partial<FontMetrics>; kerningPairs?: KerningPairs; kerningManual?: KerningManualFlags; kerningOverridesByStyle?: KerningOverridesByStyle; kerningOverrideManualByStyle?: KerningOverrideManualByStyle; wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle; featureConfig?: FeatureBuilderConfig; activeChar?: string; gridSize?: number; showGrid?: boolean; showGuides?: boolean; snapEnabled?: boolean; ghost?: Partial<GhostSettings>; brush?: BrushSettings }) => void;
 
   // kerning
   setKerningPair: (left: string, right: string, value: number) => void;
@@ -1129,6 +1133,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const s = get();
       commitPatch({ fontInfo: { ...s.fontInfo, ...patch } });
     },
+    setExportInfo: (draft) => set({ exportInfo: draft }),
     setProjectFileName: (name) => set({ projectFileName: name }),
     newProject: () => {
       const name = "Untitled Font";
@@ -2120,6 +2125,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           customFamilies,
           fontName: patch.fontName ?? s.fontName,
           fontInfo: patch.fontInfo ? { ...s.fontInfo, ...patch.fontInfo } : s.fontInfo,
+          exportInfo: patch.exportInfo ?? (incomingRegular ? undefined : s.exportInfo),
           projectFileName: patch.projectFileName ?? s.projectFileName,
           metrics: patch.metrics ? { ...s.metrics, ...patch.metrics, baseline: patch.metrics.baseline ?? s.metrics.baseline ?? 0 } : s.metrics,
           kerningPairs: patch.kerningPairs ?? s.kerningPairs,

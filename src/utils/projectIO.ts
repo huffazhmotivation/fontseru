@@ -1,4 +1,4 @@
-import type { FontInfo, FontMetrics } from "@/types/font";
+import type { ExportInfoDraft, FontInfo, FontMetrics } from "@/types/font";
 import type { CustomFamily, FontStyle, GlyphFamily, GlyphMap } from "@/types/glyph";
 import type { KerningManualFlags, KerningPairs, KerningOverridesByStyle, KerningOverrideManualByStyle, WordSpacingOverridesByStyle } from "@/types/kerning";
 import type { BrushSettings } from "@/types/brush";
@@ -24,6 +24,7 @@ export interface ProjectSource {
   kerningOverrideManualByStyle?: KerningOverrideManualByStyle;
   wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle;
   featureConfig?: FeatureBuilderConfig;
+  exportInfo?: ExportInfoDraft;
   activeChar: string;
   gridSize: number;
   showGrid: boolean;
@@ -54,6 +55,7 @@ export function createFontSeruProject(source: ProjectSource): FontSeruProject {
       kerningOverrideManualByStyle: source.kerningOverrideManualByStyle,
       wordSpacingOverridesByStyle: source.wordSpacingOverridesByStyle,
       featureConfig: source.featureConfig,
+      exportInfo: source.exportInfo,
     },
     editor: {
       activeChar: source.activeChar,

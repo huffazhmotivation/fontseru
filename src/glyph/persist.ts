@@ -1,6 +1,6 @@
 import type { CustomFamily, FontStyle, GlyphFamily, GlyphMap } from "@/types/glyph";
 import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, WordSpacingOverridesByStyle } from "@/types/kerning";
-import type { FontInfo, FontMetrics } from "@/types/font";
+import type { ExportInfoDraft, FontInfo, FontMetrics } from "@/types/font";
 import type { FeatureBuilderConfig } from "@/types/opentypeFeatures";
 
 /**
@@ -36,6 +36,9 @@ interface ProjectSnapshot {
   /** OpenType Feature Builder config (ligatures/alternates/swashes). Optional
    * so older saved snapshots without this field still load fine. */
   featureConfig?: FeatureBuilderConfig;
+  /** Raw Export-dialog form saved via "Save Info". Optional so older saved
+   * snapshots without this field still load fine. */
+  exportInfo?: ExportInfoDraft;
 }
 
 function openDB(): Promise<IDBDatabase> {

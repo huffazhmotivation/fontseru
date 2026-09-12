@@ -53,6 +53,36 @@ export interface FontInfo {
   uniqueID?: string;
 }
 
+/**
+ * The RAW Export-dialog form state (Font Info + License Info tabs), persisted
+ * with the project so that clicking "Save Info" makes every field the user
+ * typed — including License fields that don't map 1:1 into the OpenType name
+ * table (owner, type, permission, restriction, note) — stick to the project
+ * and come back exactly on reopen. All fields optional/loose for forward- and
+ * backward-compatibility with older/newer projects.
+ */
+export interface ExportInfoDraft {
+  fontInfo?: {
+    fontName?: string;
+    familyName?: string;
+    style?: string;
+    designerName?: string;
+    designerURL?: string;
+    foundry?: string;
+    copyright?: string;
+    version?: string;
+    website?: string;
+    trademark?: string;
+  };
+  license?: {
+    licenseType?: string;
+    licenseOwner?: string;
+    permission?: string;
+    restriction?: string;
+    note?: string;
+  };
+}
+
 export const DEFAULT_METRICS: FontMetrics = {
   unitsPerEm: 1000,
   ascender: 800,
