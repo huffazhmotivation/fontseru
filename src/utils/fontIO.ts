@@ -32,12 +32,40 @@ import * as opentype from "opentype.js";
   if (!FontProto || (FontProto as any).__fontseruNamesGuard) return;
   const original = FontProto.getEnglishName;
   if (typeof original !== "function") return;
+  // opentype.js not only reads these names, it calls STRING methods on some
+  // of them (e.g. `englishFamilyName.replace(...)` when deriving a missing
+  // PostScript name). Returning `undefined` for a missing record therefore
+  // just moves the crash one line down. For the handful of records the
+  // serializer treats as mandatory we hand back a harmless placeholder
+  // string instead, so the writer always has something valid to work with.
+  const REQUIRED_FALLBACKS: Record<string, string> = {
+    fontFamily: "UntitledFont",
+    fontSubfamily: "Regular",
+    fullName: "UntitledFont Regular",
+    postScriptName: "UntitledFont-Regular",
+    version: "Version 1.000",
+    manufacturer: "FontSeru",
+  };
   FontProto.getEnglishName = function patchedGetEnglishName(this: any, name: string) {
     if (!this.names || typeof this.names !== "object") this.names = {};
-    return original.call(this, name);
+    const value = original.call(this, name);
+    if (typeof value === "string") return value;
+    return Object.prototype.hasOwnProperty.call(REQUIRED_FALLBACKS, name)
+      ? REQUIRED_FALLBACKS[name]
+      : value;
   };
   (FontProto as any).__fontseruNamesGuard = true;
 })();
+
+/**
+ * Build marker. Bumped whenever the export engine changes so a screenshot of
+ * an error immediately shows WHICH build produced it — the quickest way to
+ * tell a real bug apart from a stale deploy / cached bundle.
+ */
+export const FONTSERU_EXPORT_BUILD = "v17-export-hardened";
+if (typeof console !== "undefined") {
+  console.info(`[FontSeru] export engine build: ${FONTSERU_EXPORT_BUILD}`);
+}
 
 import { expandStrokeObject } from "@/brushes/strokeToOutline";
 import {
@@ -2525,7 +2553,7 @@ export async function generateFontFiles(
       ttfBuffer = generateTTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
     } catch (error) {
       console.error("[FontSeru] TTF generation failed:", error);
-      throw new Error(`Unable to generate TTF. ${technicalMessage(error)}`);
+      throw new Error(`Unable to generate TTF [${FONTSERU_EXPORT_BUILD}]. ${technicalMessage(error)}`);
     }
     if (wanted.has("ttf")) {
       files.push({ extension: "ttf", mimeType: "font/ttf", buffer: ttfBuffer });
@@ -2533,13 +2561,24 @@ export async function generateFontFiles(
   }
 
   if (wanted.has("otf")) {
+    let otf: ArrayBuffer | null = null;
     try {
-      const otf = generateOTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
-      files.push({ extension: "otf", mimeType: "font/otf", buffer: otf });
+      otf = generateOTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
     } catch (error) {
-      console.error("[FontSeru] OTF generation failed:", error);
-      throw new Error(`Unable to generate OTF. ${technicalMessage(error)}`);
+      // Kerning (GPOS) and OpenType features (GSUB) are ENHANCEMENTS. If
+      // building the font with them attached fails for any reason, fall back
+      // to a plain font rather than losing the export entirely — a font
+      // without kerning is vastly better than no font at all.
+      console.error("[FontSeru] OTF generation failed; retrying without kerning/features:", error);
+      try {
+        otf = generateOTF(data.glyphs, data.metrics, data.info, {}, undefined);
+        console.warn("[FontSeru] OTF exported WITHOUT kerning/features (fallback).");
+      } catch (fallbackError) {
+        console.error("[FontSeru] OTF fallback also failed:", fallbackError);
+        throw new Error(`Unable to generate OTF [${FONTSERU_EXPORT_BUILD}]. ${technicalMessage(fallbackError)}`);
+      }
     }
+    if (otf) files.push({ extension: "otf", mimeType: "font/otf", buffer: otf });
   }
 
   if (wanted.has("woff")) {
@@ -2549,7 +2588,7 @@ export async function generateFontFiles(
       files.push({ extension: "woff", mimeType: "font/woff", buffer: toArrayBuffer(woff) });
     } catch (error) {
       console.error("[FontSeru] WOFF generation failed:", error);
-      throw new Error(`Unable to generate WOFF. ${technicalMessage(error)}`);
+      throw new Error(`Unable to generate WOFF [${FONTSERU_EXPORT_BUILD}]. ${technicalMessage(error)}`);
     }
   }
 
@@ -2560,7 +2599,7 @@ export async function generateFontFiles(
       files.push({ extension: "woff2", mimeType: "font/woff2", buffer: toArrayBuffer(woff2) });
     } catch (error) {
       console.error("[FontSeru] WOFF2 generation failed:", error);
-      throw new Error(`Unable to generate WOFF2. ${technicalMessage(error)}`);
+      throw new Error(`Unable to generate WOFF2 [${FONTSERU_EXPORT_BUILD}]. ${technicalMessage(error)}`);
     }
   }
 
