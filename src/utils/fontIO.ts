@@ -186,22 +186,59 @@ import * as opentype from "opentype.js";
         } catch {
           /* fall through with whatever we have */
         }
+
+        // ROOT CAUSE of `Name table entry "en" does not exist`:
+        // opentype.js builds the name table with `for (let key in names)`,
+        // and `for...in` also walks the PROTOTYPE CHAIN. If anything in the
+        // page has added an enumerable property to `Object.prototype`
+        // (prototype pollution — commonly a locale key like "en" from a
+        // third-party script or extension), that key appears in the loop for
+        // EVERY object, the writer treats it as a name record it doesn't
+        // recognise, and throws. This is why the failure was invisible to
+        // `Object.keys` logging (own keys only) and never reproduced outside
+        // the browser. Here we temporarily hide any such polluted keys for
+        // the duration of serialization, then restore them untouched.
+        const polluted: string[] = [];
+        try {
+          for (const key of Object.getOwnPropertyNames(Object.prototype)) {
+            const d = Object.getOwnPropertyDescriptor(Object.prototype, key);
+            if (d && d.enumerable) polluted.push(key);
+          }
+          for (const key of polluted) {
+            Object.defineProperty(Object.prototype, key, { enumerable: false });
+          }
+          if (polluted.length > 0) {
+            console.warn("[FontSeru] Neutralized polluted Object.prototype keys during export:", polluted);
+          }
+        } catch {
+          /* best-effort */
+        }
+
         try {
           return origToTables.apply(this, args as []);
         } catch (error) {
-          // Surface exactly what the writer choked on — the key list is the
-          // one piece of information that identifies a malformed record.
           try {
             console.error(
               "[FontSeru] name table keys at failure:",
               Object.keys((this.names ?? {}) as Record<string, unknown>),
               "| original keys:",
               Object.keys((before ?? {}) as Record<string, unknown>),
+              "| polluted proto keys:",
+              polluted,
             );
           } catch {
             /* diagnostics are best-effort */
           }
           throw error;
+        } finally {
+          // Always put the page back exactly as we found it.
+          for (const key of polluted) {
+            try {
+              Object.defineProperty(Object.prototype, key, { enumerable: true });
+            } catch {
+              /* ignore */
+            }
+          }
         }
       };
       (FontProto as any).__fontseruTablesGuard = true;
@@ -216,7 +253,7 @@ import * as opentype from "opentype.js";
  * an error immediately shows WHICH build produced it — the quickest way to
  * tell a real bug apart from a stale deploy / cached bundle.
  */
-export const FONTSERU_EXPORT_BUILD = "v22-tables-guard";
+export const FONTSERU_EXPORT_BUILD = "v23-proto-pollution-fix";
 if (typeof console !== "undefined") {
   console.info(`[FontSeru] export engine build: ${FONTSERU_EXPORT_BUILD}`);
 }
