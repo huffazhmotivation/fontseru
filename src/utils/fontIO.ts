@@ -177,8 +177,23 @@ import * as opentype from "opentype.js";
               : before) ?? {},
             [],
           );
+          // Expose `names` through a Proxy whose key enumeration is locked
+          // to valid name records. opentype copies the table with
+          // `for (let n in font.names)`, which walks the prototype chain and
+          // any exotic own keys; a Proxy lets us guarantee that loop can only
+          // ever see legitimate entries, whatever their origin.
+          const guarded = new Proxy(cleaned, {
+            ownKeys: (t) => Object.keys(t).filter((k) => OPENTYPE_NAME_KEYS.has(k)),
+            getOwnPropertyDescriptor: (t, k) => {
+              if (typeof k === "string" && !OPENTYPE_NAME_KEYS.has(k)) return undefined;
+              const d = Object.getOwnPropertyDescriptor(t, k as string);
+              return d ? { ...d, configurable: true, enumerable: true } : undefined;
+            },
+            get: (t, k) => (typeof k === "string" && !OPENTYPE_NAME_KEYS.has(k) ? undefined : (t as any)[k]),
+            has: (t, k) => typeof k === "string" && OPENTYPE_NAME_KEYS.has(k) && k in t,
+          });
           Object.defineProperty(this, "names", {
-            value: cleaned,
+            value: guarded,
             writable: true,
             configurable: true,
             enumerable: true,
@@ -219,7 +234,9 @@ import * as opentype from "opentype.js";
         } catch (error) {
           try {
             console.error(
-              "[FontSeru] name table keys at failure:",
+              "[FontSeru] name table keys at failure (for..in):",
+              (() => { const k: string[] = []; for (const x in (this.names ?? {})) k.push(x); return k; })(),
+              "| own keys:",
               Object.keys((this.names ?? {}) as Record<string, unknown>),
               "| original keys:",
               Object.keys((before ?? {}) as Record<string, unknown>),
@@ -253,7 +270,7 @@ import * as opentype from "opentype.js";
  * an error immediately shows WHICH build produced it — the quickest way to
  * tell a real bug apart from a stale deploy / cached bundle.
  */
-export const FONTSERU_EXPORT_BUILD = "v23-proto-pollution-fix";
+export const FONTSERU_EXPORT_BUILD = "v24-names-proxy";
 if (typeof console !== "undefined") {
   console.info(`[FontSeru] export engine build: ${FONTSERU_EXPORT_BUILD}`);
 }
