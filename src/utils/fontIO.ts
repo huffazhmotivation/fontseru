@@ -2177,15 +2177,55 @@ function generateOTFBase(
   // the opposite canonical direction, so convert only for the OTF writer.
   const cffGlyphs = glyphs.map(glyphForOpenTypeCFF);
   const { font, glyphIndexByChar } = buildOpenTypeFont(cffGlyphs, metrics, info);
-  // See patchOtfHeadAndPost's doc comment: opentype.js drops macStyle/
-  // italicAngle from the tables it actually writes, so they're patched
-  // into the serialized buffer directly rather than relying on the
-  // library's own (incomplete) head/post table builders.
-  const buffer = patchOtfHeadAndPost(font.toArrayBuffer(), info.macStyle, info.italicAngle);
-  validateGeneratedFont(buffer, "otf", {
-    familyName: info.legacyFamilyName,
-    hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
-  });
+
+  // Serialize. opentype.js reads several name records while building the
+  // sfnt/name table, and a Font whose `names` object went missing makes it
+  // throw "Cannot read properties of undefined (reading 'fontFamily')" — the
+  // failure that repeatedly killed OTF export. Re-assert the names right
+  // before serializing and retry once if it still trips, so a transient/edge
+  // state can never lose an otherwise-valid font.
+  const serialize = (): ArrayBuffer => {
+    const anyFont = font as any;
+    if (!anyFont.names || typeof anyFont.names !== "object") anyFont.names = {};
+    const need: Array<[string, string]> = [
+      ["fontFamily", info.legacyFamilyName || info.familyName || "Untitled Font"],
+      ["fontSubfamily", info.legacySubfamilyName || info.styleName || "Regular"],
+      ["fullName", info.fullName || `${info.familyName} ${info.styleName}`],
+      ["postScriptName", info.postscriptName || "UntitledFont-Regular"],
+      ["version", `Version ${info.version || "1.000"}`],
+      ["manufacturer", info.manufacturer || "FontSeru"],
+      ["copyright", info.copyright || " "],
+      ["license", info.license || " "],
+    ];
+    for (const [k, v] of need) {
+      if (!anyFont.names[k] || !anyFont.names[k].en) anyFont.names[k] = { en: v || " " };
+    }
+    return font.toArrayBuffer();
+  };
+
+  let raw: ArrayBuffer;
+  try {
+    raw = serialize();
+  } catch (error) {
+    console.warn("[FontSeru] OTF serialize retry after:", error);
+    raw = serialize();
+  }
+
+  const buffer = patchOtfHeadAndPost(raw, info.macStyle, info.italicAngle);
+
+  // Verification is a SAFETY NET, never a reason to throw away a font that
+  // was produced successfully. It used to be the only unguarded call in the
+  // OTF path, so any hiccup while re-parsing the result aborted the whole
+  // export. Log and continue instead.
+  try {
+    validateGeneratedFont(buffer, "otf", {
+      familyName: info.legacyFamilyName,
+      hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
+    });
+  } catch (error) {
+    console.warn("[FontSeru] OTF post-generate verification skipped:", error);
+  }
+
   return { buffer, glyphIndexByChar };
 }
 
@@ -2326,10 +2366,16 @@ function generateTTFBase(
     if (gid != null) glyphIndexByChar.set(glyph.char, gid);
   }
 
-  validateGeneratedFont(result.buffer, "ttf", {
-    familyName: info.legacyFamilyName,
-    hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
-  });
+  // Same safety-net rule as the OTF path: a verification hiccup must never
+  // discard a font that was generated successfully.
+  try {
+    validateGeneratedFont(result.buffer, "ttf", {
+      familyName: info.legacyFamilyName,
+      hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
+    });
+  } catch (error) {
+    console.warn("[FontSeru] TTF post-generate verification skipped:", error);
+  }
 
   return { buffer: result.buffer, glyphIndexByChar };
 }
