@@ -186,7 +186,7 @@ function fontseruNeutralizeProtoPollution(): void {
  * an error immediately shows WHICH build produced it — the quickest way to
  * tell a real bug apart from a stale deploy / cached bundle.
  */
-export const FONTSERU_EXPORT_BUILD = "v25-own-keys";
+export const FONTSERU_EXPORT_BUILD = "v26-metrics-corners";
 if (typeof console !== "undefined") {
   console.info(`[FontSeru] export engine build: ${FONTSERU_EXPORT_BUILD}`);
 }
@@ -1298,7 +1298,27 @@ function glyphToOpenType(glyph: Glyph, index: number): opentype.Glyph {
     if (cp !== glyph.unicode && typeof (result as any).addUnicode === "function") (result as any).addUnicode(cp);
   }
   (result as any).index = index;
+  // hmtx left side bearing MUST equal the glyph's real xMin. opentype.js's
+  // hmtx writer uses `glyph.leftSideBearing || 0`, and a Glyph created here
+  // never sets it — so every OTF glyph shipped with lsb=0 while its ink
+  // actually started at xMin. That's a spec inconsistency (the TTF writer
+  // already sets lsb=xMin) that can shift glyphs / throw off spacing in
+  // strict layout engines. Derive it from the path bounds so the OTF matches
+  // the editor and the TTF exactly.
+  setOpenTypeLeftSideBearing(result);
   return result;
+}
+
+/** Set an opentype.Glyph's hmtx left side bearing to its outline xMin so the
+ * generated OTF is metrically consistent with the editor and the TTF export. */
+function setOpenTypeLeftSideBearing(glyph: opentype.Glyph): void {
+  try {
+    const bbox = typeof (glyph as any).getBoundingBox === "function" ? (glyph as any).getBoundingBox() : null;
+    const xMin = bbox && Number.isFinite(bbox.x1) ? Math.round(bbox.x1) : 0;
+    (glyph as any).leftSideBearing = Number.isFinite(xMin) ? xMin : 0;
+  } catch {
+    (glyph as any).leftSideBearing = 0;
+  }
 }
 
 function notdefGlyph(metrics: FontMetrics): opentype.Glyph {
