@@ -186,7 +186,7 @@ function fontseruNeutralizeProtoPollution(): void {
  * an error immediately shows WHICH build produced it — the quickest way to
  * tell a real bug apart from a stale deploy / cached bundle.
  */
-export const FONTSERU_EXPORT_BUILD = "v26-metrics-corners";
+export const FONTSERU_EXPORT_BUILD = "v27-rough-baseshape";
 if (typeof console !== "undefined") {
   console.info(`[FontSeru] export engine build: ${FONTSERU_EXPORT_BUILD}`);
 }

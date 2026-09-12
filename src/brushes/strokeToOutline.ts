@@ -667,15 +667,6 @@ export function centerlineToOutline(
   // The concave side is left untouched; the existing self-intersection
   // cleanup still collapses its fold correctly.
   const JOIN_ANGLE_THRESHOLD = (28 * Math.PI) / 180;
-  // Outer corners are joined SHARP (miter) so a right-angle/"siku" corner in
-  // a letterform stays crisp instead of being rounded off into a half-circle
-  // (the regression this fixes: a previous width-thinning fix inserted a
-  // round-join arc at EVERY sharp bend, which turned deliberately square
-  // corners into rounded ones). A miter only spikes badly at very acute
-  // hairpin turns, so past this ratio of miter length to nib half-width we
-  // fall back to the round-arc join — matching the standard SVG/PostScript
-  // miter-limit behavior (default 4).
-  const MITER_LIMIT = 4;
   const normalizeAngleDelta = (a: number): number => {
     let d = a % (2 * Math.PI);
     if (d > Math.PI) d -= 2 * Math.PI;
@@ -707,41 +698,6 @@ export function centerlineToOutline(
     return out;
   };
 
-  // Sharp (miter) join for the convex side of a corner: intersect the
-  // incoming and outgoing offset edges and meet at that apex, so a square
-  // corner stays square. `aIn`/`aOut` are the convex-side normal angles (as
-  // passed to cornerJoinArc); `inT`/`outT` are the incoming/outgoing segment
-  // unit tangents. Falls back to the round-arc join when the two edges are
-  // near-parallel (no stable intersection) or the miter would spike past
-  // MITER_LIMIT (a very acute hairpin turn), so acute cusps never grow a
-  // runaway spike.
-  const cornerJoinMiter = (
-    center: Point,
-    aIn: number,
-    aOut: number,
-    inT: { x: number; y: number },
-    outT: { x: number; y: number },
-    semiA: number,
-    semiB: number,
-  ): Point[] => {
-    const vIn = ellipseSupportVector(aIn, nibAngleRad, semiA, semiB);
-    const vOut = ellipseSupportVector(aOut, nibAngleRad, semiA, semiB);
-    const p1 = { x: center.x + vIn.x, y: center.y + vIn.y };
-    const p2 = { x: center.x + vOut.x, y: center.y + vOut.y };
-    const denom = inT.x * outT.y - inT.y * outT.x;
-    if (Math.abs(denom) < 1e-6) return cornerJoinArc(center, aIn, aOut, semiA, semiB);
-    const t = ((p2.x - p1.x) * outT.y - (p2.y - p1.y) * outT.x) / denom;
-    const apex = { x: p1.x + t * inT.x, y: p1.y + t * inT.y };
-    const maxHalf = Math.max(semiA, semiB);
-    const miterLen = Math.hypot(apex.x - center.x, apex.y - center.y);
-    if (!Number.isFinite(miterLen) || miterLen > MITER_LIMIT * maxHalf) {
-      return cornerJoinArc(center, aIn, aOut, semiA, semiB);
-    }
-    // Trace the incoming edge point, the sharp apex, then the outgoing edge
-    // point — a crisp mitered corner instead of a rounded fan.
-    return [p1, apex, p2];
-  };
-
   const left: Point[] = [];
   const right: Point[] = [];
   for (let i = 0; i < pts.length; i++) {
@@ -761,8 +717,6 @@ export function centerlineToOutline(
     let joinConvexSide: "left" | "right" = "left";
     let joinInAngle = normalAngle;
     let joinOutAngle = normalAngle;
-    let joinInT = { x: 0, y: 0 };
-    let joinOutT = { x: 0, y: 0 };
     if (i > 0 && i < pts.length - 1) {
       const segInX = pts[i].x - prev.x, segInY = pts[i].y - prev.y;
       const segOutX = next.x - pts[i].x, segOutY = next.y - pts[i].y;
@@ -780,8 +734,6 @@ export function centerlineToOutline(
         const outTx = segOutX / segOutLen, outTy = segOutY / segOutLen;
         joinInAngle = Math.atan2(inTx, -inTy);
         joinOutAngle = Math.atan2(outTx, -outTy);
-        joinInT = { x: inTx, y: inTy };
-        joinOutT = { x: outTx, y: outTy };
         isJoinCorner = true;
       }
     }
@@ -871,11 +823,11 @@ export function centerlineToOutline(
       const curSemiA = semiMajor * scale;
       const curSemiB = semiMinor * scale;
       if (joinConvexSide === "left") {
-        left.push(...cornerJoinMiter(pts[i], joinInAngle, joinOutAngle, joinInT, joinOutT, curSemiA, curSemiB));
+        left.push(...cornerJoinArc(pts[i], joinInAngle, joinOutAngle, curSemiA, curSemiB));
         right.push(rightBase);
       } else {
         left.push(leftBase);
-        right.push(...cornerJoinMiter(pts[i], joinInAngle + Math.PI, joinOutAngle + Math.PI, joinInT, joinOutT, curSemiA, curSemiB));
+        right.push(...cornerJoinArc(pts[i], joinInAngle + Math.PI, joinOutAngle + Math.PI, curSemiA, curSemiB));
       }
     } else if (settings.type === "oilBrush" && (settings.jitter ?? 0) > 0) {
       // Torn dry-brush edge: each side gets its own broad, coherent scallop
@@ -1554,13 +1506,61 @@ function makeCombDash(center: Point, tangent: Point, length: number, thickness: 
  * same-sized dots.
  */
 function roughBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
-  const main = centerlineToOutline(centerline, settings);
-  if (!main) return [];
-  const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
+  // BASE SHAPE: the Rough brush's silhouette should read exactly like the
+  // Monoline / round-pen stroke of the SAME centerline — clean, consistent
+  // round outer corners and round caps — and get its "rough" character purely
+  // from the pitted texture holes carved into it below. The old per-vertex
+  // offset builder (`centerlineToOutline`) produced inconsistent corners
+  // (some rounded, some spiked, some blobbed) because a hand offset chain
+  // can't join a wide nib around a sharp turn as cleanly as unioning swept
+  // discs does. For a constant-width stroke (no taper, no pressure — which is
+  // how Rough is drawn) we therefore build the body with the exact same
+  // round-pen union the Monoline export uses, so the base shape matches the
+  // clean style 1:1. Variable-width rough strokes (taper/pressure) still use
+  // the legacy builder so their width profile is preserved.
+  const constantWidth =
+    (settings.taperStart ?? 0) <= 0 &&
+    (settings.taperEnd ?? 0) <= 0 &&
+    (!settings.pressureEnabled || (settings.pressureSensitivity ?? 0) === 0);
+
+  let bodyContours: Contour[] = [];
+  if (constantWidth) {
+    const centerContour: Contour = {
+      id: "rough-center",
+      closed: false,
+      nodes: centerline.map((s, i) => ({
+        id: `rc${i}`,
+        point: { x: s.x, y: s.y },
+        handleIn: null,
+        handleOut: null,
+        type: "corner",
+      })),
+    };
+    bodyContours = uniformCenterlineToOutlineExact(centerContour, settings.size, "butt");
+  }
+
+  // Fall back to the legacy variable-width body when the uniform path doesn't
+  // apply (tapered/pressure strokes) or produced nothing.
+  const legacyMain = bodyContours.length === 0 ? centerlineToOutline(centerline, settings) : null;
+  if (bodyContours.length === 0) {
+    if (!legacyMain) return [];
+    bodyContours = [legacyMain];
+  }
+
+  // Outer winding sign of the largest body ring, so texture holes are cut the
+  // opposite way and read as voids.
+  const largestBody = bodyContours.reduce(
+    (best, c) => {
+      const a = Math.abs(signedArea(c.nodes.map((n) => n.point)));
+      return a > best.a ? { a, c } : best;
+    },
+    { a: -1, c: bodyContours[0] },
+  ).c;
+  const outerSign = Math.sign(signedArea(largestBody.nodes.map((n) => n.point))) || 1;
   const holeSign = outerSign >= 0 ? -1 : 1;
 
   const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06));
-  if (dense.length < 2) return [main];
+  if (dense.length < 2) return bodyContours;
 
   const cumulative: number[] = [0];
   for (let i = 1; i < dense.length; i++) {
@@ -1620,7 +1620,7 @@ function roughBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
     holes.push(makeRoughHole(center, radius, seed, holeSign, baseRadius));
   }
 
-  return [main, ...holes];
+  return [...bodyContours, ...holes];
 }
 
 /**
