@@ -160,6 +160,55 @@ import * as opentype from "opentype.js";
   } catch {
     /* non-fatal */
   }
+
+  // Closest possible interception: `toTables()` is what actually hands the
+  // names object to the name-table writer, so sanitize HERE too. Guarding
+  // only `toArrayBuffer` left a window in which the object could still be
+  // replaced before the writer read it.
+  try {
+    const origToTables = FontProto.toTables;
+    if (typeof origToTables === "function" && !(FontProto as any).__fontseruTablesGuard) {
+      FontProto.toTables = function fontseruToTables(this: any, ...args: unknown[]) {
+        const before = this.names;
+        try {
+          const cleaned = sanitizeOpenTypeNames(
+            (this.__fontseruGoodNames && typeof this.__fontseruGoodNames === "object"
+              ? this.__fontseruGoodNames
+              : before) ?? {},
+            [],
+          );
+          Object.defineProperty(this, "names", {
+            value: cleaned,
+            writable: true,
+            configurable: true,
+            enumerable: true,
+          });
+        } catch {
+          /* fall through with whatever we have */
+        }
+        try {
+          return origToTables.apply(this, args as []);
+        } catch (error) {
+          // Surface exactly what the writer choked on — the key list is the
+          // one piece of information that identifies a malformed record.
+          try {
+            console.error(
+              "[FontSeru] name table keys at failure:",
+              Object.keys((this.names ?? {}) as Record<string, unknown>),
+              "| original keys:",
+              Object.keys((before ?? {}) as Record<string, unknown>),
+            );
+          } catch {
+            /* diagnostics are best-effort */
+          }
+          throw error;
+        }
+      };
+      (FontProto as any).__fontseruTablesGuard = true;
+    }
+  } catch {
+    /* non-fatal */
+  }
 })();
 
 /**
@@ -167,7 +216,7 @@ import * as opentype from "opentype.js";
  * an error immediately shows WHICH build produced it — the quickest way to
  * tell a real bug apart from a stale deploy / cached bundle.
  */
-export const FONTSERU_EXPORT_BUILD = "v21-nametable-rebuild";
+export const FONTSERU_EXPORT_BUILD = "v22-tables-guard";
 if (typeof console !== "undefined") {
   console.info(`[FontSeru] export engine build: ${FONTSERU_EXPORT_BUILD}`);
 }
