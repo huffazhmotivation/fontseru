@@ -1985,7 +1985,31 @@ function signatureFor(buffer: ArrayBuffer): string {
   return String.fromCharCode(...bytes);
 }
 
-export function validateGeneratedFont(
+export /**
+ * opentype.parse() that can never leave `font.names` undefined.
+ *
+ * ROOT CAUSE of the recurring "Unable to generate OTF. Cannot read
+ * properties of undefined (reading 'fontFamily')" export failure: inside
+ * opentype.js, parsing does `font.names = font.tables.name`, so a font whose
+ * parsed `name` table is missing ends up with `names === undefined`. Any
+ * later `font.getEnglishName('fontFamily')` then does `this.names[name]` on
+ * undefined and throws exactly that message — which is what the stack trace
+ * pointed at (`F.getEnglishName (vendor-opentype…)`). It surfaced during the
+ * post-generate verification/round-trip of the produced buffer, so the whole
+ * export aborted even though the font data itself was fine.
+ *
+ * Normalizing `names` to an object right after parse makes getEnglishName
+ * return undefined harmlessly instead of throwing, so export completes.
+ */
+function parseFontSafely(buffer: ArrayBuffer): opentype.Font {
+  const parsed = opentype.parse(buffer);
+  const anyFont = parsed as any;
+  if (!anyFont.names || typeof anyFont.names !== "object") anyFont.names = {};
+  if (!anyFont.tables || typeof anyFont.tables !== "object") anyFont.tables = {};
+  return parsed;
+}
+
+function validateGeneratedFont(
   buffer: ArrayBuffer,
   format: "otf" | "ttf",
   expected?: { familyName?: string; hasUpperA?: boolean },
@@ -2002,7 +2026,7 @@ export function validateGeneratedFont(
   if (!validSignature) throw new Error(`Generated ${format.toUpperCase()} data has an invalid sfnt signature.`);
 
   try {
-    const parsed = opentype.parse(buffer.slice(0));
+    const parsed = parseFontSafely(buffer.slice(0));
     const unitsPerEm = (parsed as any).unitsPerEm;
     const glyphCount = (parsed as any).glyphs?.length ?? 0;
     if (!Number.isFinite(unitsPerEm) || unitsPerEm <= 0) {
@@ -2461,7 +2485,7 @@ function parseOpenTypeKerning(font: any, charByGid: Map<number, string>): Kernin
 }
 
 export function importOpenType(buffer: ArrayBuffer): ImportedFontProject {
-  const font = opentype.parse(buffer);
+  const font = parseFontSafely(buffer);
   const glyphs: GlyphMap = {};
   const charByGid = new Map<number, string>();
   const count = (font as any).glyphs.length;
