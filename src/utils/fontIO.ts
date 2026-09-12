@@ -30,14 +30,11 @@ import * as opentype from "opentype.js";
 (() => {
   const FontProto = (opentype as any)?.Font?.prototype;
   if (!FontProto || (FontProto as any).__fontseruNamesGuard) return;
-  const original = FontProto.getEnglishName;
-  if (typeof original !== "function") return;
-  // opentype.js not only reads these names, it calls STRING methods on some
-  // of them (e.g. `englishFamilyName.replace(...)` when deriving a missing
-  // PostScript name). Returning `undefined` for a missing record therefore
-  // just moves the crash one line down. For the handful of records the
-  // serializer treats as mandatory we hand back a harmless placeholder
-  // string instead, so the writer always has something valid to work with.
+  if (typeof FontProto.getEnglishName !== "function") return;
+  // Fully REPLACE the method rather than wrapping it. Wrapping still ended up
+  // executing the library's own body — which is the line that throws — so the
+  // crash survived. This reimplementation reads the same data and can never
+  // throw, no matter what `this` or `this.names` happen to be.
   const REQUIRED_FALLBACKS: Record<string, string> = {
     fontFamily: "UntitledFont",
     fontSubfamily: "Regular",
@@ -45,16 +42,49 @@ import * as opentype from "opentype.js";
     postScriptName: "UntitledFont-Regular",
     version: "Version 1.000",
     manufacturer: "FontSeru",
+    copyright: " ",
+    license: " ",
   };
-  FontProto.getEnglishName = function patchedGetEnglishName(this: any, name: string) {
-    if (!this.names || typeof this.names !== "object") this.names = {};
-    const value = original.call(this, name);
+  FontProto.getEnglishName = function fontseruGetEnglishName(this: any, name: string) {
+    const names = this && this.names && typeof this.names === "object" ? this.names : undefined;
+    const record = names ? (names as any)[name] : undefined;
+    const value = record && typeof record === "object" ? (record as any).en : undefined;
     if (typeof value === "string") return value;
     return Object.prototype.hasOwnProperty.call(REQUIRED_FALLBACKS, name)
       ? REQUIRED_FALLBACKS[name]
-      : value;
+      : undefined;
   };
   (FontProto as any).__fontseruNamesGuard = true;
+
+  // Second crash site: the sfnt writer also dereferences `font.names`
+  // DIRECTLY (`names.preferredFamily = font.names.fontFamily`), which blows
+  // up the same way when `names` is missing — and that line is outside
+  // getEnglishName, so guarding the method alone isn't enough. Define
+  // `names` as an accessor that always yields an object: reads can never hit
+  // undefined, and writes still behave normally.
+  try {
+    const STORE = "__fontseruNames";
+    Object.defineProperty(FontProto, "names", {
+      configurable: true,
+      get(this: any) {
+        if (!this[STORE] || typeof this[STORE] !== "object") {
+          Object.defineProperty(this, STORE, { value: {}, writable: true, configurable: true, enumerable: false });
+        }
+        return this[STORE];
+      },
+      set(this: any, value: any) {
+        Object.defineProperty(this, STORE, {
+          value: value && typeof value === "object" ? value : {},
+          writable: true,
+          configurable: true,
+          enumerable: false,
+        });
+      },
+    });
+  } catch {
+    /* If the environment refuses the redefinition, the method guard above
+       still covers the common path. */
+  }
 })();
 
 /**
@@ -62,7 +92,7 @@ import * as opentype from "opentype.js";
  * an error immediately shows WHICH build produced it — the quickest way to
  * tell a real bug apart from a stale deploy / cached bundle.
  */
-export const FONTSERU_EXPORT_BUILD = "v17-export-hardened";
+export const FONTSERU_EXPORT_BUILD = "v19-names-accessor";
 if (typeof console !== "undefined") {
   console.info(`[FontSeru] export engine build: ${FONTSERU_EXPORT_BUILD}`);
 }
