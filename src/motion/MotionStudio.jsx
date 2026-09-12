@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useReducer, useCallback, useMemo, useImperativeHandle } from "react";
 import { ModeTabs } from "@/mode/ModeTabs";
-import { loadMotionProject, saveMotionProject } from "@/motion/motionPersist";
+import { loadMotionProject, saveMotionProject, clearMotionProject, serializeProjectForExport, deserializeImportedProject } from "@/motion/motionPersist";
 import {
   Play, Pause, Upload, Plus, Trash2, Type, Sparkles, Repeat,
   GripVertical, RotateCcw, Wand2, Move, Image as ImageIcon,
@@ -12,6 +12,7 @@ import {
   Waves, Wind, Flame, TrendingUp, AlignJustify,
   Sun, MoonStar,
   AlignLeft, AlignCenter, AlignRight,
+  Download, FolderOpen, FilePlus2,
 } from "lucide-react";
 
 /* ============================================================
@@ -579,7 +580,7 @@ const FRAME_PRESETS = [
 ];
 const DEFAULT_FRAME = FRAME_PRESETS[0];
 
-const initialProjectState = (() => {
+function makeInitialProject() {
   const textTrack = makeTrack("text");
   const clip1 = makeTextClip("Klip 1", "Motion Font\nStudio", 0, "apple", textTrack.id);
   const clip2 = makeTextClip("Klip 2", "Edit Teks Anda", 2200, "kinetic", textTrack.id);
@@ -595,7 +596,8 @@ const initialProjectState = (() => {
     background: { type: "solid", color: "#0d0d10", gradFrom: "#1c1c28", gradTo: "#08080a", gradAngle: 135, imageSrc: null },
     frameSize: { presetId: DEFAULT_FRAME.id, w: DEFAULT_FRAME.w, h: DEFAULT_FRAME.h },
   };
-})();
+}
+const initialProjectState = makeInitialProject();
 const initialPlayback = { playhead: 0, playing: false, loop: true, previewOpen: false };
 
 const TRACK_TYPES = [
@@ -3764,6 +3766,100 @@ function FrameSizeControl({ frameSize, dispatch }) {
   );
 }
 
+// Menu "Proyek": Proyek Baru, Ekspor & Impor proyek ke file .json. Memakai
+// props `project`/`dispatch` yang sudah diterima TopBar (tidak menambah prop
+// baru, jadi tidak perlu mengubah pembanding React.memo TopBar).
+function ProjectMenu({ project, dispatch }) {
+  const [open, setOpen] = useState(false);
+  const fileRef = useRef(null);
+
+  const onNew = () => {
+    setOpen(false);
+    const ok = window.confirm(
+      "Mulai proyek baru? Proyek yang sekarang akan diganti. Ekspor dulu bila ingin menyimpannya."
+    );
+    if (!ok) return;
+    clearMotionProject();
+    dispatch({ type: "HYDRATE_PROJECT", project: makeInitialProject() });
+  };
+
+  const onExport = async () => {
+    setOpen(false);
+    try {
+      const data = await serializeProjectForExport(project);
+      const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `motion-project-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      reportError("Gagal mengekspor proyek: " + (e?.message || e));
+    }
+  };
+
+  const onImportPick = () => { setOpen(false); fileRef.current?.click(); };
+
+  const onImportFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const proj = deserializeImportedProject(JSON.parse(text));
+      (proj.fonts || []).forEach((f) => {
+        if (f && f.family && f.buffer && !mfsFontRegistered(f.family)) {
+          try {
+            const face = new FontFace(f.family, f.buffer);
+            face.load().then((loaded) => document.fonts.add(loaded)).catch(() => {});
+          } catch (err) {}
+        }
+      });
+      dispatch({ type: "HYDRATE_PROJECT", project: proj });
+    } catch (err) {
+      reportError("Gagal mengimpor proyek: " + (err?.message || err));
+    }
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        className="mfs-preview-btn"
+        onClick={() => setOpen((o) => !o)}
+        title="Kelola proyek (baru / ekspor / impor)"
+      >
+        <FolderOpen size={13} /> Proyek
+      </button>
+      {open && (
+        <>
+          <div className="mfs-menu-backdrop" onClick={() => setOpen(false)} />
+          <div className="mfs-popover" style={{ width: 208, left: 0, right: "auto" }}>
+            <div className="mfs-popover-item" onClick={onNew}>
+              <FilePlus2 size={14} /> Proyek Baru
+            </div>
+            <div className="mfs-popover-item" onClick={onExport}>
+              <Download size={14} /> Ekspor Proyek (.json)
+            </div>
+            <div className="mfs-popover-item" onClick={onImportPick}>
+              <Upload size={14} /> Impor Proyek (.json)
+            </div>
+          </div>
+        </>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="application/json,.json"
+        style={{ display: "none" }}
+        onChange={onImportFile}
+      />
+    </div>
+  );
+}
+
 const TopBar = React.memo(function TopBar({ project, dispatch, canUndo, canRedo, playback, exportState, onPreview, onExport, onAlign, theme, onToggleTheme }) {
   const mediaCount = project.clips.filter((c) => c.type !== "text").length;
   const { exporting, progress } = exportState;
@@ -3781,6 +3877,7 @@ const TopBar = React.memo(function TopBar({ project, dispatch, canUndo, canRedo,
         <div className="mfs-brand"><div className="mfs-brand-mark"><Wand2 size={12} color="#fff" /></div>Motion Font Studio</div>
         <ModeTabs />
         <FrameSizeControl frameSize={project.frameSize} dispatch={dispatch} />
+        <ProjectMenu project={project} dispatch={dispatch} />
       </div>
       <div className="mfs-top-right">
         <div className="mfs-align-group" title="Ratakan objek terpilih ke kanvas">
