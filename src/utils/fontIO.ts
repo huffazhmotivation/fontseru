@@ -85,6 +85,29 @@ import * as opentype from "opentype.js";
     /* If the environment refuses the redefinition, the method guard above
        still covers the common path. */
   }
+
+  // Final safety: sanitize `names` INSIDE toArrayBuffer, immediately before
+  // the sfnt writer walks it. Doing it earlier isn't enough — anything that
+  // touches `names` between our call and serialization (including
+  // opentype's own bookkeeping) can reintroduce a malformed shape, and the
+  // writer throws `Name table entry "…" does not exist` on the first bad
+  // key. Normalizing at the last possible moment makes that impossible.
+  try {
+    const origToArrayBuffer = FontProto.toArrayBuffer;
+    if (typeof origToArrayBuffer === "function" && !(FontProto as any).__fontseruSerializeGuard) {
+      FontProto.toArrayBuffer = function fontseruToArrayBuffer(this: any, ...args: unknown[]) {
+        try {
+          this.names = sanitizeOpenTypeNames(this.names ?? {}, []);
+        } catch {
+          /* never block serialization on the cleanup itself */
+        }
+        return origToArrayBuffer.apply(this, args as []);
+      };
+      (FontProto as any).__fontseruSerializeGuard = true;
+    }
+  } catch {
+    /* non-fatal */
+  }
 })();
 
 /**
@@ -92,7 +115,7 @@ import * as opentype from "opentype.js";
  * an error immediately shows WHICH build produced it — the quickest way to
  * tell a real bug apart from a stale deploy / cached bundle.
  */
-export const FONTSERU_EXPORT_BUILD = "v19-names-accessor";
+export const FONTSERU_EXPORT_BUILD = "v20-names-sanitized";
 if (typeof console !== "undefined") {
   console.info(`[FontSeru] export engine build: ${FONTSERU_EXPORT_BUILD}`);
 }
@@ -2226,6 +2249,59 @@ function validateGeneratedFont(
   }
 }
 
+/**
+ * Valid OpenType `name` record keys, in nameID order. opentype.js's
+ * `makeNameTable` walks the keys of the names object and throws
+ * `Name table entry "X" does not exist` for anything that is neither one of
+ * these nor a numeric nameID.
+ */
+const OPENTYPE_NAME_KEYS = new Set([
+  "copyright", "fontFamily", "fontSubfamily", "uniqueID", "fullName", "version",
+  "postScriptName", "trademark", "manufacturer", "designer", "description",
+  "manufacturerURL", "designerURL", "license", "licenseURL", "reserved",
+  "preferredFamily", "preferredSubfamily", "compatibleFullName", "sampleText",
+  "postScriptFindFontName", "wwsFamily", "wwsSubfamily",
+]);
+
+/**
+ * Force the names object into the exact shape the sfnt writer requires:
+ * `{ <validNameKey>: { <langTag>: string } }`.
+ *
+ * Two malformed shapes crash export outright:
+ *  - a stray key that isn't a name record (the writer threw
+ *    `Name table entry "en" does not exist` — an entry had been stored one
+ *    level too high, so the LANGUAGE tag ended up where a record key
+ *    belongs), and
+ *  - a record whose value is a bare string instead of a language map.
+ * Both are repaired here — a bare string is wrapped as `{ en: value }`,
+ * unknown keys are dropped — and the mandatory records are guaranteed to
+ * exist, so the writer always receives something it can encode.
+ */
+function sanitizeOpenTypeNames(
+  names: Record<string, unknown>,
+  required: Array<[string, string]>,
+): Record<string, Record<string, string>> {
+  const clean: Record<string, Record<string, string>> = {};
+  for (const [key, value] of Object.entries(names ?? {})) {
+    // Allow numeric nameIDs through untouched, drop anything unrecognized.
+    if (!OPENTYPE_NAME_KEYS.has(key) && !Number.isFinite(Number(key))) continue;
+    if (typeof value === "string") {
+      clean[key] = { en: value || " " };
+      continue;
+    }
+    if (!value || typeof value !== "object") continue;
+    const langs: Record<string, string> = {};
+    for (const [lang, text] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof text === "string" && text.length > 0) langs[lang] = text;
+    }
+    if (Object.keys(langs).length > 0) clean[key] = langs;
+  }
+  for (const [key, fallback] of required) {
+    if (!clean[key] || !clean[key].en) clean[key] = { en: fallback || " " };
+  }
+  return clean;
+}
+
 function generateOTFBase(
   glyphs: Glyph[],
   metrics: FontMetrics,
@@ -2258,6 +2334,7 @@ function generateOTFBase(
     for (const [k, v] of need) {
       if (!anyFont.names[k] || !anyFont.names[k].en) anyFont.names[k] = { en: v || " " };
     }
+    anyFont.names = sanitizeOpenTypeNames(anyFont.names, need);
     return font.toArrayBuffer();
   };
 
