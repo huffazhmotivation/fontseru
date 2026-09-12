@@ -1,4 +1,44 @@
 import * as opentype from "opentype.js";
+
+/**
+ * DEFINITIVE FIX for the recurring export failure:
+ *   "Unable to generate OTF. Cannot read properties of undefined
+ *    (reading 'fontFamily') [F.getEnglishName (vendor-opentype…)]"
+ *
+ * opentype.js's own `Font.prototype.getEnglishName` is:
+ *
+ *   Font.prototype.getEnglishName = function(name) {
+ *       const translations = this.names[name];   // <-- throws when names is undefined
+ *       if (translations) return translations.en;
+ *   };
+ *
+ * and its constructor only assigns `this.names` when `options.empty` is
+ * falsy — so every Font created for PARSING (`new Font({empty: true})`, which
+ * is what `opentype.parse` uses internally) starts with `names === undefined`
+ * and only gets one if the parsed file actually yielded a `name` table. Any
+ * later name lookup on such a font throws the message above, and because the
+ * OTF writer round-trips its own output through the parser for verification,
+ * a single missing/odd name table aborted the whole export.
+ *
+ * Rather than trying to guard every individual call site (there are several,
+ * some inside the library itself and therefore out of reach), we harden the
+ * method once, here, at module load: if `names` is missing we substitute an
+ * empty object, so the lookup simply returns `undefined` — the documented
+ * "no such name" result — instead of throwing. Behaviour for well-formed
+ * fonts is completely unchanged.
+ */
+(() => {
+  const FontProto = (opentype as any)?.Font?.prototype;
+  if (!FontProto || (FontProto as any).__fontseruNamesGuard) return;
+  const original = FontProto.getEnglishName;
+  if (typeof original !== "function") return;
+  FontProto.getEnglishName = function patchedGetEnglishName(this: any, name: string) {
+    if (!this.names || typeof this.names !== "object") this.names = {};
+    return original.call(this, name);
+  };
+  (FontProto as any).__fontseruNamesGuard = true;
+})();
+
 import { expandStrokeObject } from "@/brushes/strokeToOutline";
 import {
   applyBooleanOp,
