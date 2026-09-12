@@ -96,12 +96,64 @@ import * as opentype from "opentype.js";
     const origToArrayBuffer = FontProto.toArrayBuffer;
     if (typeof origToArrayBuffer === "function" && !(FontProto as any).__fontseruSerializeGuard) {
       FontProto.toArrayBuffer = function fontseruToArrayBuffer(this: any, ...args: unknown[]) {
+        const setNamesOwn = (value: Record<string, Record<string, string>>) => {
+          // Force an OWN data property. Going through a setter/accessor can
+          // leave the writer reading a different object than the one we just
+          // cleaned, which is how a malformed table kept surviving.
+          try {
+            Object.defineProperty(this, "names", {
+              value,
+              writable: true,
+              configurable: true,
+              enumerable: true,
+            });
+          } catch {
+            this.names = value;
+          }
+        };
         try {
-          this.names = sanitizeOpenTypeNames(this.names ?? {}, []);
+          setNamesOwn(sanitizeOpenTypeNames(this.names ?? {}, []));
         } catch {
           /* never block serialization on the cleanup itself */
         }
-        return origToArrayBuffer.apply(this, args as []);
+        try {
+          return origToArrayBuffer.apply(this, args as []);
+        } catch (error) {
+          // Last resort: the name table is still unacceptable to the writer
+          // (e.g. `Name table entry "en" does not exist`). Rebuild it from
+          // scratch using only records we know are valid, preserving whatever
+          // readable text we can, and serialize again. A font with plain
+          // names is infinitely better than a failed export.
+          console.warn("[FontSeru] Rebuilding name table after serialize error:", error);
+          // Prefer the pristine copy stashed before serialization began —
+          // by the time we get here `this.names` may be the very object that
+          // was corrupted, so reading the real family name from it would
+          // fail and the font would end up called "UntitledFont".
+          const prev = ((this.__fontseruGoodNames && typeof this.__fontseruGoodNames === "object"
+            ? this.__fontseruGoodNames
+            : this.names) ?? {}) as Record<string, any>;
+          const pick = (key: string, fallback: string): string => {
+            const rec = prev[key];
+            if (typeof rec === "string" && rec.trim()) return rec;
+            if (rec && typeof rec === "object" && typeof rec.en === "string" && rec.en.trim()) return rec.en;
+            return fallback;
+          };
+          const family = pick("fontFamily", "UntitledFont");
+          const sub = pick("fontSubfamily", "Regular");
+          const ps = pick("postScriptName", `${family.replace(/\s+/g, "")}-${sub.replace(/\s+/g, "")}`);
+          setNamesOwn({
+            copyright: { en: pick("copyright", " ") },
+            fontFamily: { en: family },
+            fontSubfamily: { en: sub },
+            uniqueID: { en: `${pick("manufacturer", "FontSeru")}:${family} ${sub}` },
+            fullName: { en: pick("fullName", `${family} ${sub}`) },
+            version: { en: pick("version", "Version 1.000") },
+            postScriptName: { en: ps },
+            manufacturer: { en: pick("manufacturer", "FontSeru") },
+            license: { en: pick("license", " ") },
+          });
+          return origToArrayBuffer.apply(this, args as []);
+        }
       };
       (FontProto as any).__fontseruSerializeGuard = true;
     }
@@ -115,7 +167,7 @@ import * as opentype from "opentype.js";
  * an error immediately shows WHICH build produced it — the quickest way to
  * tell a real bug apart from a stale deploy / cached bundle.
  */
-export const FONTSERU_EXPORT_BUILD = "v20-names-sanitized";
+export const FONTSERU_EXPORT_BUILD = "v21-nametable-rebuild";
 if (typeof console !== "undefined") {
   console.info(`[FontSeru] export engine build: ${FONTSERU_EXPORT_BUILD}`);
 }
@@ -2335,6 +2387,14 @@ function generateOTFBase(
       if (!anyFont.names[k] || !anyFont.names[k].en) anyFont.names[k] = { en: v || " " };
     }
     anyFont.names = sanitizeOpenTypeNames(anyFont.names, need);
+    // Keep a pristine snapshot so the serialize guard can rebuild a valid
+    // name table from the REAL names if anything corrupts them mid-write.
+    try {
+      Object.defineProperty(anyFont, "__fontseruGoodNames", {
+        value: JSON.parse(JSON.stringify(anyFont.names)),
+        writable: true, configurable: true, enumerable: false,
+      });
+    } catch { /* snapshot is best-effort */ }
     return font.toArrayBuffer();
   };
 
