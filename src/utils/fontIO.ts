@@ -27,250 +27,166 @@ import * as opentype from "opentype.js";
  * "no such name" result — instead of throwing. Behaviour for well-formed
  * fonts is completely unchanged.
  */
+/**
+ * ------------------------------------------------------------------------
+ * EXPORT HARDENING (runs once at module load)
+ * ------------------------------------------------------------------------
+ * Two independent, well-understood failure modes used to abort OTF/WOFF
+ * export. Both are neutralized here in a small, readable way. (The deepest
+ * root cause — opentype.js walking the prototype chain with `for…in` while
+ * building the `name` table — is fixed at its source by
+ * `scripts/patch-opentype.mjs`, wired into `postinstall`. The guards below
+ * are defense-in-depth so a dev server or an un-patched install still
+ * exports correctly.)
+ *
+ *  1. `font.getEnglishName(...)` throws when `font.names` is missing/odd.
+ *     opentype only assigns `names` for non-empty fonts, and the writer
+ *     round-trips its own output through the parser, so a single missing
+ *     name table aborted the whole export. We reimplement the lookup so it
+ *     returns a sensible default instead of throwing — never affecting a
+ *     well-formed font.
+ *
+ *  2. The sfnt/name writer builds its records with `for…in`, which also
+ *     enumerates enumerable keys inherited from `Object.prototype`. Any
+ *     "prototype pollution" on the page (e.g. a stray locale key like `en`
+ *     from an extension or third-party script) then looks like a bogus name
+ *     record and makes the writer throw
+ *     `Name table entry "en" does not exist`. Right before serializing we
+ *     (a) hand opentype a clean, prototype-free names object, and
+ *     (b) best-effort hide any non-standard enumerable keys sitting on
+ *     Object/Array prototypes so the library's own `for…in` can't see them.
+ */
+
+/**
+ * Best-effort removal of "prototype pollution": make every NON-standard
+ * enumerable own property of Object/Array prototypes non-enumerable, so no
+ * `for…in` anywhere (including opentype's) can pick it up as a stray key.
+ * A pristine environment has no such properties, so this is a no-op there
+ * and completely safe. Configurable pollution (the normal kind, created by
+ * `obj[key] = value`) is fully handled; the rare non-configurable case is
+ * additionally covered by the opentype source patch.
+ */
+function fontseruNeutralizeProtoPollution(): void {
+  for (const proto of [Object.prototype, Array.prototype]) {
+    let names: string[];
+    try {
+      names = Object.getOwnPropertyNames(proto);
+    } catch {
+      continue;
+    }
+    for (const key of names) {
+      try {
+        const d = Object.getOwnPropertyDescriptor(proto, key);
+        if (d && d.enumerable && d.configurable) {
+          Object.defineProperty(proto, key, { enumerable: false });
+        }
+      } catch {
+        /* ignore individual keys we can't touch */
+      }
+    }
+  }
+}
+
 (() => {
   const FontProto = (opentype as any)?.Font?.prototype;
-  if (!FontProto || (FontProto as any).__fontseruNamesGuard) return;
-  if (typeof FontProto.getEnglishName !== "function") return;
-  // Fully REPLACE the method rather than wrapping it. Wrapping still ended up
-  // executing the library's own body — which is the line that throws — so the
-  // crash survived. This reimplementation reads the same data and can never
-  // throw, no matter what `this` or `this.names` happen to be.
-  const REQUIRED_FALLBACKS: Record<string, string> = {
-    fontFamily: "UntitledFont",
-    fontSubfamily: "Regular",
-    fullName: "UntitledFont Regular",
-    postScriptName: "UntitledFont-Regular",
-    version: "Version 1.000",
-    manufacturer: "FontSeru",
-    copyright: " ",
-    license: " ",
-  };
-  FontProto.getEnglishName = function fontseruGetEnglishName(this: any, name: string) {
-    const names = this && this.names && typeof this.names === "object" ? this.names : undefined;
-    const record = names ? (names as any)[name] : undefined;
-    const value = record && typeof record === "object" ? (record as any).en : undefined;
-    if (typeof value === "string") return value;
-    return Object.prototype.hasOwnProperty.call(REQUIRED_FALLBACKS, name)
-      ? REQUIRED_FALLBACKS[name]
-      : undefined;
-  };
-  (FontProto as any).__fontseruNamesGuard = true;
+  if (!FontProto || (FontProto as any).__fontseruExportGuard) return;
+  (FontProto as any).__fontseruExportGuard = true;
 
-  // Second crash site: the sfnt writer also dereferences `font.names`
-  // DIRECTLY (`names.preferredFamily = font.names.fontFamily`), which blows
-  // up the same way when `names` is missing — and that line is outside
-  // getEnglishName, so guarding the method alone isn't enough. Define
-  // `names` as an accessor that always yields an object: reads can never hit
-  // undefined, and writes still behave normally.
-  try {
-    const STORE = "__fontseruNames";
-    Object.defineProperty(FontProto, "names", {
-      configurable: true,
-      get(this: any) {
-        if (!this[STORE] || typeof this[STORE] !== "object") {
-          Object.defineProperty(this, STORE, { value: {}, writable: true, configurable: true, enumerable: false });
-        }
-        return this[STORE];
-      },
-      set(this: any, value: any) {
-        Object.defineProperty(this, STORE, {
-          value: value && typeof value === "object" ? value : {},
-          writable: true,
-          configurable: true,
-          enumerable: false,
-        });
-      },
-    });
-  } catch {
-    /* If the environment refuses the redefinition, the method guard above
-       still covers the common path. */
+  // Run once now, and again right before each serialize (below), so pollution
+  // introduced after load is still caught.
+  fontseruNeutralizeProtoPollution();
+
+  // (1) Crash-proof getEnglishName. Fully replace it (wrapping still ran the
+  //     library body that throws). Reads the same data; can never throw.
+  if (typeof FontProto.getEnglishName === "function") {
+    const REQUIRED_FALLBACKS: Record<string, string> = {
+      fontFamily: "UntitledFont",
+      fontSubfamily: "Regular",
+      fullName: "UntitledFont Regular",
+      postScriptName: "UntitledFont-Regular",
+      version: "Version 1.000",
+      manufacturer: "FontSeru",
+      copyright: " ",
+      license: " ",
+    };
+    FontProto.getEnglishName = function fontseruGetEnglishName(this: any, name: string) {
+      const names = this && this.names && typeof this.names === "object" ? this.names : undefined;
+      const record = names ? (names as any)[name] : undefined;
+      const value = record && typeof record === "object" ? (record as any).en : undefined;
+      if (typeof value === "string") return value;
+      return Object.prototype.hasOwnProperty.call(REQUIRED_FALLBACKS, name)
+        ? REQUIRED_FALLBACKS[name]
+        : undefined;
+    };
   }
 
-  // Final safety: sanitize `names` INSIDE toArrayBuffer, immediately before
-  // the sfnt writer walks it. Doing it earlier isn't enough — anything that
-  // touches `names` between our call and serialization (including
-  // opentype's own bookkeeping) can reintroduce a malformed shape, and the
-  // writer throws `Name table entry "…" does not exist` on the first bad
-  // key. Normalizing at the last possible moment makes that impossible.
-  try {
-    const origToArrayBuffer = FontProto.toArrayBuffer;
-    if (typeof origToArrayBuffer === "function" && !(FontProto as any).__fontseruSerializeGuard) {
-      FontProto.toArrayBuffer = function fontseruToArrayBuffer(this: any, ...args: unknown[]) {
-        const setNamesOwn = (value: Record<string, Record<string, string>>) => {
-          // Force an OWN data property. Going through a setter/accessor can
-          // leave the writer reading a different object than the one we just
-          // cleaned, which is how a malformed table kept surviving.
-          try {
-            Object.defineProperty(this, "names", {
-              value,
-              writable: true,
-              configurable: true,
-              enumerable: true,
-            });
-          } catch {
-            this.names = value;
-          }
+  // Helper: force `font.names` to be an OWN, prototype-free data property so
+  // opentype reads exactly the object we cleaned (going through a setter/
+  // accessor could hand the writer a different, re-polluted object).
+  const setNamesOwn = (font: any, value: Record<string, Record<string, string>>) => {
+    try {
+      Object.defineProperty(font, "names", { value, writable: true, configurable: true, enumerable: true });
+    } catch {
+      font.names = value;
+    }
+  };
+
+  // (2) Wrap toArrayBuffer: clean names + de-pollute right before serializing,
+  //     and rebuild from a pristine snapshot if the writer still trips.
+  const origToArrayBuffer = FontProto.toArrayBuffer;
+  if (typeof origToArrayBuffer === "function") {
+    FontProto.toArrayBuffer = function fontseruToArrayBuffer(this: any, ...args: unknown[]) {
+      fontseruNeutralizeProtoPollution();
+      try {
+        setNamesOwn(this, sanitizeOpenTypeNames(this.names ?? {}, []));
+      } catch {
+        /* never block serialization on the cleanup itself */
+      }
+      try {
+        return origToArrayBuffer.apply(this, args as []);
+      } catch (error) {
+        // Last resort: rebuild the name table from the pristine snapshot
+        // (or whatever readable text remains) and serialize again. A font
+        // with plain names beats a failed export.
+        console.warn("[FontSeru] Rebuilding name table after serialize error:", error);
+        const prev = ((this.__fontseruGoodNames && typeof this.__fontseruGoodNames === "object"
+          ? this.__fontseruGoodNames
+          : this.names) ?? {}) as Record<string, any>;
+        const pick = (key: string, fallback: string): string => {
+          const rec = prev[key];
+          if (typeof rec === "string" && rec.trim()) return rec;
+          if (rec && typeof rec === "object" && typeof rec.en === "string" && rec.en.trim()) return rec.en;
+          return fallback;
         };
-        try {
-          setNamesOwn(sanitizeOpenTypeNames(this.names ?? {}, []));
-        } catch {
-          /* never block serialization on the cleanup itself */
-        }
-        try {
-          return origToArrayBuffer.apply(this, args as []);
-        } catch (error) {
-          // Last resort: the name table is still unacceptable to the writer
-          // (e.g. `Name table entry "en" does not exist`). Rebuild it from
-          // scratch using only records we know are valid, preserving whatever
-          // readable text we can, and serialize again. A font with plain
-          // names is infinitely better than a failed export.
-          console.warn("[FontSeru] Rebuilding name table after serialize error:", error);
-          // Prefer the pristine copy stashed before serialization began —
-          // by the time we get here `this.names` may be the very object that
-          // was corrupted, so reading the real family name from it would
-          // fail and the font would end up called "UntitledFont".
-          const prev = ((this.__fontseruGoodNames && typeof this.__fontseruGoodNames === "object"
-            ? this.__fontseruGoodNames
-            : this.names) ?? {}) as Record<string, any>;
-          const pick = (key: string, fallback: string): string => {
-            const rec = prev[key];
-            if (typeof rec === "string" && rec.trim()) return rec;
-            if (rec && typeof rec === "object" && typeof rec.en === "string" && rec.en.trim()) return rec.en;
-            return fallback;
-          };
-          const family = pick("fontFamily", "UntitledFont");
-          const sub = pick("fontSubfamily", "Regular");
-          const ps = pick("postScriptName", `${family.replace(/\s+/g, "")}-${sub.replace(/\s+/g, "")}`);
-          setNamesOwn({
-            copyright: { en: pick("copyright", " ") },
-            fontFamily: { en: family },
-            fontSubfamily: { en: sub },
-            uniqueID: { en: `${pick("manufacturer", "FontSeru")}:${family} ${sub}` },
-            fullName: { en: pick("fullName", `${family} ${sub}`) },
-            version: { en: pick("version", "Version 1.000") },
-            postScriptName: { en: ps },
-            manufacturer: { en: pick("manufacturer", "FontSeru") },
-            license: { en: pick("license", " ") },
-          });
-          return origToArrayBuffer.apply(this, args as []);
-        }
-      };
-      (FontProto as any).__fontseruSerializeGuard = true;
-    }
-  } catch {
-    /* non-fatal */
-  }
-
-  // Closest possible interception: `toTables()` is what actually hands the
-  // names object to the name-table writer, so sanitize HERE too. Guarding
-  // only `toArrayBuffer` left a window in which the object could still be
-  // replaced before the writer read it.
-  try {
-    const origToTables = FontProto.toTables;
-    if (typeof origToTables === "function" && !(FontProto as any).__fontseruTablesGuard) {
-      FontProto.toTables = function fontseruToTables(this: any, ...args: unknown[]) {
-        const before = this.names;
-        try {
-          const cleaned = sanitizeOpenTypeNames(
-            (this.__fontseruGoodNames && typeof this.__fontseruGoodNames === "object"
-              ? this.__fontseruGoodNames
-              : before) ?? {},
-            [],
-          );
-          // Expose `names` through a Proxy whose key enumeration is locked
-          // to valid name records. opentype copies the table with
-          // `for (let n in font.names)`, which walks the prototype chain and
-          // any exotic own keys; a Proxy lets us guarantee that loop can only
-          // ever see legitimate entries, whatever their origin.
-          const guarded = new Proxy(cleaned, {
-            ownKeys: (t) => Object.keys(t).filter((k) => OPENTYPE_NAME_KEYS.has(k)),
-            getOwnPropertyDescriptor: (t, k) => {
-              if (typeof k === "string" && !OPENTYPE_NAME_KEYS.has(k)) return undefined;
-              const d = Object.getOwnPropertyDescriptor(t, k as string);
-              return d ? { ...d, configurable: true, enumerable: true } : undefined;
-            },
-            get: (t, k) => (typeof k === "string" && !OPENTYPE_NAME_KEYS.has(k) ? undefined : (t as any)[k]),
-            has: (t, k) => typeof k === "string" && OPENTYPE_NAME_KEYS.has(k) && k in t,
-          });
-          Object.defineProperty(this, "names", {
-            value: guarded,
-            writable: true,
-            configurable: true,
-            enumerable: true,
-          });
-        } catch {
-          /* fall through with whatever we have */
-        }
-
-        // ROOT CAUSE of `Name table entry "en" does not exist`:
-        // opentype.js builds the name table with `for (let key in names)`,
-        // and `for...in` also walks the PROTOTYPE CHAIN. If anything in the
-        // page has added an enumerable property to `Object.prototype`
-        // (prototype pollution — commonly a locale key like "en" from a
-        // third-party script or extension), that key appears in the loop for
-        // EVERY object, the writer treats it as a name record it doesn't
-        // recognise, and throws. This is why the failure was invisible to
-        // `Object.keys` logging (own keys only) and never reproduced outside
-        // the browser. Here we temporarily hide any such polluted keys for
-        // the duration of serialization, then restore them untouched.
-        const polluted: string[] = [];
-        try {
-          for (const key of Object.getOwnPropertyNames(Object.prototype)) {
-            const d = Object.getOwnPropertyDescriptor(Object.prototype, key);
-            if (d && d.enumerable) polluted.push(key);
-          }
-          for (const key of polluted) {
-            Object.defineProperty(Object.prototype, key, { enumerable: false });
-          }
-          if (polluted.length > 0) {
-            console.warn("[FontSeru] Neutralized polluted Object.prototype keys during export:", polluted);
-          }
-        } catch {
-          /* best-effort */
-        }
-
-        try {
-          return origToTables.apply(this, args as []);
-        } catch (error) {
-          try {
-            console.error(
-              "[FontSeru] name table keys at failure (for..in):",
-              (() => { const k: string[] = []; for (const x in (this.names ?? {})) k.push(x); return k; })(),
-              "| own keys:",
-              Object.keys((this.names ?? {}) as Record<string, unknown>),
-              "| original keys:",
-              Object.keys((before ?? {}) as Record<string, unknown>),
-              "| polluted proto keys:",
-              polluted,
-            );
-          } catch {
-            /* diagnostics are best-effort */
-          }
-          throw error;
-        } finally {
-          // Always put the page back exactly as we found it.
-          for (const key of polluted) {
-            try {
-              Object.defineProperty(Object.prototype, key, { enumerable: true });
-            } catch {
-              /* ignore */
-            }
-          }
-        }
-      };
-      (FontProto as any).__fontseruTablesGuard = true;
-    }
-  } catch {
-    /* non-fatal */
+        const family = pick("fontFamily", "UntitledFont");
+        const sub = pick("fontSubfamily", "Regular");
+        const ps = pick("postScriptName", `${family.replace(/\s+/g, "")}-${sub.replace(/\s+/g, "")}`);
+        const rebuilt = Object.assign(Object.create(null), {
+          copyright: { en: pick("copyright", " ") },
+          fontFamily: { en: family },
+          fontSubfamily: { en: sub },
+          uniqueID: { en: `${pick("manufacturer", "FontSeru")}:${family} ${sub}` },
+          fullName: { en: pick("fullName", `${family} ${sub}`) },
+          version: { en: pick("version", "Version 1.000") },
+          postScriptName: { en: ps },
+          manufacturer: { en: pick("manufacturer", "FontSeru") },
+          license: { en: pick("license", " ") },
+        });
+        fontseruNeutralizeProtoPollution();
+        setNamesOwn(this, rebuilt);
+        return origToArrayBuffer.apply(this, args as []);
+      }
+    };
   }
 })();
+
 
 /**
  * Build marker. Bumped whenever the export engine changes so a screenshot of
  * an error immediately shows WHICH build produced it — the quickest way to
  * tell a real bug apart from a stale deploy / cached bundle.
  */
-export const FONTSERU_EXPORT_BUILD = "v24-names-proxy";
+export const FONTSERU_EXPORT_BUILD = "v25-own-keys";
 if (typeof console !== "undefined") {
   console.info(`[FontSeru] export engine build: ${FONTSERU_EXPORT_BUILD}`);
 }
@@ -2436,7 +2352,10 @@ function sanitizeOpenTypeNames(
   names: Record<string, unknown>,
   required: Array<[string, string]>,
 ): Record<string, Record<string, string>> {
-  const clean: Record<string, Record<string, string>> = {};
+  // Prototype-FREE top-level object: opentype's sfnt writer copies the names
+  // with `for…in`, which would otherwise walk the prototype chain. A null
+  // prototype means that copy can only ever see the valid records we put here.
+  const clean: Record<string, Record<string, string>> = Object.create(null);
   for (const [key, value] of Object.entries(names ?? {})) {
     // Allow numeric nameIDs through untouched, drop anything unrecognized.
     if (!OPENTYPE_NAME_KEYS.has(key) && !Number.isFinite(Number(key))) continue;

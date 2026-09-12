@@ -5,6 +5,8 @@
   "type": "module",
   "description": "FontSeru — a modern, browser-based vector type & font design studio. Original clean editor UI with a professional Bézier engine.",
   "scripts": {
+    "postinstall": "node scripts/patch-opentype.mjs",
+    "patch:opentype": "node scripts/patch-opentype.mjs",
     "dev": "vite",
     "start": "vite preview --host 0.0.0.0 --port 3000",
     "build": "tsc -b && vite build",
