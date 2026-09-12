@@ -20,6 +20,7 @@ import { EmailConfirmedWelcome } from "@/components/EmailConfirmedWelcome";
 import { ProUpsellModal } from "@/components/ProUpsellModal";
 import { ProductTour } from "@/components/ProductTour/ProductTour";
 import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
+import { useAppModeStore } from "@/mode/appModeStore";
 
 // Chromium currently has a much more expensive compositing path for
 // backdrop-filter over a large, live SVG surface than Safari/Firefox. Keep
@@ -51,6 +52,11 @@ const TimelapseOverlay = lazy(() =>
   import("@/timelapse/TimelapseOverlay").then((m) => ({ default: m.TimelapseOverlay }))
 );
 
+// The Motion Font Studio engine is a large, self-contained module that most
+// font-editing sessions never touch — load it lazily so its code is only
+// fetched the first time the user switches into Motion mode.
+const MotionStudio = lazy(() => import("@/motion/MotionStudio"));
+
 export default function App() {
   const theme = useAppStore((s) => s.theme);
   const sketchMode = useAppStore((s) => s.sketchMode);
@@ -63,6 +69,7 @@ export default function App() {
   const traceOpen = useAppStore((s) => s.traceOpen);
   const featureBuilderOpen = useAppStore((s) => s.featureBuilderOpen);
   const timelapseOpen = useTimelapseUiStore((s) => s.open);
+  const appMode = useAppModeStore((s) => s.appMode);
   useKeyboardShortcuts();
 
   // Once a heavy overlay has been opened for the first time, keep mounting
@@ -156,6 +163,18 @@ export default function App() {
     // dark mode no matter how the webkit pseudo-elements are styled.
     document.documentElement.style.colorScheme = theme === "dark" ? "dark" : "light";
   }, [theme]);
+
+  // Motion mode: hand the whole screen over to the Motion Font Studio engine.
+  // The font project state above keeps living/persisting in the background
+  // (all hooks already ran), so switching back to Font mode restores it
+  // untouched. The ModeTabs switcher is rendered inside the Motion top bar.
+  if (appMode === "motion") {
+    return (
+      <Suspense fallback={<div className="fm-motion-loading">Memuat Mode Motion…</div>}>
+        <MotionStudio />
+      </Suspense>
+    );
+  }
 
   return (
     <div

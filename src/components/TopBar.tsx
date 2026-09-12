@@ -3,7 +3,7 @@ import {
   Download, FlaskConical, Layers, Maximize, Minimize, Redo2, Undo2, Wand2,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
-  Copy, Trash2, Film, MoreHorizontal, Info,
+  Copy, Trash2, Film, MoreHorizontal,
 } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
@@ -15,7 +15,7 @@ import { SunIcon, MoonIcon } from "@/components/icons/ThemeIcon";
 import { FileMenu } from "@/components/FileMenu";
 import { FontSeruLogo } from "@/components/FontSeruLogo";
 import { AuthWidget } from "@/components/AuthWidget";
-import { AboutModal } from "@/components/AboutModal";
+import { ModeTabs } from "@/mode/ModeTabs";
 
 const ALIGN_BUTTONS: { mode: AlignMode; label: string; icon: typeof AlignStartVertical }[] = [
   { mode: "left", label: "Align Left", icon: AlignStartVertical },
@@ -129,18 +129,13 @@ export function TopBar() {
           so each shortcut sits on the actual side of the screen it opens,
           and this bar stays pure identity + actions. */}
       <FontSeruLogo />
+      {/* Persona switcher (Font / Motion), right next to the logo — like
+          Affinity's Vector/Pixel persona tabs. Lives here in both modes;
+          in Motion mode it's rendered inside the Motion Studio top bar. */}
+      <ModeTabs />
       <div className="fm-divider" />
       <FileMenu onExportButtonReady={handleExportReady} />
-      {/* Hidden below 1180px on phones and re-rendered inside the "More"
-          dropdown instead (see fm-topbar-more-hide in app.css); on tablets
-          it's shown inline instead, icon-only. Given a leading icon here
-          (unlike the plain-label version this used to be) so it doesn't
-          collapse to an empty, icon-less button once the icon-only sizing
-          kicks in — it has no other icon of its own like the other
-          fm-topbtn buttons. */}
-      <div className="fm-topbar-more-hide">
-        <AboutModal triggerIcon={<Info size={15} />} />
-      </div>
+      {/* "About Us" moved to the bottom bar (next to Fit) — see BottomBar.tsx. */}
       <input
         className="fm-fontname"
         value={fontName}
@@ -159,11 +154,11 @@ export function TopBar() {
           is invisible (`display: contents`) and changes nothing. */}
       <div className="fm-topbar-row2">
       <div className="fm-topbtn-group">
-        <button className="fm-topbtn" disabled={past.length === 0 && !liveOutline} onClick={undo} title="Undo (Cmd/Ctrl+Z)" data-testid="undo-btn">
-          <Undo2 size={15} /> Undo
+        <button className="fm-align-btn" disabled={past.length === 0 && !liveOutline} onClick={undo} title="Undo (Cmd/Ctrl+Z)" aria-label="Undo" data-testid="undo-btn">
+          <Undo2 size={16} />
         </button>
-        <button className="fm-topbtn" disabled={future.length === 0} onClick={redo} title="Redo (Cmd/Ctrl+Shift+Z)" data-testid="redo-btn">
-          <Redo2 size={15} /> Redo
+        <button className="fm-align-btn" disabled={future.length === 0} onClick={redo} title="Redo (Cmd/Ctrl+Shift+Z)" aria-label="Redo" data-testid="redo-btn">
+          <Redo2 size={16} />
         </button>
       </div>
 
@@ -400,14 +395,8 @@ export function TopBar() {
               <button onClick={() => { openTestLab("specimen"); setMoreOpen(false); }}>
                 <FlaskConical size={14} /> Test Lab
               </button>
-
-              <div className="fm-filemenu-sep" />
-              {/* Not wrapped with a menu-closing onClick: AboutModal's own
-                  overlay (z-index 200) renders above this dropdown (z-index
-                  80) regardless, and closing this menu first would unmount
-                  AboutModal — and the "open" state it just set — before its
-                  modal ever gets a chance to render. */}
-              <AboutModal triggerClassName="" triggerIcon={<Info size={14} />} triggerLabel="About Us" />
+              {/* "About Us" now lives in the bottom bar next to Fit, which is
+                  visible at every width — so it no longer needs a row here. */}
             </div>
           </>
         )}
