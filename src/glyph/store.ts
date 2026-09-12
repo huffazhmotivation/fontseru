@@ -1469,7 +1469,12 @@ export const useAppStore = create<AppState>()((set, get) => {
           const width = o.strokeWidth ?? preset?.settings.size ?? 20;
           o.brushType = type;
           o.brushSettings = preset ? { ...preset.settings, type, size: width } : undefined;
-          o.cap = type === "monoline" ? (o.cap ?? "round") : "round";
+          // Preserve the user's chosen cap across a brush-type change. It used
+          // to be force-reset to "round" for every non-monoline preset, which
+          // silently turned a deliberately square/butt terminal round — the
+          // "expand jadi rounded padahal square" complaint. Only fall back to
+          // "round" when no cap was ever set.
+          o.cap = o.cap ?? "round";
           return o;
         });
         if (nextGlyphs) commit(nextGlyphs);
@@ -1619,7 +1624,8 @@ export const useAppStore = create<AppState>()((set, get) => {
           const width = patch.strokeWidth ?? next.strokeWidth ?? preset?.settings.size ?? 20;
           next.brushType = presetId;
           next.brushSettings = preset ? { ...preset.settings, type: presetId, size: width } : undefined;
-          next.cap = presetId === "monoline" ? (next.cap ?? "round") : "round";
+          // Preserve the user's chosen cap (see the matching fix above).
+          next.cap = next.cap ?? "round";
         } else if (patch.brushSettings !== undefined && o.kind === "brush" && o.brushSettings) {
           // A targeted field tweak (e.g. Outline Brush's End Style from the
           // Select-tool panel) — merge onto the object's EXISTING settings

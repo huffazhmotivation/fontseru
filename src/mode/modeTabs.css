@@ -1,26 +1,32 @@
 /* ==========================================================================
    Mode / persona switcher (Font <-> Motion)
-   Segmented "pill" control, styled after Affinity's persona tabs.
+   Segmented control modelled closely on the reference (Spline/Affinity-style
+   dark segmented tabs): a recessed "trough" holding pill tabs, with the
+   selected tab a lighter *raised* chip (subtle top bevel + soft drop shadow)
+   and neutral white icon + label — no accent tint.
+
    Works inside BOTH the FontSeru top bar (.fm-root) and the Motion Studio
-   top bar (.mfs-root), in light and dark themes. Only relies on variables
-   that both roots define: --accent, --accent-soft, --text, --text-dim.
-   Local --mt-* vars carry everything else so we never touch app/global CSS.
+   top bar (.mfs-root), in light and dark themes. All colours are carried in
+   local --mt-* vars so we never touch app/global CSS. Text/icon use --text /
+   --text-dim, which both roots define, so they follow each theme.
    ========================================================================== */
 
 .fm-mode-tabs {
   /* dark defaults (used by both roots' dark theme) */
-  --mt-trough: rgba(255, 255, 255, 0.045);
-  --mt-chip-bg: rgba(255, 255, 255, 0.09);
-  --mt-chip-border: rgba(255, 255, 255, 0.10);
-  --mt-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 3px 10px -4px rgba(0, 0, 0, 0.6);
+  --mt-trough: rgba(0, 0, 0, 0.24);
+  --mt-trough-border: rgba(255, 255, 255, 0.06);
+  --mt-chip-bg: rgba(255, 255, 255, 0.13);
+  --mt-chip-hover: rgba(255, 255, 255, 0.06);
+  --mt-chip-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 1px 2px rgba(0, 0, 0, 0.45), 0 3px 9px -3px rgba(0, 0, 0, 0.6);
 
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 3px;
-  border-radius: 11px;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
   background: var(--mt-trough);
-  border: 1px solid var(--mt-chip-border);
+  border: 1px solid var(--mt-trough-border);
   flex: 0 0 auto;
   -webkit-user-select: none;
   user-select: none;
@@ -29,57 +35,57 @@
 /* Light theme overrides for either root */
 .fm-root[data-theme="light"] .fm-mode-tabs,
 .mfs-root[data-theme="light"] .fm-mode-tabs {
-  --mt-trough: rgba(0, 0, 0, 0.05);
+  --mt-trough: rgba(0, 0, 0, 0.06);
+  --mt-trough-border: rgba(0, 0, 0, 0.06);
   --mt-chip-bg: #ffffff;
-  --mt-chip-border: rgba(0, 0, 0, 0.08);
-  --mt-shadow: 0 1px 2px rgba(20, 20, 40, 0.10), 0 3px 8px -4px rgba(20, 20, 40, 0.20);
+  --mt-chip-hover: rgba(0, 0, 0, 0.04);
+  --mt-chip-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 2px rgba(20, 20, 40, 0.10), 0 3px 8px -3px rgba(20, 20, 40, 0.2);
 }
 
 .fm-mode-tab {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 13px;
+  gap: 8px;
+  height: 32px;
+  padding: 0 15px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 9px;
   background: transparent;
   color: var(--text-dim);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease,
-    border-color 0.16s ease;
+  transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .fm-mode-tab svg {
   flex: 0 0 auto;
-  opacity: 0.8;
-  transition: color 0.16s ease, opacity 0.16s ease;
+  color: var(--text);
+  opacity: 0.72;
+  transition: opacity 0.16s ease;
 }
 
 .fm-mode-tab:hover:not(.active) {
   color: var(--text);
-  background: color-mix(in srgb, var(--text) 7%, transparent);
+  background: var(--mt-chip-hover);
 }
 
 .fm-mode-tab:hover:not(.active) svg {
-  opacity: 1;
+  opacity: 0.92;
 }
 
 .fm-mode-tab.active {
   color: var(--text);
   background: var(--mt-chip-bg);
-  border-color: var(--mt-chip-border);
-  box-shadow: var(--mt-shadow);
+  box-shadow: var(--mt-chip-shadow);
 }
 
 .fm-mode-tab.active svg {
-  color: var(--accent);
   opacity: 1;
 }
 
@@ -103,10 +109,15 @@
 
 /* Narrow screens: keep the switcher compact but always visible. */
 @media (max-width: 720px) {
+  .fm-mode-tabs {
+    gap: 3px;
+    padding: 3px;
+    border-radius: 10px;
+  }
   .fm-mode-tab {
-    height: 28px;
-    padding: 0 10px;
-    gap: 5px;
-    font-size: 12px;
+    height: 30px;
+    padding: 0 11px;
+    gap: 6px;
+    font-size: 12.5px;
   }
 }

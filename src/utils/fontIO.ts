@@ -1087,24 +1087,42 @@ function buildOpenTypeFont(
     index.set(glyph.char, gid);
   });
 
+  // Absolute last-line guards: opentype.js crashes with "Cannot read
+  // properties of undefined (reading 'fontFamily')" if ANY of these core
+  // name fields is empty when it serializes the sfnt/name table. Coerce them
+  // here too (belt-and-suspenders on top of normalizeFontMetadata) so no
+  // stale/edge input can ever reach the library empty and hard-fail export.
+  const safeFamily = (info.familyName && info.familyName.trim()) || "Untitled Font";
+  const safeStyle = (info.styleName && info.styleName.trim()) || "Regular";
+  const safeFull = (info.fullName && info.fullName.trim()) || `${safeFamily} ${safeStyle}`;
+  const safePS = (info.postscriptName && info.postscriptName.trim()) || sanitizePostScriptName(safeFamily, safeStyle, "");
+
   const font = new opentype.Font({
-    familyName: info.familyName,
-    styleName: info.styleName,
-    fullName: info.fullName,
-    postScriptName: info.postscriptName,
+    familyName: safeFamily,
+    styleName: safeStyle,
+    fullName: safeFull,
+    postScriptName: safePS,
     designer: info.designer || "FontSeru",
-    manufacturer: info.manufacturer,
-    license: info.license,
-    licenseURL: info.licenseURL,
-    version: `Version ${info.version}`,
-    description: info.description,
-    copyright: info.copyright,
+    manufacturer: info.manufacturer || "FontSeru",
+    license: info.license || "All Rights Reserved",
+    licenseURL: info.licenseURL || "",
+    version: `Version ${info.version || "1.000"}`,
+    description: info.description || "",
+    copyright: info.copyright || `Copyright © ${new Date().getFullYear()}`,
     unitsPerEm: metrics.unitsPerEm,
     ascender: metrics.ascender,
     descender: metrics.descender,
     glyphs: otGlyphs,
   } as any);
-  setNames(font, info);
+  setNames(font, { ...info, familyName: safeFamily, styleName: safeStyle, fullName: safeFull, postscriptName: safePS });
+  // Final direct guarantee: ensure the flat name keys opentype.js reads at
+  // serialize time exist no matter what setNames produced.
+  const nm = (font as any).names ||= {};
+  const ensure = (k: string, v: string) => { if (!nm[k] || !nm[k].en) nm[k] = { en: v || " " }; };
+  ensure("fontFamily", safeFamily);
+  ensure("fontSubfamily", safeStyle);
+  ensure("fullName", safeFull);
+  ensure("postScriptName", safePS);
 
   const tables = ((font as any).tables ||= {});
   const os2 = tables.os2 ||= {};
