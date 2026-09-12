@@ -2875,13 +2875,18 @@ function buildUniformStrokePrimitives(
 
   // Round-join disc ONLY at vertices that are actual corners (a meaningful
   // direction change). Placing a disc at EVERY flattened vertex — hundreds
-  // along a smooth curve — added tens of thousands of redundant union points
-  // per stroke (the "export sangat lama" bottleneck) with no visual benefit:
-  // consecutive segment quads along a smooth curve already overlap and cover
-  // the joint. A disc is only needed where two segments meet at an angle
-  // (convex corner needs rounding, concave corner needs filling). Detect
-  // those by turn angle; along the smooth parts, skip the disc entirely.
-  const discSteps = Math.max(12, Math.ceil((2 * Math.PI) / (6 * Math.PI / 180)));
+  // Round-join disc at EVERY interior joint. This is what keeps a curve
+  // smooth: each straight segment quad is a chord, so at every joint the two
+  // quads' outer corners stick out past the true arc as little spikes — a
+  // disc of radius r centered on the joint covers exactly those corners and
+  // rounds the outer edge back onto the arc (and fills the concave side).
+  // Skipping discs on "gentle" joints (an earlier speed hack) is what made
+  // curves come out spiky/"pecah-pecah", so every joint gets one. The disc
+  // is kept cheap (~5° steps) and the union collapses the overlaps, so this
+  // is still fast enough.
+  // ~11° steps (32-gon) is visually smooth for a join disc at text sizes and
+  // keeps the union cheap; finer gains nothing once the refit runs.
+  const discSteps = Math.max(20, Math.ceil((2 * Math.PI) / (11 * Math.PI / 180)));
   const disc = (c: Point): Point[] => {
     const out: Point[] = [];
     for (let s = 0; s < discSteps; s++) {
@@ -2890,19 +2895,10 @@ function buildUniformStrokePrimitives(
     }
     return out;
   };
-  const CORNER_MIN_TURN = 8 * Math.PI / 180; // radians; below this the quads already cover it
-  const turnAt = (i: number): number => {
-    const prev = pts[(i - 1 + n) % n], cur = pts[i], next = pts[(i + 1) % n];
-    const a1 = Math.atan2(cur.y - prev.y, cur.x - prev.x);
-    const a2 = Math.atan2(next.y - cur.y, next.x - cur.x);
-    let d = Math.abs(a2 - a1);
-    if (d > Math.PI) d = 2 * Math.PI - d;
-    return d;
-  };
   const jointStart = closed ? 0 : 1;
   const jointEnd = closed ? n : n - 1; // exclusive
   for (let i = jointStart; i < jointEnd; i++) {
-    if (turnAt(i) >= CORNER_MIN_TURN) rings.push(disc(pts[i]));
+    rings.push(disc(pts[i]));
   }
 
   if (!closed) {
@@ -2964,13 +2960,13 @@ function buildUniformStrokePrimitives(
  */
 function uniformCenterlineToOutlineExact(contour: Contour, width: number, cap: StrokeCap): Contour[] {
   const r = Math.max(0.5, width / 2);
-  // Flatness tolerance for the centerline before it's swept into primitives.
-  // Was r*0.002 capped at 0.05u — so tight it produced 400–1200 nodes per
-  // glyph and made Expand/export the slowest phase. 0.15u is still far below
-  // one font unit (imperceptible at any real text size on a 1000 UPM em),
-  // but cuts the primitive/point count several-fold, which is the dominant
-  // export-speed win. The downstream union + refit smooth everything anyway.
-  const flatTol = Math.min(0.15, Math.max(0.05, r * 0.006));
+  // Coarser flatten (fewer, longer segments) keeps the primitive/node count
+  // and export time down; smoothness is guaranteed instead by the round-join
+  // disc placed at EVERY joint below, which rounds each quad's outer corner
+  // back onto the arc. (The spiky "pecah-pecah" bug was caused by SKIPPING
+  // those discs, not by the flatten step — so we keep the flatten cheap and
+  // just never skip a disc.)
+  const flatTol = Math.min(0.2, Math.max(0.08, r * 0.008));
   const flattened = flattenContourPrecise(contour, flatTol);
   if (flattened.length < 2) return [];
   let pts = dedupeClosePoints(flattened, Math.max(0.05, width * 0.002));

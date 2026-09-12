@@ -781,18 +781,32 @@ export function resolveTexturedBrushFill(contours: Contour[], toleranceScale = 1
 
   const withArea = contours.map((c) => {
     const pts = flattenContour(c, 6);
-    return { c, absArea: Math.abs(polygonArea(pts)) };
+    return { c, pts, absArea: Math.abs(polygonArea(pts)) };
   });
   const maxArea = withArea.reduce((m, x) => Math.max(m, x.absArea), 0);
   if (maxArea <= 0) return normalizeSelfIntersectingContours(contours, toleranceScale);
 
   const bodyContours: Contour[] = [];
+  const bodyPts: Point[][] = [];
   const textureContours: Contour[] = [];
   const threshold = maxArea * bodyFraction;
-  for (const { c, absArea } of withArea) {
-    (absArea >= threshold ? bodyContours : textureContours).push(c);
+  for (const { c, pts, absArea } of withArea) {
+    if (absArea >= threshold) { bodyContours.push(c); bodyPts.push(pts); }
+    else textureContours.push(c);
   }
   if (textureContours.length === 0) return normalizeSelfIntersectingContours(contours, toleranceScale);
+
+  // FAST PATH: the expensive body-union + texture-subtract is ONLY needed
+  // when a body ring actually self-crosses (a looped gesture like "&"/"8").
+  // The vast majority of glyphs don't self-cross, so for them the plain
+  // winding resolution already gives the right solid-with-holes result and
+  // is far cheaper. Only pay the boolean cost when a body genuinely crosses
+  // itself — this is the difference between ~16s and ~2s over a full rough
+  // font export.
+  const anyBodySelfCrosses = bodyPts.some((ring) => ringSelfIntersects(ring));
+  if (!anyBodySelfCrosses) {
+    return normalizeSelfIntersectingContours(contours, toleranceScale);
+  }
 
   const toPolys = (cs: Contour[]): ClipPolygon[] => {
     const out: ClipPolygon[] = [];

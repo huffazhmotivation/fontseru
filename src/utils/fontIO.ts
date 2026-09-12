@@ -389,11 +389,19 @@ export function normalizeFontMetadata(
     };
   }
 
+  // Final hard guarantee: no name field that the font writer or opentype.js
+  // reads can ever be empty/undefined. An empty nameID 1/4/6 is what makes
+  // opentype.js throw "Cannot read properties of undefined (reading
+  // 'fontFamily')" mid-serialize — the export failure. Coerce every critical
+  // field to a safe non-empty value here so NO upstream combination can
+  // reproduce that crash.
+  const safeFamily = (typographicFamilyOverride ?? familyName) || "Untitled Font";
+  const safeStyle = (typographicSubfamilyOverride ?? styleName) || "Regular";
   return {
-    familyName: typographicFamilyOverride ?? familyName,
-    styleName: typographicSubfamilyOverride ?? styleName,
-    fullName,
-    postscriptName,
+    familyName: safeFamily,
+    styleName: safeStyle,
+    fullName: fullName || `${safeFamily} ${safeStyle}`,
+    postscriptName: postscriptName || sanitizePostScriptName(safeFamily, safeStyle, ""),
     designer,
     designerURL,
     copyright,
@@ -404,9 +412,9 @@ export function normalizeFontMetadata(
     manufacturer,
     manufacturerURL,
     trademark,
-    uniqueID,
-    legacyFamilyName,
-    legacySubfamilyName,
+    uniqueID: uniqueID || `${manufacturer}:${safeFamily}-${safeStyle}:Version ${version}`,
+    legacyFamilyName: legacyFamilyName || safeFamily,
+    legacySubfamilyName: legacySubfamilyName || "Regular",
     ...styleLink,
   };
 }
@@ -1301,6 +1309,12 @@ function resolveKerningRecords(
   glyphIndexByChar: Map<string, number>
 ): { left: number; right: number; value: number }[] {
   const all: { left: number; right: number; value: number }[] = [];
+  // Drop negligible pairs: a kern of just ±1–2 font units on a 1000 UPM em
+  // is far below what any reader can see, but auto-kern can emit tens of
+  // thousands of them, which bloats the font and makes export slow. Dropping
+  // sub-threshold pairs keeps every meaningful kern while cutting the pair
+  // count (and export time) dramatically. 2 units ≈ 0.2% of em — invisible.
+  const NEGLIGIBLE = 2;
   for (const [key, rawValue] of Object.entries(pairs ?? {})) {
     const pair = parseKerningKey(key);
     if (!pair) continue;
@@ -1308,7 +1322,7 @@ function resolveKerningRecords(
     const right = glyphIndexByChar.get(pair.right);
     if (left == null || right == null || !Number.isFinite(rawValue)) continue;
     const value = Math.max(-32768, Math.min(32767, Math.round(rawValue)));
-    if (value) all.push({ left, right, value });
+    if (Math.abs(value) > NEGLIGIBLE) all.push({ left, right, value });
   }
   return all;
 }
