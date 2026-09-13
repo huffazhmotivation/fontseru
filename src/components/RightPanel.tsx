@@ -30,8 +30,17 @@ export function RightPanel() {
   const tool = useAppStore((s) => s.tool);
   const selectedNodes = useAppStore((s) => s.selectedNodes);
   const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
+  const glyphSelectMode = useAppStore((s) => s.glyphSelectMode);
+  const selectedGlyphChars = useAppStore((s) => s.selectedGlyphChars);
 
   if (!glyph) return <div className="fm-rightpanel" />;
+
+  // Multi-glyph batch editing: several glyphs picked in GlyphNav + Select
+  // tool → show the object controls (brush list / width / cap / expand)
+  // that apply across every selected glyph at once, instead of the
+  // single-glyph object panel. Mirrors what the Select panel shows for
+  // objects inside one glyph, but wired to the multi-glyph store actions.
+  const multiGlyph = glyphSelectMode && selectedGlyphChars.length > 0;
 
   const category = GLYPH_GROUPS.find((g) => g.id === glyph.category)?.label;
   // Select tool: show its panel as soon as the tool is active, not only once
@@ -60,7 +69,9 @@ export function RightPanel() {
         </div>
       </div>
 
-      {showSelect ? (
+      {showSelect && multiGlyph ? (
+        <MultiGlyphSelectPanel selectedGlyphChars={selectedGlyphChars} />
+      ) : showSelect ? (
         <SelectPanel glyph={glyph} selectedObjectIds={selectedObjectIds} />
       ) : showBrush ? (
         <BrushPanel />
@@ -224,6 +235,92 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
       </Section>
       <TransformPanel glyph={glyph} selectedObjectIds={selectedObjectIds} />
     </>
+  );
+}
+
+// Batch object controls for a multi-glyph selection (GlyphNav "Select" mode).
+// Same look as the single-glyph SelectPanel — brush list, stroke width, cap,
+// Expand Stroke — but every control routes through the store's multi-glyph
+// actions so the change lands on the matching strokes in ALL selected glyphs
+// at once. (setBrushType / setBrush / setBrushCap already restyle every brush
+// stroke across `selectedGlyphChars` when glyph-select mode is on.)
+function MultiGlyphSelectPanel({ selectedGlyphChars }: { selectedGlyphChars: string[] }) {
+  const glyphs = useAppStore((s) => s.glyphs);
+  const brush = useAppStore((s) => s.brush);
+  const setBrushType = useAppStore((s) => s.setBrushType);
+  const setBrush = useAppStore((s) => s.setBrush);
+  const brushCap = useAppStore((s) => s.brushCap);
+  const setBrushCap = useAppStore((s) => s.setBrushCap);
+  const expandStrokesInSelectedGlyphs = useAppStore((s) => s.expandStrokesInSelectedGlyphs);
+
+  // Aggregate the strokes across every selected glyph so the panel can show
+  // real counts and a sensible current value.
+  const allObjs = selectedGlyphChars.flatMap((ch) => glyphs[ch]?.outline.objects ?? []);
+  const brushObjs = allObjs.filter((o) => o.kind === "brush");
+  const strokeObjs = allObjs.filter((o) => o.kind === "line" || o.kind === "brush");
+  const glyphsWithStrokes = selectedGlyphChars.filter(
+    (ch) => (glyphs[ch]?.outline.objects ?? []).some((o) => o.kind === "line" || o.kind === "brush")
+  ).length;
+
+  // Highlight the brush preset only when every brush stroke shares one type;
+  // otherwise fall back to the active brush setting (what a click would set).
+  const commonBrushType =
+    brushObjs.length > 0 && brushObjs.every((o) => o.brushType === brushObjs[0].brushType)
+      ? (brushObjs[0].brushType as BrushType)
+      : brush.type;
+  const widthValue = strokeObjs[0]?.strokeWidth ?? brush.size;
+
+  return (
+    <Section title={`${selectedGlyphChars.length} Glyphs Selected`}>
+      <span className="fm-status-pill" data-testid="multiglyph-status">
+        <span className="fm-status-dot" />
+        {strokeObjs.length} stroke{strokeObjs.length === 1 ? "" : "s"} in {glyphsWithStrokes} glyph{glyphsWithStrokes === 1 ? "" : "s"}
+      </span>
+
+      <div className="fm-brush-grid" data-testid="multiglyph-brush-grid">
+        {BRUSH_ORDER.map((id) => {
+          const Icon = BRUSH_ICON[id];
+          const p = BRUSH_PRESETS[id];
+          return (
+            <button
+              key={id}
+              className={`fm-brush-card ${commonBrushType === id ? "active" : ""}`}
+              onClick={() => setBrushType(id)}
+              title={`Apply ${p.label} to all selected glyphs`}
+              data-testid={`multiglyph-brush-${id}`}
+            >
+              <span className="fm-brush-icon"><Icon size={17} strokeWidth={1.8} /></span>
+              <span className="fm-brush-name">{p.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <Slider
+        label="Stroke Width"
+        value={widthValue}
+        min={1}
+        max={200}
+        directInput
+        onChange={(v) => setBrush({ size: v })}
+      />
+
+      {commonBrushType === "monoline" && (
+        <CapControl value={brushCap} onChange={setBrushCap} />
+      )}
+
+      <button
+        className="fm-action-btn accent"
+        onClick={expandStrokesInSelectedGlyphs}
+        data-testid="multiglyph-expand-stroke-btn"
+      >
+        <Scissors size={14} /> Expand Strokes
+      </button>
+
+      <InfoTip>
+        Changes here apply to every stroke in all {selectedGlyphChars.length} selected glyphs at once. Turn off “Select” in the glyph list to go back to editing one glyph.
+      </InfoTip>
+    </Section>
   );
 }
 

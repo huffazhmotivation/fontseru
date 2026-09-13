@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { GlyphOutline, Point } from "@/types/geometry";
+import type { GlyphOutline, Point, VectorObject } from "@/types/geometry";
 import { useAppStore } from "@/glyph/store";
 import { cloneOutline } from "./nodeOps";
 import {
@@ -144,6 +144,32 @@ function expandGroupsInSelection(outline: GlyphOutline, ids: string[]): string[]
   return [...out];
 }
 
+/**
+ * Stamps fresh-id copies of the objects whose ids are in `ids`, preserving
+ * group relationships (each source group maps to one new group id). Used by
+ * the Cmd/Ctrl + drag "duplicate on drag" gesture, both when the modifier is
+ * held at press time and when it's pressed part-way through a move drag.
+ */
+function duplicateObjects(objects: VectorObject[], ids: string[]): VectorObject[] {
+  const groupMap = new Map<string, string>();
+  return objects
+    .filter((o) => ids.includes(o.id))
+    .map((o) => {
+      const clone = cloneObjectWithNewIds(o);
+      if (o.groupId) {
+        let nextGroup = groupMap.get(o.groupId);
+        if (!nextGroup) {
+          nextGroup = shortId("group");
+          groupMap.set(o.groupId, nextGroup);
+        }
+        clone.groupId = nextGroup;
+      } else {
+        delete clone.groupId;
+      }
+      return clone;
+    });
+}
+
 /** hitScale = font units per screen pixel (1/scale); used for hit tolerances. */
 export function useSelectTool(hitScale: number) {
   const activeChar = useAppStore((s) => s.activeChar);
@@ -164,6 +190,10 @@ export function useSelectTool(hitScale: number) {
 
   const dragRef = useRef<DragState>(null);
   const baseRef = useRef<GlyphOutline | null>(null);
+  // True once a Cmd/Ctrl+drag has already stamped its duplicate for the
+  // current gesture, so pressing/holding the modifier during a move never
+  // stamps a second copy.
+  const dupStampedRef = useRef(false);
   const [marqueeRect, setMarqueeRect] = useState<Rect | null>(null);
   const [hoverHandle, setHoverHandle] = useState<HandleId | null>(null);
   const hoverHandleRef = useRef<HandleId | null>(null);
@@ -215,6 +245,8 @@ export function useSelectTool(hitScale: number) {
 
   const pointerDown = useCallback(
     (p: Point, shiftKey: boolean, metaKey = false) => {
+      // Fresh gesture: no duplicate stamped yet (may be set below or mid-drag).
+      dupStampedRef.current = false;
       // 1. handle on the current selection?
       const handle = findHandle(p);
       if (handle && bounds) {
@@ -251,32 +283,25 @@ export function useSelectTool(hitScale: number) {
         const unitIds = selectionUnitIds(outline, hitId);
 
         // Cmd/Ctrl + click-drag on an object: stamp a copy in place and drag
-        // that copy, leaving the original untouched — mirrors the classic
+        // that copy, leaving the original(s) untouched — the classic
         // "modifier + drag to duplicate" gesture from vector editors.
+        //
+        // If the clicked object is part of the current multi-selection, the
+        // WHOLE selection is duplicated and dragged together; if it's outside
+        // the selection, only the clicked object (its group unit) duplicates.
         if (metaKey) {
-          const groupMap = new Map<string, string>();
-          const duplicates = outline.objects
-            .filter((o) => unitIds.includes(o.id))
-            .map((o) => {
-              const clone = cloneObjectWithNewIds(o);
-              if (o.groupId) {
-                let nextGroup = groupMap.get(o.groupId);
-                if (!nextGroup) {
-                  nextGroup = shortId("group");
-                  groupMap.set(o.groupId, nextGroup);
-                }
-                clone.groupId = nextGroup;
-              } else {
-                delete clone.groupId;
-              }
-              return clone;
-            });
+          const clickedInSelection = unitIds.some((id) => selectedObjectIds.includes(id));
+          const sourceIds = clickedInSelection
+            ? expandGroupsInSelection(outline, selectedObjectIds)
+            : unitIds;
+          const duplicates = duplicateObjects(outline.objects, sourceIds);
           const withDuplicates: GlyphOutline = { objects: [...outline.objects, ...duplicates] };
           baseRef.current = cloneOutline(withDuplicates);
           setLiveOutline(withDuplicates);
           const dupIds = duplicates.map((d) => d.id);
           selectObjects(dupIds);
           dragRef.current = { mode: "move", origin: p, ids: dupIds };
+          dupStampedRef.current = true;
           return;
         }
 
@@ -306,7 +331,7 @@ export function useSelectTool(hitScale: number) {
   );
 
   const pointerMove = useCallback(
-    (p: Point, shiftKey: boolean, pointerType?: string) => {
+    (p: Point, shiftKey: boolean, pointerType?: string, metaKey = false) => {
       const drag = dragRef.current;
       if (!drag) {
         updateHoverHandle(findHandle(p));
@@ -316,14 +341,30 @@ export function useSelectTool(hitScale: number) {
         setMarqueeRect(rectFrom(drag.origin, p));
         return;
       }
-      const base = baseRef.current;
+      let base = baseRef.current;
       if (!base) return;
 
       if (drag.mode === "move") {
-        let d = subtract(p, drag.origin);
+        let moveIds = drag.ids;
+        const moveOrigin = drag.origin;
+        // Cmd/Ctrl pressed AFTER the move drag already started ("klik dulu
+        // baru Cmd"): stamp duplicates of the objects being moved, at their
+        // original positions, then continue dragging the copies — leaving the
+        // originals where they were. Done once per gesture.
+        if (metaKey && !dupStampedRef.current) {
+          dupStampedRef.current = true;
+          const duplicates = duplicateObjects(base.objects, moveIds);
+          const withDuplicates: GlyphOutline = { objects: [...base.objects, ...duplicates] };
+          baseRef.current = cloneOutline(withDuplicates);
+          base = baseRef.current;
+          moveIds = duplicates.map((dp) => dp.id);
+          selectObjects(moveIds);
+          dragRef.current = { mode: "move", origin: moveOrigin, ids: moveIds };
+        }
+        let d = subtract(p, moveOrigin);
         if (shiftKey) d = Math.abs(d.x) >= Math.abs(d.y) ? { x: d.x, y: 0 } : { x: 0, y: d.y };
         if (!shiftKey && (horizontalSnapTargets.length || verticalSnapTargets.length)) {
-          const movingBounds = objectsBounds(base, drag.ids);
+          const movingBounds = objectsBounds(base, moveIds);
           if (movingBounds) {
             d = {
               x: d.x + snapCorrection([movingBounds.minX + d.x, movingBounds.maxX + d.x], verticalSnapTargets, snapTolerance),
@@ -332,7 +373,7 @@ export function useSelectTool(hitScale: number) {
           }
         }
         const objects = base.objects.map((o) =>
-          drag.ids.includes(o.id) ? translateObject(o, d.x, d.y) : o
+          moveIds.includes(o.id) ? translateObject(o, d.x, d.y) : o
         );
         setLiveOutline({ objects });
         return;
@@ -397,12 +438,13 @@ export function useSelectTool(hitScale: number) {
         setLiveOutline({ objects });
       }
     },
-    [findHandle, selectedObjectIds, setLiveOutline, setSelectionSkewState, strokeWidthLocked, sketchMode, horizontalSnapTargets, verticalSnapTargets, snapTolerance, updateHoverHandle]
+    [findHandle, selectedObjectIds, selectObjects, setLiveOutline, setSelectionSkewState, strokeWidthLocked, sketchMode, horizontalSnapTargets, verticalSnapTargets, snapTolerance, updateHoverHandle]
   );
 
   const pointerUp = useCallback(() => {
     const drag = dragRef.current;
     dragRef.current = null;
+    dupStampedRef.current = false;
     if (!drag) return;
 
     if (drag.mode === "marquee") {

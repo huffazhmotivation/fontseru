@@ -54,6 +54,7 @@ type PointerMoveSample = {
   clientY: number;
   shiftKey: boolean;
   altKey: boolean;
+  metaKey: boolean;
   pressure: number;
 };
 
@@ -331,7 +332,7 @@ export function GlyphCanvas() {
       }
       if (tool === "brush") return brushTool.pointerMove(p, sample);
       if (tool === "pencil") return pencilTool.pointerMove(p);
-      if (tool === "select") return selectTool.pointerMove(p, sample.shiftKey, sample.pointerType);
+      if (tool === "select") return selectTool.pointerMove(p, sample.shiftKey, sample.pointerType, sample.metaKey);
       editor.pointerMove(p, sample.shiftKey, sample.altKey);
     },
     [sketchGestures, getFontPoint, tool, setPan, sc, brushTool, pencilTool, selectTool, editor]
@@ -356,6 +357,7 @@ export function GlyphCanvas() {
       clientY: e.clientY,
       shiftKey: e.shiftKey,
       altKey: e.altKey,
+      metaKey: e.metaKey || e.ctrlKey,
       pressure: e.pressure,
     };
     if (pointerMoveRafRef.current !== null) return;

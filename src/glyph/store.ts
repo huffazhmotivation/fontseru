@@ -477,6 +477,10 @@ interface AppState {
    */
   deleteSelectedNodes: () => void;
   expandSelectedStrokes: () => void;
+  /** Expand every line/brush stroke into filled outlines across ALL glyphs
+   * currently multi-selected in GlyphNav (glyph-select mode). Used by the
+   * multi-glyph Select panel so "Expand Stroke" works batch-wide. */
+  expandStrokesInSelectedGlyphs: () => void;
   flipSelectedObjects: (axis: "horizontal" | "vertical") => void;
   /**
    * Aligns every selected object to an edge/center of the selection's own
@@ -1756,6 +1760,33 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ selectedObjectIds: newIds });
     },
 
+    expandStrokesInSelectedGlyphs: () => {
+      const { glyphs, glyphSelectMode, selectedGlyphChars } = get();
+      if (!glyphSelectMode || selectedGlyphChars.length === 0) return;
+      let touched = false;
+      const next: GlyphMap = { ...glyphs };
+      for (const char of selectedGlyphChars) {
+        const g = glyphs[char];
+        if (!g) continue;
+        let changed = false;
+        const objects: VectorObject[] = [];
+        for (const o of g.outline.objects) {
+          if (o.kind === "line" || o.kind === "brush") {
+            const expanded = expandStrokeObject(o);
+            if (expanded) {
+              if (o.groupId) expanded.groupId = o.groupId;
+              objects.push(expanded);
+              changed = true;
+              continue;
+            }
+          }
+          objects.push(o);
+        }
+        if (changed) { touched = true; next[char] = { ...g, outline: { objects } }; }
+      }
+      if (touched) commit(next);
+    },
+
     // Mirrors the current selection in place around its combined bounding
     // box center. Position, transform state, per-object selection and all
     // glyph data (node types, groupId, stroke settings, samples) survive
@@ -1855,13 +1886,13 @@ export const useAppStore = create<AppState>()((set, get) => {
       const { clipboard, clipboardSourceChar, glyphs, activeChar } = get();
       const glyph = glyphs[activeChar];
       if (!clipboard || clipboard.length === 0 || !glyph) return;
-      // Pasting back into the same glyph it was copied from nudges the copy
-      // so it doesn't land exactly on top of the original (which would make
-      // the new shape invisible/hard to grab). Pasting into a different
-      // glyph has nothing underneath to collide with, and the user expects
-      // the shape to appear at the exact x/y it was copied from.
-      const sameGlyph = clipboardSourceChar === activeChar;
-      const [nudgeX, nudgeY] = sameGlyph ? [40, -40] : [0, 0];
+      // Paste ALWAYS lands at the exact same x/y the objects were copied from
+      // — in the same glyph or in any other glyph tab. No nudge, so a shape
+      // pasted into another glyph sits pixel-for-pixel where it was, and a
+      // paste into the same glyph stacks exactly on the original (it's
+      // selected on paste, so it can be dragged off immediately). This is the
+      // deliberate "presisi" copy/paste behaviour the user asked for.
+      const [nudgeX, nudgeY] = [0, 0];
       const groupMap = new Map<string, string>();
       const pasted = clipboard.map((source) => {
         const o = translateObject(cloneObjectWithNewIds(source), nudgeX, nudgeY);
@@ -1878,11 +1909,11 @@ export const useAppStore = create<AppState>()((set, get) => {
         return o;
       });
       const objects = [...glyph.outline.objects, ...pasted];
-      // Route through commitOutline (not a raw commit()) so a pasted vector
-      // gets the same live Auto Spacing pass as drawing/dragging does —
-      // otherwise a shape pasted at an arbitrary position just sits there
-      // with stale LSB/RSB instead of being re-centered on its own ink.
-      get().commitOutline(activeChar, { objects });
+      // skipAutoSpacing: keep the pasted ink at its EXACT copied coordinates.
+      // Auto Spacing would re-derive LSB/RSB from the glyph's ink and shift
+      // everything sideways, which would break the precise-position paste the
+      // user wants (especially when pasting into another glyph tab).
+      get().commitOutline(activeChar, { objects }, { skipAutoSpacing: true });
       // After landing in this glyph, treat it as the new clipboard "home" so
       // a repeated paste here nudges (avoiding an invisible exact-stack)
       // instead of re-pasting on top of the shape we just placed.
