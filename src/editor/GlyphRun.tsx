@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useAppStore } from "@/glyph/store";
 import { hasOutline, type GlyphMap } from "@/types/glyph";
 import type { KerningPairs } from "@/types/kerning";
+import { effectiveWordSpacing } from "@/types/kerning";
 import { layoutLine } from "./textLayout";
 import { getGlyphPaths } from "./glyphPaths";
 
@@ -56,9 +57,12 @@ export function GlyphRun({
   const storeGlyphs = useAppStore((s) => s.glyphs);
   const metrics = useAppStore((s) => s.metrics);
   const storeKerningPairs = useAppStore((s) => s.kerningPairs);
+  const fontStyle = useAppStore((s) => s.fontStyle);
+  const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
   const glyphs = glyphsOverride ?? storeGlyphs;
   const kerningPairs = kerningPairsOverride ?? storeKerningPairs;
-  const { ascender, descender, unitsPerEm, wordSpacing } = metrics;
+  const { ascender, descender, unitsPerEm } = metrics;
+  const wordSpacing = effectiveWordSpacing(metrics.wordSpacing, wordSpacingOverridesByStyle, fontStyle);
   const totalH = ascender - descender;
 
   // Single shared layout engine — also used by the Test Lab / Kerning caret

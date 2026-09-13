@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/glyph/store";
 import { layoutLine, nearestCaretColumn, caretX, type LineLayout } from "./textLayout";
+import { effectiveWordSpacing } from "@/types/kerning";
 
 export interface CaretPos {
   line: number;
@@ -24,7 +25,10 @@ export function useTypingCaret(
   const glyphs = useAppStore((s) => s.glyphs);
   const metrics = useAppStore((s) => s.metrics);
   const kerningPairs = useAppStore((s) => s.kerningPairs);
-  const { unitsPerEm, ascender, descender, wordSpacing } = metrics;
+  const fontStyle = useAppStore((s) => s.fontStyle);
+  const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
+  const { unitsPerEm, ascender, descender } = metrics;
+  const wordSpacing = effectiveWordSpacing(metrics.wordSpacing, wordSpacingOverridesByStyle, fontStyle);
   const totalH = ascender - descender;
   const pxPerUnit = fontSizePx / unitsPerEm;
 

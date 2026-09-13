@@ -407,6 +407,8 @@ interface AppState {
   beginMetricDrag: () => void;
   setFontMetricLive: (key: keyof FontMetrics, value: number) => void;
   endMetricDrag: () => void;
+  beginWordSpacingEdit: () => void;
+  endWordSpacingEdit: () => void;
   metricFocus: keyof FontMetrics | null;
   setMetricFocus: (key: keyof FontMetrics | null) => void;
   setActiveChar: (char: string) => void;
@@ -689,6 +691,13 @@ export const useAppStore = create<AppState>()((set, get) => {
   // `commitFontNameEdit` (called on blur) flushes a single entry instead.
   let fontNameEditSnapshot: string | null = null;
   let metricDragSnapshot: FontMetrics | null = null;
+  let wordSpacingEditSnapshot: {
+    metrics: FontMetrics;
+    wordSpacingOverridesByStyle: WordSpacingOverridesByStyle;
+    glyphs: GlyphMap;
+    kerningPairs: KerningPairs;
+    kerningManual: KerningManualFlags;
+  } | null = null;
   let glyphMetricDragSnapshot: GlyphMap | null = null;
   /** Debounce handle for the italicAngle → re-space-all-glyphs pass (see
    * setFontMetric below) — cleared/reset on every change while the italic
@@ -1247,8 +1256,14 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (metrics[key] === nextValue) return;
       set({
         metrics: { ...metrics, [key]: nextValue },
-        past: [...past, { glyphs, metrics, kerningPairs, kerningManual }].slice(-HISTORY_LIMIT),
-        future: [],
+        // When a bracketed edit is active (beginMetricDrag was called),
+        // skip per-keystroke history — endMetricDrag pushes one undo step.
+        ...(metricDragSnapshot
+          ? {}
+          : {
+              past: [...past, { glyphs, metrics, kerningPairs, kerningManual }].slice(-HISTORY_LIMIT),
+              future: [],
+            }),
       });
 
       // Auto Metrik promises every glyph's LSB/RSB stays derived from "that
@@ -1300,6 +1315,37 @@ export const useAppStore = create<AppState>()((set, get) => {
         future: [],
       });
     },
+    beginWordSpacingEdit: () => {
+      if (!wordSpacingEditSnapshot) {
+        const s = get();
+        wordSpacingEditSnapshot = {
+          metrics: { ...s.metrics },
+          wordSpacingOverridesByStyle: { ...s.wordSpacingOverridesByStyle },
+          glyphs: s.glyphs,
+          kerningPairs: s.kerningPairs,
+          kerningManual: s.kerningManual,
+        };
+      }
+    },
+    endWordSpacingEdit: () => {
+      const snap = wordSpacingEditSnapshot;
+      if (!snap) return;
+      wordSpacingEditSnapshot = null;
+      const state = get();
+      const changed = snap.metrics.wordSpacing !== state.metrics.wordSpacing ||
+        JSON.stringify(snap.wordSpacingOverridesByStyle) !== JSON.stringify(state.wordSpacingOverridesByStyle);
+      if (!changed) return;
+      set({
+        past: [...state.past, {
+          glyphs: snap.glyphs,
+          metrics: snap.metrics,
+          kerningPairs: snap.kerningPairs,
+          kerningManual: snap.kerningManual,
+          wordSpacingOverridesByStyle: snap.wordSpacingOverridesByStyle,
+        }].slice(-HISTORY_LIMIT),
+        future: [],
+      });
+    },
     setMetricFocus: (key) => set({ metricFocus: key }),
     setActiveChar: (char) => {
       finalizeLive();
@@ -1316,11 +1362,14 @@ export const useAppStore = create<AppState>()((set, get) => {
       const nextActiveChar = nextGlyphs[state.activeChar]
         ? state.activeChar
         : Object.keys(nextGlyphs)[0] ?? state.activeChar;
-      // Switching the Glyph/Family tab used to wipe the whole undo stack —
-      // now it's just another tagged step, so undo/redo keeps working
-      // seamlessly across tab switches instead of losing everything the
-      // moment you look at Bold or Italic.
-      commitPatch({
+      // Lightweight set() — only the fields that actually change during a
+      // tab switch, plus a minimal history entry containing just the fields
+      // the undo handler needs (`glyphsByStyle` for family data, `fontStyle`
+      // to know which tab was active).  The full `commitPatch()` was heavier:
+      // it snapshotted 13+ fields (including fontInfo, customFamilies,
+      // featureConfig, overrides) into history on every switch even though
+      // none of them change, which made tab switching feel sluggish.
+      set({
         fontStyle: style,
         glyphs: nextGlyphs,
         activeChar: nextActiveChar,
@@ -1333,6 +1382,18 @@ export const useAppStore = create<AppState>()((set, get) => {
         clipboardSourceChar: null,
         glyphMetricFocus: null,
         selectedGlyphChars: [],
+        past: [
+          ...state.past,
+          {
+            glyphs: state.glyphs,
+            glyphsByStyle: state.glyphsByStyle,
+            metrics: state.metrics,
+            kerningPairs: state.kerningPairs,
+            kerningManual: state.kerningManual,
+            fontStyle: state.fontStyle,
+          },
+        ].slice(-HISTORY_LIMIT),
+        future: [],
       });
     },
 
@@ -1511,10 +1572,20 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
 
     updateGlyphMetrics: (char, patch, scope) => {
-      const { glyphs, glyphMetricScope } = get();
+      const { glyphs, glyphsByStyle, fontStyle, glyphMetricScope } = get();
       const nextGlyphs = applyGlyphMetricToMap(glyphs, char, patch, scope ?? glyphMetricScope);
       if (nextGlyphs === glyphs) return;
-      commit(nextGlyphs);
+      // During a bracketed edit (beginGlyphMetricDrag was called by keyboard
+      // input), skip per-keystroke history — endGlyphMetricDrag pushes one
+      // undo step when the user finishes typing.
+      if (glyphMetricDragSnapshot) {
+        set({
+          glyphs: nextGlyphs,
+          glyphsByStyle: { ...glyphsByStyle, [fontStyle]: nextGlyphs },
+        });
+      } else {
+        commit(nextGlyphs);
+      }
     },
 
     setGlyphMetricScope: (scope) => set({ glyphMetricScope: scope }),

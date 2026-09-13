@@ -6,6 +6,7 @@ import { wrapLines } from "@/editor/textLayout";
 import { sentenceForCategory } from "@/glyph/testSentences";
 import type { GlyphCategory } from "@/types/glyph";
 import { SunIcon, MoonIcon } from "@/components/icons/ThemeIcon";
+import { effectiveWordSpacing } from "@/types/kerning";
 
 /** Small icon toggles for the categories that have a preset sentence (see
  * sentenceForCategory) — spacing/feature glyphs fall back to the uppercase
@@ -48,6 +49,8 @@ export function ProductionPreviewBar() {
   const setStageHeight = useAppStore((s) => s.setProductionPreviewHeight);
   const metrics = useAppStore((s) => s.metrics);
   const kerningPairs = useAppStore((s) => s.kerningPairs);
+  const fontStyle = useAppStore((s) => s.fontStyle);
+  const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
 
   const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const [isResizingPreview, setIsResizingPreview] = useState(false);
@@ -81,7 +84,8 @@ export function ProductionPreviewBar() {
   // preview downward (more lines) instead of forcing sideways scrolling.
   const pxPerUnit = scale / metrics.unitsPerEm;
   const maxWidthUnits = Math.max(1, (stageWidth || 720) / Math.max(pxPerUnit, 0.0001));
-  const lines = wrapLines(text, glyphs, metrics.unitsPerEm, kerningPairs, 0, maxWidthUnits, metrics.wordSpacing);
+  const wordSpacing = effectiveWordSpacing(metrics.wordSpacing, wordSpacingOverridesByStyle, fontStyle);
+  const lines = wrapLines(text, glyphs, metrics.unitsPerEm, kerningPairs, 0, maxWidthUnits, wordSpacing);
 
   function startResize(e: ReactPointerEvent) {
     e.preventDefault();

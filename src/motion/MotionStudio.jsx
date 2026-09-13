@@ -2202,6 +2202,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  const exportingRef = useRef(false);
 
   const frameRef = useRef(project.frameSize);
   useEffect(() => { frameRef.current = project.frameSize; }, [project.frameSize]);
@@ -2269,7 +2270,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       if (clip.id === selId) selBBox = bbox;
     }
 
-    if (selBBox && !playingRef.current) {
+    if (selBBox && !playingRef.current && !exportingRef.current) {
       drawSelectionOverlay(ctx, selBBox);
       bboxRef.current = selBBox;
     } else {
@@ -2398,7 +2399,12 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     if (playback.playing) return;
     const sel = selectedClipRef.current;
     const bbox = bboxRef.current;
-    if (!sel || !bbox) return;
+    if (!sel || !bbox) {
+      // Clicking the empty stage clears the active clip selection and its
+      // transform box. Keep BG_SEL as the neutral "nothing selected" state.
+      if (sel) dispatchProject({ type: "SELECT_CLIP", id: BG_SEL });
+      return;
+    }
     const rect = canvasRef.current.getBoundingClientRect();
     const scaleX = dimsRef.current.w / rect.width, scaleY = dimsRef.current.h / rect.height;
     const mx = (e.clientX - rect.left) * scaleX, my = (e.clientY - rect.top) * scaleY;
@@ -2421,7 +2427,12 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
         init = { startMx: mx, startMy: my, startOffX: sel.offset.x, startOffY: sel.offset.y };
       }
     }
-    if (!mode) return;
+    if (!mode) {
+      // Click landed on the selected clip's bounding area but not on the move
+      // region or rotate handle — treat it as an outside click and deselect.
+      dispatchProject({ type: "SELECT_CLIP", id: BG_SEL });
+      return;
+    }
     dragRef.current = { mode, clipId: sel.id, ...init };
 
     const onMove = (ev) => {
@@ -2454,6 +2465,10 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       return;
     }
 
+    // Suppress editing chrome for the entire export, including the initial
+    // readiness wait before the first frame is recorded.
+    exportingRef.current = true;
+    try {
     // Prime every media element with a play()+pause() *synchronously* inside
     // this click handler. Browsers only allow programmatic el.play() without
     // a fresh user gesture if the element was already "activated" by one —
@@ -2645,6 +2660,9 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
 
     setExporting(false);
     setExportProgress(0);
+    } finally {
+      exportingRef.current = false;
+    }
   };
 
   // Tombol play di bawah frame: cuma memutar animasi inline di kanvas

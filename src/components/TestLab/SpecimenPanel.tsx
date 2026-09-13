@@ -1178,6 +1178,10 @@ function FeatureSentencePreview({
   const { ascender, descender, unitsPerEm } = metrics;
   const totalH = ascender - descender;
 
+  const fontStyle = useAppStore((s) => s.fontStyle);
+  const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
+  const wordSpacing = effectiveWordSpacing(metrics.wordSpacing, wordSpacingOverridesByStyle, fontStyle);
+
   const [previewText, setPreviewText] = useState("");
   const [toggles, setToggles] = useState<FeatureToggles>({ ligatures: true, alternates: false, swashes: false });
 
@@ -1280,8 +1284,8 @@ function FeatureSentencePreview({
     [previewText, glyphs, featureConfig, toggles]
   );
   const { placed, totalAdvance: rawAdvance } = useMemo(
-    () => layoutTokens(tokens, glyphs, unitsPerEm, kerningPairs, tracking, metrics.wordSpacing),
-    [tokens, glyphs, unitsPerEm, kerningPairs, tracking, metrics.wordSpacing]
+    () => layoutTokens(tokens, glyphs, unitsPerEm, kerningPairs, tracking, wordSpacing),
+    [tokens, glyphs, unitsPerEm, kerningPairs, tracking, wordSpacing]
   );
   const totalAdvance = Math.max(1, rawAdvance);
   const substitutedCount = placed.filter((p) => p.substituted).length;

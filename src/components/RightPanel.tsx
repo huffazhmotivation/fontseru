@@ -15,6 +15,7 @@ import type { BrushType, OutlineCapStyle, PixelRenderMode } from "@/types/brush"
 import { GlyphThumbnail } from "./GlyphThumbnail";
 import { NumericInput } from "./NumericInput";
 import { InfoTip } from "./InfoTip";
+import { effectiveWordSpacing } from "@/types/kerning";
 
 const NODE_TYPE_LABEL: Record<NodeType, string> = { corner: "Corner", smooth: "Smooth", symmetric: "Symmetric" };
 
@@ -404,8 +405,20 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
   const setAutoSpacingEnabled = useAppStore((s) => s.setAutoSpacingEnabled);
   const wordSpacingMetric = useAppStore((s) => s.metrics.wordSpacing);
   const unitsPerEm = useAppStore((s) => s.metrics.unitsPerEm);
-  const setFontMetric = useAppStore((s) => s.setFontMetric);
+  const fontStyle = useAppStore((s) => s.fontStyle);
+  const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
+  const setFamilyWordSpacing = useAppStore((s) => s.setFamilyWordSpacing);
   const refs = useRef<Partial<Record<GlyphMetricKey, HTMLInputElement | null>>>({});
+
+  // Bracketed editing: track keystroke bursts so begin/end push one undo step.
+  const glyphMetricEditBegun = useRef(false);
+  const wordSpacingEditBegun = useRef(false);
+  const beginGlyphMetricDrag = useAppStore((s) => s.beginGlyphMetricDrag);
+  const endGlyphMetricDrag = useAppStore((s) => s.endGlyphMetricDrag);
+  const beginWordSpacingEdit = useAppStore((s) => s.beginWordSpacingEdit);
+  const endWordSpacingEdit = useAppStore((s) => s.endWordSpacingEdit);
+  const beginMetricDrag = useAppStore((s) => s.beginMetricDrag);
+  const endMetricDrag = useAppStore((s) => s.endMetricDrag);
 
   // The space character's advance is never actually read from
   // `glyph.advanceWidth` at render time — `layoutLine` always uses the
@@ -418,7 +431,7 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
   // only — makes the number always match Word Spacing below, and makes
   // editing it here actually change how text spaces out.
   const isSpaceGlyph = char === " ";
-  const wordSpacingValue = wordSpacingMetric ?? Math.round(unitsPerEm * 0.27);
+  const wordSpacingValue = effectiveWordSpacing(wordSpacingMetric, wordSpacingOverridesByStyle, fontStyle) ?? Math.round(unitsPerEm * 0.27);
 
   useEffect(() => {
     if (!focus) return;
@@ -501,7 +514,13 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
                   // `advanceWidth` — write to that instead so this field
                   // and "Word Spacing" below can never disagree, and so
                   // typing here actually changes the on-canvas spacing.
-                  setFontMetric("wordSpacing", next);
+                  // Writes to the active style's override layer so each
+                  // family tab keeps its own word spacing.
+                  if (!wordSpacingEditBegun.current) {
+                    wordSpacingEditBegun.current = true;
+                    beginWordSpacingEdit();
+                  }
+                  setFamilyWordSpacing(fontStyle, next);
                   return;
                 }
                 // Typing a value by hand is the same "switch to Manual"
@@ -509,9 +528,23 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
                 // user just typed can never get silently overwritten by
                 // the next outline edit on this or any other glyph.
                 if (isSidebearing && isAuto) setAutoSpacingEnabled(false);
+                if (!glyphMetricEditBegun.current) {
+                  glyphMetricEditBegun.current = true;
+                  beginGlyphMetricDrag();
+                }
                 updateGlyphMetrics(char, { [key]: next });
               }}
               onFocus={() => setFocus(null)}
+              onBlur={() => {
+                if (glyphMetricEditBegun.current) {
+                  glyphMetricEditBegun.current = false;
+                  endGlyphMetricDrag();
+                }
+                if (wordSpacingEditBegun.current) {
+                  wordSpacingEditBegun.current = false;
+                  endWordSpacingEdit();
+                }
+              }}
               data-testid={testid}
             />
           </div>
@@ -534,6 +567,15 @@ function FontMetricsSection() {
   const setFontMetric = useAppStore((s) => s.setFontMetric);
   const metricFocus = useAppStore((s) => s.metricFocus);
   const setMetricFocus = useAppStore((s) => s.setMetricFocus);
+  const fontStyle = useAppStore((s) => s.fontStyle);
+  const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
+  const setFamilyWordSpacing = useAppStore((s) => s.setFamilyWordSpacing);
+  const beginMetricDrag = useAppStore((s) => s.beginMetricDrag);
+  const endMetricDrag = useAppStore((s) => s.endMetricDrag);
+  const beginWordSpacingEdit = useAppStore((s) => s.beginWordSpacingEdit);
+  const endWordSpacingEdit = useAppStore((s) => s.endWordSpacingEdit);
+  const metricEditBegun = useRef(false);
+  const wordSpacingEditBegun = useRef(false);
   const refs = useRef<Partial<Record<keyof typeof metrics, HTMLInputElement | null>>>({});
 
   useEffect(() => {
@@ -544,6 +586,20 @@ function FontMetricsSection() {
     el.select();
     setMetricFocus(null);
   }, [metricFocus, setMetricFocus]);
+
+  const finishMetricEdit = () => {
+    if (!metricEditBegun.current) return;
+    metricEditBegun.current = false;
+    endMetricDrag();
+  };
+
+  const applyMetric = (key: "ascender" | "capHeight" | "xHeight" | "baseline" | "descender", next: number) => {
+    if (!metricEditBegun.current) {
+      metricEditBegun.current = true;
+      beginMetricDrag();
+    }
+    setFontMetric(key, next);
+  };
 
   // Narrowed to the exact keys used below (rather than the full `keyof
   // typeof metrics`) so `metrics[key]` stays a plain `number` — `metrics`
@@ -558,10 +614,9 @@ function FontMetricsSection() {
     { key: "descender", label: "Descender", testid: "font-metric-descender" },
   ];
 
-  // Falls back to the same constant the live preview/export already use
-  // when wordSpacing hasn't been set explicitly (see FontMetrics.wordSpacing),
-  // purely so the field shows a sensible starting number instead of blank/0.
-  const wordSpacingValue = metrics.wordSpacing ?? Math.round(metrics.unitsPerEm * 0.27);
+  // Resolve the active family tab's sparse override, falling back to the
+  // shared Regular value and finally the historical default.
+  const wordSpacingValue = effectiveWordSpacing(metrics.wordSpacing, wordSpacingOverridesByStyle, fontStyle) ?? Math.round(metrics.unitsPerEm * 0.27);
 
   return (
     <Section title="Font Metrics" defaultOpen={true}>
@@ -574,9 +629,10 @@ function FontMetricsSection() {
               ref={(el) => { refs.current[key] = el; }}
               value={metrics[key]}
               onChange={(next) => {
-                if (Number.isFinite(next)) setFontMetric(key, next);
+                if (Number.isFinite(next)) applyMetric(key, next);
               }}
               onFocus={() => setMetricFocus(null)}
+              onBlur={finishMetricEdit}
               data-testid={testid}
             />
           </div>
@@ -588,9 +644,21 @@ function FontMetricsSection() {
             ref={(el) => { refs.current.wordSpacing = el; }}
             value={wordSpacingValue}
             onChange={(next) => {
-              if (Number.isFinite(next)) setFontMetric("wordSpacing", next);
+              if (!Number.isFinite(next)) return;
+              if (!wordSpacingEditBegun.current) {
+                wordSpacingEditBegun.current = true;
+                beginWordSpacingEdit();
+              }
+              setFamilyWordSpacing(fontStyle, next);
             }}
             onFocus={() => setMetricFocus(null)}
+            onBlur={() => {
+              if (wordSpacingEditBegun.current) {
+                wordSpacingEditBegun.current = false;
+                endWordSpacingEdit();
+              }
+              finishMetricEdit();
+            }}
             data-testid="font-metric-wordSpacing"
           />
         </div>
