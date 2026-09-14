@@ -2010,16 +2010,18 @@ const GlobalStyle = () => (
     .mfs-transition-bar.seam-drop { opacity:0.35; background:linear-gradient(180deg, #45d48322, #45d48311); border-color:#45d48344; }
     .mfs-transition-bar.seam-drop:hover { opacity:1; width:22px; margin-left:-11px; transform:scale(1.05); background:linear-gradient(180deg, #45d48355, #45d48333); border-color:#45d48388; }
     .mfs-transition-bar.over { opacity:1; width:26px; margin-left:-13px; transform:scale(1.05); border-color:#45d483; background:linear-gradient(180deg, #45d483cc, #45d48366); }
-    /* Solid transition slot bar — hijau, lebih kecil dari bar klip */
-    .mfs-transition-slot { position:absolute; bottom:1px; height:18px; border-radius:5px; z-index:3;
+    /* Solid transition slot bar — hijau solid, sejajar dengan bar klip */
+    .mfs-transition-slot { position:absolute; border-radius:7px; z-index:3;
       display:flex; align-items:center; justify-content:center; gap:3px;
-      cursor:grab; border:1px solid #45d48388; background:linear-gradient(180deg, #45d48344, #45d48322);
-      color:#a0f0c0; font-size:9px; font-weight:600; letter-spacing:0.3px; white-space:nowrap; overflow:hidden;
+      cursor:grab; border:1px solid #45d483; background:#45d483;
+      color:#fff; font-size:9px; font-weight:600; letter-spacing:0.3px; white-space:nowrap; overflow:hidden;
       pointer-events:auto; user-select:none;
       transition:opacity .15s ease, transform .15s ease, background .15s ease, border-color .15s ease; }
-    .mfs-transition-slot > svg { flex-shrink:0; width:9px; height:9px; opacity:0.8; }
-    .mfs-transition-slot:hover { border-color:#45d483; background:linear-gradient(180deg, #45d48377, #45d48344); transform:translateY(-1px); }
+    .mfs-transition-slot > svg { flex-shrink:0; width:10px; height:10px; }
+    .mfs-transition-slot:hover { background:#3cc474; transform:translateY(-1px); }
     .mfs-transition-slot:active { cursor:grabbing; transform:scale(0.97); }
+    .mfs-transition-slot .mfs-transition-del { opacity:0.7; cursor:pointer; flex-shrink:0; display:flex; align-items:center; }
+    .mfs-transition-slot .mfs-transition-del:hover { opacity:1; color:#ff6b6b; }
     .mfs-toast-stack { position:fixed; top:14px; right:14px; z-index:999; display:flex; flex-direction:column; gap:8px; max-width:320px; }
     .mfs-toast { display:flex; align-items:flex-start; gap:8px; background:#2a1418; border:1px solid #6a2530; color:#ffd7dc; font-size:11.5px; line-height:1.5;
       padding:10px 12px; border-radius:8px; cursor:pointer; box-shadow:0 4px 16px rgba(0,0,0,0.4); }
@@ -3909,7 +3911,12 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
               key={slot.id}
               className="mfs-transition-slot"
               draggable
-              style={{ left: `${(slot.start / timelineDuration) * 100}%`, width: `${(slot.duration / timelineDuration) * 100}%` }}
+              style={{
+                left: `${(slot.start / timelineDuration) * 100}%`,
+                width: `${(slot.duration / timelineDuration) * 100}%`,
+                top: 3,
+                height: ROW_H - 6,
+              }}
               title={`${transition.name} — seret ke sela lain; lepas di luar untuk menghapus`}
               onDragStart={(e) => {
                 e.dataTransfer.setData("text/transition-slot-id", slot.id);
@@ -3920,7 +3927,14 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
                 if (e.dataTransfer.dropEffect === "none") deleteTransitionSlot(slot.id);
               }}
             >
-              <Wand size={10} /> <span>{transition.name}</span>
+              <span>{transition.name}</span>
+              <span
+                className="mfs-transition-del"
+                onClick={(e) => { e.stopPropagation(); deleteTransitionSlot(slot.id); }}
+                title="Hapus transisi"
+              >
+                <Trash2 size={10} />
+              </span>
             </div>
           );
         })}
@@ -3933,6 +3947,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
           const slot = slots.find((s) => s.leftClipId === m.left?.id && s.rightClipId === m.right?.id);
           const activeId = slot?.presetId || null;
           const activeTrans = activeId ? getTransition(activeId) : null;
+          if (activeTrans) return null;
           const markerStyle = isSeam ? {
             left: `${(gapStart / timelineDuration) * 100}%`,
             width: `${Math.max((gapMs / timelineDuration) * 100, 0.6)}%`,
@@ -3969,7 +3984,6 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
                 setOpenMarkerKey((k) => (k === mk ? null : mk));
               }}
             >
-              <Wand size={11} color="#ff8fc4" />
               {openMarkerKey === mk && (
                 <>
                   <div className="mfs-menu-backdrop" onClick={(e) => { e.stopPropagation(); setOpenMarkerKey(null); }} />

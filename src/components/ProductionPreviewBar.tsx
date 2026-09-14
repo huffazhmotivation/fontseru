@@ -32,7 +32,7 @@ const CATEGORY_OPTIONS: { id: GlyphCategory; label: string; Icon: typeof CaseUpp
  * its content entirely (not just visually collapsed) when closed so it
  * costs nothing while off.
  */
-export function ProductionPreviewBar() {
+function ProductionPreviewContent() {
   const open = useAppStore((s) => s.productionPreviewOpen);
   const toggle = useAppStore((s) => s.toggleProductionPreview);
   const scale = useAppStore((s) => s.productionPreviewScale);
@@ -76,8 +76,6 @@ export function ProductionPreviewBar() {
     return () => observer.disconnect();
   }, [open]);
 
-  if (!open) return null;
-
   const activeCategory = category === "auto" ? deferredGlyphs[activeChar]?.category : category;
   const text = customText.trim() ? customText : sentenceForCategory(activeCategory);
 
@@ -90,6 +88,8 @@ export function ProductionPreviewBar() {
     () => wrapLines(text, deferredGlyphs, metrics.unitsPerEm, kerningPairs, 0, maxWidthUnits, wordSpacing),
     [text, deferredGlyphs, metrics.unitsPerEm, kerningPairs, maxWidthUnits, wordSpacing]
   );
+
+  if (!open) return null;
 
   function startResize(e: ReactPointerEvent) {
     e.preventDefault();
@@ -265,4 +265,9 @@ export function ProductionPreviewBar() {
       </div>
     </div>
   );
+}
+
+export function ProductionPreviewBar() {
+  const open = useAppStore((s) => s.productionPreviewOpen);
+  return open ? <ProductionPreviewContent /> : null;
 }
