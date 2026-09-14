@@ -1638,8 +1638,9 @@ export const useAppStore = create<AppState>()((set, get) => {
       glyphMetricDragSnapshot = null;
       const { glyphs, metrics, past, kerningPairs, kerningManual } = get();
       if (before === glyphs) return;
+      const snapshot = { glyphs: before, metrics, kerningPairs, kerningManual };
       set({
-        past: [...past, { glyphs: before, metrics, kerningPairs, kerningManual }].slice(-HISTORY_LIMIT),
+        past: past.length >= HISTORY_LIMIT ? [...past.slice(1), snapshot] : [...past, snapshot],
         future: [],
       });
     },
@@ -1677,6 +1678,10 @@ export const useAppStore = create<AppState>()((set, get) => {
       // actually broken. Skipping the re-center for these edits keeps the
       // glyph visually anchored while it's being fine-tuned; the one-time
       // repositioning still happens the moment a shape is first drawn.
+      // Auto Metrik is applied only after the live outline preview has already
+      // been rendered, so pointer-move frames never run this optical pass.
+      // Keeping the calculation synchronous preserves the existing commit
+      // ordering and guarantees the saved glyph is immediately fully spaced.
       if (autoSpacingEnabled && !opts?.skipAutoSpacing) {
         const suggestion = suggestGlyphSidebearings(nextGlyph, metrics);
         if (suggestion) nextGlyph = applyOpticalSidebearings(nextGlyph, suggestion);

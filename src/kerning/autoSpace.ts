@@ -113,8 +113,17 @@ function deslantOutline(outline: GlyphOutline, shearXPerY: number, anchorY: numb
   return { objects: outline.objects.map((o) => skewObject(o, anchor, shearXPerY, 0)) };
 }
 
+const spacingSuggestionCache = new WeakMap<GlyphOutline, Map<string, GlyphSpacingSuggestion | null>>();
+
 export function suggestGlyphSidebearings(glyph: Glyph, metrics: FontMetrics): GlyphSpacingSuggestion | null {
   if (!hasOutline(glyph)) return null;
+  const cacheKey = `${metrics.unitsPerEm}|${metrics.baseline}|${metrics.italicAngle ?? 0}`;
+  let byMetrics = spacingSuggestionCache.get(glyph.outline);
+  if (!byMetrics) {
+    byMetrics = new Map();
+    spacingSuggestionCache.set(glyph.outline, byMetrics);
+  }
+  if (byMetrics.has(cacheKey)) return byMetrics.get(cacheKey) ?? null;
 
   // Measure on a de-slanted copy when the font has a nonzero italic angle,
   // so recess reflects letterform curvature only, not the slant itself.
@@ -160,7 +169,9 @@ export function suggestGlyphSidebearings(glyph: Glyph, metrics: FontMetrics): Gl
   const lsb = Math.round(Math.max(minMargin, target - leftRecess * OPTICAL_COMPENSATION));
   const rsb = Math.round(Math.max(minMargin, target - rightRecess * OPTICAL_COMPENSATION));
 
-  return { lsb, rsb };
+  const result = { lsb, rsb };
+  byMetrics.set(cacheKey, result);
+  return result;
 }
 
 const WORD_SPACE_RATIO = 0.45; // NORMAL-class default advance (600) * 0.45 = unitsPerEm * 0.27 — matches the app's existing fallback exactly, so a freshly-started font's "Auto" suggestion doesn't jump.

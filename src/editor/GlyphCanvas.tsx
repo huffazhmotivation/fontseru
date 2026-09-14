@@ -195,35 +195,44 @@ export function GlyphCanvas() {
 
   const applyZoomAt = useCallback(
     (newZoom: number, clientX: number, clientY: number) => {
-      // Use svgRef rect (not frameRef) so the ruler inset is already excluded.
       const rect = svgRef.current?.getBoundingClientRect() ?? frameRef.current?.getBoundingClientRect();
-      if (!rect || !rect.width || !rect.height) return setZoom(newZoom);
+      if (!rect || !rect.width || !rect.height) {
+        useAppStore.setState({ zoom: Math.min(8000, Math.max(20, newZoom)) });
+        return;
+      }
+      const state = useAppStore.getState();
+      const upm = state.metrics.unitsPerEm;
+      const totalH = state.metrics.ascender - state.metrics.descender;
+      const fit = 0.62 * Math.min(rect.width / upm, rect.height / totalH);
+      const oldScale = fit * (state.zoom / 100);
+      const newScale = fit * (Math.min(8000, Math.max(20, newZoom)) / 100);
       const fx = (clientX - rect.left) / rect.width;
       const fy = (clientY - rect.top) / rect.height;
-      const Px = vbX + fx * vbW;
-      const Py = vbY + fy * vbH;
+      const Px = state.pan.x + (fx - 0.5) * (rect.width / oldScale);
+      const Py = state.pan.y + (fy - 0.5) * (rect.height / oldScale);
+      const nvbW = rect.width / newScale;
+      const nvbH = rect.height / newScale;
       const clamped = Math.min(8000, Math.max(20, newZoom));
-      const nScale = baseFit * (clamped / 100);
-      const nvbW = rect.width / nScale;
-      const nvbH = rect.height / nScale;
-      setZoom(clamped);
-      setPan({ x: Px + (0.5 - fx) * nvbW, y: Py + (0.5 - fy) * nvbH });
+      useAppStore.setState({ zoom: clamped, pan: { x: Px + (0.5 - fx) * nvbW, y: Py + (0.5 - fy) * nvbH } });
     },
-    [vbX, vbY, vbW, vbH, baseFit, setZoom, setPan]
+    []
   );
 
   // Native, non-passive wheel: plain wheel (any direction, incl. Ctrl/Cmd or
   // trackpad pinch) zooms toward the cursor; hold Shift to pan instead.
   // Coalesce high-resolution trackpad events to one view update per frame.
+  // Store scale in a ref so processWheel never needs to re-create.
+  const scRef = useRef(sc);
+  scRef.current = sc;
   const processWheel = useCallback((event: NonNullable<typeof pendingWheelRef.current>) => {
     const store = useAppStore.getState();
     if (event.shiftKey) {
       const dx = event.deltaX !== 0 ? event.deltaX : event.deltaY;
-      store.setPan({ x: store.pan.x + dx / sc, y: store.pan.y });
+      store.setPan({ x: store.pan.x + dx / scRef.current, y: store.pan.y });
       return;
     }
     applyZoomAt(store.zoom * Math.exp(-event.deltaY * 0.0018), event.clientX, event.clientY);
-  }, [applyZoomAt, sc]);
+  }, [applyZoomAt]);
   wheelProcessorRef.current = processWheel;
 
   useEffect(() => {

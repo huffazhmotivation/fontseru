@@ -225,6 +225,68 @@ const IMAGE_PRESET_LIB = [
     curve: (t) => { const e = ease("easeOut", t); return { ...pose({ opacity: Math.min(1, t * 2) }), scaleX: Math.max(0.05, e), scaleY: 1 }; } },
   { id: "img_whip", name: "Whip Pan", animateBy: "all", stagger: 0, entranceMs: 380, exitMs: 300, icon: Wind,
     curve: (t) => { const e = cubicBezier(0.65, 0, 0.35, 1, t); return pose({ opacity: e, x: (1 - e) * -180, blur: (1 - e) * 18 }); } },
+
+  // —— Ken Burns / Documentary (4) ——
+  { id: "img_kenburns_in", name: "Ken Burns Zoom In", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: Film,
+    curve: (t) => pose({ opacity: Math.min(1, t * 8), scale: 1.0 + 0.15 * t, x: -25 * t }) },
+  { id: "img_kenburns_out", name: "Ken Burns Zoom Out", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: Film,
+    curve: (t) => pose({ opacity: Math.min(1, t * 8), scale: 1.15 - 0.15 * t, x: 25 * t }) },
+  { id: "img_kenpan_left", name: "Ken Burns Pan Left", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: MoveHorizontal,
+    curve: (t) => pose({ opacity: Math.min(1, t * 8), scale: 1.05, x: 60 * t }) },
+  { id: "img_kenpan_right", name: "Ken Burns Pan Right", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: MoveHorizontal,
+    curve: (t) => pose({ opacity: Math.min(1, t * 8), scale: 1.05, x: -60 * t }) },
+
+  // —— Smooth Cinematic (5) ——
+  { id: "img_smoothscale", name: "Smooth Scale", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 500, icon: Focus,
+    curve: (t) => { const e = cubicBezier(0.22, 1, 0.36, 1, t); return pose({ opacity: e, scale: 0.85 + 0.15 * e }); } },
+  { id: "img_centralfocus", name: "Central Focus", animateBy: "all", stagger: 0, entranceMs: 800, exitMs: 500, icon: Focus,
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, scale: 1.2 - 0.2 * e, blur: 16 * (1 - e) }); } },
+  { id: "img_pushin", name: "Push In", animateBy: "all", stagger: 0, entranceMs: 900, exitMs: 600, icon: Rocket,
+    curve: (t) => { const e = cubicBezier(0.16, 1, 0.3, 1, t); return pose({ opacity: e, scale: 0.9 + 0.15 * e, x: 30 * (1 - e) }); } },
+  { id: "img_pullback", name: "Pull Back", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 500, icon: Rocket,
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, scale: 1.3 - 0.3 * e, y: -20 * (1 - e) }); } },
+  { id: "img_driftright", name: "Drift Right", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: MoveHorizontal,
+    curve: (t) => pose({ opacity: Math.min(1, t * 6), x: -40 * t, scale: 1.0 + 0.06 * t }) },
+
+  // —— Photo Album / Reveals (4) ——
+  { id: "img_photodrop", name: "Photo Drop", animateBy: "all", stagger: 0, entranceMs: 600, exitMs: 380, icon: Feather,
+    curve: (t) => { const e = elasticOut(t, 0.9); const eo = ease("easeOut", Math.min(t * 2.5, 1)); return pose({ opacity: eo, scale: 0.3 + 0.7 * e, rotation: -8 * (1 - e) }); } },
+  { id: "img_cardflip", name: "Card Flip", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 360, icon: FlipHorizontal,
+    curve: (t) => { const e = cubicBezier(0.16, 1, 0.3, 1, t); return { ...pose({ opacity: Math.min(1, t * 2.5) }), scaleX: Math.max(0.05, e), scaleY: 1 }; } },
+  { id: "img_paperfly", name: "Paper Fly-In", animateBy: "all", stagger: 0, entranceMs: 650, exitMs: 400, icon: Wind,
+    curve: (t) => { const e = elasticOut(t, 0.6); return pose({ opacity: Math.min(1, t * 2.5), x: 180 * (1 - e), y: -140 * (1 - e), rotation: 25 * (1 - e), scale: 0.7 + 0.3 * e }); } },
+  { id: "img_floatup", name: "Float Up Gentle", animateBy: "all", stagger: 0, entranceMs: 800, exitMs: 500, icon: TrendingUp,
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, y: 50 * (1 - e), scale: 0.96 + 0.04 * e }); } },
+
+  // —— Dynamic / Energetic (4) ——
+  { id: "img_slam", name: "Slam In", animateBy: "all", stagger: 0, entranceMs: 360, exitMs: 280, icon: Flame,
+    curve: (t) => { const e = cubicBezier(0.12, 0.8, 0.3, 1, t); return pose({ opacity: e, scale: 2.0 - 1.0 * e, blur: 6 * (1 - e) }); } },
+  { id: "img_kickback", name: "Kick Back", animateBy: "all", stagger: 0, entranceMs: 480, exitMs: 340, icon: Activity,
+    curve: (t) => { const e = elasticOut(t, 1.1); const eo = ease("easeOut", Math.min(t * 3, 1)); return pose({ opacity: eo, scale: 0.5 + 0.5 * e }); } },
+  { id: "img_spinburst", name: "Spin Burst", animateBy: "all", stagger: 0, entranceMs: 620, exitMs: 380, icon: RotateCcw,
+    curve: (t) => { const e = elasticOut(t, 0.85); const eo = ease("easeOut", Math.min(t * 2, 1)); return pose({ opacity: eo, rotation: 360 * (1 - e), scale: 0.2 + 0.8 * e }); } },
+  { id: "img_riseup", name: "Rise Up", animateBy: "all", stagger: 0, entranceMs: 560, exitMs: 400, icon: TrendingUp,
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, y: 100 * (1 - e), scale: 0.9 + 0.1 * e, blur: 10 * (1 - e) }); } },
+
+  // —— Transitions-as-Presets (4) ——
+  { id: "img_crosszoom", name: "Cross Zoom", animateBy: "all", stagger: 0, entranceMs: 450, exitMs: 350, icon: Focus,
+    curve: (t) => { const e = ease("easeInOut", t); return pose({ opacity: Math.min(t * 3, 1), scale: 0.8 + 0.4 * e }); } },
+  { id: "img_lumaedge", name: "Luma Edge", animateBy: "all", stagger: 0, entranceMs: 420, exitMs: 300, icon: Zap,
+    curve: (t) => { const flick = t < 0.5 ? (Math.sin(t * 40) > 0 ? 1 : 0.3) : 1; return pose({ opacity: flick * Math.min(1, t * 3), scale: 1.0 + Math.sin(t * 12) * 0.04 * (1 - t) }); } },
+  { id: "img_warpzoom", name: "Warp Zoom", animateBy: "all", stagger: 0, entranceMs: 500, exitMs: 400, icon: Rocket,
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: Math.min(t * 3, 1), scale: 3.5 - 2.5 * e, blur: 30 * (1 - e * e) }); } },
+  { id: "img_swish", name: "Swish Pan", animateBy: "all", stagger: 0, entranceMs: 360, exitMs: 280, icon: Wind,
+    curve: (t) => { const e = cubicBezier(0.65, 0, 0.35, 1, t); return pose({ opacity: e, x: (1 - e) * -220, blur: (1 - e) * 24 }); } },
+
+  // —— Time/Camera Effects (4) ——
+  { id: "img_speedramp", name: "Speed Ramp", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 0, icon: Rocket,
+    curve: (t) => { const s = t < 0.3 ? t / 0.3 * 0.3 : t < 0.7 ? 0.3 + (t - 0.3) / 0.4 * 0.5 : 0.8 + (t - 0.7) / 0.3 * 0.2; return pose({ opacity: Math.min(1, t * 5), scale: 0.9 + 0.2 * s }); } },
+  { id: "img_shutter", name: "Shutter Close", animateBy: "all", stagger: 0, entranceMs: 500, exitMs: 380, icon: ScanLine,
+    curve: (t) => { const e = ease("easeInOut", t); return { ...pose({ opacity: e > 0.04 ? 1 : 0 }), scaleX: 1, scaleY: Math.max(0.01, e > 0.5 ? 0.01 + (e - 0.5) * 2 : 1 - e * 2) }; } },
+  { id: "img_viewfinder", name: "Viewfinder", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 380, icon: Eye,
+    curve: (t) => { const e = cubicBezier(0.22, 1, 0.36, 1, t); return pose({ opacity: Math.min(t * 3, 1), scale: 0.1 + 0.9 * e, rotation: 360 * (1 - e) }); } },
+  { id: "img_fisheyeburst", name: "Fisheye Burst", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 360, icon: Gem,
+    curve: (t) => { const e = elasticOut(t, 0.7); const eo = ease("easeOut", Math.min(t * 2.5, 1)); return pose({ opacity: eo, scale: 1.5 - 0.5 * e, blur: 14 * (1 - eo) }); } },
 ];
 const DEFAULT_IMAGE_PRESET = IMAGE_PRESET_LIB[0];
 
@@ -251,6 +313,55 @@ const TRANSITION_LIB = [
   { id: "wipeH", name: "Wipe Horizontal", entranceMs: 480, exitMs: 360, curve: (t) => { const e = ease("easeInOut", t); return { ...pose({ opacity: e > 0.04 ? 1 : 0 }), scaleX: Math.max(e, 0.001), scaleY: 1 }; } },
   { id: "shutterV", name: "Shutter Vertikal", entranceMs: 480, exitMs: 360, curve: (t) => { const e = ease("easeInOut", t); return { ...pose({ opacity: e > 0.04 ? 1 : 0 }), scaleX: 1, scaleY: Math.max(e, 0.001) }; } },
   { id: "crossDiss", name: "Cross Dissolve", entranceMs: 500, exitMs: 500, curve: (t) => { const e = ease("linear", t); return pose({ opacity: e, scale: 0.97 + 0.03 * e }); } },
+
+  // —— New professional transitions (pose-based) ——
+  { id: "inkBleed", name: "Tinta Merembes", entranceMs: 650, exitMs: 450, curve: (t) => {
+    const e = elasticOut(t, 0.85);
+    const opacity = ease("easeOut", Math.min(t * 1.8, 1));
+    return pose({ opacity, scale: 0.4 + 0.6 * e, blur: 16 * (1 - ease("easeInOut", t)) });
+  }},
+  { id: "colorWipe", name: "Color Wipe", entranceMs: 500, exitMs: 400, curve: (t) => {
+    const e = ease("easeInOut", t);
+    const squash = t < 0.4 ? (1 - 0.35 * (t / 0.4)) : (0.65 + 0.35 * ease("easeOut", (t - 0.4) / 0.6));
+    return { ...pose({ opacity: e > 0.04 ? 1 : 0 }), scaleX: Math.max(squash, 0.01), scaleY: 1 / Math.max(squash, 0.3) };
+  }},
+  { id: "morphBlob", name: "Blob Morph", entranceMs: 700, exitMs: 500, curve: (t) => {
+    const e = elasticOut(t, 1);
+    const blur = t < 0.5 ? 30 * (1 - t * 2) : 0;
+    return pose({ opacity: ease("easeOut", Math.min(t * 2, 1)), scale: 0.2 + 0.8 * e, rotation: 45 * (1 - e), blur });
+  }},
+  { id: "filmRoll", name: "Film Roll", entranceMs: 480, exitMs: 380, curve: (t) => {
+    const e = ease("easeOut", t);
+    const spin = 360 * (1 - e);
+    return pose({ opacity: e, y: -80 * (1 - e), rotation: spin, scale: 0.8 + 0.2 * Math.abs(Math.sin(t * Math.PI * 2)) });
+  }},
+  { id: "chromaSplit", name: "Chroma Split", entranceMs: 550, exitMs: 400, curve: (t, seed = 0) => {
+    const e = ease("easeOut", t);
+    const offset = (1 - e) * 25 * Math.sin(seed * 10 + 1);
+    return pose({ opacity: Math.min(t * 3, 1), x: offset, scale: 0.85 + 0.15 * e, blur: 8 * (1 - e) });
+  }},
+  { id: "shatter", name: "Shatter", entranceMs: 380, exitMs: 300, curve: (t, seed = 0) => {
+    const e = ease("easeOut", t);
+    const spin = (seed > 0.5 ? 1 : -1) * 200 * (1 - e);
+    const burst = t < 0.15 ? 1.5 : 1 - 0.5 * ease("easeOut", (t - 0.15) / 0.85);
+    return pose({ opacity: e, rotation: spin, scale: burst, blur: 12 * (1 - e) });
+  }},
+  { id: "liquidDrip", name: "Liquid Drip", entranceMs: 600, exitMs: 450, curve: (t) => {
+    const e = elasticOut(t, 0.9);
+    const dropEase = ease("easeIn", Math.min(t * 2, 1));
+    const squash = t < 0.5 ? (1 + 0.3 * dropEase) : (1.3 - 0.3 * elasticOut((t - 0.5) * 2, 0.7));
+    return { ...pose({ opacity: ease("easeOut", Math.min(t * 2.5, 1)), y: -60 * (1 - e) }), scaleX: 1 / squash, scaleY: squash };
+  }},
+  { id: "zoomBlur", name: "Zoom Blur", entranceMs: 550, exitMs: 400, curve: (t) => {
+    const e = ease("easeOut", t);
+    const scale = 3.5 - 2.5 * e;
+    return pose({ opacity: Math.min(t * 3, 1), scale, blur: 35 * (1 - e * e) });
+  }},
+
+  // —— Canvas overlay transitions (rendered via drawTransitionOverlay) ——
+  { id: "paintSplash", name: "Paint Splash", entranceMs: 700, exitMs: 500, curve: (t) => pose({ opacity: ease("easeOut", Math.min(t * 2, 1)) }) },
+  { id: "colorSwap", name: "Color Swap", entranceMs: 500, exitMs: 400, curve: (t) => pose({ opacity: ease("easeOut", Math.min(t * 2, 1)) }) },
+  { id: "inkReveal", name: "Ink Reveal", entranceMs: 650, exitMs: 450, curve: (t) => pose({ opacity: ease("easeOut", Math.min(t * 2, 1)) }) },
 ];
 const DEFAULT_TRANSITION = TRANSITION_LIB[0];
 const MIN_CLIP_MS = 150;
@@ -293,6 +404,20 @@ const EFFECT_LIB = [
     fn: (t, s, p) => ({ shadowBlur: 12, shadowOffsetX: Math.cos(t*(p.speed||2)*Math.PI*2)*(p.amount||15), shadowOffsetY: Math.sin(t*(p.speed||2)*Math.PI*2)*(p.amount||15), shadowColor: 'rgba(0,0,0,0.4)' }) },
   { id: "wave", name: "Gelombang (Wave)", icon: Waves,
     fn: (t, s, p) => ({ y: Math.sin(t*(p.speed||2)*Math.PI*2 + s*6) * (p.amount||35) }) },
+
+  // —— New professional effects ——
+  { id: "chromatic", name: "Chromatic", icon: Sparkles,
+    fn: (t, s, p) => ({ x: Math.sin(t*(p.speed||7)*Math.PI*2) * (p.amount||3), y: Math.cos(t*(p.speed||7)*Math.PI*2.3) * (p.amount||3), shadowBlur: 8, shadowColor: 'rgba(255,50,50,0.5)', shadowOffsetX: Math.sin(t*(p.speed||7)*Math.PI*2) * 4, shadowOffsetY: 0 }) },
+  { id: "filmGrain", name: "Film Grain", icon: Cpu,
+    fn: (t, s, p) => { const f = t*(p.speed||30)*Math.PI*2; const j = (Math.sin(f) * Math.cos(f*1.7) + Math.sin(f*3.1)) * 0.5; return { x: j*(p.amount||4), y: j*0.7*(p.amount||4), opacity: 0.92 + Math.sin(f*0.3)*0.08 }; } },
+  { id: "vhsGlitch", name: "VHS Glitch", icon: Zap,
+    fn: (t, s, p) => { const f = t*(p.speed||4)*Math.PI*2; const glitch = Math.sin(f*3) > 0.85 ? 1 : 0; return { x: glitch * Math.sin(f*13) * (p.amount||25), opacity: glitch > 0.5 ? 0.7 : 1 }; } },
+  { id: "lightLeak", name: "Light Leak", icon: Sparkles,
+    fn: (t, s, p) => { const glow = 0.5 + 0.5 * Math.sin(t*(p.speed||0.8)*Math.PI*2); return { shadowBlur: 15 + glow * (p.amount||30), shadowColor: `rgba(255,180,80,${0.3 + glow*0.4})`, shadowOffsetX: Math.sin(t*0.5)*20, shadowOffsetY: -10, opacity: 0.95 + glow * 0.05 }; } },
+  { id: "holographic", name: "Holographic", icon: Layers,
+    fn: (t, s, p) => { const f = t*(p.speed||2)*Math.PI*2; return { rotation: Math.sin(f) * (p.amount||6), scale: 0.02 * Math.sin(f*1.3), x: Math.sin(f*0.7) * (p.amountX||10), shadowBlur: 10, shadowColor: `rgba(${127+127*Math.sin(f)},${127+127*Math.sin(f+2)},${127+127*Math.sin(f+4)},0.4)` }; } },
+  { id: "strobe", name: "Strobe", icon: Zap,
+    fn: (t, s, p) => { const on = Math.sin(t*(p.speed||10)*Math.PI*2) > 0; return { opacity: on ? 1 : 0.15, shadowBlur: on ? 20 : 0, shadowColor: 'rgba(255,255,255,0.9)' }; } },
 ];
 
 function getEffect(id) { return EFFECT_LIB.find((e) => e.id === id) || EFFECT_LIB[0]; }
@@ -732,6 +857,7 @@ function projectReducer(state, action) {
       if (!track) { track = makeTrack("text"); tracks = [...tracks, track]; }
       const lastEnd = state.clips.filter((c) => c.trackId === track.id).reduce((m, c) => Math.max(m, c.start + c.duration), 0);
       const clip = makeTextClip(`Klip ${state.clips.length + 1}`, "Teks Baru", lastEnd, "apple", track.id);
+      if (action.offset) clip.offset = { ...clip.offset, ...action.offset };
       return { ...state, tracks, clips: [...state.clips, clip], selectedClipId: clip.id };
     }
     case "ADD_MEDIA_CLIP": {
@@ -740,6 +866,7 @@ function projectReducer(state, action) {
       if (!track) { track = makeTrack(action.kind); tracks = [...tracks, track]; }
       const lastEnd = state.clips.filter((c) => c.trackId === track.id).reduce((m, c) => Math.max(m, c.start + c.duration), 0);
       const clip = makeMediaClip(action.kind, action.asset, lastEnd, track.id);
+      if (action.offset) clip.offset = { ...clip.offset, ...action.offset };
       return { ...state, tracks, clips: [...state.clips, clip], selectedClipId: clip.id };
     }
     case "ADD_TRACK": {
@@ -1115,6 +1242,159 @@ function combinePose(unitP, transP) {
 }
 
 /* ============================================================
+   CANVAS OVERLAY TRANSITIONS — render pixel-level effects
+   (paint splash, color swap, ink reveal) that the pose system
+   alone cannot express. These draw directly onto mainCtx AFTER
+   the clip content has been composited.
+   ============================================================ */
+
+// Deterministic pseudo-random from seed — no Math.random() so
+// the same frame always looks identical during pause/scrub.
+function seededRand(seed) {
+  let s = (seed * 9301 + 49297) % 233280;
+  return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+}
+
+// Simple noise-offset blob path for organic edges.
+function blobPath(ctx, cx, cy, baseR, segments, seed, amp) {
+  const rng = seededRand(seed);
+  ctx.beginPath();
+  for (let i = 0; i <= segments; i++) {
+    const a = (i / segments) * Math.PI * 2;
+    const r = baseR * (1 + (rng() - 0.5) * amp);
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
+/**
+ * Paints overlay effects for the three canvas-level transitions.
+ *
+ * @param {CanvasRenderingContext2D} ctx  — main canvas context
+ * @param {string} transId                — transition id
+ * @param {"in"|"out"} phase              — entering or exiting
+ * @param {number} progress               — 0→1 progress within the phase
+ * @param {number} cx                     — clip center X
+ * @param {number} cy                     — clip center Y
+ * @param {number} clipW                  — clip bounding width
+ * @param {number} clipH                  — clip bounding height
+ * @param {string} clipColor              — text color (used for splash paint)
+ * @param {number} seed                   — deterministic seed
+ */
+function drawTransitionOverlay(ctx, transId, phase, progress, cx, cy, clipW, clipH, clipColor, seed) {
+  if (progress <= 0 || progress >= 1) return;
+  ctx.save();
+
+  if (transId === "paintSplash") {
+    // Paint splatter reveal: organic blobs expand from center,
+    // revealing content underneath.
+    const rng = seededRand(seed * 31 + 7);
+    const reveal = ease("easeOut", progress);
+    const blobCount = 8;
+    ctx.globalCompositeOperation = "source-over";
+    for (let i = 0; i < blobCount; i++) {
+      const angle = rng() * Math.PI * 2;
+      const dist = (0.15 + rng() * 0.5) * Math.max(clipW, clipH);
+      const bx = cx + Math.cos(angle) * dist * (1 - reveal * 0.6);
+      const by = cy + Math.sin(angle) * dist * (1 - reveal * 0.6);
+      const maxR = (0.2 + rng() * 0.25) * Math.max(clipW, clipH);
+      const r = maxR * reveal;
+      if (r < 2) continue;
+      const grad = ctx.createRadialGradient(bx, by, 0, bx, by, r);
+      const alpha = (1 - reveal) * (0.6 + rng() * 0.4);
+      grad.addColorStop(0, clipColor || "#fff");
+      grad.addColorStop(0.6, clipColor || "#fff");
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.globalAlpha = alpha;
+      blobPath(ctx, bx, by, r, 12 + Math.floor(rng() * 8), seed + i * 17, 0.3);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+    // Central splash wipe
+    const wipeR = reveal * Math.max(clipW, clipH) * 0.8;
+    ctx.globalAlpha = (1 - reveal) * 0.9;
+    ctx.globalCompositeOperation = "destination-out";
+    blobPath(ctx, cx, cy, wipeR, 16, seed + 99, 0.25);
+    ctx.fill();
+  }
+
+  if (transId === "colorSwap") {
+    // Color inversion sweep from left to right with a
+    // chromatic-flash accent.
+    const sweep = ease("easeInOut", progress);
+    const sweepX = cx - clipW * 0.6 + sweep * clipW * 1.2;
+    // Flash zone
+    const flashW = clipW * 0.15;
+    const flashAlpha = Math.sin(progress * Math.PI) * 0.75;
+    ctx.globalCompositeOperation = "difference";
+    ctx.globalAlpha = flashAlpha;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(sweepX - flashW / 2, cy - clipH * 0.6, flashW, clipH * 1.2);
+    // Color band
+    const bandW = clipW * 0.25;
+    ctx.globalAlpha = Math.sin(progress * Math.PI) * 0.5;
+    const bandGrad = ctx.createLinearGradient(sweepX - bandW, 0, sweepX + bandW, 0);
+    bandGrad.addColorStop(0, "rgba(0,255,255,1)");
+    bandGrad.addColorStop(0.5, "rgba(255,0,255,1)");
+    bandGrad.addColorStop(1, "rgba(255,255,0,1)");
+    ctx.fillStyle = bandGrad;
+    ctx.fillRect(sweepX - bandW, cy - clipH * 0.6, bandW * 2, clipH * 1.2);
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  if (transId === "inkReveal") {
+    // Multiple expanding ink circles with organic irregular
+    // edges progressively reveal the content underneath.
+    // We use destination-out to "erase" the overlay.
+    const reveal = ease("easeOut", progress);
+    const rng = seededRand(seed * 53 + 11);
+    // First fill a dark overlay, then punch holes.
+    // (The caller is responsible for the pre-overlay fill if needed.)
+    // Here we use destination-in to mask the content itself.
+    const circles = 6;
+    ctx.globalCompositeOperation = "source-over";
+    for (let i = 0; i < circles; i++) {
+      const angle = (i / circles) * Math.PI * 2 + rng() * 0.5;
+      const dist = (0.1 + rng() * 0.35) * Math.max(clipW, clipH);
+      const bx = cx + Math.cos(angle) * dist * (0.5 + reveal * 0.5);
+      const by = cy + Math.sin(angle) * dist * (0.5 + reveal * 0.5);
+      const maxR = (0.25 + rng() * 0.3) * Math.max(clipW, clipH);
+      const r = maxR * reveal;
+      if (r < 2) continue;
+      const grad = ctx.createRadialGradient(bx, by, 0, bx, by, r);
+      grad.addColorStop(0, "rgba(0,0,0,1)");
+      grad.addColorStop(0.7, "rgba(0,0,0,0.8)");
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "destination-out";
+      blobPath(ctx, bx, by, r, 14 + Math.floor(rng() * 6), seed + i * 23, 0.35);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+    // Final center burst
+    const centerR = reveal * reveal * Math.max(clipW, clipH);
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.globalAlpha = 1;
+    const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, centerR);
+    cg.addColorStop(0, "rgba(0,0,0,1)");
+    cg.addColorStop(0.8, "rgba(0,0,0,0.6)");
+    cg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.arc(cx, cy, centerR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// Checks if a transition ID requires canvas-level overlay rendering.
+const OVERLAY_TRANS_IDS = new Set(["paintSplash", "colorSwap", "inkReveal"]);
+function isOverlayTransition(id) { return OVERLAY_TRANS_IDS.has(id); }
+
+/* ============================================================
    BACKGROUND
    ============================================================ */
 
@@ -1403,6 +1683,25 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
     }
   }
 
+  // Overlay transition: paint-level effects (paintSplash, colorSwap, inkReveal)
+  const overlayTransIn = overrides?.in || clip.transitionInId;
+  const overlayTransOut = overrides?.out || clip.transitionOutId;
+  if (isOverlayTransition(overlayTransIn) || isOverlayTransition(overlayTransOut)) {
+    const inOverlayId = isOverlayTransition(overlayTransIn) ? overlayTransIn : null;
+    const outOverlayId = isOverlayTransition(overlayTransOut) ? overlayTransOut : null;
+    if (inOverlayId && localTime < inTrans.entranceMs) {
+      const t = clamp(localTime / inTrans.entranceMs, 0, 1);
+      drawTransitionOverlay(mainCtx, inOverlayId, "in", t, cx, cy, rotHalfW * 2, rotHalfH * 2, clip.color, 0.42);
+    }
+    if (outOverlayId) {
+      const exitStart = clip.duration - outTrans.exitMs;
+      if (localTime >= exitStart) {
+        const t = clamp((localTime - exitStart) / outTrans.exitMs, 0, 1);
+        drawTransitionOverlay(mainCtx, outOverlayId, "out", t, cx, cy, rotHalfW * 2, rotHalfH * 2, clip.color, 0.42);
+      }
+    }
+  }
+
   return {
     cx, cy,
     halfW: rawHalfW,
@@ -1440,7 +1739,8 @@ function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCt
 
   const naturalW = el?.naturalWidth || el?.videoWidth || 0;
   const naturalH = el?.naturalHeight || el?.videoHeight || 0;
-  const maxW = w * 0.62, maxH = h * 0.62;
+  // Media fills the entire frame (scale=1), respecting aspect ratio.
+  const maxW = w * 1.0, maxH = h * 1.0;
   // Beberapa aset (mis. SVG tanpa atribut width/height) melaporkan
   // naturalWidth/Height = 0 walau sudah termuat sempurna — jangan sampai
   // itu membuat elemen selamanya digambar sebagai kotak placeholder.
@@ -1455,7 +1755,7 @@ function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCt
   mainCtx.translate(cx, cy);
   mainCtx.rotate(((p.rotation || 0) + off.rotation) * Math.PI / 180);
   mainCtx.scale(sx, sy);
-  mainCtx.globalAlpha = clamp(p.opacity ?? 1, 0, 1);
+  mainCtx.globalAlpha = clamp((p.opacity ?? 1) * (clip.opacity ?? 1), 0, 1);
   if (effectDelta.shadowBlur) {
     mainCtx.shadowBlur = effectDelta.shadowBlur;
     mainCtx.shadowColor = effectDelta.shadowColor || 'rgba(124,108,255,0.6)';
@@ -1498,6 +1798,26 @@ function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCt
   mainCtx.shadowBlur = 0; mainCtx.shadowColor = 'transparent';
   mainCtx.restore();
 
+  const overlayTransIn = overrides?.in || clip.transitionInId;
+  const overlayTransOut = overrides?.out || clip.transitionOutId;
+  if (isOverlayTransition(overlayTransIn) || isOverlayTransition(overlayTransOut)) {
+    const inOverlayId = isOverlayTransition(overlayTransIn) ? overlayTransIn : null;
+    const outOverlayId = isOverlayTransition(overlayTransOut) ? overlayTransOut : null;
+    const halfW = (dw * Math.abs(sx)) / 2 + 8;
+    const halfH = (dh * Math.abs(sy)) / 2 + 8;
+    if (inOverlayId && localTime < inTrans.entranceMs) {
+      const t = clamp(localTime / inTrans.entranceMs, 0, 1);
+      drawTransitionOverlay(mainCtx, inOverlayId, "in", t, cx, cy, halfW * 2, halfH * 2, "#ffffff", 0.31);
+    }
+    if (outOverlayId) {
+      const exitStart = clip.duration - outTrans.exitMs;
+      if (localTime >= exitStart) {
+        const t = clamp((localTime - exitStart) / outTrans.exitMs, 0, 1);
+        drawTransitionOverlay(mainCtx, outOverlayId, "out", t, cx, cy, halfW * 2, halfH * 2, "#ffffff", 0.31);
+      }
+    }
+  }
+
   return { cx, cy, halfW: (dw * sx) / 2 + 8, halfH: (dh * sy) / 2 + 8, rotation: (p.rotation || 0) + off.rotation };
 }
 
@@ -1510,10 +1830,25 @@ function drawSelectionOverlay(ctx, bbox) {
   ctx.setLineDash([4, 3]);
   ctx.strokeRect(-bbox.halfW, -bbox.halfH, bbox.halfW * 2, bbox.halfH * 2);
   ctx.setLineDash([]);
+  // Rotation handle stem + circle
   ctx.beginPath(); ctx.moveTo(0, -bbox.halfH); ctx.lineTo(0, -bbox.halfH - 26); ctx.stroke();
   ctx.beginPath(); ctx.arc(0, -bbox.halfH - 26, 6.5, 0, Math.PI * 2);
   ctx.fillStyle = "#7c6cff"; ctx.fill();
   ctx.lineWidth = 1.5; ctx.strokeStyle = "#0d0d10"; ctx.stroke();
+  // Corner scale handles (4 white squares at each corner)
+  const corners = [
+    [-bbox.halfW, -bbox.halfH],
+    [ bbox.halfW, -bbox.halfH],
+    [-bbox.halfW,  bbox.halfH],
+    [ bbox.halfW,  bbox.halfH],
+  ];
+  corners.forEach(([cx, cy]) => {
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(cx - 4, cy - 4, 8, 8);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#7c6cff";
+    ctx.strokeRect(cx - 4, cy - 4, 8, 8);
+  });
   ctx.restore();
 }
 
@@ -2173,13 +2508,22 @@ const LayersPanel = React.memo(function LayersPanel({ project, dispatch }) {
 
   const pickFile = (kind) => {
     setMenuOpen(false);
-    if (kind === "text") { dispatch({ type: "ADD_CLIP" }); return; }
+    if (kind === "text") {
+      const pos = consumeCanvasClickPos();
+      dispatch({ type: "ADD_CLIP", ...(pos ? { offset: pos } : {}) });
+      return;
+    }
+    // Store the click position at pick time (not at file-selected time)
+    // so the position is latched before the file dialog blocks the UI.
+    _pendingFilePos = consumeCanvasClickPos();
     const ref = kind === "image" ? imgRef : kind === "video" ? vidRef : audRef;
     ref.current?.click();
   };
   const handleFile = async (e, kind) => {
     const file = e.target.files[0];
     e.target.value = "";
+    const pos = _pendingFilePos;
+    _pendingFilePos = null;
     if (!file) return;
     if (file.size === 0) { reportError(`File "${file.name}" kosong (0 byte), tidak bisa diimpor.`); return; }
     if (file.size > 150 * 1024 * 1024) {
@@ -2204,7 +2548,7 @@ const LayersPanel = React.memo(function LayersPanel({ project, dispatch }) {
       }
       const asset = { id: uid("asset"), name: file.name, kind, ...imgData };
       dispatch({ type: "ADD_LIBRARY_ASSET", kind, asset });
-      dispatch({ type: "ADD_MEDIA_CLIP", kind, asset });
+      dispatch({ type: "ADD_MEDIA_CLIP", kind, asset, ...(pos ? { offset: pos } : {}) });
     } catch (err) {
       reportError(`Gagal mengimpor "${file.name}": ${err.message || err}`);
     }
@@ -2485,6 +2829,17 @@ const LeftPanel = React.memo(function LeftPanel({ project, dispatch }) {
    CENTER STAGE
    ============================================================ */
 
+// Stores the last canvas click position (in canvas-pixel coords) so
+// that a layer added immediately after a click can be placed there.
+// Non-reactive — just a shared latch between CenterStage & LayersPanel.
+let _lastCanvasClickPos = null; // { x, y } relative to frame center or null
+let _pendingFilePos = null; // latch click position while file dialog is open
+function consumeCanvasClickPos() {
+  const pos = _lastCanvasClickPos;
+  _lastCanvasClickPos = null;
+  return pos;
+}
+
 const CenterStage = React.forwardRef(function CenterStage({ project, playback, dispatchProject, dispatchPlayback, exportState, setExportState, playClock }, ref) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
@@ -2507,6 +2862,30 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  const [canvasCursor, setCanvasCursor] = useState("move");
+
+  const onCanvasHover = useCallback((e) => {
+    const sel = selectedClipRef.current;
+    const bbox = bboxRef.current;
+    if (!sel || !bbox) { setCanvasCursor("default"); return; }
+    const rect = canvasRef.current.getBoundingClientRect();
+    const sX = dimsRef.current.w / rect.width, sY = dimsRef.current.h / rect.height;
+    const mx = (e.clientX - rect.left) * sX, my = (e.clientY - rect.top) * sY;
+    const rad = (bbox.rotation * Math.PI) / 180;
+    const dx = mx - bbox.cx, dy = my - bbox.cy;
+    const lx = dx * Math.cos(-rad) - dy * Math.sin(-rad);
+    const ly = dx * Math.sin(-rad) + dy * Math.cos(-rad);
+    const cornerHit = [[-1, -1], [1, -1], [-1, 1], [1, 1]].some(([sx, sy]) =>
+      Math.hypot(lx - sx * bbox.halfW, ly - sy * bbox.halfH) < 12
+    );
+    if (cornerHit) { setCanvasCursor("nwse-resize"); return; }
+    const handleDist = bbox.halfH + 26;
+    const hx = bbox.cx + Math.sin(rad) * handleDist;
+    const hy = bbox.cy - Math.cos(rad) * handleDist;
+    if (Math.hypot(mx - hx, my - hy) < 11) { setCanvasCursor("crosshair"); return; }
+    if (Math.abs(lx) <= bbox.halfW && Math.abs(ly) <= bbox.halfH) { setCanvasCursor("grab"); return; }
+    setCanvasCursor("default");
+  }, []);
   const exportingRef = useRef(false);
 
   const frameRef = useRef(project.frameSize);
@@ -2740,17 +3119,32 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       mode = "rotate";
       init = { startAngle: (Math.atan2(mx - bbox.cx, -(my - bbox.cy)) * 180) / Math.PI, startOffRot: sel.offset.rotation, cx: bbox.cx, cy: bbox.cy };
     } else {
+      // Corner handles are evaluated in the box's rotated local coordinates.
       const dx = mx - bbox.cx, dy = my - bbox.cy;
       const lx = dx * Math.cos(-rad) - dy * Math.sin(-rad);
       const ly = dx * Math.sin(-rad) + dy * Math.cos(-rad);
-      if (Math.abs(lx) <= bbox.halfW && Math.abs(ly) <= bbox.halfH) {
+      const cornerHit = [[-1, -1], [1, -1], [-1, 1], [1, 1]].some(([sx, sy]) =>
+        Math.hypot(lx - sx * bbox.halfW, ly - sy * bbox.halfH) < 12
+      );
+      if (cornerHit) {
+        mode = "scale";
+        init = {
+          startDist: Math.max(1, Math.hypot(lx, ly)),
+          startScale: sel.offset.scale,
+          cx: bbox.cx,
+          cy: bbox.cy,
+          rotation: rad,
+        };
+      } else if (Math.abs(lx) <= bbox.halfW && Math.abs(ly) <= bbox.halfH) {
         mode = "move";
         init = { startMx: mx, startMy: my, startOffX: sel.offset.x, startOffY: sel.offset.y };
       }
     }
     if (!mode) {
-      // Click landed on the selected clip's bounding area but not on the move
-      // region or rotate handle — treat it as an outside click and deselect.
+      // Click landed on empty canvas or outside the selected clip's bounds.
+      // Store the click position so the next "Add" action places the new
+      // clip right where the user clicked.
+      _lastCanvasClickPos = { x: mx, y: my };
       dispatchProject({ type: "SELECT_CLIP", id: BG_SEL });
       return;
     }
@@ -2768,6 +3162,14 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       } else if (d.mode === "rotate") {
         const angle = (Math.atan2(cx2 - d.cx, -(cy2 - d.cy)) * 180) / Math.PI;
         dispatchProject({ type: "SET_OFFSET", id: d.clipId, patch: { rotation: Math.round(d.startOffRot + (angle - d.startAngle)) } });
+      } else if (d.mode === "scale") {
+        // Uniform scale: compare pointer distance to the selected box center.
+        // Rotation is neutralized by measuring in the same local coordinate space.
+        const dx = cx2 - d.cx, dy = cy2 - d.cy;
+        const lx = dx * Math.cos(-d.rotation) - dy * Math.sin(-d.rotation);
+        const ly = dx * Math.sin(-d.rotation) + dy * Math.cos(-d.rotation);
+        const nextScale = clamp(d.startScale * (Math.hypot(lx, ly) / d.startDist), 0.05, 5);
+        dispatchProject({ type: "SET_OFFSET", id: d.clipId, patch: { scale: Math.round(nextScale * 100) / 100 } });
       }
     };
     const onUp = () => { dragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
@@ -3071,10 +3473,11 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
         <canvas
           ref={canvasRef}
           onMouseDown={onMouseDown}
+          onMouseMove={onCanvasHover}
           style={{
             borderRadius: playback.previewOpen ? 0 : 10,
             boxShadow: playback.previewOpen ? "none" : "0 0 0 1px var(--border), 0 30px 80px rgba(0,0,0,0.5)",
-            cursor: playback.previewOpen ? "default" : "move",
+            cursor: playback.previewOpen ? "default" : (canvasCursor || "move"),
           }}
         />
         {playback.previewOpen && (
@@ -3530,13 +3933,22 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch })
           </div>
         </div>
         <div className="mfs-divider" />
-        <div className="mfs-section-label">Posisi</div>
-        <div className="mfs-row4">
-          <div className="mfs-field"><label>X</label><input type="number" className="mfs-input" value={Math.round(clip.offset.x)} onChange={(e) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { x: Number(e.target.value) || 0 } })} /></div>
-          <div className="mfs-field"><label>Y</label><input type="number" className="mfs-input" value={Math.round(clip.offset.y)} onChange={(e) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { y: Number(e.target.value) || 0 } })} /></div>
-          <div className="mfs-field"><label>Rotasi °</label><input type="number" className="mfs-input" value={Math.round(clip.offset.rotation)} onChange={(e) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { rotation: Number(e.target.value) || 0 } })} /></div>
-          <div className="mfs-field"><label>Skala</label><input type="number" step="0.05" className="mfs-input" value={clip.offset.scale} onChange={(e) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { scale: Number(e.target.value) || 1 } })} /></div>
-        </div>
+        <div className="mfs-section-label">Transform</div>
+        <SliderField label="Posisi X" value={clip.offset.x} min={-1000} max={1000} step={1}
+          format={(v) => `${Math.round(v)}px`}
+          onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { x: v } })} />
+        <SliderField label="Posisi Y" value={clip.offset.y} min={-1000} max={1000} step={1}
+          format={(v) => `${Math.round(v)}px`}
+          onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { y: v } })} />
+        <SliderField label="Rotasi" value={clip.offset.rotation} min={-180} max={180} step={1}
+          format={(v) => `${Math.round(v)}°`}
+          onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { rotation: v } })} />
+        <SliderField label="Skala" value={clip.offset.scale} min={0.05} max={5} step={0.05}
+          format={(v) => `${v.toFixed(2)}×`}
+          onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { scale: v } })} />
+        <SliderField label="Opacity" value={clip.opacity ?? 1} min={0} max={1} step={0.01}
+          format={(v) => `${Math.round(v * 100)}%`}
+          onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { opacity: v } })} />
         <div className="mfs-divider" />
         <AnimationControls clip={clip} dispatch={dispatch} />
       </div>
@@ -3596,13 +4008,22 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch })
       {!isAudio && (
         <>
           <div className="mfs-divider" />
-          <div className="mfs-section-label">Posisi</div>
-          <div className="mfs-row4">
-            <div className="mfs-field"><label>X</label><input type="number" className="mfs-input" value={Math.round(clip.offset.x)} onChange={(e) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { x: Number(e.target.value) || 0 } })} /></div>
-            <div className="mfs-field"><label>Y</label><input type="number" className="mfs-input" value={Math.round(clip.offset.y)} onChange={(e) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { y: Number(e.target.value) || 0 } })} /></div>
-            <div className="mfs-field"><label>Rotasi °</label><input type="number" className="mfs-input" value={Math.round(clip.offset.rotation)} onChange={(e) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { rotation: Number(e.target.value) || 0 } })} /></div>
-            <div className="mfs-field"><label>Skala</label><input type="number" step="0.05" className="mfs-input" value={clip.offset.scale} onChange={(e) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { scale: Number(e.target.value) || 1 } })} /></div>
-          </div>
+          <div className="mfs-section-label">Transform</div>
+          <SliderField label="Posisi X" value={clip.offset.x} min={-1000} max={1000} step={1}
+            format={(v) => `${Math.round(v)}px`}
+            onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { x: v } })} />
+          <SliderField label="Posisi Y" value={clip.offset.y} min={-1000} max={1000} step={1}
+            format={(v) => `${Math.round(v)}px`}
+            onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { y: v } })} />
+          <SliderField label="Rotasi" value={clip.offset.rotation} min={-180} max={180} step={1}
+            format={(v) => `${Math.round(v)}°`}
+            onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { rotation: v } })} />
+          <SliderField label="Skala" value={clip.offset.scale} min={0.05} max={5} step={0.05}
+            format={(v) => `${v.toFixed(2)}×`}
+            onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { scale: v } })} />
+          <SliderField label="Opacity" value={clip.opacity ?? 1} min={0} max={1} step={0.01}
+            format={(v) => `${Math.round(v * 100)}%`}
+            onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { opacity: v } })} />
         </>
       )}
       <div className="mfs-divider" />
