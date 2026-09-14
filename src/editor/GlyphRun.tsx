@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { useAppStore } from "@/glyph/store";
 import { hasOutline, type GlyphMap } from "@/types/glyph";
 import type { KerningPairs } from "@/types/kerning";
@@ -43,7 +43,7 @@ interface GlyphRunProps {
   ghostEmpty?: boolean;
 }
 
-export function GlyphRun({
+function GlyphRunView({
   text,
   fontSizePx,
   trackingUnits = 0,
@@ -156,3 +156,5 @@ export function GlyphRun({
     </svg>
   );
 }
+
+export const GlyphRun = memo(GlyphRunView);

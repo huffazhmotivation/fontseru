@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { AlignCenter, AlignLeft, AlignRight, Loader2, MoveHorizontal, Redo2, RotateCcw, Undo2, Wand2, Zap } from "lucide-react";
 import { NumericInput } from "@/components/NumericInput";
@@ -1119,6 +1119,18 @@ function FamilyPreview({
   // every family is visible, or the sole visible style when narrowed down.
   const editableStyleId = kerningContext === "shared" ? "regular" : kerningContext;
 
+  // Memoize effective kerning pairs for each style so the reference is stable
+  // when sharedPairs and overridesByStyle haven't changed. Without this,
+  // FamilyStylePreview receives a fresh merged object on every render of the
+  // parent, defeating any memoization inside the child.
+  const effectivePairsByStyle = useMemo(() => {
+    const map: Partial<Record<FontStyle, KerningPairs>> = {};
+    for (const { id } of allStyles) {
+      map[id] = effectiveKerningPairs(sharedPairs, overridesByStyle, id);
+    }
+    return map;
+  }, [sharedPairs, overridesByStyle, allStyles]);
+
   return (
     <div className="fm-family-preview" data-testid="family-preview">
       {styles.map(({ id, label }) => (
@@ -1133,7 +1145,7 @@ function FamilyPreview({
           tracking={tracking}
           align={align}
           glyphs={glyphsByStyle[id]}
-          kerningPairs={effectiveKerningPairs(sharedPairs, overridesByStyle, id)}
+          kerningPairs={effectivePairsByStyle[id] ?? sharedPairs}
           kerningContext={kerningContext}
           onKerningContextChange={onKerningContextChange}
           activeGlyph={activeGlyph}
@@ -1288,6 +1300,13 @@ function FeatureSentencePreview({
     [tokens, glyphs, unitsPerEm, kerningPairs, tracking, wordSpacing]
   );
   const totalAdvance = Math.max(1, rawAdvance);
+  const pathEntries = useMemo(
+    () => placed.map((p) => {
+      const glyph = glyphs[p.token];
+      return glyph ? getGlyphPaths(glyph, ascender) : [];
+    }),
+    [placed, glyphs, ascender]
+  );
   const substitutedCount = placed.filter((p) => p.substituted).length;
 
   const pxPerUnit = fontSize / unitsPerEm;
@@ -1314,8 +1333,27 @@ function FeatureSentencePreview({
     dragging: boolean;
   };
   const dragRef = useRef<FeatureKernDrag | null>(null);
+  const pendingClientXRef = useRef<number | null>(null);
+  const rafRef = useRef<number | null>(null);
   const [liveKern, setLiveKern] = useState<{ leftToken: string; rightToken: string; value: number } | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  const applyPendingDrag = () => {
+    rafRef.current = null;
+    const d = dragRef.current;
+    const clientX = pendingClientXRef.current;
+    if (!d || clientX === null || !d.dragging) return;
+    const deltaUnits = Math.round((clientX - d.startX) / Math.max(pxPerUnit, 0.0001));
+    if (d.leftToken) {
+      const value = d.leftValue + deltaUnits;
+      setKerningPairLive(d.leftToken, d.token, value);
+      setLiveKern({ leftToken: d.leftToken, rightToken: d.token, value });
+    } else if (d.rightToken) {
+      const value = d.rightValue - deltaUnits;
+      setKerningPairLive(d.token, d.rightToken, value);
+      setLiveKern({ leftToken: d.token, rightToken: d.rightToken, value });
+    }
+  };
 
   const handlePointerDown = (e: ReactPointerEvent<SVGGElement>, index: number) => {
     if (e.button !== 0) return;
@@ -1341,16 +1379,8 @@ function FeatureSentencePreview({
       d.dragging = true;
       beginKerningDrag();
     }
-    const deltaUnits = Math.round(deltaPx / Math.max(pxPerUnit, 0.0001));
-    if (d.leftToken) {
-      const value = d.leftValue + deltaUnits;
-      setKerningPairLive(d.leftToken, d.token, value);
-      setLiveKern({ leftToken: d.leftToken, rightToken: d.token, value });
-    } else if (d.rightToken) {
-      const value = d.rightValue - deltaUnits;
-      setKerningPairLive(d.token, d.rightToken, value);
-      setLiveKern({ leftToken: d.token, rightToken: d.rightToken, value });
-    }
+    pendingClientXRef.current = e.clientX;
+    if (rafRef.current === null) rafRef.current = requestAnimationFrame(applyPendingDrag);
   };
 
   const handlePointerUp = (e: ReactPointerEvent<SVGGElement>, index: number) => {
@@ -1359,6 +1389,8 @@ function FeatureSentencePreview({
     dragRef.current = null;
     setActiveIndex(null);
     if (d.dragging) {
+      if (rafRef.current !== null) applyPendingDrag();
+      pendingClientXRef.current = null;
       endKerningDrag();
       setLiveKern(null);
     } else {
@@ -1372,7 +1404,12 @@ function FeatureSentencePreview({
     if (!d || e.pointerId !== d.pointerId) return;
     dragRef.current = null;
     setActiveIndex(null);
-    if (d.dragging) endKerningDrag();
+    if (d.dragging) {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      pendingClientXRef.current = null;
+      endKerningDrag();
+    }
     setLiveKern(null);
   };
 
@@ -1463,7 +1500,7 @@ function FeatureSentencePreview({
               <g fill="currentColor" stroke="currentColor">
                 {placed.map((p, i) => {
                   const g = glyphs[p.token];
-                  const paths = g ? getGlyphPaths(g, ascender) : [];
+                  const paths = pathEntries[i] ?? [];
                   return (
                     <g
                       key={i}
