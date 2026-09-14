@@ -100,6 +100,7 @@ export function GlyphCanvas() {
   const setGlyphMetricFocus = useAppStore((s) => s.setGlyphMetricFocus);
   const autoSpacingEnabled = useAppStore((s) => s.autoSpacingEnabled);
   const glyph = useAppStore((s) => s.glyphs[s.activeChar]);
+  const liveOutline = useAppStore((s) => s.liveOutline);
   const activeChar = useAppStore((s) => s.activeChar);
   const ghost = useAppStore((s) => s.ghost);
   const glyphsByStyle = useAppStore((s) => s.glyphsByStyle);
@@ -706,11 +707,14 @@ export function GlyphCanvas() {
 
   const toY = (val: number) => ascender - val;
   const objects = editor.outline.objects;
-  // Purely visual: flags the top shape of any stacked pair so overlapping
-  // shapes are easy to spot on the canvas. Overlap testing flattens curves and
-  // compares polygon pairs, so doing it synchronously for every live pointer
-  // sample can dominate Chrome's frame. Debounce it while editing; the latest
-  // geometry is still reflected immediately after the pointer stops/commits.
+  const renderOutline = liveOutline ?? glyph?.outline ?? { objects: [] };
+  const visualObjects = renderOutline.objects;
+  // The boolean merge is needed for committed outline-brush geometry, but it
+  // is intentionally skipped during live drawing. Re-running polygon unions
+  // on every pointer frame is what made the canvas feel delayed after the
+  // performance pass; the final committed outline still takes the exact same
+  // merge path once the stroke is released.
+  const objectsForRender = liveOutline ? visualObjects : objects;
   const [overlappingIds, setOverlappingIds] = useState<Set<string>>(() => findOverlappingObjectIds(objects));
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1129,13 +1133,13 @@ export function GlyphCanvas() {
             string to be rebuilt from scratch — the part that used to make dragging
             or even just moving the mouse feel "stuck" after pasting a large vector. */}
         <ObjectsLayer
-          objects={objects}
+          objects={objectsForRender}
           ascender={ascender}
           tool={tool}
           penAutoCloseShape={penAutoCloseShape}
           drawingContourId={editor.drawingContourId}
           selectedObjectIds={selectedObjectIds}
-          overlappingIds={overlappingIds}
+          overlappingIds={liveOutline ? new Set<string>() : overlappingIds}
         />
 
         {/* Brush silhouette preview (true nib/taper outline) */}
