@@ -394,7 +394,7 @@ function weightClassForStyle(styleName: string): number {
  * This remains name-driven because FontSeru currently stores style identity
  * as a subfamily name rather than as a separate weight/slant model.
  */
-export function fontStyleLinkMetadata(styleName: string): {
+export function fontStyleLinkMetadata(styleName: string, angleOverride?: number): {
   weightClass: number;
   fsSelection: number;
   macStyle: number;
@@ -415,7 +415,10 @@ export function fontStyleLinkMetadata(styleName: string): {
     weightClass,
     fsSelection,
     macStyle,
-    italicAngle: italic ? -12 : 0,
+    // FontSeru's generated italic outlines are already pre-sheared. An
+    // explicit metadata value therefore takes precedence; old projects keep
+    // the legacy fallback until they are re-exported with the new path.
+    italicAngle: italic ? (Number.isFinite(angleOverride) ? Number(angleOverride) : -12) : 0,
   };
 }
 
@@ -516,7 +519,7 @@ export function normalizeFontMetadata(
   const uniqueID = asText(info?.uniqueID) && !grouping
     ? asText(info?.uniqueID)
     : `${manufacturer}:${postscriptName}:Version ${version}`;
-  let styleLink = fontStyleLinkMetadata(styleName);
+  let styleLink = fontStyleLinkMetadata(styleName, info?.italicAngle);
   let { legacyFamilyName, legacySubfamilyName } = legacyStyleLinkNames(familyName, styleName);
 
   // FAMILY GROUPING: force every member to share one typographic family
@@ -577,7 +580,7 @@ export function normalizeFontMetadata(
       weightClass: synthWeight,
       fsSelection: italicBit | boldBit | regularBit || (baseItalic ? 0x0001 : 0),
       macStyle: (boldBit ? 0x0001 : 0) | (baseItalic ? 0x0002 : 0),
-      italicAngle: baseItalic ? -12 : 0,
+      italicAngle: baseItalic ? (Number.isFinite(info?.italicAngle) ? Number(info?.italicAngle) : -12) : 0,
     };
   }
 

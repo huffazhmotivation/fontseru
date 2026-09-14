@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { memo, useDeferredValue, useMemo, useRef, useState, type FormEvent } from "react";
 import { CheckSquare, Lock, Plus, Search, X, Zap, Globe } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useAuth } from "@/auth/AuthProvider";
@@ -14,9 +14,10 @@ function isReservedStyleId(id: string): id is "bold" | "italic" {
   return id === "bold" || id === "italic";
 }
 
-export function GlyphNav() {
+export function GlyphNavInner() {
   const [query, setQuery] = useState("");
   const glyphs = useAppStore((s) => s.glyphs);
+  const deferredGlyphs = useDeferredValue(glyphs);
   const activeChar = useAppStore((s) => s.activeChar);
   const setActiveChar = useAppStore((s) => s.setActiveChar);
   const fontStyle = useAppStore((s) => s.fontStyle);
@@ -31,6 +32,7 @@ export function GlyphNav() {
   const glyphSelectMode = useAppStore((s) => s.glyphSelectMode);
   const setGlyphSelectMode = useAppStore((s) => s.setGlyphSelectMode);
   const selectedGlyphChars = useAppStore((s) => s.selectedGlyphChars);
+  const selectedSet = useMemo(() => new Set(selectedGlyphChars), [selectedGlyphChars]);
   const toggleGlyphSelected = useAppStore((s) => s.toggleGlyphSelected);
   const setGlyphSelection = useAppStore((s) => s.setGlyphSelection);
   const addGlyphsToSelection = useAppStore((s) => s.addGlyphsToSelection);
@@ -89,7 +91,7 @@ export function GlyphNav() {
   const filteredGroups = useMemo(() => {
     const baseChars = new Set(GLYPH_GROUPS.flatMap((g) => g.chars));
     const extrasByCategory = new Map<string, string[]>();
-    for (const [ch, glyph] of Object.entries(glyphs)) {
+    for (const [ch, glyph] of Object.entries(deferredGlyphs)) {
       if (baseChars.has(ch)) continue;
       const arr = extrasByCategory.get(glyph.category) ?? [];
       arr.push(ch);
@@ -97,10 +99,10 @@ export function GlyphNav() {
     }
     const groups = GLYPH_GROUPS.map((g) => ({
       ...g,
-      chars: [...g.chars.filter((ch) => Boolean(glyphs[ch])), ...(extrasByCategory.get(g.id) ?? []).sort((a, b) => glyphs[a].unicode - glyphs[b].unicode)],
+      chars: [...g.chars.filter((ch) => Boolean(deferredGlyphs[ch])), ...(extrasByCategory.get(g.id) ?? []).sort((a, b) => deferredGlyphs[a].unicode - deferredGlyphs[b].unicode)],
     })).filter((g) => g.chars.length > 0);
     const assigned = new Set(groups.flatMap((g) => g.chars));
-    const remaining = Object.keys(glyphs).filter((ch) => !assigned.has(ch)).sort((a, b) => glyphs[a].unicode - glyphs[b].unicode);
+    const remaining = Object.keys(deferredGlyphs).filter((ch) => !assigned.has(ch)).sort((a, b) => deferredGlyphs[a].unicode - deferredGlyphs[b].unicode);
     const allGroups = remaining.length ? [...groups, { id: "symbols" as const, label: "Imported", chars: remaining }] : groups;
     if (!query.trim()) return allGroups;
     const q = query.trim().toLowerCase();
@@ -108,11 +110,11 @@ export function GlyphNav() {
       ...g,
       chars: g.chars.filter((ch) => {
         if (ch.toLowerCase() === q) return true;
-        const info = glyphs[ch];
+        const info = deferredGlyphs[ch];
         return info ? unicodeHex(info.unicode).toLowerCase().includes(q) || (info.name ?? "").toLowerCase().includes(q) : false;
       }),
     })).filter((g) => g.chars.length > 0);
-  }, [query, glyphs]);
+  }, [query, deferredGlyphs]);
 
   return (
     <div className="fm-glyphnav" data-testid="glyph-nav">
@@ -265,8 +267,8 @@ export function GlyphNav() {
       </div>
       <div className="fm-glyphlist">
         {filteredGroups.map((g) => {
-          const groupChars = g.chars.filter((ch) => glyphs[ch]);
-          const allInGroupSelected = groupChars.length > 0 && groupChars.every((ch) => selectedGlyphChars.includes(ch));
+          const groupChars = g.chars.filter((ch) => deferredGlyphs[ch]);
+          const allInGroupSelected = groupChars.length > 0 && groupChars.every((ch) => selectedSet.has(ch));
           return (
             <div key={g.id}>
               <div className="fm-group-label-row">
@@ -288,10 +290,10 @@ export function GlyphNav() {
               </div>
               <div className="fm-grid">
                 {g.chars.map((ch) => {
-                  const info = glyphs[ch];
+                  const info = deferredGlyphs[ch];
                   if (!info) return null;
                   const done = hasOutline(info);
-                  const selected = selectedGlyphChars.includes(ch);
+                  const selected = selectedSet.has(ch);
                   return (
                     <button
                       key={ch}
@@ -345,3 +347,5 @@ export function GlyphNav() {
     </div>
   );
 }
+
+export const GlyphNav = memo(GlyphNavInner);

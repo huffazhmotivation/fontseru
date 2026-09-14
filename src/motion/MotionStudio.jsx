@@ -9,7 +9,8 @@ import {
   Settings2, X, AlertTriangle, Undo2, Redo2, Eye,
   Feather, Minus, Gem, LayoutGrid, Zap, Keyboard, Cpu, Activity,
   Focus, MoveHorizontal, Rocket, CloudFog, FlipHorizontal, Tv, Ban,
-  Waves, Wind, Flame, TrendingUp, AlignJustify,
+  Waves, Wind, Flame, TrendingUp, AlignJustify, ArrowLeftRight, ArrowDownUp,
+  HeartPulse, Layers, ScanLine,
   Sun, MoonStar,
   AlignLeft, AlignCenter, AlignRight,
   Download, FolderOpen, FilePlus2,
@@ -151,6 +152,32 @@ const PRESET_LIB = [
     curve: (t, seed = 0) => { const eo = ease("easeOut", t); const fl = t < 0.7 ? (Math.sin(seed * 61 + t * 50) > -0.2 ? 1 : 0.25) : 1; return pose({ opacity: Math.min(1, eo) * fl, scale: 0.9 + 0.1 * eo, blur: 6 * (1 - eo) }); } },
   { id: "swingin", name: "Ayun Masuk", animateBy: "word", stagger: 65, entranceMs: 620, exitMs: 400, icon: Wind,
     curve: (t) => { const e = elasticOut(t, 0.7); return pose({ opacity: Math.min(1, t * 2), rotation: (1 - e) * -25, y: -20 * (1 - e) }); } },
+  // Original pro-style kinetic typography set: each curve combines a distinct
+  // spatial idea with the existing per-character/word/line sampler.
+  { id: "duosplit", name: "Duo Split Reveal", animateBy: "char", stagger: 28, entranceMs: 620, exitMs: 420, icon: MoveHorizontal,
+    curve: (t, seed = 0) => { const e = cubicBezier(0.22, 1, 0.36, 1, t); const side = seed < 0.5 ? -1 : 1; return pose({ opacity: Math.min(1, t * 2), x: side * 150 * (1 - e), rotation: side * 12 * (1 - e), scale: 0.86 + 0.14 * e }); } },
+  { id: "ribboncascade", name: "Ribbon Cascade", animateBy: "word", stagger: 95, entranceMs: 700, exitMs: 440, icon: Waves,
+    curve: (t, seed = 0) => { const e = elasticOut(t, 0.65); return pose({ opacity: Math.min(1, t * 2), y: -58 * (1 - e), rotation: Math.sin(seed * 9) * 18 * (1 - e), scale: 0.9 + 0.1 * e }); } },
+  { id: "breathinglight", name: "Breathing Spotlight", animateBy: "all", stagger: 0, entranceMs: 900, exitMs: 520, icon: Eye,
+    curve: (t) => { const e = ease("easeInOut", t); const breath = Math.sin(t * Math.PI * 1.5) * (1 - t) * 0.035; return pose({ opacity: e, scale: 0.96 + 0.04 * e + breath, blur: 10 * (1 - e) }); } },
+  { id: "marqueeping", name: "Marquee Ping-Pong", animateBy: "word", stagger: 42, entranceMs: 760, exitMs: 460, icon: ArrowLeftRight,
+    curve: (t, seed = 0) => { const e = ease("easeInOut", t); const side = Math.floor(seed * 4) % 2 ? 1 : -1; return pose({ opacity: e, x: side * 210 * (1 - e), scaleX: 0.82 + 0.18 * e }); } },
+  { id: "pulsebeat", name: "Pulse Beat", animateBy: "char", stagger: 34, entranceMs: 520, exitMs: 360, icon: HeartPulse,
+    curve: (t, seed = 0) => { const e = ease("easeOut", t); const beat = Math.max(0, Math.sin((t * 2.5 + seed) * Math.PI * 2)) * (1 - t) * 0.13; return pose({ opacity: e, scale: 0.82 + 0.18 * e + beat, y: beat * -24 }); } },
+  { id: "slideshade", name: "Slide Shade", animateBy: "line", stagger: 120, entranceMs: 620, exitMs: 420, icon: ScanLine,
+    curve: (t) => { const e = cubicBezier(0.16, 1, 0.3, 1, t); return { ...pose({ opacity: Math.min(1, t * 2), x: -120 * (1 - e) }), scaleX: Math.max(0.08, e), scaleY: 1 }; } },
+  { id: "alternateroll", name: "Alternating Kinetic Roll", animateBy: "char", stagger: 26, entranceMs: 580, exitMs: 380, icon: Repeat,
+    curve: (t, seed = 0) => { const e = elasticOut(t, 0.55); const dir = Math.floor(seed * 10) % 2 ? 1 : -1; return pose({ opacity: e, rotation: dir * 75 * (1 - e), y: 28 * (1 - e), scale: 0.72 + 0.28 * e }); } },
+  { id: "parallaxstack", name: "Parallax Stack", animateBy: "line", stagger: 165, entranceMs: 820, exitMs: 500, icon: Layers,
+    curve: (t, seed = 0) => { const depth = 0.65 + seed * 0.55; const e = ease("easeOut", t); return pose({ opacity: e, x: -105 * depth * (1 - e), y: 34 * depth * (1 - e), scale: 0.88 + 0.12 * e, blur: 5 * depth * (1 - e) }); } },
+  { id: "typejump", name: "Typewriter Jump", animateBy: "char", stagger: 42, entranceMs: 70, exitMs: 220, icon: Keyboard,
+    curve: (t) => { const visible = t >= 0.35; const jump = visible ? Math.sin((t - 0.35) * Math.PI) * 16 : 0; return pose({ opacity: visible ? 1 : 0, y: -jump, scale: visible ? 1 : 1.08 }); } },
+  { id: "gravityrebound", name: "Gravity Rebound", animateBy: "char", stagger: 38, entranceMs: 860, exitMs: 460, icon: ArrowDownUp,
+    curve: (t) => { const e = elasticOut(t, 1.05); return pose({ opacity: Math.min(1, t * 2), y: -130 * (1 - e), rotation: 8 * (1 - e), scale: 0.86 + 0.14 * e }); } },
+  { id: "prismscatter", name: "Prism Scatter", animateBy: "char", stagger: 24, entranceMs: 740, exitMs: 440, icon: Sparkles,
+    curve: (t, seed = 0) => { const e = ease("easeOut", t); const a = seed * Math.PI * 8; const radius = 125 * (1 - e); return pose({ opacity: e, x: Math.cos(a) * radius, y: Math.sin(a) * radius, rotation: Math.sin(a) * 35 * (1 - e), scale: 0.45 + 0.55 * e, blur: 9 * (1 - e) }); } },
+  { id: "baselinewave", name: "Baseline Wave", animateBy: "word", stagger: 58, entranceMs: 680, exitMs: 420, icon: Activity,
+    curve: (t, seed = 0) => { const e = ease("easeOut", t); return pose({ opacity: e, y: Math.sin(seed * Math.PI * 3 + (1 - e) * Math.PI * 2) * 38 * (1 - e), rotation: Math.sin(seed * Math.PI * 2) * 8 * (1 - e), scale: 0.93 + 0.07 * e }); } },
 ];
 // PRESET_LIB[0] sekarang "none" (dipakai sebagai default klip gambar/video
 // yang belum diberi animasi apa pun) — fallback preset untuk id yang tak
@@ -226,6 +253,82 @@ const TRANSITION_LIB = [
   { id: "crossDiss", name: "Cross Dissolve", entranceMs: 500, exitMs: 500, curve: (t) => { const e = ease("linear", t); return pose({ opacity: e, scale: 0.97 + 0.03 * e }); } },
 ];
 const DEFAULT_TRANSITION = TRANSITION_LIB[0];
+const MIN_CLIP_MS = 150;
+const MIN_TRANSITION_MS = 180;
+const MAX_TRANSITION_MS = 1200;
+
+/* ============================================================
+   EFFECT LIBRARY — effect persisten yang melekat terus pada
+   klip selama durasi penuh (berbeda dengan preset yang hanya
+   animasi masuk/keluar). Effect dimodulasi oleh intensity.
+   ============================================================ */
+
+const EFFECT_LIB = [
+  { id: "none", name: "Tanpa Effect", icon: Ban },
+  { id: "float", name: "Melayang (Float)", icon: Waves,
+    fn: (t, s, p) => ({ y: Math.sin(t * (p.speed||1.5) * Math.PI * 2) * (p.amount||35) }) },
+  { id: "shake", name: "Getar (Shake)", icon: Activity,
+    fn: (t, s, p) => ({ x: Math.sin(t*(p.speed||12)*Math.PI*2) * (p.amount||10), y: Math.cos(t*(p.speed||12)*Math.PI*2.5) * (p.amountY||7) }) },
+  { id: "pulse", name: "Denyut (Pulse)", icon: HeartPulse,
+    fn: (t, s, p) => ({ scale: Math.sin(t*(p.speed||2)*Math.PI*2) * (p.amount||0.15) }) },
+  { id: "glow", name: "Berkilau (Glow)", icon: Sparkles,
+    fn: (t, s, p) => ({ shadowBlur: Math.max(0, 4 + Math.sin(t*(p.speed||1.5)*Math.PI*2) * (p.intensity||25)), shadowColor: 'rgba(124,108,255,0.6)' }) },
+  { id: "flicker", name: "Berkedip (Flicker)", icon: Zap,
+    fn: (t, s, p) => { const v = Math.sin(t*(p.speed||8)*Math.PI*2) > 0.3 ? 1 : 0.65; return { opacity: v }; } },
+  { id: "rotate", name: "Putar Lambat", icon: RotateCcw,
+    fn: (t, s, p) => ({ rotation: Math.sin(t*(p.speed||0.5)*Math.PI*2) * (p.amount||15) }) },
+  { id: "sway", name: "Ayun (Sway)", icon: Wind,
+    fn: (t, s, p) => ({ rotation: Math.sin(t*(p.speed||1.2)*Math.PI*2) * (p.amount||12), x: Math.sin(t*(p.speed||1.2)*Math.PI*2) * (p.amountX||15) }) },
+  { id: "breathe", name: "Bernapas (Breathe)", icon: Focus,
+    fn: (t, s, p) => ({ scale: Math.sin(t*(p.speed||1)*Math.PI*2) * 0.1, opacity: 0.8 + Math.sin(t*(p.speed||1)*Math.PI*2) * 0.2 }) },
+  { id: "drift", name: "Hanyut (Drift)", icon: MoveHorizontal,
+    fn: (t, s, p) => ({ x: Math.sin(t*(p.speed||0.4)*Math.PI*2) * (p.amount||50) }) },
+  { id: "jitter", name: "Gemetar (Jitter)", icon: Cpu,
+    fn: (t, s, p) => { const f = t*(p.speed||15)*Math.PI*2; return { x: Math.sin(f)*Math.cos(f*1.3)*(p.amount||6), y: Math.cos(f)*Math.sin(f*0.7)*(p.amount||6), rotation: Math.sin(f*0.5)*(p.rotationAmount||3) }; } },
+  { id: "blurpulse", name: "Blur Denyut", icon: CloudFog,
+    fn: (t, s, p) => ({ blur: Math.abs(Math.sin(t*(p.speed||2)*Math.PI*2)) * (p.amount||14) }) },
+  { id: "neonflicker", name: "Neon Flicker", icon: Zap,
+    fn: (t, s, p) => { const v = Math.sin(t*(p.speed||6)*Math.PI*2) > -0.1 ? 1 : 0.3; return { opacity: v, shadowBlur: v > 0.5 ? 15 : 0, shadowColor: 'rgba(124,108,255,0.8)' }; } },
+  { id: "shadowchase", name: "Bayangan Kejar", icon: Layers,
+    fn: (t, s, p) => ({ shadowBlur: 12, shadowOffsetX: Math.cos(t*(p.speed||2)*Math.PI*2)*(p.amount||15), shadowOffsetY: Math.sin(t*(p.speed||2)*Math.PI*2)*(p.amount||15), shadowColor: 'rgba(0,0,0,0.4)' }) },
+  { id: "wave", name: "Gelombang (Wave)", icon: Waves,
+    fn: (t, s, p) => ({ y: Math.sin(t*(p.speed||2)*Math.PI*2 + s*6) * (p.amount||35) }) },
+];
+
+function getEffect(id) { return EFFECT_LIB.find((e) => e.id === id) || EFFECT_LIB[0]; }
+
+function sampleEffect(effectId, intensity, localTime, clipDuration, seed) {
+  if (!effectId || effectId === "none" || !intensity) return {};
+  const effect = getEffect(effectId);
+  if (!effect.fn) return {};
+  const t = localTime / 1000;
+  const raw = effect.fn(t, seed, {});
+  const result = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v === "number") result[k] = v * intensity;
+    else result[k] = v;
+  }
+  return result;
+}
+
+function transitionSlotDuration(transitionId) {
+  const transition = getTransition(transitionId);
+  return clamp(Math.max(transition.entranceMs || 0, transition.exitMs || 0), MIN_TRANSITION_MS, MAX_TRANSITION_MS);
+}
+
+function transitionAnchor(leftClipId, rightClipId) {
+  return `${leftClipId}:${rightClipId}`;
+}
+
+// Normalize projects from before transition slots existed. Existing clip-side
+// IDs remain valid; new drops use the explicit slot array as their source.
+function normalizeMotionProject(project) {
+  if (!project) return project;
+  return {
+    ...project,
+    transitions: Array.isArray(project.transitions) ? project.transitions : [],
+  };
+}
 
 // opts (opsional): { animateIn, animateOut, easing }
 //  - animateIn=false  → tidak ada animasi MASUK (objek langsung di pose diam).
@@ -538,6 +641,8 @@ function makeTextClip(name, text, start, presetId = "apple", trackId = null) {
     animateIn: true, animateOut: true, easing: "auto",
     transitionInId: "none",
     transitionOutId: "none",
+    effectId: "none",
+    effectIntensity: 0.5,
     offset: { ...BASE_OFFSET },
   };
 }
@@ -555,6 +660,8 @@ function makeMediaClip(kind, asset, start, trackId = null) {
     animateIn: true, animateOut: true, easing: "auto",
     transitionInId: isAudio ? "fade" : "none",
     transitionOutId: isAudio ? "fade" : "none",
+    effectId: "none",
+    effectIntensity: 0.5,
     volume: 1, muted: false,
     offset: { ...BASE_OFFSET },
     // File asli disimpan (referensi ringan, bukan salinan) supaya elemen media
@@ -586,7 +693,7 @@ function makeInitialProject() {
   const clip2 = makeTextClip("Klip 2", "Edit Teks Anda", 2200, "kinetic", textTrack.id);
   clip2.duration = 1800;
   return {
-    fonts: [], clips: [clip1, clip2], selectedClipId: clip1.id,
+    fonts: [], clips: [clip1, clip2], transitions: [], selectedClipId: clip1.id,
     // "tracks" adalah daftar linimasa yang fleksibel — bisa lebih dari satu
     // track per jenis (teks/gambar/video/audio). Pengguna bisa menambah
     // track baru lewat tombol "+" di linimasa, atau otomatis saat sebuah
@@ -610,8 +717,13 @@ function trackColor(type) { return TRACK_TYPES.find((t) => t.type === type)?.col
 
 function projectReducer(state, action) {
   switch (action.type) {
-    case "ADD_FONT":
-      return { ...state, fonts: [...state.fonts, action.font] };
+    case "HYDRATE_PROJECT": {
+      if (!action.project) return state;
+      return {
+        ...state,
+        transitions: Array.isArray(action.project.transitions) ? action.project.transitions : [],
+      };
+    }
     case "ADD_CLIP": {
       // Taruh di track teks terakhir (paling bawah) yang sudah ada; kalau
       // belum ada track teks sama sekali, buat satu baru secara otomatis.
@@ -666,7 +778,8 @@ function projectReducer(state, action) {
     case "DELETE_CLIP": {
       const clips = state.clips.filter((c) => c.id !== action.id);
       const selectedClipId = state.selectedClipId === action.id ? (clips[0]?.id ?? null) : state.selectedClipId;
-      return { ...state, clips, selectedClipId };
+      const transitions = (state.transitions || []).filter((t) => t.leftClipId !== action.id && t.rightClipId !== action.id);
+      return { ...state, clips, transitions, selectedClipId };
     }
     case "SELECT_CLIP":
       return { ...state, selectedClipId: action.id };
@@ -702,12 +815,122 @@ function projectReducer(state, action) {
       const clips = state.clips.map((c) => (c.id === action.id ? { ...c, transitionInId: action.transitionId, transitionOutId: action.transitionId } : c));
       return { ...state, clips };
     }
+    case "APPLY_EFFECT": {
+      const clips = state.clips.map((c) => (c.id === action.id ? { ...c, effectId: action.effectId } : c));
+      return { ...state, clips };
+    }
     case "APPLY_TRANSITION_SIDE": {
       const clips = state.clips.map((c) => (c.id === action.id ? { ...c, [action.side === "in" ? "transitionInId" : "transitionOutId"]: action.transitionId } : c));
       return { ...state, clips };
     }
     case "SET_BACKGROUND":
       return { ...state, background: { ...state.background, ...action.patch } };
+    case "ADD_TRANSITION_AFTER_CLIP": {
+      const { clipId, transitionId } = action;
+      if (!clipId || !transitionId || transitionId === "none") return state;
+      const leftClip = state.clips.find((c) => c.id === clipId);
+      if (!leftClip) return state;
+      const siblings = state.clips
+        .filter((c) => c.trackId === leftClip.trackId && c.id !== leftClip.id)
+        .sort((a, b) => a.start - b.start);
+      const rightClip = siblings.find((c) => c.start >= leftClip.start + leftClip.duration - 1) || null;
+      const anchor = transitionAnchor(leftClip.id, rightClip?.id || "end");
+      const slotMs = transitionSlotDuration(transitionId);
+      const transitions = (state.transitions || []).filter((t) => t.leftClipId !== leftClip.id);
+      const gapStart = leftClip.start + leftClip.duration;
+      const gapEnd = rightClip ? rightClip.start : gapStart;
+      const needed = rightClip ? Math.max(0, slotMs - Math.max(0, gapEnd - gapStart)) : 0;
+      const clips = rightClip && needed > 0
+        ? state.clips.map((c) => c.id === rightClip.id ? { ...c, start: c.start + needed } : c)
+        : state.clips;
+      const slot = { id: uid("trans"), presetId: transitionId, leftClipId: leftClip.id, rightClipId: rightClip?.id || null, anchor, start: gapStart, duration: slotMs };
+      return { ...state, clips, transitions: [...transitions, slot] };
+    }
+    case "INSERT_TRANSITION_SLOT": {
+      const { leftClipId, rightClipId, transitionId } = action;
+      const leftClip = state.clips.find((c) => c.id === leftClipId);
+      const rightClip = state.clips.find((c) => c.id === rightClipId);
+      if (!leftClip || !rightClip || leftClip.trackId !== rightClip.trackId || transitionId === "none") return state;
+      const existingAnchor = transitionAnchor(leftClipId, rightClipId);
+      if ((state.transitions || []).some((t) => t.anchor === existingAnchor)) return state;
+      const slotMs = transitionSlotDuration(transitionId);
+      const gapStart = leftClip.start + leftClip.duration;
+      const gapEnd = rightClip.start;
+      const availableGap = gapEnd - gapStart;
+      const needed = Math.max(0, slotMs - availableGap);
+      if (needed === 0) {
+        const slot = { id: uid("trans"), presetId: transitionId, leftClipId, rightClipId, anchor: existingAnchor, start: gapStart, duration: slotMs };
+        return { ...state, transitions: [...(state.transitions || []), slot] };
+      }
+      const leftShrink = Math.min(Math.max(0, leftClip.duration - MIN_CLIP_MS), Math.ceil(needed / 2));
+      const rightShrink = Math.min(Math.max(0, rightClip.duration - MIN_CLIP_MS), needed - leftShrink);
+      const newLeft = { ...leftClip, duration: leftClip.duration - leftShrink };
+      const newRightStart = Math.max(newLeft.start + newLeft.duration + MIN_TRANSITION_MS, rightClip.start + rightShrink);
+      const newRightDuration = Math.max(MIN_CLIP_MS, rightClip.duration - rightShrink);
+      const targetGapStart = newLeft.start + newLeft.duration;
+      const slot = { id: uid("trans"), presetId: transitionId, leftClipId, rightClipId, anchor: existingAnchor, start: targetGapStart, duration: Math.max(MIN_TRANSITION_MS, Math.min(slotMs, newRightStart - targetGapStart)) };
+      const clips = state.clips.map((c) => {
+        if (c.id === leftClipId) return newLeft;
+        if (c.id === rightClipId) return { ...rightClip, start: Math.max(newLeft.start + newLeft.duration + slot.duration, newRightStart), duration: newRightDuration };
+        return c;
+      });
+      return { ...state, clips, transitions: [...(state.transitions || []), slot] };
+    }
+    case "DELETE_TRANSITION_SLOT": {
+      const target = (state.transitions || []).find((t) => t.id === action.transitionId);
+      if (!target) return state;
+      const transitions = (state.transitions || []).filter((t) => t.id !== action.transitionId);
+      const leftClip = state.clips.find((c) => c.id === target.leftClipId);
+      const rightClip = state.clips.find((c) => c.id === target.rightClipId);
+      if (!leftClip || !rightClip) return { ...state, transitions };
+      const clipGapStart = leftClip.start + leftClip.duration;
+      const slotGap = (target.start + target.duration) - clipGapStart;
+      const newRightStart = Math.max(clipGapStart, rightClip.start - slotGap);
+      const clips = state.clips.map((c) => {
+        if (c.id === target.rightClipId && c.start !== newRightStart) return { ...c, start: newRightStart };
+        return c;
+      });
+      return { ...state, clips, transitions };
+    }
+    case "MOVE_TRANSITION_SLOT": {
+      // Pindahkan slot transisi yang sudah ada ke seam baru (leftClipId → rightClipId).
+      // Lepaskan clip lama, lalu masukkan ke seam baru dengan logika INSERT yang sama.
+      const { transitionId: slotId, leftClipId, rightClipId } = action;
+      const existing = (state.transitions || []).find((t) => t.id === slotId);
+      if (!existing) return state;
+      const leftClip = state.clips.find((c) => c.id === leftClipId);
+      const rightClip = state.clips.find((c) => c.id === rightClipId);
+      if (!leftClip || !rightClip || leftClip.trackId !== rightClip.trackId) return state;
+      const newAnchor = transitionAnchor(leftClipId, rightClipId);
+      if ((state.transitions || []).some((t) => t.id !== slotId && t.anchor === newAnchor)) return state;
+      const slotMs = transitionSlotDuration(existing.presetId);
+      const gapStart = leftClip.start + leftClip.duration;
+      const gapEnd = rightClip.start;
+      const availableGap = gapEnd - gapStart;
+      if (availableGap >= slotMs) {
+        const transitions = (state.transitions || []).map((t) =>
+          t.id === slotId ? { ...t, leftClipId, rightClipId, anchor: newAnchor, start: gapStart, duration: slotMs } : t
+        );
+        return { ...state, transitions };
+      }
+      const needed = Math.max(0, slotMs - availableGap);
+      const leftShrink = Math.min(Math.max(0, leftClip.duration - MIN_CLIP_MS), Math.ceil(needed / 2));
+      const rightShrink = Math.min(Math.max(0, rightClip.duration - MIN_CLIP_MS), needed - leftShrink);
+      const newLeft = { ...leftClip, duration: leftClip.duration - leftShrink };
+      const targetGapStart = newLeft.start + newLeft.duration;
+      const newRightStart = Math.max(targetGapStart + MIN_TRANSITION_MS, rightClip.start + rightShrink);
+      const newRightDuration = Math.max(MIN_CLIP_MS, rightClip.duration - rightShrink);
+      const actualSlotDuration = Math.max(MIN_TRANSITION_MS, Math.min(slotMs, newRightStart - targetGapStart));
+      const clips = state.clips.map((c) => {
+        if (c.id === leftClipId) return newLeft;
+        if (c.id === rightClipId) return { ...rightClip, start: targetGapStart + actualSlotDuration, duration: newRightDuration };
+        return c;
+      });
+      const transitions = (state.transitions || []).map((t) =>
+        t.id === slotId ? { ...t, leftClipId, rightClipId, anchor: newAnchor, start: targetGapStart, duration: actualSlotDuration } : t
+      );
+      return { ...state, clips, transitions };
+    }
     case "SET_FRAME_PRESET":
       return { ...state, frameSize: { presetId: action.presetId, w: action.w, h: action.h } };
     case "SET_FRAME_CUSTOM":
@@ -982,7 +1205,7 @@ function drawCircularText(mainCtx, offCtx, clip, localTime, w, h, spinDir) {
   return { cx, cy, halfW: half, halfH: half, rotation: 0 };
 }
 
-function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCanvas, blurCtx) {
+function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCanvas, blurCtx, slotTransitions) {
   const localTime = playheadMs - clip.start;
   if (localTime < 0 || localTime > clip.duration) return null;
   const preset = getPreset(clip.presetId);
@@ -991,8 +1214,9 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
   if (preset.layout === "circle") {
     return drawCircularText(mainCtx, offCtx, clip, localTime, w, h, preset.spinDir || 1);
   }
-  const inTrans = getTransition(clip.transitionInId);
-  const outTrans = getTransition(clip.transitionOutId);
+  const overrides = slotTransitions?.[clip.id];
+  const inTrans = getTransition(overrides?.in || clip.transitionInId);
+  const outTrans = getTransition(overrides?.out || clip.transitionOutId);
   const transPose = sampleTransitionPose(inTrans, outTrans, localTime, clip.duration, 0.42);
 
   offCtx.clearRect(0, 0, w, h);
@@ -1034,23 +1258,52 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
   // Glitch, Typewriter, Flip, Split Flap, Popcorn Chars) paling kerasa
   // dampaknya — itulah sumber utama keluhan "tersendat-sendat" pada
   // preset kompleks.
-  const applyUnit = (text, cx, cy, pRaw, uw) => {
+  const applyUnit = (text, cx, cy, pRaw, uw, unitSeed) => {
     const p = combinePose(pRaw, transPose);
+    // Effect: modifikasi pose akhir secara kontinu
+    const effectDelta = sampleEffect(clip.effectId, clip.effectIntensity || 0, localTime, clip.duration, unitSeed || 0);
+    if (effectDelta.x) p.x = (p.x || 0) + effectDelta.x;
+    if (effectDelta.y) p.y = (p.y || 0) + effectDelta.y;
+    if (effectDelta.rotation) p.rotation = (p.rotation || 0) + effectDelta.rotation;
+    if (effectDelta.scale) { const es = 1 + effectDelta.scale; p.scale = (p.scale ?? 1) * es; p.scaleX = (p.scaleX ?? p.scale ?? 1) * es; p.scaleY = (p.scaleY ?? p.scale ?? 1) * es; }
+    if (effectDelta.opacity != null) p.opacity = clamp((p.opacity ?? 1) * effectDelta.opacity, 0, 1);
+    if (effectDelta.blur) p.blur = Math.max(p.blur || 0, effectDelta.blur);
     maxBlur = Math.max(maxBlur, p.blur || 0);
     offCtx.save();
+    if (effectDelta.shadowBlur) {
+      offCtx.shadowBlur = effectDelta.shadowBlur;
+      offCtx.shadowColor = effectDelta.shadowColor || 'rgba(124,108,255,0.6)';
+      if (effectDelta.shadowOffsetX) offCtx.shadowOffsetX = effectDelta.shadowOffsetX;
+      if (effectDelta.shadowOffsetY) offCtx.shadowOffsetY = effectDelta.shadowOffsetY;
+    }
     offCtx.translate(cx + p.x + off.x, cy + p.y + off.y);
     offCtx.rotate(((p.rotation || 0) + off.rotation) * Math.PI / 180);
     offCtx.scale((p.scaleX ?? p.scale ?? 1) * off.scale, (p.scaleY ?? p.scale ?? 1) * off.scale);
     offCtx.globalAlpha = clamp(p.opacity ?? 1, 0, 1);
     if (ls) drawSpacedText(offCtx, text, -uw / 2, 0, ls); else offCtx.fillText(text, -uw / 2, 0);
+    offCtx.shadowBlur = 0; offCtx.shadowColor = 'transparent';
     offCtx.restore();
   };
 
   let maxW = 0;
   if (clip.animateBy === "all") {
     const p = combinePose(pose0raw, transPose);
+    // Effect pada mode "all"
+    const effectDeltaAll = sampleEffect(clip.effectId, clip.effectIntensity || 0, localTime, clip.duration, 0);
+    if (effectDeltaAll.x) p.x = (p.x || 0) + effectDeltaAll.x;
+    if (effectDeltaAll.y) p.y = (p.y || 0) + effectDeltaAll.y;
+    if (effectDeltaAll.rotation) p.rotation = (p.rotation || 0) + effectDeltaAll.rotation;
+    if (effectDeltaAll.scale) { const es = 1 + effectDeltaAll.scale; p.scale = (p.scale ?? 1) * es; p.scaleX = (p.scaleX ?? p.scale ?? 1) * es; p.scaleY = (p.scaleY ?? p.scale ?? 1) * es; }
+    if (effectDeltaAll.opacity != null) p.opacity = clamp((p.opacity ?? 1) * effectDeltaAll.opacity, 0, 1);
+    if (effectDeltaAll.blur) p.blur = Math.max(p.blur || 0, effectDeltaAll.blur);
     maxBlur = p.blur || 0;
     offCtx.save();
+    if (effectDeltaAll.shadowBlur) {
+      offCtx.shadowBlur = effectDeltaAll.shadowBlur;
+      offCtx.shadowColor = effectDeltaAll.shadowColor || 'rgba(124,108,255,0.6)';
+      if (effectDeltaAll.shadowOffsetX) offCtx.shadowOffsetX = effectDeltaAll.shadowOffsetX;
+      if (effectDeltaAll.shadowOffsetY) offCtx.shadowOffsetY = effectDeltaAll.shadowOffsetY;
+    }
     offCtx.translate(w / 2 + p.x + off.x, h / 2 + p.y + off.y);
     offCtx.rotate(((p.rotation || 0) + off.rotation) * Math.PI / 180);
     offCtx.scale((p.scaleX ?? p.scale ?? 1) * off.scale, (p.scaleY ?? p.scale ?? 1) * off.scale);
@@ -1070,7 +1323,7 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
       const baseY = -blockH / 2 + u.line * lineHeight + clip.fontSize * 0.35 + lineHeight / 2;
       const uw = measure(u.text);
       maxW = Math.max(maxW, uw);
-      applyUnit(u.text, w / 2 + alignShift(uw), h / 2 + baseY, p, uw);
+      applyUnit(u.text, w / 2 + alignShift(uw), h / 2 + baseY, p, uw, seed);
     });
   } else {
     const isChar = clip.animateBy === "char";
@@ -1090,7 +1343,7 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
         const centerX = cursor + uw / 2;
         const seed = totalUnits > 1 ? u.index / (totalUnits - 1) : 0;
         const p = samplePose(preset, u.index, clip.stagger, localTime, clip.duration, seed, animOpts);
-        applyUnit(u.text, w / 2 + centerX, h / 2 + baseY, p, uw);
+        applyUnit(u.text, w / 2 + centerX, h / 2 + baseY, p, uw, seed);
         cursor += uw + (isChar ? ls : 0);
       });
     });
@@ -1158,11 +1411,12 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
   };
 }
 
-function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCtx) {
+function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCtx, slotTransitions) {
   const localTime = playheadMs - clip.start;
   if (localTime < 0 || localTime > clip.duration) return null;
-  const inTrans = getTransition(clip.transitionInId);
-  const outTrans = getTransition(clip.transitionOutId);
+  const overrides = slotTransitions?.[clip.id];
+  const inTrans = getTransition(overrides?.in || clip.transitionInId);
+  const outTrans = getTransition(overrides?.out || clip.transitionOutId);
   const transPose = sampleTransitionPose(inTrans, outTrans, localTime, clip.duration, 0.31);
   // Preset animasi (sama seperti klip teks, dievaluasi sebagai satu unit
   // utuh — gambar/video tidak punya "per-karakter") dikombinasikan dengan
@@ -1174,6 +1428,14 @@ function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCt
     ? samplePose(preset, 0, 0, localTime, clip.duration, 0, { animateIn: clip.animateIn, animateOut: clip.animateOut, easing: clip.easing })
     : REST_POSE;
   const p = combinePose(presetPose, transPose);
+  // Effect persisten
+  const effectDelta = sampleEffect(clip.effectId, clip.effectIntensity || 0, localTime, clip.duration, 0);
+  if (effectDelta.x) p.x = (p.x || 0) + effectDelta.x;
+  if (effectDelta.y) p.y = (p.y || 0) + effectDelta.y;
+  if (effectDelta.rotation) p.rotation = (p.rotation || 0) + effectDelta.rotation;
+  if (effectDelta.scale) { const es = 1 + effectDelta.scale; p.scale = (p.scale ?? 1) * es; p.scaleX = (p.scaleX ?? p.scale ?? 1) * es; p.scaleY = (p.scaleY ?? p.scale ?? 1) * es; }
+  if (effectDelta.opacity != null) p.opacity = clamp((p.opacity ?? 1) * effectDelta.opacity, 0, 1);
+  if (effectDelta.blur) p.blur = Math.max(p.blur || 0, effectDelta.blur);
   const off = clip.offset;
 
   const naturalW = el?.naturalWidth || el?.videoWidth || 0;
@@ -1194,6 +1456,12 @@ function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCt
   mainCtx.rotate(((p.rotation || 0) + off.rotation) * Math.PI / 180);
   mainCtx.scale(sx, sy);
   mainCtx.globalAlpha = clamp(p.opacity ?? 1, 0, 1);
+  if (effectDelta.shadowBlur) {
+    mainCtx.shadowBlur = effectDelta.shadowBlur;
+    mainCtx.shadowColor = effectDelta.shadowColor || 'rgba(124,108,255,0.6)';
+    if (effectDelta.shadowOffsetX) mainCtx.shadowOffsetX = effectDelta.shadowOffsetX;
+    if (effectDelta.shadowOffsetY) mainCtx.shadowOffsetY = effectDelta.shadowOffsetY;
+  }
   const blurPx = p.blur || 0;
   if (el && el.__mfsReady && !el.__mfsFailed) {
     try {
@@ -1227,6 +1495,7 @@ function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCt
     mainCtx.fillStyle = "#1c1c22";
     mainCtx.fillRect(-dw / 2, -dh / 2, dw, dh);
   }
+  mainCtx.shadowBlur = 0; mainCtx.shadowColor = 'transparent';
   mainCtx.restore();
 
   return { cx, cy, halfW: (dw * sx) / 2 + 8, halfH: (dh * sy) / 2 + 8, rotation: (p.rotation || 0) + off.rotation };
@@ -1444,7 +1713,7 @@ function primeMediaElements(mediaMapRef) {
   });
 }
 
-function syncMediaPlayback(clips, mediaMapRef, timeMs, playing) {
+function syncMediaPlayback(clips, mediaMapRef, timeMs, playing, slotTransitions) {
   clips.forEach((c) => {
     if (c.type !== "video" && c.type !== "audio") return;
     const entry = mediaMapRef.current[c.type][c.id];
@@ -1453,8 +1722,9 @@ function syncMediaPlayback(clips, mediaMapRef, timeMs, playing) {
     const local = timeMs - c.start;
     const active = local >= 0 && local <= c.duration;
     if (active) {
-      const inTrans = getTransition(c.transitionInId);
-      const outTrans = getTransition(c.transitionOutId);
+      const overrides = slotTransitions?.[c.id];
+      const inTrans = getTransition(overrides?.in || c.transitionInId);
+      const outTrans = getTransition(overrides?.out || c.transitionOutId);
       const tp = sampleTransitionPose(inTrans, outTrans, local, c.duration, 0.31);
       const targetVol = clamp((c.volume ?? 1) * clamp(tp.opacity ?? 1, 0, 1), 0, 1);
       try { el.muted = c.type === "video" ? !!c.muted : false; el.volume = targetVol; } catch (e) {}
@@ -1720,7 +1990,9 @@ const GlobalStyle = () => (
     .mfs-clip-name { font-size:11px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .mfs-clip-handle { position:absolute; top:0; bottom:0; width:8px; cursor:ew-resize; z-index:2; }
     .mfs-clip-handle.left { left:0; } .mfs-clip-handle.right { right:0; }
-    .mfs-clip-del { position:absolute; top:3px; right:3px; width:15px; height:15px; border-radius:4px; background:rgba(0,0,0,0.55); border:none; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3; }
+    .mfs-clip-del { position:absolute; top:2px; right:2px; width:20px; height:20px; border-radius:4px; background:rgba(0,0,0,0.55); border:none; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3; opacity:0; transition:opacity .15s ease, color .15s ease; }
+    .mfs-clip-block:hover .mfs-clip-del { opacity:1; }
+    .mfs-clip-del:hover { color:#ff6b6b; }
     .mfs-playhead { position:absolute; top:0; bottom:0; width:1px; background:var(--accent); z-index:6; pointer-events:none; }
     .mfs-playhead-flag { position:absolute; top:-1px; left:-5px; width:11px; height:11px; background:var(--accent); border-radius:2px 2px 2px 0; transform:rotate(45deg); }
 
@@ -1731,13 +2003,23 @@ const GlobalStyle = () => (
        (tidak tampil) — hanya "hidup" (terlihat) saat memang ada transisi
        aktif, atau sedang di-hover/di-drag-over untuk memasang satu. */
     .mfs-transition-bar { position:absolute; bottom:1px; width:18px; height:11px; margin-left:-9px; border-radius:4px; z-index:2;
-      display:flex; align-items:center; justify-content:center; cursor:grab; border:1px solid transparent;
-      background:transparent; opacity:0; pointer-events:auto;
+      display:flex; align-items:center; justify-content:center; cursor:pointer; border:1px solid transparent;
+      background:transparent; pointer-events:auto;
       transition:opacity .15s ease, transform .15s ease, width .15s ease, background .15s ease, border-color .15s ease; }
     .mfs-transition-bar > svg { flex-shrink:0; width:9px; height:9px; }
-    .mfs-transition-bar:hover { opacity:0.7; border-color:#ff8fc466; background:linear-gradient(180deg, #ff5fa233, #ff5fa211); }
-    .mfs-transition-bar.active { opacity:1; border-color:#ff8fc4; background:linear-gradient(180deg, #ff5fa2aa, #ff5fa255); }
-    .mfs-transition-bar.over { opacity:1; width:26px; margin-left:-13px; transform:scale(1.05); border-color:#ffb3d9; background:linear-gradient(180deg, #ff5fa2cc, #ff5fa266); }
+    .mfs-transition-bar.seam-drop { opacity:0.35; background:linear-gradient(180deg, #45d48322, #45d48311); border-color:#45d48344; }
+    .mfs-transition-bar.seam-drop:hover { opacity:1; width:22px; margin-left:-11px; transform:scale(1.05); background:linear-gradient(180deg, #45d48355, #45d48333); border-color:#45d48388; }
+    .mfs-transition-bar.over { opacity:1; width:26px; margin-left:-13px; transform:scale(1.05); border-color:#45d483; background:linear-gradient(180deg, #45d483cc, #45d48366); }
+    /* Solid transition slot bar — hijau, lebih kecil dari bar klip */
+    .mfs-transition-slot { position:absolute; bottom:1px; height:18px; border-radius:5px; z-index:3;
+      display:flex; align-items:center; justify-content:center; gap:3px;
+      cursor:grab; border:1px solid #45d48388; background:linear-gradient(180deg, #45d48344, #45d48322);
+      color:#a0f0c0; font-size:9px; font-weight:600; letter-spacing:0.3px; white-space:nowrap; overflow:hidden;
+      pointer-events:auto; user-select:none;
+      transition:opacity .15s ease, transform .15s ease, background .15s ease, border-color .15s ease; }
+    .mfs-transition-slot > svg { flex-shrink:0; width:9px; height:9px; opacity:0.8; }
+    .mfs-transition-slot:hover { border-color:#45d483; background:linear-gradient(180deg, #45d48377, #45d48344); transform:translateY(-1px); }
+    .mfs-transition-slot:active { cursor:grabbing; transform:scale(0.97); }
     .mfs-toast-stack { position:fixed; top:14px; right:14px; z-index:999; display:flex; flex-direction:column; gap:8px; max-width:320px; }
     .mfs-toast { display:flex; align-items:flex-start; gap:8px; background:#2a1418; border:1px solid #6a2530; color:#ffd7dc; font-size:11.5px; line-height:1.5;
       padding:10px 12px; border-radius:8px; cursor:pointer; box-shadow:0 4px 16px rgba(0,0,0,0.4); }
@@ -2029,20 +2311,39 @@ function PresetPanel({ selectedClip, dispatch }) {
   );
 }
 
+function EffectPanel({ selectedClip, dispatch }) {
+  if (!selectedClip) return <div className="mfs-panel-body"><div className="mfs-empty">Pilih klip untuk menerapkan effect.</div></div>;
+  return (
+    <div className="mfs-panel-body">
+      <div className="mfs-section-label">Effect ({EFFECT_LIB.length})</div>
+      {EFFECT_LIB.map((e) => {
+        const Icon = e.icon || Sparkles;
+        const selected = selectedClip.effectId === e.id;
+        return (
+          <div key={e.id} className={`mfs-list-item ${selected ? "selected" : ""}`} onClick={() => dispatch({ type: "APPLY_EFFECT", id: selectedClip.id, effectId: e.id })}>
+            <Icon size={13} color={selected ? "var(--accent)" : "var(--text-dim)"} />
+            <span className="name">{e.name}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function TransitionPanel({ selectedClip, dispatch }) {
   return (
     <div className="mfs-panel-body">
       <div className="mfs-section-label">Transisi ({TRANSITION_LIB.length})</div>
       <div style={{ fontSize: 10.5, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 10 }}>
-        Seret transisi langsung ke bar pink di sela-sela klip pada linimasa bawah, atau klik untuk menerapkannya ke klip yang sedang dipilih.
+        Pilih klip di linimasa, lalu klik transisi. Bar hijau solid muncul tepat setelah klip.
       </div>
       {TRANSITION_LIB.map((t) => (
         <div
           key={t.id}
           draggable
           onDragStart={(e) => { e.dataTransfer.setData("text/transition-id", t.id); e.dataTransfer.effectAllowed = "copy"; }}
-          className={`mfs-list-item ${selectedClip && (selectedClip.transitionInId === t.id || selectedClip.transitionOutId === t.id) ? "selected" : ""}`}
-          onClick={() => selectedClip && dispatch({ type: "APPLY_TRANSITION_BOTH", id: selectedClip.id, transitionId: t.id })}
+          className="mfs-list-item"
+          onClick={() => selectedClip && dispatch({ type: "ADD_TRANSITION_AFTER_CLIP", clipId: selectedClip.id, transitionId: t.id })}
         >
           <Wand size={13} color="var(--text-dim)" />
           <span className="name">{t.name}</span>
@@ -2155,6 +2456,7 @@ function FontsPanel({ fonts, selectedClip, dispatch }) {
 
 const LEFT_TABS = [
   { id: "preset", label: "Preset" },
+  { id: "effect", label: "Effect" },
   { id: "transisi", label: "Transisi" },
   { id: "library", label: "Library" },
 ];
@@ -2170,6 +2472,7 @@ const LeftPanel = React.memo(function LeftPanel({ project, dispatch }) {
         ))}
       </div>
       {tab === "preset" && <PresetPanel selectedClip={selectedClip} dispatch={dispatch} />}
+      {tab === "effect" && <EffectPanel selectedClip={selectedClip} dispatch={dispatch} />}
       {tab === "transisi" && <TransitionPanel selectedClip={selectedClip} dispatch={dispatch} />}
       {tab === "library" && <LibraryPanel library={project.library} dispatch={dispatch} />}
     </div>
@@ -2220,6 +2523,22 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
   const clipsRef = useRef(project.clips);
   useEffect(() => { clipsRef.current = project.clips; }, [project.clips]);
 
+  // Peta side transition dari project.transitions — meng-override
+  // clip.transitionInId/OutId bila ada slot yang aktif di seam terkait.
+  const transitionsRef = useRef({});
+  useEffect(() => {
+    const map = {};
+    for (const slot of (project.transitions || [])) {
+      if (!map[slot.leftClipId]) map[slot.leftClipId] = {};
+      map[slot.leftClipId].out = slot.presetId;
+      if (slot.rightClipId) {
+        if (!map[slot.rightClipId]) map[slot.rightClipId] = {};
+        map[slot.rightClipId].in = slot.presetId;
+      }
+    }
+    transitionsRef.current = map;
+  }, [project.transitions]);
+
   const bgRef = useRef(project.background);
   useEffect(() => { bgRef.current = project.background; }, [project.background]);
   useEffect(() => {
@@ -2261,10 +2580,10 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       let bbox = null;
       try {
         if (clip.type === "text") {
-          bbox = drawTextClip(ctx, offCtx, offCanvas, clip, timeMs, w, h, blurCanvas, blurCtx);
+          bbox = drawTextClip(ctx, offCtx, offCanvas, clip, timeMs, w, h, blurCanvas, blurCtx, transitionsRef.current);
         } else if (clip.type === "image" || clip.type === "video") {
           const entry = mediaMapRef.current[clip.type][clip.id];
-          bbox = drawMediaVisual(ctx, entry?.el, clip, timeMs, w, h, blurCanvas, blurCtx);
+          bbox = drawMediaVisual(ctx, entry?.el, clip, timeMs, w, h, blurCanvas, blurCtx, transitionsRef.current);
         }
       } catch (e) { /* aset belum siap */ }
       if (clip.id === selId) selBBox = bbox;
@@ -2359,7 +2678,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     // tiap frame. Menjalankan ulang blok ini tiap tick hanya menambah beban
     // (dan dulu ikut bikin patah-patah), jadi cukup update ref lalu keluar.
     if (playback.playing) return;
-    syncMediaPlayback(project.clips, mediaMapRef, playback.playhead, false);
+    syncMediaPlayback(project.clips, mediaMapRef, playback.playhead, false, transitionsRef.current);
     drawFrame(playback.playhead);
   }, [playback.playhead, playback.playing, project.clips, project.selectedClipId, project.background, drawFrame, mediaMapRef]);
 
@@ -2377,7 +2696,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       }
       playheadRef.current = next;
       drawFrame(next);
-      if (ts - lastSync > 180) { lastSync = ts; syncMediaPlayback(clipsRef.current, mediaMapRef, next, true); }
+      if (ts - lastSync > 180) { lastSync = ts; syncMediaPlayback(clipsRef.current, mediaMapRef, next, true, transitionsRef.current); }
       // Perbarui indikator playhead & teks waktu LANGSUNG lewat DOM (tanpa
       // dispatch → tanpa re-render React), supaya animasi kanvas mulus dan
       // tidak lagi patah-patah saat diputar.
@@ -2618,7 +2937,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
           if (next >= duration) next = duration;
           playheadRef.current = next;
           drawFrame(next);
-          syncMediaPlayback(clipsRef.current, mediaMapRef, next, true);
+          syncMediaPlayback(clipsRef.current, mediaMapRef, next, true, transitionsRef.current);
           setExportProgress(Math.min(99, Math.round((next / duration) * 100)));
           if (next >= duration) { resolve(); return; }
           requestAnimationFrame(stepLoop);
@@ -3132,7 +3451,17 @@ function AnimationControls({ clip, dispatch }) {
           <option value="easeInOut">Ease In-Out (pelan di ujung)</option>
         </select>
       </div>
-      <div style={{ fontSize: 10.5, color: "var(--text-dim)", marginTop: 8, lineHeight: 1.5 }}>Pilih preset di panel kiri (tab "Preset"). Transisi antar-klip diseret ke sela-sela klip di linimasa.</div>
+      {clip.effectId && clip.effectId !== "none" && (
+        <>
+          <div className="mfs-divider" />
+          <div className="mfs-section-label">Effect</div>
+          <div className="mfs-chip" style={{ marginBottom: 8 }}><Sparkles size={12} /> {getEffect(clip.effectId).name}</div>
+          <SliderField label="Intensitas effect" value={clip.effectIntensity ?? 0.5} min={0.05} max={1} step={0.05}
+            format={(v) => `${Math.round(v * 100)}%`}
+            onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { effectIntensity: v } })} />
+        </>
+      )}
+      <div style={{ fontSize: 10.5, color: "var(--text-dim)", marginTop: 8, lineHeight: 1.5 }}>Pilih preset di panel kiri (tab "Preset"). Effect di panel kiri (tab "Effect"). Transisi diseret ke sela-sela klip di linimasa.</div>
     </>
   );
 }
@@ -3177,7 +3506,7 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch })
         </div>
         <div className="mfs-divider" />
         <div className="mfs-field">
-          <SliderField label="Ukuran font" value={clip.fontSize} min={8} max={220} step={1} unit="px"
+          <SliderField label="Ukuran font" value={clip.fontSize} min={8} max={600} step={1} unit="px"
             onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { fontSize: v } })} />
         </div>
         <ColorPickerField label="Warna" value={clip.color} onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { color: v } })} />
@@ -3335,14 +3664,14 @@ function laneMarkers(clips) {
 
 const ROW_H = 34;
 const MAX_ROWS = 3;
-const TRANS_STRIP_H = 12; // ruang khusus di bawah tiap lane, tempat bar transisi hidup — tidak pernah menimpa bar klip
+const TRANS_STRIP_H = 20; // ruang khusus di bawah tiap lane, tempat bar transisi hidup — tidak pernah menimpa bar klip
 
 // Satu bar klip di linimasa, di-memo. Sama seperti <LayerRow>: karena reducer
 // mempertahankan referensi objek klip yang tak berubah dan semua callback di
 // sini stabil (useCallback), mengedit satu klip hanya me-render ulang barnya
 // sendiri — bukan puluhan bar lain — sehingga linimasa tetap ringan saat
 // banyak layer.
-const TimelineClipBlock = React.memo(function TimelineClipBlock({ clip, row, color, timelineDuration, selected, onClipMouseDown, onDropTransition, onDelete }) {
+const TimelineClipBlock = React.memo(function TimelineClipBlock({ clip, row, color, timelineDuration, selected, onClipMouseDown, onDelete }) {
   const blockStyle = {
     left: `${(clip.start / timelineDuration) * 100}%`,
     width: `${(clip.duration / timelineDuration) * 100}%`,
@@ -3356,12 +3685,6 @@ const TimelineClipBlock = React.memo(function TimelineClipBlock({ clip, row, col
       className={`mfs-clip-block ${selected ? "selected" : ""}`}
       style={blockStyle}
       onMouseDown={(e) => onClipMouseDown(e, clip, "move")}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault();
-        const id = e.dataTransfer.getData("text/transition-id");
-        if (id) onDropTransition(clip.id, id);
-      }}
     >
       <div className="mfs-clip-handle left" onMouseDown={(e) => onClipMouseDown(e, clip, "resize-left")} />
       <div className="mfs-clip-body">
@@ -3369,7 +3692,7 @@ const TimelineClipBlock = React.memo(function TimelineClipBlock({ clip, row, col
       </div>
       <div className="mfs-clip-handle right" onMouseDown={(e) => onClipMouseDown(e, clip, "resize-right")} />
       {selected && (
-        <button className="mfs-clip-del" onClick={(e) => { e.stopPropagation(); onDelete(clip.id); }}><Trash2 size={10} /></button>
+        <button className="mfs-clip-del" onClick={(e) => { e.stopPropagation(); onDelete(clip.id); }}><Trash2 size={14} /></button>
       )}
     </div>
   );
@@ -3497,13 +3820,27 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     if (marker.right) dispatchProject({ type: "APPLY_TRANSITION_SIDE", id: marker.right.id, side: "in", transitionId });
   };
 
+  const insertTransitionAtSeam = (marker, transitionId) => {
+    if (!marker.left || !marker.right || !transitionId || transitionId === "none") return;
+    dispatchProject({
+      type: "INSERT_TRANSITION_SLOT",
+      leftClipId: marker.left.id,
+      rightClipId: marker.right.id,
+      transitionId,
+    });
+  };
+
+  const deleteTransitionSlot = (transitionId) => {
+    if (!transitionId) return;
+    dispatchProject({ type: "DELETE_TRANSITION_SLOT", transitionId });
+  };
+
   // Callback stabil untuk <TimelineClipBlock> yang di-memo (identitas tetap
   // antar-render), supaya mengedit satu klip tidak me-render ulang SEMUA bar
   // klip di linimasa — penyebab utama lag saat banyak layer.
   const startClipDragRef = useRef(() => {});
   startClipDragRef.current = startClipDrag;
   const onClipMouseDown = useCallback((e, clip, mode) => startClipDragRef.current(e, clip, mode), []);
-  const onClipDropTransition = useCallback((clipId, transitionId) => dispatchProject({ type: "APPLY_TRANSITION_BOTH", id: clipId, transitionId }), [dispatchProject]);
   const onDeleteClip = useCallback((id) => dispatchProject({ type: "DELETE_CLIP", id }), [dispatchProject]);
 
   const ticks = useMemo(() => {
@@ -3523,9 +3860,11 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
       const packed = isText ? packLaneRows(raw, MAX_ROWS) : raw.map((c) => ({ clip: c, row: 0 }));
       const rowsUsed = packed.reduce((m, p) => Math.max(m, p.row + 1), 1);
       const laneHeight = rowsUsed * ROW_H + TRANS_STRIP_H;
-      return { track, clips: packed, rowsUsed, laneHeight, markers: laneMarkers(raw) };
+      const markers = laneMarkers(raw);
+      const slots = (project.transitions || []).filter((t) => raw.some((c) => c.id === t.leftClipId));
+      return { track, clips: packed, rowsUsed, laneHeight, markers, slots };
     });
-  }, [project.tracks, project.clips]);
+  }, [project.tracks, project.clips, project.transitions]);
 
   const addTrack = (trackType) => {
     setAddTrackMenuOpen(false);
@@ -3541,7 +3880,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   // ulang tiap tick juga — itulah sumber utama "tersendat" saat play.
   // Dengan useMemo di sini, blok berat ini hanya dihitung ulang saat data
   // klip/track atau state drag-nya benar-benar berubah, bukan tiap tick.
-  const laneRows = useMemo(() => trackData.map(({ track, clips, laneHeight, markers }) => {
+  const laneRows = useMemo(() => trackData.map(({ track, clips, laneHeight, markers, slots }) => {
     const meta = TRACK_TYPES.find((t) => t.type === track.type);
     const color = meta?.color || trackColor(track.type);
     return (
@@ -3560,49 +3899,73 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
             timelineDuration={timelineDuration}
             selected={c.id === project.selectedClipId}
             onClipMouseDown={onClipMouseDown}
-            onDropTransition={onClipDropTransition}
             onDelete={onDeleteClip}
           />
         ))}
-        {markers.map((m) => {
-          const mk = `${track.id}-${m.key}`;
-          const outId = m.left?.transitionOutId;
-          const inId = m.right?.transitionInId;
-          const activeId = (outId && outId !== "none") ? outId : (inId && inId !== "none") ? inId : null;
-          const activeTrans = activeId ? getTransition(activeId) : null;
+        {slots.map((slot) => {
+          const transition = getTransition(slot.presetId);
           return (
             <div
-              key={mk}
-              className={`mfs-transition-bar ${activeTrans ? "active" : ""} ${dragOverKey === mk ? "over" : ""}`}
-              style={{ left: `${(m.x / timelineDuration) * 100}%` }}
-              title={activeTrans ? `Transisi: ${activeTrans.name} — klik untuk ganti/hapus, atau seret bar ini keluar linimasa untuk menghapus` : "Seret transisi dari panel kiri ke sini untuk memasang, atau klik untuk memilih"}
-              draggable={!!activeTrans}
+              key={slot.id}
+              className="mfs-transition-slot"
+              draggable
+              style={{ left: `${(slot.start / timelineDuration) * 100}%`, width: `${(slot.duration / timelineDuration) * 100}%` }}
+              title={`${transition.name} — seret ke sela lain; lepas di luar untuk menghapus`}
               onDragStart={(e) => {
-                if (!activeTrans) { e.preventDefault(); return; }
-                // Bar transisi yang sudah aktif ini sendiri bisa
-                // diseret — memindahkannya ke sela lain akan
-                // menerapkan transisi yang sama di sana, dan kalau
-                // dilepas KELUAR linimasa (bukan di atas target drop
-                // yang valid) akan menghapusnya dari sini.
-                e.dataTransfer.setData("text/transition-id", activeTrans.id);
+                e.dataTransfer.setData("text/transition-slot-id", slot.id);
+                e.dataTransfer.setData("text/transition-id", slot.presetId);
                 e.dataTransfer.effectAllowed = "move";
               }}
               onDragEnd={(e) => {
-                if (activeTrans && e.dataTransfer.dropEffect === "none") {
-                  applyTransitionToMarker(m, "none");
-                }
+                if (e.dataTransfer.dropEffect === "none") deleteTransitionSlot(slot.id);
               }}
-              onDragOver={(e) => e.preventDefault()}
-              onDragEnter={() => setDragOverKey(mk)}
+            >
+              <Wand size={10} /> <span>{transition.name}</span>
+            </div>
+          );
+        })}
+        {markers.map((m) => {
+          const mk = `${track.id}-${m.key}`;
+          const gapStart = m.left ? m.left.start + m.left.duration : m.x;
+          const gapEnd = m.right ? m.right.start : m.x;
+          const gapMs = Math.max(0, gapEnd - gapStart);
+          const isSeam = !!m.left && !!m.right;
+          const slot = slots.find((s) => s.leftClipId === m.left?.id && s.rightClipId === m.right?.id);
+          const activeId = slot?.presetId || null;
+          const activeTrans = activeId ? getTransition(activeId) : null;
+          const markerStyle = isSeam ? {
+            left: `${(gapStart / timelineDuration) * 100}%`,
+            width: `${Math.max((gapMs / timelineDuration) * 100, 0.6)}%`,
+          } : { left: `${(m.x / timelineDuration) * 100}%` };
+          return (
+            <div
+              key={mk}
+              className={`mfs-transition-bar ${activeTrans ? "active" : ""} ${dragOverKey === mk ? "over" : ""} ${isSeam ? "seam-drop" : "invalid-drop"}`}
+              style={markerStyle}
+              title={activeTrans ? `Transisi: ${activeTrans.name} — drag keluar untuk menghapus` : isSeam ? "Lepaskan preset transisi di gap ini" : "Transisi hanya bisa dimasukkan di antara dua klip"}
+              draggable={false}
+              onDragOver={(e) => {
+                if (!isSeam) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+              }}
+              onDragEnter={() => { if (isSeam) setDragOverKey(mk); }}
               onDragLeave={() => setDragOverKey((k) => (k === mk ? null : k))}
               onDrop={(e) => {
                 e.preventDefault();
                 setDragOverKey(null);
-                const id = e.dataTransfer.getData("text/transition-id");
-                if (id) applyTransitionToMarker(m, id);
+                if (!isSeam) return;
+                const slotId = e.dataTransfer.getData("text/transition-slot-id");
+                const presetId = e.dataTransfer.getData("text/transition-id");
+                if (slotId) {
+                  dispatchProject({ type: "MOVE_TRANSITION_SLOT", transitionId: slotId, leftClipId: m.left.id, rightClipId: m.right.id });
+                } else if (presetId) {
+                  insertTransitionAtSeam(m, presetId);
+                }
               }}
               onClick={(e) => {
                 e.stopPropagation();
+                if (!isSeam) return;
                 setOpenMarkerKey((k) => (k === mk ? null : mk));
               }}
             >
@@ -3611,24 +3974,25 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
                 <>
                   <div className="mfs-menu-backdrop" onClick={(e) => { e.stopPropagation(); setOpenMarkerKey(null); }} />
                   <div className="mfs-popover mfs-transition-popover" onClick={(e) => e.stopPropagation()}>
-                    <div className="mfs-section-label" style={{ margin: "2px 6px 6px" }}>Transisi di Sela Ini</div>
+                    <div className="mfs-section-label" style={{ margin: "2px 6px 6px" }}>Info Sela</div>
                     {activeTrans && (
-                      <div
-                        className="mfs-popover-item mfs-popover-danger"
-                        onClick={() => { applyTransitionToMarker(m, "none"); setOpenMarkerKey(null); }}
-                      >
-                        <X size={13} /> Hapus Transisi
+                      <>
+                        <div className="mfs-popover-item" style={{ cursor: "default", opacity: 0.8 }}>
+                          <Wand size={13} /> {activeTrans.name}
+                        </div>
+                        <div
+                          className="mfs-popover-item mfs-popover-danger"
+                          onClick={() => { deleteTransitionSlot(slot.id); setOpenMarkerKey(null); }}
+                        >
+                          <X size={13} /> Hapus Transisi
+                        </div>
+                      </>
+                    )}
+                    {!activeTrans && (
+                      <div className="mfs-popover-item" style={{ cursor: "default", opacity: 0.6, fontSize: 11 }}>
+                        Seret preset transisi ke sela ini untuk menambahkan
                       </div>
                     )}
-                    {TRANSITION_LIB.map((t) => (
-                      <div
-                        key={t.id}
-                        className={`mfs-popover-item ${activeId === t.id ? "selected" : ""}`}
-                        onClick={() => { applyTransitionToMarker(m, t.id); setOpenMarkerKey(null); }}
-                      >
-                        <Wand size={13} /> {t.name}
-                      </div>
-                    ))}
                   </div>
                 </>
               )}
@@ -3637,7 +4001,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
         })}
       </div>
     );
-  }), [trackData, timelineDuration, project.selectedClipId, dragHover, dragOverKey, openMarkerKey]);
+  }), [trackData, timelineDuration, project.selectedClipId, dragHover, dragOverKey, openMarkerKey, project.transitions]);
 
   return (
     <div className="mfs-timeline">
@@ -4027,7 +4391,7 @@ export default function App() {
               } catch (e) {}
             }
           });
-          dispatchProject({ type: "HYDRATE_PROJECT", project: saved });
+          dispatchProject({ type: "HYDRATE_PROJECT", project: normalizeMotionProject(saved) });
         }
         mfsHydratedRef.current = true;
       })

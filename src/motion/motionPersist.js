@@ -190,7 +190,9 @@ export function deserializeImportedProject(data) {
     name: f.name,
     buffer: f.bufferB64 ? b64ToAb(f.bufferB64) : (f.buffer || null),
   }));
-  return { ...root, fonts };
+  // Normalisasi: project yang dibuat sebelum fitur transition slots
+  // mungkin belum punya array transitions — inisialisasi sebagai [].
+  return { ...root, fonts, transitions: Array.isArray(root.transitions) ? root.transitions : [] };
 }
 
 /**

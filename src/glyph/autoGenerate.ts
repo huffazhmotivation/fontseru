@@ -233,6 +233,13 @@ function generateStyle(
     next[char] = {
       ...base,
       outline: transform(regularGlyph.outline),
+      // Generated styles must keep the exact advance metrics of the source
+      // style. The Test Lab lays out by advanceWidth; retaining the target
+      // family's placeholder metrics makes an exported Bold/Italic font use
+      // different pen positions from the same glyphs shown in Test Lab.
+      advanceWidth: regularGlyph.advanceWidth,
+      lsb: regularGlyph.lsb,
+      rsb: regularGlyph.rsb,
       // Generated family vectors must never share mutable component arrays with Regular.
       components: [...base.components],
       unicodes: base.unicodes ? [...base.unicodes] : undefined,

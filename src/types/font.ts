@@ -51,6 +51,15 @@ export interface FontInfo {
   /** OpenType name table nameID 7 (Trademark notice). */
   trademark?: string;
   uniqueID?: string;
+  /**
+   * Angle of the italic slant stored in degrees (negative = leans right,
+   * same convention as OpenType post.italicAngle). FontSeru always
+   * pre-shears italic outlines, so this must be 0 for installed engines
+   * to NOT apply an additional synthetic oblique on top. Older projects
+   * without this field fall back to the legacy hard-coded -12 for "italic"
+   * style names, which preserves backward compatibility.
+   */
+  italicAngle?: number;
 }
 
 /**

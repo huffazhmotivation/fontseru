@@ -1254,7 +1254,13 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
   font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em;
   text-transform: uppercase; color: var(--text-faint); margin: 16px 2px 8px;
 }
-.fm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.fm-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 400px;
+}
 .fm-tile {
   aspect-ratio: 1; border-radius: 11px;
   border: 1px solid var(--line); background: var(--panel-2);

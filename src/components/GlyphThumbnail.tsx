@@ -6,6 +6,16 @@ import { outlineBounds } from "@/editor/objectOps";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { hasOutline } from "@/types/glyph";
 
+const boundsCache = new WeakMap<object, ReturnType<typeof outlineBounds>>();
+
+function cachedOutlineBounds(outline: NonNullable<Glyph["outline"]>) {
+  const cached = boundsCache.get(outline);
+  if (cached !== undefined) return cached;
+  const bounds = outlineBounds(outline);
+  boundsCache.set(outline, bounds);
+  return bounds;
+}
+
 /**
  * Miniature preview of a glyph's ACTUAL vector data. Falls back to the plain
  * character (sans) when the glyph has not been drawn yet.
@@ -29,7 +39,7 @@ function GlyphThumbnailImpl({ glyph, className = "" }: { glyph: Glyph; className
     return <span className={charClassName}>{glyph.char}</span>;
   }
 
-  const b = outlineBounds(glyph.outline);
+  const b = cachedOutlineBounds(glyph.outline);
   const { ascender } = metrics;
   if (!b) return <span className={charClassName}>{glyph.char}</span>;
 

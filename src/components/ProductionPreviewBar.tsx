@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useDeferredValue, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { AlignCenter, AlignLeft, AlignRight, Ampersand, CaseLower, CaseUpper, Globe, Hash, Quote, Wand2, X } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { GlyphRun } from "@/editor/GlyphRun";
@@ -43,6 +43,7 @@ export function ProductionPreviewBar() {
   const setAlign = useAppStore((s) => s.setProductionPreviewAlign);
   const activeChar = useAppStore((s) => s.activeChar);
   const glyphs = useAppStore((s) => s.glyphs);
+  const deferredGlyphs = useDeferredValue(glyphs);
   const category = useAppStore((s) => s.productionPreviewCategory);
   const setCategory = useAppStore((s) => s.setProductionPreviewCategory);
   const stageHeight = useAppStore((s) => s.productionPreviewHeight);
@@ -77,7 +78,7 @@ export function ProductionPreviewBar() {
 
   if (!open) return null;
 
-  const activeCategory = category === "auto" ? glyphs[activeChar]?.category : category;
+  const activeCategory = category === "auto" ? deferredGlyphs[activeChar]?.category : category;
   const text = customText.trim() ? customText : sentenceForCategory(activeCategory);
 
   // Wrap to the box's own width so enlarging the glyph scale grows the
@@ -85,7 +86,7 @@ export function ProductionPreviewBar() {
   const pxPerUnit = scale / metrics.unitsPerEm;
   const maxWidthUnits = Math.max(1, (stageWidth || 720) / Math.max(pxPerUnit, 0.0001));
   const wordSpacing = effectiveWordSpacing(metrics.wordSpacing, wordSpacingOverridesByStyle, fontStyle);
-  const lines = wrapLines(text, glyphs, metrics.unitsPerEm, kerningPairs, 0, maxWidthUnits, wordSpacing);
+  const lines = wrapLines(text, deferredGlyphs, metrics.unitsPerEm, kerningPairs, 0, maxWidthUnits, wordSpacing);
 
   function startResize(e: ReactPointerEvent) {
     e.preventDefault();

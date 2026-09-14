@@ -292,6 +292,10 @@ function detectExportableStyles(family: GlyphFamily, customFamilies: ReadonlyArr
   return result;
 }
 
+/** Empty fallback used when the export dialog is closed — avoids running the
+ * expensive per-glyph detection on every render. */
+const defaultStyleAvailability: FamilyStyleSelection = {};
+
 function selectedExportStyles(
   selected: FamilyStyleSelection,
   available: FamilyStyleSelection,
@@ -394,7 +398,13 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const qaKerningPairs = useAppStore((s) => s.kerningPairs);
   const qaKerningOverridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
   const qaFeatureConfig = useAppStore((s) => s.featureConfig);
-  const styleAvailability = detectExportableStyles(glyphsByStyle, customFamilies);
+  // Only compute style availability when the export dialog is open —
+  // this is expensive (iterates all glyphs checking hasExportableVectorGlyph)
+  // and causes input lag when run on every render while the main menu is open.
+  const styleAvailability = useMemo(
+    () => (exportOpen ? detectExportableStyles(glyphsByStyle, customFamilies) : defaultStyleAvailability),
+    [exportOpen, glyphsByStyle, customFamilies],
+  );
   const openProModal = useAppStore((s) => s.openProModal);
   const { isPro, isConfigured, user } = useAuth();
 
@@ -577,6 +587,24 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const [exportTab, setExportTab] = useState<ExportTab>("fontinfo");
   const [fontInfoForm, setFontInfoForm] = useState<FontInfoFormState>(emptyFontInfoForm);
   const [licenseInfoForm, setLicenseInfoForm] = useState<LicenseInfoFormState>(emptyLicenseInfoForm);
+  // Keep keystrokes responsive: QA and name-table previews are intentionally
+  // derived from a short-lived draft so their full-font scans run after typing
+  // pauses, while export/save actions continue using the live form values.
+  const [debouncedFontInfoForm, setDebouncedFontInfoForm] = useState<FontInfoFormState>(emptyFontInfoForm);
+  const [debouncedLicenseInfo, setDebouncedLicenseInfo] = useState<Pick<LicenseInfoFormState, "licenseOwner" | "licenseType">>(() => ({
+    licenseOwner: "",
+    licenseType: "",
+  }));
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedFontInfoForm(fontInfoForm);
+      setDebouncedLicenseInfo({
+        licenseOwner: licenseInfoForm.licenseOwner,
+        licenseType: licenseInfoForm.licenseType,
+      });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [fontInfoForm, licenseInfoForm.licenseOwner, licenseInfoForm.licenseType]);
   const [nameTablePreviewOpen, setNameTablePreviewOpen] = useState(false);
   // `normalizeFontMetadata`/`previewNameTableRecords` live in fontIO.ts,
   // which pulls in opentype.js at module scope — loaded lazily here (only
@@ -650,7 +678,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     // otherwise fixes made in Font Info/License Info tabs never clear their
     // own warnings until after export. Mirrors the merge nameTablePreview
     // already does above.
-    const liveFamilyName = fontInfoForm.familyName.trim() || qaFontInfo.familyName;
+    const liveFamilyName = debouncedFontInfoForm.familyName.trim() || qaFontInfo.familyName;
     // BUG FIX: this object used to spread `...qaFontInfo` and override
     // familyName/designer/etc, but never touched `fullName` — so it stayed
     // whatever stale value was last saved in the project (e.g. an old
@@ -664,16 +692,16 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       familyName: liveFamilyName,
       styleName: fontStyleLabel(qaFontStyle, customFamilies),
       fullName: `${liveFamilyName} ${fontStyleLabel(qaFontStyle, customFamilies)}`,
-      designer: fontInfoForm.designerName.trim(),
-      designerURL: fontInfoForm.designerURL.trim(),
-      manufacturer: fontInfoForm.foundry.trim(),
-      manufacturerURL: fontInfoForm.website.trim(),
-      trademark: fontInfoForm.trademark.trim(),
-      copyright: fontInfoForm.copyright.trim(),
-      version: fontInfoForm.version.trim(),
-      license: licenseInfoForm.licenseOwner.trim()
-        ? `${licenseInfoForm.licenseType || "Personal"} - ${licenseInfoForm.licenseOwner.trim()}`
-        : licenseInfoForm.licenseType || qaFontInfo.license,
+      designer: debouncedFontInfoForm.designerName.trim(),
+      designerURL: debouncedFontInfoForm.designerURL.trim(),
+      manufacturer: debouncedFontInfoForm.foundry.trim(),
+      manufacturerURL: debouncedFontInfoForm.website.trim(),
+      trademark: debouncedFontInfoForm.trademark.trim(),
+      copyright: debouncedFontInfoForm.copyright.trim(),
+      version: debouncedFontInfoForm.version.trim(),
+      license: debouncedLicenseInfo.licenseOwner.trim()
+        ? `${debouncedLicenseInfo.licenseType || "Personal"} - ${debouncedLicenseInfo.licenseOwner.trim()}`
+        : debouncedLicenseInfo.licenseType || qaFontInfo.license,
     };
     return runFontQA({
       glyphs: qaGlyphs,
@@ -690,9 +718,8 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     qaKerningPairs,
     qaKerningOverridesByStyle,
     qaFeatureConfig,
-    fontInfoForm,
-    licenseInfoForm.licenseOwner,
-    licenseInfoForm.licenseType,
+    debouncedFontInfoForm,
+    debouncedLicenseInfo,
     customFamilies,
   ]);
 
@@ -811,13 +838,13 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   // subfamily per file, but the rest of the record set is identical.
   const nameTablePreview = useMemo(() => {
     if (!nameTableTools) return null;
-    const fontName = fontInfoForm.fontName.trim();
+    const fontName = debouncedFontInfoForm.fontName.trim();
     if (!fontName) return null;
-    const familyName = fontInfoForm.familyName.trim() || fontName;
-    const styleName = fontInfoForm.style.trim() || "Regular";
-    const resolvedLicense = licenseInfoForm.licenseOwner.trim()
-      ? `${licenseInfoForm.licenseType || "Personal"} - ${licenseInfoForm.licenseOwner.trim()}`
-      : licenseInfoForm.licenseType || "All Rights Reserved";
+    const familyName = debouncedFontInfoForm.familyName.trim() || fontName;
+    const styleName = debouncedFontInfoForm.style.trim() || "Regular";
+    const resolvedLicense = debouncedLicenseInfo.licenseOwner.trim()
+      ? `${debouncedLicenseInfo.licenseType || "Personal"} - ${debouncedLicenseInfo.licenseOwner.trim()}`
+      : debouncedLicenseInfo.licenseType || "All Rights Reserved";
 
     const previewInfo: Partial<FontInfo> = {
       familyName,
@@ -833,19 +860,19 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       fullName: `${familyName} ${styleName}`,
       postscriptName: "",
       uniqueID: "",
-      designer: fontInfoForm.designerName.trim(),
-      designerURL: fontInfoForm.designerURL.trim(),
-      manufacturer: fontInfoForm.foundry.trim(),
-      manufacturerURL: fontInfoForm.website.trim(),
-      trademark: fontInfoForm.trademark.trim(),
-      copyright: fontInfoForm.copyright.trim(),
-      version: fontInfoForm.version.trim(),
+      designer: debouncedFontInfoForm.designerName.trim(),
+      designerURL: debouncedFontInfoForm.designerURL.trim(),
+      manufacturer: debouncedFontInfoForm.foundry.trim(),
+      manufacturerURL: debouncedFontInfoForm.website.trim(),
+      trademark: debouncedFontInfoForm.trademark.trim(),
+      copyright: debouncedFontInfoForm.copyright.trim(),
+      version: debouncedFontInfoForm.version.trim(),
       license: resolvedLicense,
-      licenseURL: fontInfoForm.website.trim(),
+      licenseURL: debouncedFontInfoForm.website.trim(),
     };
     const normalized = nameTableTools.normalizeFontMetadata(previewInfo, fontName);
     return nameTableTools.previewNameTableRecords(normalized);
-  }, [nameTableTools, fontInfoForm, licenseInfoForm.licenseOwner, licenseInfoForm.licenseType]);
+  }, [nameTableTools, debouncedFontInfoForm, debouncedLicenseInfo]);
 
   // Family-aware summary: when more than one style is selected for export
   // (Regular + Bold/Italic, or any custom family), the name table preview
@@ -855,7 +882,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   // Each row mirrors the exact family/subfamily resolution runExport uses
   // (per-row override first, else the automatic style label / family name).
   const familyNameTablePreview = useMemo(() => {
-    const baseFamily = fontInfoForm.familyName.trim() || fontInfoForm.fontName.trim();
+    const baseFamily = debouncedFontInfoForm.familyName.trim() || debouncedFontInfoForm.fontName.trim();
     if (!baseFamily) return null;
     const selected = selectedExportStyles(
       selectedStyles,
@@ -863,7 +890,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       customFamilies,
     );
     if (selected.length <= 1) return null; // not a family — single-style preview already covers it
-    const styleOverride = fontInfoForm.style.trim();
+    const styleOverride = debouncedFontInfoForm.style.trim();
     return selected.map((style) => {
       const override = styleNameOverrides[style];
       const subfamily =
@@ -872,7 +899,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       const family = override?.familyName.trim() || baseFamily;
       return { style, family, subfamily, fullName: `${family} ${subfamily}`.trim() };
     });
-  }, [fontInfoForm, selectedStyles, glyphsByStyle, customFamilies, styleNameOverrides]);
+  }, [debouncedFontInfoForm, selectedStyles, glyphsByStyle, customFamilies, styleNameOverrides]);
 
   const save = () => {
     try {
@@ -1109,6 +1136,10 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
           version,
           license: resolvedLicense,
           licenseURL: website,
+          // Italic geometry is already pre-sheared in the glyph outlines.
+          // Keep the post table neutral so the installed text engine does not
+          // synthesize a second slant and change the visual spacing.
+          italicAngle: 0,
         };
 
         const effectiveKerning = effectiveKerningPairs(

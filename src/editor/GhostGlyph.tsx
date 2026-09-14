@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { objectFillPath, objectStrokePath, contourToPath } from "./pathBuilder";
@@ -46,7 +47,7 @@ interface GhostGlyphProps {
  * Family ghosts deliberately have no fallback. If the matching style glyph
  * has no outline yet, that side stays empty.
  */
-export function GhostGlyph({
+export const GhostGlyph = memo(function GhostGlyph({
   mode,
   char,
   glyph,
@@ -157,4 +158,4 @@ export function GhostGlyph({
       )}
     </g>
   );
-}
+});
