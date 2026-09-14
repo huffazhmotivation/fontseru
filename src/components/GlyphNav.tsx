@@ -88,6 +88,20 @@ export function GlyphNavInner() {
     [glyphs]
   );
 
+  // Precompute lowercase search strings once when the glyph map changes,
+  // so the filter below doesn't re-normalize every glyph on every keystroke.
+  const searchMeta = useMemo(() => {
+    const map = new Map<string, { lower: string; hex: string; name: string }>();
+    for (const [ch, glyph] of Object.entries(deferredGlyphs)) {
+      map.set(ch, {
+        lower: ch.toLowerCase(),
+        hex: unicodeHex(glyph.unicode).toLowerCase(),
+        name: (glyph.name ?? "").toLowerCase(),
+      });
+    }
+    return map;
+  }, [deferredGlyphs]);
+
   const filteredGroups = useMemo(() => {
     const baseChars = new Set(GLYPH_GROUPS.flatMap((g) => g.chars));
     const extrasByCategory = new Map<string, string[]>();
@@ -109,12 +123,13 @@ export function GlyphNavInner() {
     return allGroups.map((g) => ({
       ...g,
       chars: g.chars.filter((ch) => {
-        if (ch.toLowerCase() === q) return true;
-        const info = deferredGlyphs[ch];
-        return info ? unicodeHex(info.unicode).toLowerCase().includes(q) || (info.name ?? "").toLowerCase().includes(q) : false;
+        const meta = searchMeta.get(ch);
+        if (!meta) return false;
+        if (meta.lower === q) return true;
+        return meta.hex.includes(q) || meta.name.includes(q);
       }),
     })).filter((g) => g.chars.length > 0);
-  }, [query, deferredGlyphs]);
+  }, [query, deferredGlyphs, searchMeta]);
 
   return (
     <div className="fm-glyphnav" data-testid="glyph-nav">
@@ -288,7 +303,7 @@ export function GlyphNavInner() {
                   </button>
                 )}
               </div>
-              <div className="fm-grid">
+              <div className="fm-grid" style={{ contentVisibility: "auto", containIntrinsicSize: "0 500px" }}>
                 {g.chars.map((ch) => {
                   const info = deferredGlyphs[ch];
                   if (!info) return null;

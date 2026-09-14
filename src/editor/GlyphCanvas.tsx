@@ -103,8 +103,13 @@ export function GlyphCanvas() {
   const liveOutline = useAppStore((s) => s.liveOutline);
   const activeChar = useAppStore((s) => s.activeChar);
   const ghost = useAppStore((s) => s.ghost);
-  const glyphsByStyle = useAppStore((s) => s.glyphsByStyle);
+  // Only subscribe to the two specific ghost styles needed for preview,
+  // not the entire glyphsByStyle map which would re-render on any
+  // style change (bold/italic/custom edits, family generation, etc.).
   const fontStyle = useAppStore((s) => s.fontStyle);
+  const [leftGhostStyle, rightGhostStyle] = familyGhostOrder(fontStyle);
+  const leftGhostMap = useAppStore((s) => s.glyphsByStyle[leftGhostStyle]);
+  const rightGhostMap = useAppStore((s) => s.glyphsByStyle[rightGhostStyle]);
   const brush = useAppStore((s) => s.brush);
   const brushCap = useAppStore((s) => s.brushCap);
   const fitNonce = useAppStore((s) => s.fitNonce);
@@ -141,12 +146,11 @@ export function GlyphCanvas() {
   // with where this glyph's ink is actually drawn, the same way LSB/RSB/
   // Advance already default to FontSeru's standard sidebearing metrics.
   const ghostCenterX = glyph ? (glyph.advanceWidth + glyph.lsb - glyph.rsb) / 2 : upm * 0.5;
-  const [leftGhostStyle, rightGhostStyle] = familyGhostOrder(fontStyle);
   const leftFamilyGlyph = glyph
-    ? matchingFamilyGlyph(glyphsByStyle[leftGhostStyle], glyph, activeChar)
+    ? matchingFamilyGlyph(leftGhostMap, glyph, activeChar)
     : undefined;
   const rightFamilyGlyph = glyph
-    ? matchingFamilyGlyph(glyphsByStyle[rightGhostStyle], glyph, activeChar)
+    ? matchingFamilyGlyph(rightGhostMap, glyph, activeChar)
     : undefined;
 
   const baseFit = viewSize.w && viewSize.h ? 0.62 * Math.min(viewSize.w / upm, viewSize.h / totalH) : 0.35;
@@ -716,7 +720,13 @@ export function GlyphCanvas() {
   // merge path once the stroke is released.
   const objectsForRender = liveOutline ? visualObjects : objects;
   const [overlappingIds, setOverlappingIds] = useState<Set<string>>(() => findOverlappingObjectIds(objects));
+  // Cache the last objects reference we ran overlap detection on, so we can
+  // skip the expensive O(n²) pass when objects identity hasn't actually
+  // changed (e.g. only liveOutline or selection changed).
+  const lastOverlapObjectsRef = useRef(objects);
   useEffect(() => {
+    if (objects === lastOverlapObjectsRef.current) return;
+    lastOverlapObjectsRef.current = objects;
     const timer = window.setTimeout(() => {
       setOverlappingIds(findOverlappingObjectIds(objects));
     }, 100);

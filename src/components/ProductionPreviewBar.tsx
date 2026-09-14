@@ -53,7 +53,7 @@ function ProductionPreviewContent() {
   const fontStyle = useAppStore((s) => s.fontStyle);
   const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
 
-  const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const resizeRef = useRef<{ startY: number; startHeight: number; rafId: number } | null>(null);
   const [isResizingPreview, setIsResizingPreview] = useState(false);
   const [customText, setCustomText] = useState("");
   const stageRef = useRef<HTMLDivElement>(null);
@@ -93,7 +93,7 @@ function ProductionPreviewContent() {
 
   function startResize(e: ReactPointerEvent) {
     e.preventDefault();
-    resizeRef.current = { startY: e.clientY, startHeight: stageHeight };
+    resizeRef.current = { startY: e.clientY, startHeight: stageHeight, rafId: 0 };
     setIsResizingPreview(true);
     // Lock the cursor and stop stray text selection for the whole drag,
     // not just while hovering the thin handle strip — otherwise fast drags
@@ -105,9 +105,16 @@ function ProductionPreviewContent() {
     const onMove = (ev: PointerEvent) => {
       if (!resizeRef.current) return;
       const delta = ev.clientY - resizeRef.current.startY;
-      setStageHeight(resizeRef.current.startHeight + delta);
+      // Batch resize updates through rAF to avoid multiple store writes
+      // per frame during fast pointer drags.
+      if (resizeRef.current.rafId) cancelAnimationFrame(resizeRef.current.rafId);
+      resizeRef.current.rafId = requestAnimationFrame(() => {
+        if (!resizeRef.current) return;
+        setStageHeight(resizeRef.current.startHeight + delta);
+      });
     };
     const onUp = () => {
+      if (resizeRef.current?.rafId) cancelAnimationFrame(resizeRef.current.rafId);
       resizeRef.current = null;
       setIsResizingPreview(false);
       document.body.style.userSelect = prevUserSelect;

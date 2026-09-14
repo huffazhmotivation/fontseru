@@ -43,8 +43,11 @@ export function TopBar() {
   const fontName = useAppStore((s) => s.fontName);
   const setFontName = useAppStore((s) => s.setFontName);
   const commitFontNameEdit = useAppStore((s) => s.commitFontNameEdit);
-  const past = useAppStore((s) => s.past);
-  const future = useAppStore((s) => s.future);
+  // Subscribe to history lengths rather than the full snapshot arrays. The
+  // undo/redo buttons only need availability; retaining the arrays here made
+  // TopBar reconcile on every glyph commit.
+  const canUndo = useAppStore((s) => s.past.length > 0);
+  const canRedo = useAppStore((s) => s.future.length > 0);
   const liveOutline = useAppStore((s) => s.liveOutline);
   const undo = useAppStore((s) => s.undo);
   const redo = useAppStore((s) => s.redo);
@@ -154,10 +157,10 @@ export function TopBar() {
           is invisible (`display: contents`) and changes nothing. */}
       <div className="fm-topbar-row2">
       <div className="fm-topbtn-group">
-        <button className="fm-align-btn" disabled={past.length === 0 && !liveOutline} onClick={undo} title="Undo (Cmd/Ctrl+Z)" aria-label="Undo" data-testid="undo-btn">
+        <button className="fm-align-btn" disabled={!canUndo && !liveOutline} onClick={undo} title="Undo (Cmd/Ctrl+Z)" aria-label="Undo" data-testid="undo-btn">
           <Undo2 size={16} />
         </button>
-        <button className="fm-align-btn" disabled={future.length === 0} onClick={redo} title="Redo (Cmd/Ctrl+Shift+Z)" aria-label="Redo" data-testid="redo-btn">
+        <button className="fm-align-btn" disabled={!canRedo} onClick={redo} title="Redo (Cmd/Ctrl+Shift+Z)" aria-label="Redo" data-testid="redo-btn">
           <Redo2 size={16} />
         </button>
       </div>

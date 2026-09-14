@@ -752,10 +752,16 @@ export const useAppStore = create<AppState>()((set, get) => {
   }
   function commit(nextGlyphs: GlyphMap) {
     const { glyphs, glyphsByStyle, fontStyle, metrics, past, kerningPairs, kerningManual } = get();
+    // Efficiently append to history without creating intermediate arrays:
+    // directly build the final capped array to avoid [spread].slice() cost.
+    const nextPast = past.length >= HISTORY_LIMIT
+      ? (past.length === HISTORY_LIMIT ? [...past.slice(1), { glyphs, metrics, kerningPairs, kerningManual }]
+        : [...past, { glyphs, metrics, kerningPairs, kerningManual }])
+      : [...past, { glyphs, metrics, kerningPairs, kerningManual }];
     set({
       glyphs: nextGlyphs,
       glyphsByStyle: { ...glyphsByStyle, [fontStyle]: nextGlyphs },
-      past: [...past, { glyphs, metrics, kerningPairs, kerningManual }].slice(-HISTORY_LIMIT),
+      past: nextPast,
       future: [],
     });
   }
@@ -776,9 +782,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     const state = get();
     set({
       ...patch,
-      past: [
-        ...state.past,
-        {
+      past: (() => {
+        const snapshot = {
           glyphs: state.glyphs,
           glyphsByStyle: state.glyphsByStyle,
           metrics: state.metrics,
@@ -792,8 +797,11 @@ export const useAppStore = create<AppState>()((set, get) => {
           fontInfo: state.fontInfo,
           customFamilies: state.customFamilies,
           featureConfig: state.featureConfig,
-        },
-      ].slice(-HISTORY_LIMIT),
+        };
+        return state.past.length >= HISTORY_LIMIT
+          ? [...state.past.slice(1), snapshot]
+          : [...state.past, snapshot];
+      })(),
       future: [],
     } as Partial<AppState>);
   }
@@ -801,10 +809,14 @@ export const useAppStore = create<AppState>()((set, get) => {
   /** Same history stack as `commit`, for edits that touch kerning instead of glyph geometry. */
   function commitKerning(nextPairs: KerningPairs, nextManual: KerningManualFlags) {
     const { glyphs, metrics, past, kerningPairs, kerningManual } = get();
+    const snapshot = { glyphs, metrics, kerningPairs, kerningManual };
+    const nextPast = past.length >= HISTORY_LIMIT
+      ? [...past.slice(1), snapshot]
+      : [...past, snapshot];
     set({
       kerningPairs: nextPairs,
       kerningManual: nextManual,
-      past: [...past, { glyphs, metrics, kerningPairs, kerningManual }].slice(-HISTORY_LIMIT),
+      past: nextPast,
       future: [],
     });
   }

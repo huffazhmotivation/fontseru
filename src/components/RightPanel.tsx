@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, PenLine, Minus, Highlighter, Feather, Pencil, Zap, Scissors, Trash2, Flame, Grid3x3, Lock, Unlock, ImagePlus, CircleDashed, Droplet, Triangle, Circle, Square, Sparkles } from "lucide-react";
 import type { ShapeKind } from "@/editor/shapeBuilder";
 import { useAppStore, type NodeRef, type GlyphMetricKey } from "@/glyph/store";
@@ -254,14 +254,20 @@ function MultiGlyphSelectPanel({ selectedGlyphChars }: { selectedGlyphChars: str
   const setBrushCap = useAppStore((s) => s.setBrushCap);
   const expandStrokesInSelectedGlyphs = useAppStore((s) => s.expandStrokesInSelectedGlyphs);
 
-  // Aggregate the strokes across every selected glyph so the panel can show
-  // real counts and a sensible current value.
-  const allObjs = selectedGlyphChars.flatMap((ch) => glyphs[ch]?.outline.objects ?? []);
-  const brushObjs = allObjs.filter((o) => o.kind === "brush");
-  const strokeObjs = allObjs.filter((o) => o.kind === "line" || o.kind === "brush");
-  const glyphsWithStrokes = selectedGlyphChars.filter(
-    (ch) => (glyphs[ch]?.outline.objects ?? []).some((o) => o.kind === "line" || o.kind === "brush")
-  ).length;
+  // Memoize the expensive aggregation so it only recalculates when glyphs or
+  // selection actually changes, not on every parent render (e.g. brush slider
+  // drag in the same panel).
+  const { allObjs, brushObjs, strokeObjs, glyphsWithStrokes } = useMemo(() => {
+    const all = selectedGlyphChars.flatMap((ch) => glyphs[ch]?.outline.objects ?? []);
+    return {
+      allObjs: all,
+      brushObjs: all.filter((o) => o.kind === "brush"),
+      strokeObjs: all.filter((o) => o.kind === "line" || o.kind === "brush"),
+      glyphsWithStrokes: selectedGlyphChars.filter(
+        (ch) => (glyphs[ch]?.outline.objects ?? []).some((o) => o.kind === "line" || o.kind === "brush")
+      ).length,
+    };
+  }, [selectedGlyphChars, glyphs]);
 
   // Highlight the brush preset only when every brush stroke shares one type;
   // otherwise fall back to the active brush setting (what a click would set).

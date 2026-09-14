@@ -21,7 +21,7 @@ function cachedOutlineBounds(outline: NonNullable<Glyph["outline"]>) {
  * character (sans) when the glyph has not been drawn yet.
  */
 function GlyphThumbnailImpl({ glyph, className = "" }: { glyph: Glyph; className?: string }) {
-  const metrics = useAppStore((s) => s.metrics);
+  const ascender = useAppStore((s) => s.metrics.ascender);
   // Feature Builder glyphs (ligatures, alternates, swashes) haven't been
   // drawn yet fall back to their multi-character rule name (e.g. "A.alt1",
   // "C.swash") instead of a single letter. Flag that here so the CSS can
@@ -40,7 +40,6 @@ function GlyphThumbnailImpl({ glyph, className = "" }: { glyph: Glyph; className
   }
 
   const b = cachedOutlineBounds(glyph.outline);
-  const { ascender } = metrics;
   if (!b) return <span className={charClassName}>{glyph.char}</span>;
 
   const w = b.maxX - b.minX;

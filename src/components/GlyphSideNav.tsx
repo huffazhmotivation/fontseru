@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { getOrderedChars } from "@/glyph/defaultGlyphs";
@@ -12,13 +13,13 @@ import { getOrderedChars } from "@/glyph/defaultGlyphs";
  * Reuses the exact same glyph ordering / setActiveChar logic as
  * GlyphStepper, so Prev/Next behavior is identical between the two modes.
  */
-export function GlyphSideNav() {
+function GlyphSideNavInner() {
   const glyphs = useAppStore((s) => s.glyphs);
   const activeChar = useAppStore((s) => s.activeChar);
   const setActiveChar = useAppStore((s) => s.setActiveChar);
 
-  const ordered = getOrderedChars(glyphs);
-  const idx = ordered.indexOf(activeChar);
+  const ordered = useMemo(() => getOrderedChars(glyphs), [glyphs]);
+  const idx = useMemo(() => ordered.indexOf(activeChar), [ordered, activeChar]);
   const canPrev = idx > 0;
   const canNext = idx >= 0 && idx < ordered.length - 1;
 
@@ -50,3 +51,5 @@ export function GlyphSideNav() {
     </>
   );
 }
+
+export const GlyphSideNav = memo(GlyphSideNavInner);
