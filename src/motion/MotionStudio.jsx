@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useReducer, useCallback, useMemo, useImperativeHandle } from "react";
 import { ModeTabs } from "@/mode/ModeTabs";
+import { decodeAudioFile, transcribeAudio, getLanguageOptions, splitCaptionText } from "@/motion/autoCaption";
 import { loadMotionProject, saveMotionProject, clearMotionProject, serializeProjectForExport, deserializeImportedProject } from "@/motion/motionPersist";
 import {
   Play, Pause, Upload, Plus, Trash2, Type, Sparkles, Repeat,
@@ -465,15 +466,18 @@ function samplePose(preset, rank, staggerMs, localClipTime, clipDuration, seed, 
   const animateIn = !opts || opts.animateIn !== false;
   const animateOut = !opts || opts.animateOut !== false;
   const easing = (opts && opts.easing) || "auto";
+  const speed = (opts && opts.speed) || 1;
   const remap = (t) => (easing === "auto" ? t : ease(easing, t));
   const rankDelay = rank * staggerMs;
-  const exitStart = clipDuration - preset.exitMs - rankDelay;
-  if (animateOut && preset.exitMs > 0 && localClipTime >= exitStart) {
-    const tOut = clamp((localClipTime - exitStart) / preset.exitMs, 0, 1);
+  const adjustedEntrance = Math.max(1, preset.entranceMs / speed);
+  const adjustedExit = Math.max(1, preset.exitMs / speed);
+  const exitStart = clipDuration - adjustedExit - rankDelay;
+  if (animateOut && adjustedExit > 0 && localClipTime >= exitStart) {
+    const tOut = clamp((localClipTime - exitStart) / adjustedExit, 0, 1);
     return preset.curve(1 - remap(tOut), seed);
   }
   if (!animateIn) return preset.curve(1, seed); // pose "sudah sampai" (diam)
-  const tIn = clamp((localClipTime - rankDelay) / preset.entranceMs, 0, 1);
+  const tIn = clamp((localClipTime - rankDelay) / adjustedEntrance, 0, 1);
   return preset.curve(remap(tIn), seed);
 }
 
@@ -764,6 +768,7 @@ function makeTextClip(name, text, start, presetId = "apple", trackId = null) {
     animateBy: preset.animateBy,
     stagger: preset.stagger,
     animateIn: true, animateOut: true, easing: "auto",
+    speed: 1,
     transitionInId: "none",
     transitionOutId: "none",
     effectId: "none",
@@ -783,6 +788,7 @@ function makeMediaClip(kind, asset, start, trackId = null) {
     // klip yang baru diimpor tidak tiba-tiba bergerak tanpa diminta.
     presetId: "none", animateBy: "all", stagger: 0,
     animateIn: true, animateOut: true, easing: "auto",
+    speed: 1,
     transitionInId: isAudio ? "fade" : "none",
     transitionOutId: isAudio ? "fade" : "none",
     effectId: "none",
@@ -868,6 +874,25 @@ function projectReducer(state, action) {
       const clip = makeMediaClip(action.kind, action.asset, lastEnd, track.id);
       if (action.offset) clip.offset = { ...clip.offset, ...action.offset };
       return { ...state, tracks, clips: [...state.clips, clip], selectedClipId: clip.id };
+    }
+    case "ADD_CAPTION_CLIPS": {
+      // Membuat klip teks (caption) hasil auto-transkripsi audio. Satu track
+      // teks baru dibuat khusus untuk caption supaya tidak tercampur dengan
+      // klip teks manual.
+      const { segments, audioStart } = action;
+      if (!segments || segments.length === 0) return state;
+      const captionTrack = makeTrack("text");
+      const tracks = [...state.tracks, captionTrack];
+      const newClips = segments.map((seg) => {
+        const capClip = makeTextClip("Caption", seg.text, audioStart + seg.start, "none", captionTrack.id);
+        capClip.duration = Math.max(300, seg.end - seg.start);
+        capClip.fontSize = 36;
+        capClip.animateIn = false;
+        capClip.animateOut = false;
+        capClip.presetId = "none";
+        return capClip;
+      });
+      return { ...state, tracks, clips: [...state.clips, ...newClips], selectedClipId: newClips[0]?.id || state.selectedClipId };
     }
     case "ADD_TRACK": {
       const track = { id: action.id || uid("track"), type: action.trackType };
@@ -1509,7 +1534,7 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
   const blockH = lines.length * lineHeight;
   const off = clip.offset;
   let maxBlur = 0;
-  const animOpts = { animateIn: clip.animateIn, animateOut: clip.animateOut, easing: clip.easing };
+  const animOpts = { animateIn: clip.animateIn, animateOut: clip.animateOut, easing: clip.easing, speed: clip.speed ?? 1 };
 
   const pose0raw = samplePose(preset, 0, clip.stagger, localTime, clip.duration, 0, animOpts);
   const pose0 = combinePose(pose0raw, transPose);
@@ -1724,7 +1749,7 @@ function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCt
   // di batas klip.
   const preset = getPreset(clip.presetId || "none");
   const presetPose = clip.presetId && clip.presetId !== "none"
-    ? samplePose(preset, 0, 0, localTime, clip.duration, 0, { animateIn: clip.animateIn, animateOut: clip.animateOut, easing: clip.easing })
+    ? samplePose(preset, 0, 0, localTime, clip.duration, 0, { animateIn: clip.animateIn, animateOut: clip.animateOut, easing: clip.easing, speed: clip.speed ?? 1 })
     : REST_POSE;
   const p = combinePose(presetPose, transPose);
   // Effect persisten
@@ -2143,6 +2168,9 @@ const GlobalStyle = () => (
     .mfs-icon-btn:hover { background:var(--bg-hover); color:var(--text); }
     .mfs-icon-btn.active { background:var(--accent-soft); color:var(--accent); }
     .mfs-icon-btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+    .mfs-progress { height:6px; border-radius:999px; background:var(--bg-elevated); overflow:hidden; }
+    .mfs-progress > div { height:100%; background:linear-gradient(90deg,var(--accent),#a78bfa); border-radius:999px; transition:width 0.25s ease; }
 
     /* LAYERS (panel paling kiri, menetap) */
     .mfs-layers { grid-area:layers; background:var(--bg-panel); border-right:1px solid var(--border); display:flex; flex-direction:column; min-height:0; }
@@ -3824,6 +3852,104 @@ function FontPicker({ fonts, clip, dispatch }) {
   );
 }
 
+function AutoCaptionControl({ clip, dispatch }) {
+  const [language, setLanguage] = useState("id");
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+
+  const generate = async () => {
+    if (busy) return;
+    if (!clip.file) {
+      setError("File audio asli tidak tersedia. Impor ulang audio ini untuk membuat caption.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setStatus("Menyiapkan audio…");
+    setProgress(0.02);
+    try {
+      const audioBuffer = await decodeAudioFile(clip.file);
+      const segments = await transcribeAudio(audioBuffer, language, (message, fraction) => {
+        setStatus(message);
+        setProgress(clamp(fraction ?? 0, 0, 1));
+      });
+      if (segments.length === 0) {
+        setError("Tidak ada ucapan yang terdeteksi di audio ini.");
+        return;
+      }
+      dispatch({ type: "ADD_CAPTION_CLIPS", segments, audioStart: clip.start });
+      setStatus(`${segments.length} caption dibuat`);
+      setProgress(1);
+    } catch (err) {
+      setError(err?.message || "Gagal menganalisis audio.");
+      setStatus("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mfs-field" style={{ marginTop: 10 }}>
+      <div className="mfs-section-label">Auto Caption</div>
+      <div style={{ fontSize: 10.5, color: "var(--text-dim)", lineHeight: 1.45, marginBottom: 7 }}>
+        Transkripsi berjalan lokal di browser. Model Whisper diunduh sekali saat pertama kali digunakan.
+      </div>
+      <select className="mfs-input mfs-select" value={language} disabled={busy} onChange={(e) => setLanguage(e.target.value)}>
+        {getLanguageOptions().map((option) => <option key={option.code} value={option.code}>{option.label}</option>)}
+      </select>
+      <button className="mfs-btn mfs-btn-sm" style={{ marginTop: 7, width: "100%" }} disabled={busy} onClick={generate}>
+        {busy ? <Loader2 size={13} className="mfs-spin" /> : <Type size={13} />} {busy ? "Menganalisis…" : "Buat caption otomatis"}
+      </button>
+      {busy && (
+        <>
+          <div className="mfs-progress" style={{ marginTop: 7 }}><div style={{ width: `${Math.round(progress * 100)}%` }} /></div>
+          {status && <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>{status}</div>}
+        </>
+      )}
+      {!busy && status && !error && <div style={{ fontSize: 10, color: "var(--accent)", marginTop: 5 }}>{status}</div>}
+      {error && <div style={{ fontSize: 10, color: "#ff7777", marginTop: 5, lineHeight: 1.4 }}>{error}</div>}
+    </div>
+  );
+}
+
+function MediaPreviewImg({ clip }) {
+  const [src, setSrc] = useState(clip.src);
+  const [fallbackTried, setFallbackTried] = useState(false);
+
+  useEffect(() => {
+    setSrc(clip.src);
+    setFallbackTried(false);
+  }, [clip.src, clip.file]);
+
+  const handleError = () => {
+    if (fallbackTried || !clip.file) return;
+    setFallbackTried(true);
+    readFileAsDataURL(clip.file).then(setSrc).catch(() => {});
+  };
+
+  return <img src={src} alt="" onError={handleError} />;
+}
+
+function MediaPreviewVideo({ clip }) {
+  const [src, setSrc] = useState(clip.src);
+  const [fallbackTried, setFallbackTried] = useState(false);
+
+  useEffect(() => {
+    setSrc(clip.src);
+    setFallbackTried(false);
+  }, [clip.src, clip.file]);
+
+  const handleError = () => {
+    if (fallbackTried || !clip.file) return;
+    setFallbackTried(true);
+    readFileAsDataURL(clip.file).then(setSrc).catch(() => {});
+  };
+
+  return <video src={src} muted playsInline preload="metadata" onError={handleError} />;
+}
+
 // Kontrol animasi (preset) untuk panel kanan: easing + centang animasi
 // masuk/keluar. "animasi" di sini = preset. Centang masuk saja → objek diam
 // saat keluar; centang keluar saja → diam saat masuk; centang keduanya →
@@ -3856,6 +3982,9 @@ function AnimationControls({ clip, dispatch }) {
           <option value="easeInOut">Ease In-Out (pelan di ujung)</option>
         </select>
       </div>
+      <SliderField label="Speed animasi" value={clip.speed ?? 1} min={0.25} max={3} step={0.05}
+        format={(v) => `${v.toFixed(2)}×`}
+        onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { speed: v } })} />
       {clip.effectId && clip.effectId !== "none" && (
         <>
           <div className="mfs-divider" />
@@ -3961,7 +4090,7 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch })
     <div className="mfs-right">
       {!isAudio && (
         <div className="mfs-media-preview">
-          {clip.type === "image" ? <img src={clip.src} alt="" /> : <video src={clip.src} muted />}
+          {clip.type === "image" ? <MediaPreviewImg clip={clip} /> : <MediaPreviewVideo clip={clip} />}
         </div>
       )}
       {clip.isSvg && (
@@ -4028,7 +4157,10 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch })
       )}
       <div className="mfs-divider" />
       {isAudio ? (
-        <div style={{ fontSize: 10.5, color: "var(--text-dim)", lineHeight: 1.5 }}>Seret transisi (fade dll.) ke sela-sela klip di linimasa untuk audio.</div>
+        <>
+          <div style={{ fontSize: 10.5, color: "var(--text-dim)", lineHeight: 1.5 }}>Seret transisi (fade dll.) ke sela-sela klip di linimasa untuk audio.</div>
+          <AutoCaptionControl clip={clip} dispatch={dispatch} />
+        </>
       ) : (
         <AnimationControls clip={clip} dispatch={dispatch} />
       )}
