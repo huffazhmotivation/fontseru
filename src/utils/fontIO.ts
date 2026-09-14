@@ -1590,32 +1590,20 @@ function spliceSfntTable(buffer: ArrayBuffer, tag: string, data: Uint8Array): Ar
  */
 
 /**
- * Maximum kerning pairs written into an exported font.
+ * Parse and clamp every stored pair that exists in the exported glyph set.
  *
- * Auto Kern can emit a pair for nearly EVERY glyph combination — on a 371
- * glyph font that's ~131,000 pairs. Encoding that many into GPOS builds
- * enormous in-memory structures, which is what made the browser tab go
- * "Page Unresponsive" and the OTF writer fail (TTF sometimes squeaked
- * through, hence "berhasil tapi harus ngulang 3x"). Real-world fonts ship
- * hundreds to a few thousand pairs; keeping the strongest ones by absolute
- * adjustment preserves everything a reader can actually perceive while
- * making export fast and reliable.
+ * This intentionally has NO magnitude threshold and NO global pair cap.
+ * Test Lab applies the complete effective kerning map, so dropping a small
+ * pair (or keeping only the strongest 6000 pairs) makes installed text use a
+ * different pen position from the exact same text in FontSeru. The encoders
+ * below split records across multiple spec-compliant subtables when needed;
+ * that keeps the file valid without changing the authored spacing.
  */
-const MAX_EXPORT_KERN_PAIRS = 6000;
-
-/** Parses, validates, and clamps every stored kerning pair into sorted-glyph
- * records ready for layout, then keeps the most significant ones within the
- * export budget above. */
 function resolveKerningRecords(
   pairs: KerningPairs,
   glyphIndexByChar: Map<string, number>
 ): { left: number; right: number; value: number }[] {
   const all: { left: number; right: number; value: number }[] = [];
-  // Drop negligible pairs: a kern of just a few font units on a 1000 UPM em
-  // is below what any reader can see, but auto-kern emits tens of thousands
-  // of them. 4 units = 0.4% of em — invisible, but removes a huge amount of
-  // pure bloat.
-  const NEGLIGIBLE = 4;
   for (const [key, rawValue] of Object.entries(pairs ?? {})) {
     const pair = parseKerningKey(key);
     if (!pair) continue;
@@ -1623,16 +1611,9 @@ function resolveKerningRecords(
     const right = glyphIndexByChar.get(pair.right);
     if (left == null || right == null || !Number.isFinite(rawValue)) continue;
     const value = Math.max(-32768, Math.min(32767, Math.round(rawValue)));
-    if (Math.abs(value) > NEGLIGIBLE) all.push({ left, right, value });
-  }
-  if (all.length > MAX_EXPORT_KERN_PAIRS) {
-    // Keep the strongest adjustments — those are the ones that visibly fix
-    // spacing; the long tail of tiny tweaks is what bloats the font.
-    all.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
-    all.length = MAX_EXPORT_KERN_PAIRS;
-    console.warn(
-      `[FontSeru] Kerning export: keeping the ${MAX_EXPORT_KERN_PAIRS} strongest pairs of ${Object.keys(pairs ?? {}).length} to keep the font compact and the export responsive.`
-    );
+    // Preserve zero-valued entries too: filtering them is harmless visually,
+    // but retaining the complete valid map makes the export deterministic.
+    all.push({ left, right, value });
   }
   return all;
 }
