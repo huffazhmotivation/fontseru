@@ -575,29 +575,55 @@ function wrapFamilyText(
     advance = 0;
   };
 
-  for (const ch of Array.from(text)) {
-    const charStart = sourceIndex;
-    sourceIndex += ch.length;
-
-    if (ch === "\n") {
-      flush(charStart);
-      lineStart = sourceIndex;
-      continue;
-    }
-
+  const appendChar = (ch: string) => {
     const glyphAdvance = glyphs[ch]?.advanceWidth ?? fallbackAdvance(ch, unitsPerEm, wordSpacing);
     const previous = chars[chars.length - 1] ?? null;
     const between = previous ? tracking + (kerningPairs[kerningKey(previous, ch)] ?? 0) : 0;
-    const nextAdvance = advance + between + glyphAdvance;
+    chars.push(ch);
+    advance += between + glyphAdvance;
+  };
 
-    if (chars.length > 0 && nextAdvance > maxWidthUnits) {
-      flush(charStart);
-      lineStart = charStart;
-      chars.push(ch);
-      advance = glyphAdvance;
+  // Wrap at whitespace first, matching normal text layout. Only split an
+  // individual token when that token itself is wider than the available line.
+  for (const token of text.match(/\s+|[^\s]+/gu) ?? []) {
+    const tokenStart = sourceIndex;
+    sourceIndex += token.length;
+    if (token.includes("\n")) {
+      const parts = token.split("\n");
+      parts.forEach((part, index) => {
+        for (const ch of part) appendChar(ch);
+        if (index < parts.length - 1) {
+          flush(tokenStart + token.slice(0, token.indexOf("\n") + index + 1).length);
+          lineStart = tokenStart + token.slice(0, token.indexOf("\n") + index + 1).length;
+        }
+      });
+      continue;
+    }
+
+    let tokenAdvance = 0;
+    let previous = chars[chars.length - 1] ?? null;
+    for (const ch of token) {
+      const glyphAdvance = glyphs[ch]?.advanceWidth ?? fallbackAdvance(ch, unitsPerEm, wordSpacing);
+      tokenAdvance += (previous ? tracking + (kerningPairs[kerningKey(previous, ch)] ?? 0) : 0) + glyphAdvance;
+      previous = ch;
+    }
+    if (chars.length > 0 && !/^\s+$/.test(token) && advance + tokenAdvance > maxWidthUnits) {
+      flush(tokenStart);
+      lineStart = tokenStart;
+    }
+    if (tokenAdvance > maxWidthUnits && !/^\s+$/.test(token)) {
+      for (const ch of token) {
+        const glyphAdvance = glyphs[ch]?.advanceWidth ?? fallbackAdvance(ch, unitsPerEm, wordSpacing);
+        const prev = chars[chars.length - 1] ?? null;
+        const nextAdvance = advance + (prev ? tracking + (kerningPairs[kerningKey(prev, ch)] ?? 0) : 0) + glyphAdvance;
+        if (chars.length > 0 && nextAdvance > maxWidthUnits) {
+          flush(tokenStart);
+          lineStart = tokenStart;
+        }
+        appendChar(ch);
+      }
     } else {
-      chars.push(ch);
-      advance = nextAdvance;
+      for (const ch of token) appendChar(ch);
     }
   }
 

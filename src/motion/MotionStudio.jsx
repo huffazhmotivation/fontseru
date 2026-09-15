@@ -2463,9 +2463,10 @@ const GlobalStyle = () => (
     .mfs-timeline { grid-area:timeline; background:var(--bg-panel); display:flex; flex-direction:column; min-height:0; max-height:100%; overflow:hidden; }
     .mfs-timeline-head { height:28px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:0 14px; border-bottom:1px solid var(--border); }
     .mfs-timeline-title { font-size:10.5px; color:var(--text-dim); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
-    .mfs-tracks-outer { flex:1; display:flex; min-height:0; padding:0 12px; overflow-y:auto; overflow-x:hidden; align-items:flex-start; }
-    .mfs-track-labels { width:56px; flex-shrink:0; display:flex; flex-direction:column; }
+    .mfs-tracks-outer { flex:1; display:flex; min-height:0; padding:0 12px; overflow:hidden; align-items:flex-start; }
+    .mfs-track-labels { width:56px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
     .mfs-track-labels .mfs-ruler-spacer { height:20px; display:flex; align-items:center; justify-content:center; position:sticky; top:0; z-index:5; background:var(--bg-panel); }
+    .mfs-track-viewport { flex:1; min-width:0; min-height:0; overflow-y:auto; overflow-x:hidden; position:relative; }
     .mfs-track-label { height:32px; display:flex; align-items:center; gap:5px; font-size:10px; color:var(--text-muted); font-weight:600; position:relative; flex-shrink:0; }
     .mfs-track-label .dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
     .mfs-track-label .label-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
@@ -2477,7 +2478,7 @@ const GlobalStyle = () => (
     .mfs-track-ghost.showing { height:26px; margin:2px 0; border-color:var(--border-light); }
     .mfs-track-ghost.over { border-color:var(--accent); background:var(--accent-soft); }
     .mfs-track-ghost-label { font-size:9.5px; color:var(--text-dim); display:flex; align-items:center; justify-content:center; height:100%; pointer-events:none; }
-    .mfs-tracks-scroll { flex:1 0 auto; position:relative; min-width:0; min-height:max-content; overflow-x:auto; overflow-y:visible; }
+    .mfs-tracks-scroll { position:relative; min-width:0; min-height:max-content; overflow-x:auto; overflow-y:visible; }
     .mfs-ruler { height:18px; border-bottom:1px solid var(--border-light); position:sticky; top:0; z-index:8; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
     .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; border-left:1px solid var(--border-light); padding-left:3px; }
     .mfs-marquee { position:absolute; z-index:12; border:1px solid var(--accent); background:var(--accent-soft); pointer-events:none; }    .mfs-lane { position:relative; height:32px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
@@ -4768,7 +4769,8 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
             );
           })}
         </div>
-        <div className="mfs-tracks-scroll" ref={trackRef} onMouseDown={startMarquee}>
+        <div className="mfs-track-viewport">
+          <div className="mfs-tracks-scroll" ref={trackRef} onMouseDown={startMarquee}>
           <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative" }}>
             <div className="mfs-ruler" onMouseDown={(e) => { e.stopPropagation(); onRulerDown(e); }}>
               {ticks.map((t) => <div key={t} className="mfs-ruler-tick" style={{ left: `${(t / timelineDuration) * 100}%` }}>{(t / 1000).toFixed(1)}dtk</div>)}
@@ -4799,6 +4801,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
           <div className="mfs-playhead" ref={playheadElRef} style={{ left: `${(playback.playhead / timelineDuration) * 100}%` }}><div className="mfs-playhead-flag" /></div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
