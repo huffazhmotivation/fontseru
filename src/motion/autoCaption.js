@@ -192,6 +192,40 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
 }
 
 /**
+ * Gabungkan hasil timestamp per kata menjadi caption per kalimat.
+ * Pemisahan terjadi setelah tanda baca akhir kalimat atau jeda ucapan
+ * yang cukup panjang. Timestamp kalimat tetap mencakup kata pertama sampai
+ * kata terakhirnya.
+ */
+export function groupCaptionSentences(words, gapMs = 1200) {
+  if (!Array.isArray(words) || words.length === 0) return [];
+  const result = [];
+  let current = null;
+
+  for (const word of words) {
+    const text = String(word?.text || "").trim();
+    if (!text) continue;
+    const start = Number.isFinite(word?.start) ? word.start : 0;
+    const end = Number.isFinite(word?.end) && word.end > start ? word.end : start + 250;
+    const gap = current ? start - current.end : 0;
+    const shouldSplit = current && (gap > gapMs || /[.!?。！？؟]$/.test(current.text));
+
+    if (shouldSplit) {
+      result.push(current);
+      current = null;
+    }
+    if (!current) {
+      current = { text, start, end };
+    } else {
+      current.text += ` ${text}`;
+      current.end = Math.max(current.end, end);
+    }
+  }
+  if (current) result.push(current);
+  return result;
+}
+
+/**
  * Split long caption text into short lines for display (max ~40 chars each).
  * Returns an array of string lines.
  */

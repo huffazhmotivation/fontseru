@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useReducer, useCallback, useMemo, useImperativeHandle } from "react";
 import { ModeTabs } from "@/mode/ModeTabs";
-import { decodeAudioFile, transcribeAudio, getLanguageOptions, splitCaptionText } from "@/motion/autoCaption";
+import { decodeAudioFile, transcribeAudio, getLanguageOptions, splitCaptionText, groupCaptionSentences } from "@/motion/autoCaption";
 import { loadMotionProject, saveMotionProject, clearMotionProject, serializeProjectForExport, deserializeImportedProject } from "@/motion/motionPersist";
 import {
   Play, Pause, Upload, Plus, Trash2, Type, Sparkles, Repeat,
@@ -824,7 +824,7 @@ function makeInitialProject() {
   const clip2 = makeTextClip("Klip 2", "Edit Teks Anda", 2200, "kinetic", textTrack.id);
   clip2.duration = 1800;
   return {
-    fonts: [], clips: [clip1, clip2], transitions: [], selectedClipId: clip1.id,
+    fonts: [], clips: [clip1, clip2], transitions: [], selectedClipId: clip1.id, selectedClipIds: [clip1.id],
     // "tracks" adalah daftar linimasa yang fleksibel — bisa lebih dari satu
     // track per jenis (teks/gambar/video/audio). Pengguna bisa menambah
     // track baru lewat tombol "+" di linimasa, atau otomatis saat sebuah
@@ -856,7 +856,12 @@ function normalizePersistedMediaClips(clips, tracks) {
     const trackType = trackTypes.get(clip.trackId);
     const normalizedType = ["image", "video", "audio"].includes(trackType) ? trackType : clip.type;
     const sourceKey = `${clip.src || ""}|${clip.name || ""}`;
-    if (normalizedType === "image" && audioKeys.has(sourceKey)) return false;
+    if (normalizedType === "image" && (audioKeys.has(sourceKey) || clip.file?.type?.startsWith("audio/"))) return false;
+    // Media clips must never be attached to a track of another media type.
+    // Older saved projects could contain an audio clip on an image track;
+    // dropping that malformed entry prevents it from reappearing as a green
+    // image bar after hydration.
+    if (clip.type === "audio" && trackType && trackType !== "audio") return false;
     const identity = clip.assetId || `${normalizedType}|${sourceKey}`;
     if (seen.has(identity)) return false;
     seen.add(identity);
@@ -880,6 +885,10 @@ function projectReducer(state, action) {
         frameSize: action.project.frameSize || state.frameSize,
         transitions: Array.isArray(action.project.transitions) ? action.project.transitions : [],
         library: action.project.library || state.library,
+        selectedClipId: action.project.selectedClipId ?? state.selectedClipId,
+        selectedClipIds: Array.isArray(action.project.selectedClipIds)
+          ? action.project.selectedClipIds.filter((id) => (action.project.clips || []).some((c) => c.id === id))
+          : (action.project.selectedClipId ? [action.project.selectedClipId] : []),
       };
     }
     case "ADD_CLIP": {
@@ -891,22 +900,27 @@ function projectReducer(state, action) {
       const lastEnd = state.clips.filter((c) => c.trackId === track.id).reduce((m, c) => Math.max(m, c.start + c.duration), 0);
       const clip = makeTextClip(`Klip ${state.clips.length + 1}`, "Teks Baru", lastEnd, "apple", track.id);
       if (action.offset) clip.offset = { ...clip.offset, ...action.offset };
-      return { ...state, tracks, clips: [...state.clips, clip], selectedClipId: clip.id };
+      return { ...state, tracks, clips: [...state.clips, clip], selectedClipId: clip.id, selectedClipIds: [clip.id] };
     }
     case "ADD_MEDIA_CLIP": {
       const asset = action.asset;
       if (!asset || !["image", "video", "audio"].includes(action.kind)) return state;
-      // Satu asset hanya boleh menghasilkan satu clip pada setiap track.
-      // Ini juga mencegah double-dispatch dari UI import atau klik berulang.
-      const existing = state.clips.find((c) => c.assetId === asset.id);
-      if (existing) return { ...state, selectedClipId: existing.id };
+      // Audio hanya boleh memiliki satu representasi audio. Bersihkan sisa
+      // klip gambar lama yang memakai sumber/nama sama (bug proyek lama).
+      const sourceKey = `${asset.src || ""}|${asset.name || ""}`;
+      const clipsWithoutWrongImage = action.kind === "audio"
+        ? state.clips.filter((c) => !(c.type === "image" && `${c.src || ""}|${c.name || ""}` === sourceKey))
+        : state.clips;
+      const existing = clipsWithoutWrongImage.find((c) => c.assetId === asset.id && c.type === action.kind);
+      if (existing) return { ...state, clips: clipsWithoutWrongImage, selectedClipId: existing.id, selectedClipIds: [existing.id] };
+      state = { ...state, clips: clipsWithoutWrongImage };
       let tracks = state.tracks;
       let track = [...tracks].reverse().find((t) => t.type === action.kind);
       if (!track) { track = makeTrack(action.kind); tracks = [...tracks, track]; }
       const lastEnd = state.clips.filter((c) => c.trackId === track.id).reduce((m, c) => Math.max(m, c.start + c.duration), 0);
       const clip = makeMediaClip(action.kind, action.asset, lastEnd, track.id);
       if (action.offset) clip.offset = { ...clip.offset, ...action.offset };
-      return { ...state, tracks, clips: [...state.clips, clip], selectedClipId: clip.id };
+      return { ...state, tracks, clips: [...state.clips, clip], selectedClipId: clip.id, selectedClipIds: [clip.id] };
     }
     case "ADD_CAPTION_CLIPS": {
       // Membuat klip teks (caption) hasil auto-transkripsi audio. Satu track
@@ -979,13 +993,35 @@ function projectReducer(state, action) {
       return { ...state, library: { ...state.library, [key]: state.library[key].filter((a) => a.id !== action.id) } };
     }
     case "DELETE_CLIP": {
-      const clips = state.clips.filter((c) => c.id !== action.id);
-      const selectedClipId = state.selectedClipId === action.id ? (clips[0]?.id ?? null) : state.selectedClipId;
-      const transitions = (state.transitions || []).filter((t) => t.leftClipId !== action.id && t.rightClipId !== action.id);
-      return { ...state, clips, transitions, selectedClipId };
+      const ids = action.ids || [action.id];
+      const idSet = new Set(ids.filter(Boolean));
+      const clips = state.clips.filter((c) => !idSet.has(c.id));
+      const selectedClipId = idSet.has(state.selectedClipId) ? (clips[0]?.id ?? null) : state.selectedClipId;
+      const transitions = (state.transitions || []).filter((t) => !idSet.has(t.leftClipId) && !idSet.has(t.rightClipId));
+      const selectedClipIds = (state.selectedClipIds || []).filter((id) => !idSet.has(id));
+      return { ...state, clips, transitions, selectedClipId, selectedClipIds };
     }
-    case "SELECT_CLIP":
-      return { ...state, selectedClipId: action.id };
+    case "DELETE_SELECTED_CLIPS": {
+      const ids = state.selectedClipIds || (state.selectedClipId ? [state.selectedClipId] : []);
+      if (ids.length === 0 || ids.includes(BG_SEL)) return state;
+      const idSet = new Set(ids);
+      const clips = state.clips.filter((c) => !idSet.has(c.id));
+      const transitions = (state.transitions || []).filter((t) => !idSet.has(t.leftClipId) && !idSet.has(t.rightClipId));
+      const nextSelected = clips[0]?.id ?? null;
+      return { ...state, clips, transitions, selectedClipId: nextSelected, selectedClipIds: nextSelected ? [nextSelected] : [] };
+    }
+    case "SELECT_ALL_CLIPS": {
+      const ids = state.clips.map((c) => c.id);
+      return { ...state, selectedClipId: ids[ids.length - 1] || null, selectedClipIds: ids };
+    }
+    case "SELECT_CLIP": {
+      if (action.id === BG_SEL) return { ...state, selectedClipId: BG_SEL, selectedClipIds: [] };
+      const current = state.selectedClipIds || (state.selectedClipId ? [state.selectedClipId] : []);
+      const next = action.additive
+        ? (current.includes(action.id) ? current.filter((id) => id !== action.id) : [...current, action.id])
+        : [action.id];
+      return { ...state, selectedClipId: next.includes(action.id) ? action.id : (next[next.length - 1] || null), selectedClipIds: next };
+    }
     case "REORDER_CLIP": {
       // Dipakai saat sebuah layer diseret di panel Layer untuk mengubah
       // urutan tumpukan (stacking order). Urutan di array `clips` = urutan
@@ -1011,7 +1047,8 @@ function projectReducer(state, action) {
     }
     case "APPLY_PRESET": {
       const preset = getPreset(action.presetId);
-      const clips = state.clips.map((c) => (c.id === action.id ? { ...c, presetId: preset.id, animateBy: preset.animateBy, stagger: preset.stagger } : c));
+      const ids = new Set(action.ids || [action.id]);
+      const clips = state.clips.map((c) => (ids.has(c.id) ? { ...c, presetId: preset.id, animateBy: preset.animateBy, stagger: preset.stagger } : c));
       return { ...state, clips };
     }
     case "APPLY_TRANSITION_BOTH": {
@@ -1019,7 +1056,8 @@ function projectReducer(state, action) {
       return { ...state, clips };
     }
     case "APPLY_EFFECT": {
-      const clips = state.clips.map((c) => (c.id === action.id ? { ...c, effectId: action.effectId } : c));
+      const ids = new Set(action.ids || [action.id]);
+      const clips = state.clips.map((c) => (ids.has(c.id) ? { ...c, effectId: action.effectId } : c));
       return { ...state, clips };
     }
     case "APPLY_TRANSITION_SIDE": {
@@ -1167,7 +1205,7 @@ const COALESCE_MS = 500;
 // Aksi yang murni soal "apa yang sedang dipilih/di-hover", bukan
 // perubahan data proyek yang sesungguhnya — tidak pernah masuk ke
 // riwayat undo/redo sendiri.
-const NON_HISTORY_ACTIONS = new Set(["SELECT_CLIP"]);
+const NON_HISTORY_ACTIONS = new Set(["SELECT_CLIP", "SELECT_ALL_CLIPS"]);
 
 function actionCoalesceKey(action) {
   switch (action.type) {
@@ -2408,7 +2446,7 @@ const GlobalStyle = () => (
     .mfs-track-ghost.showing { height:26px; margin:2px 0; border-color:var(--border-light); }
     .mfs-track-ghost.over { border-color:var(--accent); background:var(--accent-soft); }
     .mfs-track-ghost-label { font-size:9.5px; color:var(--text-dim); display:flex; align-items:center; justify-content:center; height:100%; pointer-events:none; }
-    .mfs-tracks-scroll { flex:1 0 auto; position:relative; min-width:0; min-height:max-content; overflow:visible; }
+    .mfs-tracks-scroll { flex:1 0 auto; position:relative; min-width:0; min-height:max-content; overflow-x:auto; overflow-y:visible; }
     .mfs-ruler { height:20px; border-bottom:1px solid var(--border-light); position:sticky; top:0; z-index:4; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
     .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9.5px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; border-left:1px solid var(--border-light); padding-left:3px; }
     .mfs-lane { position:relative; height:38px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
@@ -2527,7 +2565,7 @@ const LayerRow = React.memo(function LayerRow({ clip, selected, isDragging, show
       <div
         ref={(el) => registerRef(clip.id, el)}
         className={`mfs-clip-item ${selected ? "selected" : ""} ${isDragging ? "dragging" : ""}`}
-        onClick={() => dispatch({ type: "SELECT_CLIP", id: clip.id })}
+        onClick={(e) => dispatch({ type: "SELECT_CLIP", id: clip.id, additive: e.metaKey || e.ctrlKey })}
       >
         <GripVertical size={13} color="var(--text-dim)" className="mfs-layer-grip" onMouseDown={(e) => onGripDown(e, clip.id)} />
         <span className="mfs-type-dot" style={{ background: color }} />
@@ -2679,7 +2717,7 @@ const LayersPanel = React.memo(function LayersPanel({ project, dispatch }) {
             <LayerRow
               key={c.id}
               clip={c}
-              selected={c.id === project.selectedClipId}
+              selected={new Set(project.selectedClipIds || [project.selectedClipId]).has(c.id)}
               isDragging={dragClipId === c.id}
               showDropLine={!!dragClipId && dropBeforeId === c.id}
               dispatch={dispatch}
@@ -2704,7 +2742,8 @@ const LayersPanel = React.memo(function LayersPanel({ project, dispatch }) {
    LEFT PANEL — Preset / Transisi / Library / Font
    ============================================================ */
 
-function PresetPanel({ selectedClip, dispatch }) {
+function PresetPanel({ selectedClip, selectedClipIds = [], dispatch }) {
+  const selectedIds = selectedClipIds.length > 0 ? selectedClipIds : (selectedClip ? [selectedClip.id] : []);
   const isMediaType = (t) => t === "image" || t === "video";
   const [tab, setTab] = useState(selectedClip?.type === "text" ? "text" : "media");
   // Ikut pindah tab otomatis saat pilihan klip berganti jenis, supaya
@@ -2739,9 +2778,9 @@ function PresetPanel({ selectedClip, dispatch }) {
       <div className="mfs-section-label">Preset Animasi</div>
       {list.map((p) => {
         const Icon = p.icon || Sparkles;
-        const selected = selectedClip.presetId === p.id;
+        const selected = selectedIds.includes(selectedClip.id) && selectedClip.presetId === p.id;
         return (
-          <div key={p.id} className={`mfs-list-item ${selected ? "selected" : ""}`} onClick={() => dispatch({ type: "APPLY_PRESET", id: selectedClip.id, presetId: p.id })}>
+          <div key={p.id} className={`mfs-list-item ${selected ? "selected" : ""}`} onClick={() => dispatch({ type: "APPLY_PRESET", ids: selectedIds, presetId: p.id })}>
             <Icon size={13} color={selected ? "var(--accent)" : "var(--text-dim)"} />
             <span className="name">{p.name}</span>
           </div>
@@ -2751,16 +2790,17 @@ function PresetPanel({ selectedClip, dispatch }) {
   );
 }
 
-function EffectPanel({ selectedClip, dispatch }) {
+function EffectPanel({ selectedClip, selectedClipIds = [], dispatch }) {
+  const selectedIds = selectedClipIds.length > 0 ? selectedClipIds : (selectedClip ? [selectedClip.id] : []);
   if (!selectedClip) return <div className="mfs-panel-body"><div className="mfs-empty">Pilih klip untuk menerapkan effect.</div></div>;
   return (
     <div className="mfs-panel-body">
       <div className="mfs-section-label">Effect ({EFFECT_LIB.length})</div>
       {EFFECT_LIB.map((e) => {
         const Icon = e.icon || Sparkles;
-        const selected = selectedClip.effectId === e.id;
+        const selected = selectedIds.includes(selectedClip.id) && selectedClip.effectId === e.id;
         return (
-          <div key={e.id} className={`mfs-list-item ${selected ? "selected" : ""}`} onClick={() => dispatch({ type: "APPLY_EFFECT", id: selectedClip.id, effectId: e.id })}>
+          <div key={e.id} className={`mfs-list-item ${selected ? "selected" : ""}`} onClick={() => dispatch({ type: "APPLY_EFFECT", ids: selectedIds, effectId: e.id })}>
             <Icon size={13} color={selected ? "var(--accent)" : "var(--text-dim)"} />
             <span className="name">{e.name}</span>
           </div>
@@ -2791,6 +2831,24 @@ function TransitionPanel({ selectedClip, dispatch }) {
       ))}
     </div>
   );
+}
+
+function LibraryThumbnail({ asset }) {
+  const [src, setSrc] = useState(asset.src);
+  const [fallbackTried, setFallbackTried] = useState(false);
+
+  useEffect(() => {
+    setSrc(asset.src);
+    setFallbackTried(false);
+  }, [asset.src, asset.id]);
+
+  const handleError = () => {
+    if (fallbackTried || !asset.file) return;
+    setFallbackTried(true);
+    readFileAsDataURL(asset.file).then(setSrc).catch(() => {});
+  };
+
+  return <img className="mfs-asset-thumb" src={src} alt="" onError={handleError} />;
 }
 
 function LibraryPanel({ library, dispatch }) {
@@ -2832,7 +2890,7 @@ function LibraryPanel({ library, dispatch }) {
       {assets.map((a) => (
         <div key={a.id} className="mfs-list-item">
           {kind === "image"
-            ? <img className="mfs-asset-thumb" src={a.src} alt="" />
+            ? <LibraryThumbnail asset={a} />
             : <div className="mfs-asset-icon"><Icon size={14} color={trackColor(kind)} /></div>}
           <span className="name">{a.name}</span>
           <button className="mfs-add-btn" title="Tambah ke frame" onClick={() => dispatch({ type: "ADD_MEDIA_CLIP", kind, asset: a })}><Plus size={13} /></button>
@@ -2904,6 +2962,7 @@ const LEFT_TABS = [
 const LeftPanel = React.memo(function LeftPanel({ project, dispatch }) {
   const [tab, setTab] = useState("preset");
   const selectedClip = project.clips.find((c) => c.id === project.selectedClipId);
+  const selectedClipIds = project.selectedClipIds || (project.selectedClipId ? [project.selectedClipId] : []);
   return (
     <div className="mfs-left">
       <div className="mfs-tabs">
@@ -2911,8 +2970,8 @@ const LeftPanel = React.memo(function LeftPanel({ project, dispatch }) {
           <div key={t.id} className={`mfs-tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</div>
         ))}
       </div>
-      {tab === "preset" && <PresetPanel selectedClip={selectedClip} dispatch={dispatch} />}
-      {tab === "effect" && <EffectPanel selectedClip={selectedClip} dispatch={dispatch} />}
+      {tab === "preset" && <PresetPanel selectedClip={selectedClip} selectedClipIds={selectedClipIds} dispatch={dispatch} />}
+      {tab === "effect" && <EffectPanel selectedClip={selectedClip} selectedClipIds={selectedClipIds} dispatch={dispatch} />}
       {tab === "transisi" && <TransitionPanel selectedClip={selectedClip} dispatch={dispatch} />}
       {tab === "library" && <LibraryPanel library={project.library} dispatch={dispatch} />}
     </div>
@@ -3024,6 +3083,8 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     }
   }, [project.background.type, project.background.imageSrc]);
 
+  const selectedClipIds = project.selectedClipIds || (project.selectedClipId ? [project.selectedClipId] : []);
+  const selectSet = new Set(selectedClipIds);
   const selectedClip = project.selectedClipId === BG_SEL ? null : project.clips.find((c) => c.id === project.selectedClipId) || null;
   const selectedClipRef = useRef(selectedClip);
   useEffect(() => { selectedClipRef.current = selectedClip; }, [selectedClip]);
@@ -3920,6 +3981,7 @@ function FontPicker({ fonts, clip, dispatch }) {
 
 function AutoCaptionControl({ clip, dispatch }) {
   const [language, setLanguage] = useState("id");
+  const [mode, setMode] = useState("word");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("");
@@ -3937,10 +3999,11 @@ function AutoCaptionControl({ clip, dispatch }) {
     setProgress(0.02);
     try {
       const audioBuffer = await decodeAudioFile(clip.file);
-      const segments = await transcribeAudio(audioBuffer, language, (message, fraction) => {
+      const words = await transcribeAudio(audioBuffer, language, (message, fraction) => {
         setStatus(message);
         setProgress(clamp(fraction ?? 0, 0, 1));
       });
+      const segments = mode === "sentence" ? groupCaptionSentences(words) : words;
       if (segments.length === 0) {
         setError("Tidak ada ucapan yang terdeteksi di audio ini.");
         return;
@@ -3965,6 +4028,13 @@ function AutoCaptionControl({ clip, dispatch }) {
       <select className="mfs-input mfs-select" value={language} disabled={busy} onChange={(e) => setLanguage(e.target.value)}>
         {getLanguageOptions().map((option) => <option key={option.code} value={option.code}>{option.label}</option>)}
       </select>
+      <div className="mfs-field" style={{ marginTop: 7 }}>
+        <label>Format caption</label>
+        <div className="mfs-segmented">
+          <button type="button" className={mode === "word" ? "active" : ""} disabled={busy} onClick={() => setMode("word")}>Per kata</button>
+          <button type="button" className={mode === "sentence" ? "active" : ""} disabled={busy} onClick={() => setMode("sentence")}>Per kalimat</button>
+        </div>
+      </div>
       <button className="mfs-btn mfs-btn-sm" style={{ marginTop: 7, width: "100%" }} disabled={busy} onClick={generate}>
         {busy ? <Loader2 size={13} className="mfs-spin" /> : <Type size={13} />} {busy ? "Menganalisis…" : "Buat caption otomatis"}
       </button>
@@ -4328,7 +4398,27 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const [addTrackMenuOpen, setAddTrackMenuOpen] = useState(false);
   const [draggingClip, setDraggingClip] = useState(null); // clip.id sedang di-drag (untuk menampilkan zona ghost)
   const [dragHover, setDragHover] = useState(null); // { kind: 'track'|'ghost-top'|'ghost-bottom', trackId? }
-  const timelineDuration = useMemo(() => computeTimelineDuration(project.clips), [project.clips]);
+  const [timelineZoom, setTimelineZoom] = useState(1);
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      if (!e.metaKey && !e.ctrlKey) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left + el.scrollLeft;
+      const oldWidth = Math.max(rect.width, rect.width * timelineZoom);
+      const timeAtCursor = (cursorX / oldWidth) * timelineDuration;
+      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      setTimelineZoom((value) => Math.round(clamp(value * factor, 0.25, 8) * 100) / 100);
+      requestAnimationFrame(() => {
+        const nextWidth = Math.max(rect.width, rect.width * timelineZoom * factor);
+        el.scrollLeft = Math.max(0, timeAtCursor / timelineDuration * nextWidth - (e.clientX - rect.left));
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [timelineDuration, timelineZoom]);
   tlDurRef.current = timelineDuration;
 
   // Saat memutar, geser garis playhead LANGSUNG lewat DOM tiap frame (tanpa
@@ -4344,7 +4434,8 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const pxToTime = (px, width) => clamp((px / width) * timelineDuration, 0, timelineDuration);
   const scrub = (clientX) => {
     const rect = trackRef.current.getBoundingClientRect();
-    dispatchPlayback({ type: "SET_PLAYHEAD", value: pxToTime(clientX - rect.left, rect.width) });
+    const width = Math.max(trackRef.current.scrollWidth, rect.width);
+    dispatchPlayback({ type: "SET_PLAYHEAD", value: pxToTime(clientX - rect.left + trackRef.current.scrollLeft, width) });
   };
   const onRulerDown = (e) => {
     scrub(e.clientX);
@@ -4377,8 +4468,9 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
 
   const startClipDrag = (e, clip, mode) => {
     e.stopPropagation();
-    dispatchProject({ type: "SELECT_CLIP", id: clip.id });
+    dispatchProject({ type: "SELECT_CLIP", id: clip.id, additive: e.metaKey || e.ctrlKey });
     const rect = trackRef.current.getBoundingClientRect();
+    const width = Math.max(trackRef.current.scrollWidth, rect.width);
     const startMx = e.clientX, startMy = e.clientY;
     const startStart = clip.start, startDuration = clip.duration;
     // Jangan langsung menampilkan zona ghost "+ track baru" saat klip baru
@@ -4390,7 +4482,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     let hasStartedDrag = false;
     let lastHover = null, lastStart = startStart;
     const move = (ev) => {
-      const dxMs = ((ev.clientX - startMx) / rect.width) * timelineDuration;
+      const dxMs = ((ev.clientX - startMx) / width) * timelineDuration;
       if (mode === "move") {
         if (!hasStartedDrag) {
           const moved = Math.hypot(ev.clientX - startMx, ev.clientY - startMy);
@@ -4499,7 +4591,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
             row={row}
             color={color}
             timelineDuration={timelineDuration}
-            selected={c.id === project.selectedClipId}
+            selected={(project.selectedClipIds || [project.selectedClipId]).includes(c.id)}
             onClipMouseDown={onClipMouseDown}
             onDelete={onDeleteClip}
           />
@@ -4540,12 +4632,13 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
         })}
       </div>
     );
-  }), [trackData, timelineDuration, project.selectedClipId, dragHover, project.transitions]);
+  }), [trackData, timelineDuration, project.selectedClipId, project.selectedClipIds, dragHover, project.transitions]);
 
   return (
     <div className="mfs-timeline">
       <div className="mfs-timeline-head">
         <span className="mfs-timeline-title">Linimasa — seret klip ke atas/bawah untuk pindah track, seret transisi ke sela klip</span>
+        <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{Math.round(timelineZoom * 100)}%</span>
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ position: "relative" }}>
             <button className="mfs-btn mfs-btn-sm" onClick={() => setAddTrackMenuOpen((v) => !v)}><Plus size={12} /> Tambah Track</button>
@@ -4591,6 +4684,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
           <div className={`mfs-track-ghost ${draggingClip ? "showing" : ""}`} />
         </div>
         <div className="mfs-tracks-scroll" ref={trackRef}>
+          <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative" }}>
           <div className="mfs-ruler" onMouseDown={onRulerDown}>
             {ticks.map((t) => <div key={t} className="mfs-ruler-tick" style={{ left: `${(t / timelineDuration) * 100}%` }}>{(t / 1000).toFixed(1)}dtk</div>)}
           </div>
@@ -4617,6 +4711,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
           </div>
 
           <div className="mfs-playhead" ref={playheadElRef} style={{ left: `${(playback.playhead / timelineDuration) * 100}%` }}><div className="mfs-playhead-flag" /></div>
+          </div>
         </div>
       </div>
     </div>
@@ -4971,6 +5066,16 @@ export default function App() {
       const tag = e.target?.tagName;
       const isEditable = tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable;
       if (isEditable) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        dispatchProject({ type: "SELECT_ALL_CLIPS" });
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        dispatchProject({ type: "DELETE_SELECTED_CLIPS" });
+        return;
+      }
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
       if (e.key.toLowerCase() === "z" && e.shiftKey) { e.preventDefault(); dispatchProject({ type: "REDO" }); }
@@ -4979,7 +5084,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [dispatchProject]);
 
   return (
     <ErrorBoundary>
