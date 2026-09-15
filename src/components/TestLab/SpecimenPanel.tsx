@@ -2126,16 +2126,14 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
         </div>
       </div>
 
-      <div
-        className={`fm-lab-resize-handle${isResizingSide ? " active" : ""}`}
-        onPointerDown={startSideResize}
-        title="Drag to resize panel"
-        data-testid="lab-side-resize-handle"
-      >
+      <div className={`fm-lab-resize-handle${isResizingSide ? " active" : ""}`} aria-hidden="true" data-testid="lab-side-resize-handle">
         <span className="fm-lab-resize-grip" aria-hidden="true" />
       </div>
 
-      <div className="fm-lab-side" style={{ width: sideWidth }} data-testid="lab-right-panel">
+      <div
+        className="fm-lab-side"
+        data-testid="lab-right-panel"
+      >
         <div className="fm-lab-side-section" data-testid="lab-kerning-panel">
           <div className="fm-section-title">Kerning</div>
 
