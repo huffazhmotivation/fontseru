@@ -211,26 +211,25 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
  * yang cukup panjang. Timestamp kalimat tetap mencakup kata pertama sampai
  * kata terakhirnya.
  */
-export function groupCaptionSentences(words, gapMs = 550) {
+export function groupCaptionSentences(words, gapMs = 900) {
   if (!Array.isArray(words) || words.length === 0) return [];
   const result = [];
   let current = null;
-
   for (const word of words) {
     const text = String(word?.text || "").trim();
     if (!text) continue;
     const start = Number.isFinite(word?.start) ? word.start : 0;
     const end = Number.isFinite(word?.end) && word.end > start ? word.end : start + 250;
     const gap = current ? Math.max(0, start - current.end) : 0;
-    const shouldSplit = current && (gap >= gapMs || /[.!?。！？؟]$/.test(current.text) || /^[¿¡]/.test(text));
-
+    const punctuation = /[.!?。！？؟…]$/.test(text);
+    const naturalBreak = /[,;:]$/.test(text) && gap >= 350;
+    const shouldSplit = current && (gap >= gapMs || punctuation || naturalBreak);
     if (shouldSplit) {
       result.push(current);
       current = null;
     }
-    if (!current) {
-      current = { text, start, end };
-    } else {
+    if (!current) current = { text, start, end };
+    else {
       current.text += ` ${text}`;
       current.end = Math.max(current.end, end);
     }

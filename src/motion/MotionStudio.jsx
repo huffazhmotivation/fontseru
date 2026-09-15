@@ -2257,10 +2257,7 @@ const GlobalStyle = () => (
       --popover-shadow:rgba(20,20,40,0.14); --stage-checker:#e6e6ea;
     }
     * { box-sizing: border-box; }
-    .mfs-root { font-family:'Inter',-apple-system,sans-serif; background:var(--bg); color:var(--text); height:100vh; width:100%;
-      display:grid; grid-template-columns:200px 268px 1fr 320px; grid-template-rows:48px 1fr 226px;
-      grid-template-areas:"top top top top" "layers left center right" "timeline timeline timeline timeline"; overflow:hidden; font-size:13px;
-      transition:background .15s ease, color .15s ease; }
+    .mfs-root { font-family:'Inter',-apple-system,sans-serif; background:var(--bg); color:var(--text); height:100vh; width:100%; display:grid; grid-template-columns:200px 268px 1fr 200px 320px; grid-template-rows:48px 1fr 226px; grid-template-areas:"top top top top top" "left left center layers right" "timeline timeline timeline timeline timeline"; overflow:hidden; font-size:13px; transition:background .15s ease, color .15s ease; }
     .mfs-theme-toggle { position:relative; overflow:hidden; }
     .mfs-theme-toggle svg { transition:transform .2s ease, opacity .2s ease; }
     ::-webkit-scrollbar{width:8px;height:8px;} ::-webkit-scrollbar-thumb{background:var(--border-light);border-radius:4px;} ::-webkit-scrollbar-track{background:transparent;}
@@ -2305,7 +2302,7 @@ const GlobalStyle = () => (
     .mfs-progress > div { height:100%; background:linear-gradient(90deg,var(--accent),#a78bfa); border-radius:999px; transition:width 0.25s ease; }
 
     /* LAYERS (panel paling kiri, menetap) */
-    .mfs-layers { grid-area:layers; background:var(--bg-panel); border-right:1px solid var(--border); display:flex; flex-direction:column; min-height:0; }
+    .mfs-layers { grid-area:layers; background:var(--bg-panel); border-left:1px solid var(--border); display:flex; flex-direction:column; min-height:0; }
     .mfs-layers-head { height:40px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid var(--border); }
     .mfs-layers-bg { border-top:1px solid var(--border); padding:8px; flex-shrink:0; }
     .mfs-popover { position:absolute; top:32px; right:0; background:var(--bg-elevated); border:1px solid var(--border-light); border-radius:var(--radius); box-shadow:0 12px 30px var(--popover-shadow); z-index:20; width:150px; overflow:hidden; padding:4px; }
@@ -2465,8 +2462,9 @@ const GlobalStyle = () => (
     .mfs-timeline-title { font-size:10.5px; color:var(--text-dim); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
     .mfs-tracks-outer { flex:1; display:flex; min-height:0; padding:0 12px; overflow:hidden; align-items:flex-start; }
     .mfs-track-labels { width:56px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
-    .mfs-track-labels .mfs-ruler-spacer { height:20px; display:flex; align-items:center; justify-content:center; position:sticky; top:0; z-index:5; background:var(--bg-panel); }
-    .mfs-track-viewport { flex:1; min-width:0; min-height:0; overflow-y:auto; overflow-x:hidden; position:relative; }
+    .mfs-track-labels .mfs-ruler-spacer { height:20px; display:flex; align-items:center; justify-content:center; background:var(--bg-panel); }
+    .mfs-track-viewport { flex:1; min-width:0; min-height:0; overflow:hidden; position:relative; display:flex; flex-direction:column; }
+    .mfs-track-viewport .mfs-tracks-scroll { flex:1; min-height:0; overflow-y:auto; }
     .mfs-track-label { height:32px; display:flex; align-items:center; gap:5px; font-size:10px; color:var(--text-muted); font-weight:600; position:relative; flex-shrink:0; }
     .mfs-track-label .dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
     .mfs-track-label .label-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
@@ -2479,7 +2477,11 @@ const GlobalStyle = () => (
     .mfs-track-ghost.over { border-color:var(--accent); background:var(--accent-soft); }
     .mfs-track-ghost-label { font-size:9.5px; color:var(--text-dim); display:flex; align-items:center; justify-content:center; height:100%; pointer-events:none; }
     .mfs-tracks-scroll { position:relative; min-width:0; min-height:max-content; overflow-x:auto; overflow-y:visible; }
-    .mfs-ruler { height:18px; border-bottom:1px solid var(--border-light); position:sticky; top:0; z-index:8; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
+    .mfs-ruler { height:18px; border-bottom:1px solid var(--border-light); position:relative; z-index:8; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
+    .mfs-ruler-fixed { height:18px; flex:0 0 18px; position:relative; z-index:10; background:var(--bg-panel); }
+    .mfs-timeline-hscroll { height:10px; flex:0 0 10px; overflow-x:auto; overflow-y:hidden; margin-left:56px; background:var(--bg-panel); }
+    .mfs-timeline-hscroll-inner { height:1px; }
+    .mfs-playhead-marker { position:absolute; top:0; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid var(--accent); transform:translateX(-6px); z-index:12; pointer-events:none; }
     .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; border-left:1px solid var(--border-light); padding-left:3px; }
     .mfs-marquee { position:absolute; z-index:12; border:1px solid var(--accent); background:var(--accent-soft); pointer-events:none; }    .mfs-lane { position:relative; height:32px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
     .mfs-lane.track-over { background:var(--accent-soft); }
@@ -2493,7 +2495,6 @@ const GlobalStyle = () => (
     .mfs-clip-block:hover .mfs-clip-del { opacity:1; }
     .mfs-clip-del:hover { color:#ff6b6b; }
     .mfs-playhead { position:absolute; top:0; bottom:0; width:1px; background:var(--accent); z-index:6; pointer-events:none; }
-    .mfs-playhead-flag { position:absolute; top:-1px; left:-5px; width:11px; height:11px; background:var(--accent); border-radius:2px 2px 2px 0; transform:rotate(45deg); }
 
     /* Transisi hidup di STRIP TERSENDIRI di bagian bawah tiap lane — bukan
        lagi di atas/menimpa bar klip. Karena punya ruang sendiri, ia tidak
@@ -4431,10 +4432,25 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const [draggingClip, setDraggingClip] = useState(null); // clip.id sedang di-drag (untuk menampilkan zona ghost)
   const [dragHover, setDragHover] = useState(null); // { kind: 'track'|'ghost-top'|'ghost-bottom', trackId? }
   const [timelineZoom, setTimelineZoom] = useState(1);
+  const [horizontalScroll, setHorizontalScroll] = useState(0);
   const [marquee, setMarquee] = useState(null);
   const MIN_TL_H = 120;
   const MAX_TL_H = Math.max(320, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) * 0.65));
   const timelineDuration = useMemo(() => computeTimelineDuration(project.clips), [project.clips]);
+
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const onScroll = () => setHorizontalScroll(el.scrollLeft);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const setTimelineScroll = useCallback((value) => {
+    const next = Math.max(0, value);
+    setHorizontalScroll(next);
+    if (trackRef.current) trackRef.current.scrollLeft = next;
+  }, []);
 
   useEffect(() => {
     const el = trackRef.current;
@@ -4450,12 +4466,12 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
       setTimelineZoom((value) => Math.round(clamp(value * factor, 0.25, 8) * 100) / 100);
       requestAnimationFrame(() => {
         const nextWidth = Math.max(rect.width, rect.width * timelineZoom * factor);
-        el.scrollLeft = Math.max(0, timeAtCursor / timelineDuration * nextWidth - (e.clientX - rect.left));
+        setTimelineScroll(timeAtCursor / timelineDuration * nextWidth - (e.clientX - rect.left));
       });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [timelineDuration, timelineZoom]);
+  }, [timelineDuration, timelineZoom, setTimelineScroll]);
 
   const onResizeHandleDown = useCallback((e) => {
     e.preventDefault();
@@ -4770,11 +4786,16 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
           })}
         </div>
         <div className="mfs-track-viewport">
+          <div className="mfs-ruler-fixed" style={{ overflow: "hidden" }}>
+            <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative", transform: `translateX(${-horizontalScroll}px)` }}>
+              <div className="mfs-ruler" onMouseDown={onRulerDown}>
+                {ticks.map((t) => <div key={t} className="mfs-ruler-tick" style={{ left: `${(t / timelineDuration) * 100}%` }}>{(t / 1000).toFixed(1)}dtk</div>)}
+                <div className="mfs-playhead-marker" style={{ left: `${(playback.playhead / timelineDuration) * 100}%` }} />
+              </div>
+            </div>
+          </div>
           <div className="mfs-tracks-scroll" ref={trackRef} onMouseDown={startMarquee}>
           <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative" }}>
-            <div className="mfs-ruler" onMouseDown={(e) => { e.stopPropagation(); onRulerDown(e); }}>
-              {ticks.map((t) => <div key={t} className="mfs-ruler-tick" style={{ left: `${(t / timelineDuration) * 100}%` }}>{(t / 1000).toFixed(1)}dtk</div>)}
-            </div>
             {marquee && <div className="mfs-marquee" style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }} />}
 
           {/* Zona kosong di paling atas — seret klip ke sini untuk membuat
@@ -4798,7 +4819,10 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
             {draggingClip && <span className="mfs-track-ghost-label">+ track baru di sini</span>}
           </div>
 
-          <div className="mfs-playhead" ref={playheadElRef} style={{ left: `${(playback.playhead / timelineDuration) * 100}%` }}><div className="mfs-playhead-flag" /></div>
+          <div className="mfs-playhead" ref={playheadElRef} style={{ left: `${(playback.playhead / timelineDuration) * 100}%` }} />
+          </div>
+          <div className="mfs-timeline-hscroll" onScroll={(e) => setTimelineScroll(e.currentTarget.scrollLeft)}>
+            <div className="mfs-timeline-hscroll-inner" style={{ width: `${Math.max(1, timelineZoom) * 100}%` }} />
           </div>
         </div>
       </div>
