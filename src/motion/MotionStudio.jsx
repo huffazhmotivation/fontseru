@@ -4523,22 +4523,33 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     const el = trackRef.current;
     if (!el) return;
     const onWheel = (e) => {
-      if (!e.metaKey && !e.ctrlKey) return;
-      e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const cursorX = e.clientX - rect.left + el.scrollLeft;
-      const oldWidth = Math.max(rect.width, rect.width * timelineZoom);
-      const timeAtCursor = (cursorX / oldWidth) * timelineDuration;
-      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-      setTimelineZoom((value) => Math.round(clamp(value * factor, 0.25, 8) * 100) / 100);
-      requestAnimationFrame(() => {
-        const nextWidth = Math.max(rect.width, rect.width * timelineZoom * factor);
-        setTimelineScroll(timeAtCursor / timelineDuration * nextWidth - (e.clientX - rect.left));
-      });
+      if (e.shiftKey) {
+        e.preventDefault();
+        const scrollEl = horizontalScrollRef.current;
+        const rect = el.getBoundingClientRect();
+        const localX = e.clientX - rect.left;
+        const currentScroll = scrollEl?.scrollLeft || 0;
+        const oldWidth = Math.max(rect.width, rect.width * timelineZoom);
+        const timeAtCursor = ((currentScroll + localX) / oldWidth) * timelineDuration;
+        const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+        const nextZoom = Math.round(clamp(timelineZoom * factor, 0.25, 8) * 100) / 100;
+        setTimelineZoom(nextZoom);
+        requestAnimationFrame(() => {
+          const nextWidth = Math.max(rect.width, rect.width * nextZoom);
+          setTimelineScroll(timeAtCursor / timelineDuration * nextWidth - localX);
+        });
+        return;
+      }
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        const current = horizontalScrollRef.current?.scrollLeft || 0;
+        const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+        setTimelineScroll(current + delta);
+      }
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [timelineDuration, timelineZoom, setTimelineScroll]);
+  }, [setTimelineScroll, timelineDuration, timelineZoom]);
 
   const onResizeHandleDown = useCallback((e) => {
     e.preventDefault();
@@ -4571,8 +4582,9 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const pxToTime = (px, width) => clamp((px / width) * timelineDuration, 0, timelineDuration);
   const scrub = (clientX) => {
     const rect = trackRef.current.getBoundingClientRect();
-    const width = Math.max(trackRef.current.scrollWidth, rect.width);
-    dispatchPlayback({ type: "SET_PLAYHEAD", value: pxToTime(clientX - rect.left + trackRef.current.scrollLeft, width) });
+    const scrollLeft = horizontalScrollRef.current?.scrollLeft || 0;
+    const width = Math.max(trackRef.current.clientWidth, trackRef.current.scrollWidth);
+    dispatchPlayback({ type: "SET_PLAYHEAD", value: pxToTime(clientX - rect.left + scrollLeft, width) });
   };
   const onRulerDown = (e) => {
     scrub(e.clientX);
@@ -4607,12 +4619,12 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     if (e.button !== 0 || e.target.closest(".mfs-clip-block,button")) return;
     e.preventDefault();
     const rect = trackRef.current.getBoundingClientRect();
-    const startX = e.clientX - rect.left + trackRef.current.scrollLeft;
+    const startX = e.clientX - rect.left + (horizontalScrollRef.current?.scrollLeft || 0);
     const startY = e.clientY - rect.top + trackRef.current.scrollTop;
     const additive = e.metaKey || e.ctrlKey;
     const base = additive ? (project.selectedClipIds || []) : [];
     const update = (ev) => {
-      const x = ev.clientX - rect.left + trackRef.current.scrollLeft;
+      const x = ev.clientX - rect.left + (horizontalScrollRef.current?.scrollLeft || 0);
       const y = ev.clientY - rect.top + trackRef.current.scrollTop;
       const left = Math.min(startX, x), right = Math.max(startX, x);
       const top = Math.min(startY, y), bottom = Math.max(startY, y);
@@ -4644,7 +4656,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     e.stopPropagation();
     dispatchProject({ type: "SELECT_CLIP", id: clip.id, additive: e.metaKey || e.ctrlKey });
     const rect = trackRef.current.getBoundingClientRect();
-    const width = Math.max(trackRef.current.scrollWidth, rect.width);
+    const width = Math.max(trackRef.current.clientWidth, trackRef.current.scrollWidth);
     const startMx = e.clientX, startMy = e.clientY;
     const startStart = clip.start, startDuration = clip.duration;
     // Jangan langsung menampilkan zona ghost "+ track baru" saat klip baru
@@ -4863,8 +4875,11 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
               </div>
             </div>
           </div>
+          <div className="mfs-timeline-hscroll" ref={horizontalScrollRef} onScroll={(e) => setTimelineScroll(e.currentTarget.scrollLeft)}>
+            <div className="mfs-timeline-hscroll-inner" style={{ width: `${Math.max(1, timelineZoom) * 100}%` }} />
+          </div>
           <div className="mfs-tracks-scroll" ref={trackRef} onMouseDown={startMarquee}>
-          <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative" }}>
+          <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative", transform: `translateX(${-horizontalScroll}px)` }}>
             {marquee && <div className="mfs-marquee" style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }} />}
 
           {/* Zona kosong di paling atas — seret klip ke sini untuk membuat
@@ -4889,9 +4904,6 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
           </div>
 
           <div className="mfs-playhead" ref={playheadElRef} style={{ left: `${(playback.playhead / timelineDuration) * 100}%` }} />
-          </div>
-          <div className="mfs-timeline-hscroll" ref={horizontalScrollRef} onScroll={(e) => setTimelineScroll(e.currentTarget.scrollLeft)}>
-            <div className="mfs-timeline-hscroll-inner" style={{ width: `${Math.max(1, timelineZoom) * 100}%` }} />
           </div>
         </div>
       </div>
