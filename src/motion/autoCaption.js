@@ -37,6 +37,12 @@ export async function decodeAudioFile(file) {
   try {
     const arrayBuffer = await file.arrayBuffer();
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    console.log("[AutoCaption] decoded audio:", {
+      duration: audioBuffer.duration,
+      sampleRate: audioBuffer.sampleRate,
+      channels: audioBuffer.numberOfChannels,
+      length: audioBuffer.length,
+    });
     return audioBuffer;
   } finally {
     try { await ctx.close(); } catch (_) {}
@@ -61,7 +67,7 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
   if (!pipeline) {
     onProgress?.("Memuat model transkripsi Whisper…", 0);
     try {
-      pipeline = await loadPipeline("automatic-speech-recognition", "Xenova/whisper-tiny", {
+      pipeline = await loadPipeline("automatic-speech-recognition", "Xenova/whisper-base", {
         progress_callback: (p) => {
           if (p.status === "progress" && typeof p.progress === "number") {
             onProgress?.("Memuat model Whisper…", p.progress / 200); // 0 → 0.5
@@ -106,6 +112,8 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
 
   onProgress?.("Mengenali ucapan…", 0.6);
 
+  console.log("[AutoCaption] input PCM length:", inputPcm.length, "sampleRate: 16000, duration:", (inputPcm.length / 16000).toFixed(2) + "s");
+
   const result = await pipeline(inputPcm, {
     language: whisperLang,
     task: "transcribe",
@@ -113,14 +121,47 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
     chunk_length_s: 30,
   });
 
+  console.log("[AutoCaption] raw whisper result:", result);
+  if (result?.segments) {
+    console.log("[AutoCaption] segments count:", result.segments.length);
+    result.segments.forEach((seg, i) => console.log(`[AutoCaption] seg ${i}:`, seg));
+  }
+  if (result?.chunks) {
+    console.log("[AutoCaption] chunks count:", result.chunks.length);
+    result.chunks.forEach((ch, i) => console.log(`[AutoCaption] chunk ${i}:`, ch));
+  }
+  if (result?.text) {
+    console.log("[AutoCaption] full text:", result.text.slice(0, 300));
+  }
+
   onProgress?.("Selesai!", 1);
 
-  if (!result || !result.segments || result.segments.length === 0) {
+  // Normalisasi hasil — @xenova/transformers bisa mengembalikan format
+  // berbeda tergantung versi model: `segments` (lama) atau `chunks` (baru
+  // whisper-timestamped), atau hanya `text` tanpa segmentasi.
+  let rawSegments = [];
+
+  if (Array.isArray(result?.segments) && result.segments.length > 0) {
+    rawSegments = result.segments;
+  } else if (Array.isArray(result?.chunks) && result.chunks.length > 0) {
+    // chunks: [{ text, timestamp: [start, end] }] atau [{ text, timestamps: [[s,e], ...] }]
+    rawSegments = result.chunks.map((ch) => {
+      const ts = ch.timestamp || ch.timestamps?.[0] || [0, 0];
+      return { text: ch.text, timestamp: ts };
+    });
+  } else if (result?.text && result.text.trim().length > 0) {
+    // Fallback: satu segment besar untuk seluruh audio
+    const totalDur = audioBuffer.duration;
+    rawSegments = [{ text: result.text.trim(), timestamp: [0, totalDur] }];
+    console.log("[AutoCaption] no segments/chunks, using full text fallback");
+  }
+
+  if (rawSegments.length === 0) {
     return [];
   }
 
-  return result.segments.map((seg) => ({
-    text: seg.text?.trim() || "",
+  return rawSegments.map((seg) => ({
+    text: (seg.text || "").trim(),
     start: Math.round((seg.timestamp?.[0] ?? 0) * 1000),
     end: Math.round((seg.timestamp?.[1] ?? 0) * 1000),
   })).filter((s) => s.text.length > 0);

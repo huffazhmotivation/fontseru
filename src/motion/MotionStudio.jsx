@@ -781,7 +781,7 @@ function makeMediaClip(kind, asset, start, trackId = null) {
   const isAudio = kind === "audio";
   const isSvg = kind === "image" && !!asset.isSvg;
   return {
-    id: uid("clip"), type: kind, name: asset.name, src: asset.src, start, trackId,
+    id: uid("clip"), assetId: asset.id, type: kind, name: asset.name, src: asset.src, start, trackId,
     duration: isAudio ? 3000 : kind === "video" ? 3200 : 2400,
     // Gambar/video sekarang juga bisa diberi preset animasi lewat panel
     // Preset (tab "Gambar & Video") — defaultnya "none" (statis) supaya
@@ -850,9 +850,18 @@ function projectReducer(state, action) {
   switch (action.type) {
     case "HYDRATE_PROJECT": {
       if (!action.project) return state;
+      // Muat seluruh field proyek tersimpan (clips, fonts, tracks, background,
+      // frameSize, transitions) — sebelumnya hanya transitions yang dipulihkan,
+      // sehingga fonts & clips tersimpan hilang setelah reload.
       return {
         ...state,
+        clips: action.project.clips || state.clips,
+        fonts: action.project.fonts || state.fonts,
+        tracks: action.project.tracks || state.tracks,
+        background: action.project.background || state.background,
+        frameSize: action.project.frameSize || state.frameSize,
         transitions: Array.isArray(action.project.transitions) ? action.project.transitions : [],
+        library: action.project.library || state.library,
       };
     }
     case "ADD_CLIP": {
@@ -867,6 +876,12 @@ function projectReducer(state, action) {
       return { ...state, tracks, clips: [...state.clips, clip], selectedClipId: clip.id };
     }
     case "ADD_MEDIA_CLIP": {
+      const asset = action.asset;
+      if (!asset || !["image", "video", "audio"].includes(action.kind)) return state;
+      // Satu asset hanya boleh menghasilkan satu clip pada setiap track.
+      // Ini juga mencegah double-dispatch dari UI import atau klik berulang.
+      const existing = state.clips.find((c) => c.assetId === asset.id);
+      if (existing) return { ...state, selectedClipId: existing.id };
       let tracks = state.tracks;
       let track = [...tracks].reverse().find((t) => t.type === action.kind);
       if (!track) { track = makeTrack(action.kind); tracks = [...tracks, track]; }
@@ -977,6 +992,15 @@ function projectReducer(state, action) {
     }
     case "SET_BACKGROUND":
       return { ...state, background: { ...state.background, ...action.patch } };
+    case "ADD_FONT": {
+      if (!action.font || !action.font.family) return state;
+      const exists = state.fonts.some((f) => f.family === action.font.family);
+      if (exists) return state;
+      return { ...state, fonts: [...state.fonts, action.font] };
+    }
+    case "DELETE_FONT": {
+      return { ...state, fonts: state.fonts.filter((f) => f.family !== action.family) };
+    }
     case "ADD_TRANSITION_AFTER_CLIP": {
       const { clipId, transitionId } = action;
       if (!clipId || !transitionId || transitionId === "none") return state;
@@ -1581,10 +1605,16 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
       if (effectDelta.shadowOffsetX) offCtx.shadowOffsetX = effectDelta.shadowOffsetX;
       if (effectDelta.shadowOffsetY) offCtx.shadowOffsetY = effectDelta.shadowOffsetY;
     }
-    offCtx.translate(cx + p.x + off.x, cy + p.y + off.y);
-    offCtx.rotate(((p.rotation || 0) + off.rotation) * Math.PI / 180);
-    offCtx.scale((p.scaleX ?? p.scale ?? 1) * off.scale, (p.scaleY ?? p.scale ?? 1) * off.scale);
-    offCtx.globalAlpha = clamp(p.opacity ?? 1, 0, 1);
+    const offAngle = (off.rotation || 0) * Math.PI / 180;
+    const offScale = off.scale ?? 1;
+    const relX = cx - w / 2;
+    const relY = cy - h / 2;
+    const transformedX = (relX * Math.cos(offAngle) - relY * Math.sin(offAngle)) * offScale;
+    const transformedY = (relX * Math.sin(offAngle) + relY * Math.cos(offAngle)) * offScale;
+    offCtx.translate(w / 2 + off.x + transformedX + p.x, h / 2 + off.y + transformedY + p.y);
+    offCtx.rotate(offAngle + (p.rotation || 0) * Math.PI / 180);
+    offCtx.scale(offScale * (p.scaleX ?? p.scale ?? 1), offScale * (p.scaleY ?? p.scale ?? 1));
+    offCtx.globalAlpha = clamp((p.opacity ?? 1) * (clip.opacity ?? 1), 0, 1);
     if (ls) drawSpacedText(offCtx, text, -uw / 2, 0, ls); else offCtx.fillText(text, -uw / 2, 0);
     offCtx.shadowBlur = 0; offCtx.shadowColor = 'transparent';
     offCtx.restore();
@@ -1612,7 +1642,7 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
     offCtx.translate(w / 2 + p.x + off.x, h / 2 + p.y + off.y);
     offCtx.rotate(((p.rotation || 0) + off.rotation) * Math.PI / 180);
     offCtx.scale((p.scaleX ?? p.scale ?? 1) * off.scale, (p.scaleY ?? p.scale ?? 1) * off.scale);
-    offCtx.globalAlpha = clamp(p.opacity ?? 1, 0, 1);
+    offCtx.globalAlpha = clamp((p.opacity ?? 1) * (clip.opacity ?? 1), 0, 1);
     lines.forEach((line, li) => {
       const lw = measure(line);
       maxW = Math.max(maxW, lw);
@@ -2325,27 +2355,27 @@ const GlobalStyle = () => (
     .mfs-transition-popover { top:22px; left:-96px; right:auto; width:200px; max-height:280px; overflow-y:auto; }
     .mfs-zoom-badge { font-size:10.5px; color:var(--text-muted); font-family:'JetBrains Mono',monospace; min-width:38px; text-align:center; user-select:none; }
 
-    .mfs-timeline { grid-area:timeline; background:var(--bg-panel); border-top:1px solid var(--border); display:flex; flex-direction:column; min-height:0; }
+    .mfs-timeline { grid-area:timeline; background:var(--bg-panel); border-top:1px solid var(--border); display:flex; flex-direction:column; min-height:0; max-height:100%; overflow:hidden; }
     .mfs-timeline-head { height:32px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:0 14px; border-bottom:1px solid var(--border); }
     .mfs-timeline-title { font-size:11px; color:var(--text-dim); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
-    .mfs-tracks-outer { flex:1; display:flex; min-height:0; padding:0 14px; }
+    .mfs-tracks-outer { flex:1; display:flex; min-height:0; padding:0 14px; overflow-y:auto; overflow-x:hidden; align-items:flex-start; }
     .mfs-track-labels { width:60px; flex-shrink:0; display:flex; flex-direction:column; }
-    .mfs-track-labels .mfs-ruler-spacer { height:20px; display:flex; align-items:center; justify-content:center; }
-    .mfs-track-label { height:38px; display:flex; align-items:center; gap:5px; font-size:10px; color:var(--text-muted); font-weight:600; position:relative; }
+    .mfs-track-labels .mfs-ruler-spacer { height:20px; display:flex; align-items:center; justify-content:center; position:sticky; top:0; z-index:5; background:var(--bg-panel); }
+    .mfs-track-label { height:38px; display:flex; align-items:center; gap:5px; font-size:10px; color:var(--text-muted); font-weight:600; position:relative; flex-shrink:0; }
     .mfs-track-label .dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
     .mfs-track-label .label-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
     .mfs-track-label .mfs-track-del { opacity:0; width:14px; height:14px; flex-shrink:0; border:none; background:transparent; color:var(--text-dim); cursor:pointer; display:flex; align-items:center; justify-content:center; }
     .mfs-track-label:hover .mfs-track-del { opacity:1; }
     .mfs-add-track-btn { width:20px; height:20px; border-radius:5px; border:1px dashed var(--border-light); background:transparent; color:var(--text-dim); display:flex; align-items:center; justify-content:center; cursor:pointer; }
     .mfs-add-track-btn:hover { color:var(--accent); border-color:var(--accent-dim); background:var(--accent-soft); }
-    .mfs-track-ghost { height:0; overflow:hidden; border-radius:6px; border:1.5px dashed transparent; transition:height .12s ease, border-color .12s ease, background .12s ease; }
+    .mfs-track-ghost { height:0; overflow:hidden; border-radius:6px; border:1.5px dashed transparent; transition:height .12s ease, border-color .12s ease, background .12s ease; flex-shrink:0; }
     .mfs-track-ghost.showing { height:26px; margin:2px 0; border-color:var(--border-light); }
     .mfs-track-ghost.over { border-color:var(--accent); background:var(--accent-soft); }
     .mfs-track-ghost-label { font-size:9.5px; color:var(--text-dim); display:flex; align-items:center; justify-content:center; height:100%; pointer-events:none; }
-    .mfs-tracks-scroll { flex:1; position:relative; min-width:0; }
-    .mfs-ruler { height:20px; border-bottom:1px solid var(--border-light); position:relative; cursor:pointer; }
+    .mfs-tracks-scroll { flex:1 0 auto; position:relative; min-width:0; min-height:max-content; overflow:visible; }
+    .mfs-ruler { height:20px; border-bottom:1px solid var(--border-light); position:sticky; top:0; z-index:4; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
     .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9.5px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; border-left:1px solid var(--border-light); padding-left:3px; }
-    .mfs-lane { position:relative; height:38px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; }
+    .mfs-lane { position:relative; height:38px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
     .mfs-lane.track-over { background:var(--accent-soft); }
     .mfs-clip-block { position:absolute; top:3px; bottom:3px; border-radius:7px; cursor:grab; overflow:hidden; min-width:22px; border:1px solid; }
     .mfs-clip-block.selected { box-shadow:0 0 0 2px var(--accent-dim); border-color:var(--accent); z-index:5; }
