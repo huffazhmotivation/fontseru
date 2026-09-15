@@ -2277,7 +2277,12 @@ const GlobalStyle = () => (
     .mfs-root { font-family:'Inter',-apple-system,sans-serif; background:var(--bg); color:var(--text); height:100vh; width:100%; display:grid; grid-template-columns:240px minmax(0,1fr) 170px 280px; grid-template-rows:48px 1fr 226px; grid-template-areas:"top top top top" "left center layers right" "timeline timeline timeline timeline"; overflow:hidden; font-size:13px; transition:background .15s ease, color .15s ease; }
     .mfs-theme-toggle { position:relative; overflow:hidden; }
     .mfs-theme-toggle svg { transition:transform .2s ease, opacity .2s ease; }
-    ::-webkit-scrollbar{width:8px;height:8px;} ::-webkit-scrollbar-thumb{background:var(--border-light);border-radius:4px;} ::-webkit-scrollbar-track{background:transparent;}
+    /* Motion scrollbars: purple thumb only, with no boxed track/background. */
+    .mfs-root { scrollbar-color: #9b6cff transparent; scrollbar-width: thin; }
+    .mfs-root ::-webkit-scrollbar { width:7px; height:7px; }
+    .mfs-root ::-webkit-scrollbar-track { background:transparent; }
+    .mfs-root ::-webkit-scrollbar-thumb { background:#9b6cff; border:2px solid transparent; background-clip:padding-box; border-radius:99px; }
+    .mfs-root ::-webkit-scrollbar-thumb:hover { background:#bd9cff; border-width:1px; }
 
     .mfs-top { grid-area:top; display:flex; align-items:center; justify-content:space-between; padding:0 14px; border-bottom:1px solid var(--border); background:var(--bg-panel); }
     .mfs-top-left { display:flex; align-items:center; gap:16px; }
@@ -2450,11 +2455,13 @@ const GlobalStyle = () => (
     .mfs-bg-preview { width:100%; height:64px; border-radius:var(--radius); border:1px solid var(--border-light); margin-bottom:12px; overflow:hidden; background-size:cover; background-position:center; }
 
     .mfs-slider-val { float:right; color:var(--text-muted); font-weight:600; text-transform:none; letter-spacing:0; }
-    input.mfs-slider { -webkit-appearance:none; appearance:none; width:100%; height:4px; border-radius:3px; background:var(--border-light); outline:none; cursor:pointer; margin-top:4px; accent-color:var(--accent); }
-    input.mfs-slider::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:14px; height:14px; border-radius:50%; background:var(--accent); border:2px solid #fff1; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4); transition:transform .1s; }
-    input.mfs-slider::-webkit-slider-thumb:hover { transform:scale(1.15); }
-    input.mfs-slider::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:var(--accent); border:2px solid #fff1; cursor:pointer; }
+    input.mfs-slider { -webkit-appearance:none; appearance:none; width:100%; height:4px; border-radius:3px; background:linear-gradient(90deg, #9b6cff 0%, #9b6cff var(--slider-progress, 0%), var(--border-light) var(--slider-progress, 0%), var(--border-light) 100%); outline:none; cursor:pointer; margin-top:4px; accent-color:var(--accent); }
+    input.mfs-slider::-webkit-slider-runnable-track { height:4px; border-radius:3px; background:transparent; }
+    input.mfs-slider::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:14px; height:14px; border-radius:50%; background:#b995ff; border:2px solid #fff1; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.4), 0 0 6px #9b6cffaa; transition:transform .1s, box-shadow .1s; }
+    input.mfs-slider::-webkit-slider-thumb:hover { transform:scale(1.15); box-shadow:0 1px 4px rgba(0,0,0,0.4), 0 0 9px #b995ff; }
+    input.mfs-slider::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#b995ff; border:2px solid #fff1; cursor:pointer; box-shadow:0 0 6px #9b6cffaa; }
     input.mfs-slider::-moz-range-track { height:4px; border-radius:3px; background:var(--border-light); }
+    input.mfs-slider::-moz-range-progress { height:4px; border-radius:3px; background:#9b6cff; }
 
     .mfs-frame-ctrl { position:relative; display:flex; align-items:center; gap:6px; }
     .mfs-frame-trigger { white-space:nowrap; }
@@ -2482,8 +2489,10 @@ const GlobalStyle = () => (
     .mfs-track-labels .mfs-ruler-spacer { height:18px; flex:0 0 18px; display:flex; align-items:center; justify-content:center; background:#211538; border-bottom:1px solid #49316f; }
     .mfs-track-labels-scroll { flex:1; min-height:0; overflow:hidden; }
     .mfs-track-viewport { flex:1; min-width:0; min-height:0; overflow:hidden; position:relative; display:flex; flex-direction:column; }
-    .mfs-track-viewport .mfs-tracks-scroll { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; scrollbar-width:none; }
-    .mfs-track-viewport .mfs-tracks-scroll::-webkit-scrollbar { width:0; height:0; }
+    .mfs-track-viewport .mfs-tracks-scroll { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#9b6cff transparent; }
+    .mfs-track-viewport .mfs-tracks-scroll::-webkit-scrollbar { width:7px; height:0; }
+    .mfs-track-viewport .mfs-tracks-scroll::-webkit-scrollbar-track { background:transparent; }
+    .mfs-track-viewport .mfs-tracks-scroll::-webkit-scrollbar-thumb { background:#9b6cff; border:2px solid transparent; background-clip:padding-box; border-radius:99px; }
     .mfs-track-label { height:32px; display:flex; align-items:center; gap:5px; font-size:10px; color:var(--text-muted); font-weight:600; position:relative; flex-shrink:0; }
     .mfs-track-label .dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
     .mfs-track-label .label-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
@@ -2499,10 +2508,11 @@ const GlobalStyle = () => (
     .mfs-ruler { height:18px; border-bottom:1px solid var(--border-light); position:relative; z-index:8; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
     .mfs-ruler-fixed { height:18px; flex:0 0 18px; position:relative; z-index:10; background:#211538; border-bottom:1px solid #49316f; }
     .mfs-ruler { height:18px; border-bottom:none; position:relative; z-index:8; cursor:pointer; flex-shrink:0; background:transparent; }
-    .mfs-timeline-hscroll { height:10px; flex:0 0 10px; overflow-x:auto; overflow-y:hidden; margin:0; background:var(--bg-panel); scrollbar-width:thin; }
-    .mfs-timeline-hscroll::-webkit-scrollbar { height:6px; }
+    .mfs-timeline-hscroll { height:12px; flex:0 0 12px; overflow-x:scroll; overflow-y:hidden; margin:0; padding:0; background:transparent; scrollbar-width:thin; scrollbar-color:#9b6cff transparent; }
+    .mfs-timeline-hscroll::-webkit-scrollbar { height:8px; }
     .mfs-timeline-hscroll::-webkit-scrollbar-track { background:transparent; }
-    .mfs-timeline-hscroll::-webkit-scrollbar-thumb { background:var(--border-light); border-radius:99px; }
+    .mfs-timeline-hscroll::-webkit-scrollbar-thumb { background:#9b6cff; border:2px solid transparent; background-clip:padding-box; border-radius:99px; box-shadow:0 0 5px #9b6cff99; }
+    .mfs-timeline-hscroll::-webkit-scrollbar-thumb:hover { background:#bd9cff; }
     .mfs-timeline-hscroll-inner { height:1px; }
     .mfs-playhead-marker { position:absolute; top:0; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid var(--accent); transform:translateX(-6px); z-index:12; pointer-events:none; }
     .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9px; color:#c8b7e8; font-family:'JetBrains Mono',monospace; border-left:1px solid #694b91; padding-left:3px; }
@@ -3926,6 +3936,7 @@ function SliderField({ label, value, min, max, step, unit = "", onChange, format
         max={max}
         step={step}
         value={value}
+        style={{ "--slider-progress": `${((Number(value) - Number(min)) / Math.max(Number(max) - Number(min), 1)) * 100}%` }}
         onChange={(e) => onChange(Number(e.target.value))}
       />
     </div>
@@ -4465,6 +4476,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const [draggingClip, setDraggingClip] = useState(null); // clip.id sedang di-drag (untuk menampilkan zona ghost)
   const [dragHover, setDragHover] = useState(null); // { kind: 'track'|'ghost-top'|'ghost-bottom', trackId? }
   const [timelineZoom, setTimelineZoom] = useState(1);
+  const horizontalScrollRef = useRef(null);
   const [horizontalScroll, setHorizontalScroll] = useState(0);
   const [marquee, setMarquee] = useState(null);
   const MIN_TL_H = 120;
@@ -4476,8 +4488,8 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     const labels = labelScrollRef.current;
     if (!el || !labels) return;
     const onScroll = () => {
-      setHorizontalScroll(el.scrollLeft);
       labels.scrollTop = el.scrollTop;
+      setHorizontalScroll(horizontalScrollRef.current?.scrollLeft || 0);
     };
     const onLabelScroll = () => { el.scrollTop = labels.scrollTop; };
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -4491,7 +4503,20 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const setTimelineScroll = useCallback((value) => {
     const next = Math.max(0, value);
     setHorizontalScroll(next);
-    if (trackRef.current) trackRef.current.scrollLeft = next;
+    if (horizontalScrollRef.current && horizontalScrollRef.current.scrollLeft !== next) {
+      horizontalScrollRef.current.scrollLeft = next;
+    }
+  }, []);
+
+  useEffect(() => {
+    const el = horizontalScrollRef.current;
+    if (!el) return;
+    const sync = () => {
+      setHorizontalScroll(el.scrollLeft);
+      if (trackRef.current) trackRef.current.scrollLeft = el.scrollLeft;
+    };
+    el.addEventListener("scroll", sync, { passive: true });
+    return () => el.removeEventListener("scroll", sync);
   }, []);
 
   useEffect(() => {
@@ -4865,7 +4890,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
 
           <div className="mfs-playhead" ref={playheadElRef} style={{ left: `${(playback.playhead / timelineDuration) * 100}%` }} />
           </div>
-          <div className="mfs-timeline-hscroll" onScroll={(e) => setTimelineScroll(e.currentTarget.scrollLeft)}>
+          <div className="mfs-timeline-hscroll" ref={horizontalScrollRef} onScroll={(e) => setTimelineScroll(e.currentTarget.scrollLeft)}>
             <div className="mfs-timeline-hscroll-inner" style={{ width: `${Math.max(1, timelineZoom) * 100}%` }} />
           </div>
         </div>
