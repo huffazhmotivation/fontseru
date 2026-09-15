@@ -4415,7 +4415,7 @@ const TimelineClipBlock = React.memo(function TimelineClipBlock({ clip, row, col
   );
 });
 
-function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, playClock }) {
+function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, playClock, timelineHeight, setTimelineHeight }) {
   const trackRef = useRef(null);
   const playheadElRef = useRef(null);
   const tlDurRef = useRef(1);
@@ -4426,7 +4426,6 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const [draggingClip, setDraggingClip] = useState(null); // clip.id sedang di-drag (untuk menampilkan zona ghost)
   const [dragHover, setDragHover] = useState(null); // { kind: 'track'|'ghost-top'|'ghost-bottom', trackId? }
   const [timelineZoom, setTimelineZoom] = useState(1);
-  const [timelineHeight, setTimelineHeight] = useState(226);
   const MIN_TL_H = 120;
   const MAX_TL_H = Math.max(320, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) * 0.65));
   const timelineDuration = useMemo(() => computeTimelineDuration(project.clips), [project.clips]);
@@ -5017,6 +5016,7 @@ export default function App() {
   const [history, dispatchProject] = useReducer(historyReducer, initialHistoryState);
   const [playback, dispatchPlayback] = useReducer(playbackReducer, initialPlayback);
   const [exportState, setExportState] = useState({ exporting: false, progress: 0 });
+  const [timelineHeight, setTimelineHeight] = useState(226);
   const project = history.present;
   const canUndo = history.past.length > 0;
   const canRedo = history.future.length > 0;
@@ -5160,7 +5160,7 @@ export default function App() {
           playClock={playClock}
         />
         <RightInspector project={project} dispatch={dispatchProject} />
-        <ClipTimeline project={project} playback={playback} dispatchProject={dispatchProject} dispatchPlayback={dispatchPlayback} playClock={playClock} />
+        <ClipTimeline project={project} playback={playback} dispatchProject={dispatchProject} dispatchPlayback={dispatchPlayback} playClock={playClock} timelineHeight={timelineHeight} setTimelineHeight={setTimelineHeight} />
         {mobilePane && <div className="mfs-mobile-backdrop" onClick={() => setMobilePane(null)} />}
         <nav className="mfs-mobile-nav">
           <button className={mobilePane === "layers" ? "active" : ""} onClick={() => toggleMobilePane("layers")}><LayoutGrid size={18} /><span>Layer</span></button>
