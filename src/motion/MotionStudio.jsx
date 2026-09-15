@@ -846,6 +846,24 @@ const TRACK_TYPES = [
 ];
 function trackColor(type) { return TRACK_TYPES.find((t) => t.type === type)?.color || "#7c6cff"; }
 
+function normalizePersistedMediaClips(clips, tracks) {
+  const trackTypes = new Map((tracks || []).map((t) => [t.id, t.type]));
+  const media = (clips || []).filter((clip) => clip && clip.type !== "text");
+  const audioKeys = new Set(media.filter((clip) => clip.type === "audio").map((clip) => `${clip.src || ""}|${clip.name || ""}`));
+  const seen = new Set();
+  return (clips || []).filter((clip) => {
+    if (!clip || clip.type === "text") return true;
+    const trackType = trackTypes.get(clip.trackId);
+    const normalizedType = ["image", "video", "audio"].includes(trackType) ? trackType : clip.type;
+    const sourceKey = `${clip.src || ""}|${clip.name || ""}`;
+    if (normalizedType === "image" && audioKeys.has(sourceKey)) return false;
+    const identity = clip.assetId || `${normalizedType}|${sourceKey}`;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+
 function projectReducer(state, action) {
   switch (action.type) {
     case "HYDRATE_PROJECT": {
@@ -855,7 +873,7 @@ function projectReducer(state, action) {
       // sehingga fonts & clips tersimpan hilang setelah reload.
       return {
         ...state,
-        clips: action.project.clips || state.clips,
+        clips: normalizePersistedMediaClips(action.project.clips || state.clips, action.project.tracks || state.tracks),
         fonts: action.project.fonts || state.fonts,
         tracks: action.project.tracks || state.tracks,
         background: action.project.background || state.background,
@@ -893,14 +911,26 @@ function projectReducer(state, action) {
     case "ADD_CAPTION_CLIPS": {
       // Membuat klip teks (caption) hasil auto-transkripsi audio. Satu track
       // teks baru dibuat khusus untuk caption supaya tidak tercampur dengan
-      // klip teks manual.
-      const { segments, audioStart } = action;
+      // klip teks manual. Idempoten per audio sumber: audio yang sama tidak
+      // pernah menghasilkan track caption kedua — jalankan ulang hanya
+      // memilih track caption yang sudah ada.
+      const { segments, audioStart, sourceClipId } = action;
       if (!segments || segments.length === 0) return state;
+      const existingTrackId = sourceClipId
+        ? state.clips.find((c) => c.captionSourceClipId === sourceClipId)?.trackId
+        : null;
+      if (existingTrackId) {
+        return { ...state, selectedClipId: state.clips.find((c) => c.captionSourceClipId === sourceClipId)?.id || state.selectedClipId };
+      }
       const captionTrack = makeTrack("text");
       const tracks = [...state.tracks, captionTrack];
       const newClips = segments.map((seg) => {
-        const capClip = makeTextClip("Caption", seg.text, audioStart + seg.start, "none", captionTrack.id);
-        capClip.duration = Math.max(300, seg.end - seg.start);
+    const start = Math.max(0, Math.round(seg.start ?? 0));
+        const end = Math.max(start + 120, Math.round(seg.end ?? start + 300));
+        const capClip = makeTextClip("Caption", seg.text, audioStart + start, "none", captionTrack.id);
+        capClip.captionSourceClipId = sourceClipId || null;
+        capClip.captionBatchId = action.batchId || null;
+        capClip.duration = Math.max(120, end - start);
         capClip.fontSize = 36;
         capClip.animateIn = false;
         capClip.animateOut = false;
@@ -908,6 +938,12 @@ function projectReducer(state, action) {
         return capClip;
       });
       return { ...state, tracks, clips: [...state.clips, ...newClips], selectedClipId: newClips[0]?.id || state.selectedClipId };
+    }
+    case "DELETE_CAPTION_CLIPS": {
+      // Menghapus semua caption yang dibuat dari satu audio sumber — dipakai
+      // saat caption dibuat ulang supaya tidak menumpuk.
+      const clips = state.clips.filter((c) => c.captionSourceClipId !== action.sourceClipId);
+      return { ...state, clips };
     }
     case "ADD_TRACK": {
       const track = { id: action.id || uid("track"), type: action.trackType };
@@ -3909,7 +3945,7 @@ function AutoCaptionControl({ clip, dispatch }) {
         setError("Tidak ada ucapan yang terdeteksi di audio ini.");
         return;
       }
-      dispatch({ type: "ADD_CAPTION_CLIPS", segments, audioStart: clip.start });
+      dispatch({ type: "ADD_CAPTION_CLIPS", segments, audioStart: clip.start, sourceClipId: clip.id });
       setStatus(`${segments.length} caption dibuat`);
       setProgress(1);
     } catch (err) {
@@ -4249,7 +4285,6 @@ function laneMarkers(clips) {
 
 const ROW_H = 34;
 const MAX_ROWS = 3;
-const TRANS_STRIP_H = 20; // ruang khusus di bawah tiap lane, tempat bar transisi hidup — tidak pernah menimpa bar klip
 
 // Satu bar klip di linimasa, di-memo. Sama seperti <LayerRow>: karena reducer
 // mempertahankan referensi objek klip yang tak berubah dan semua callback di
@@ -4290,8 +4325,6 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const laneElRef = useRef({});
   const topGhostRef = useRef(null);
   const bottomGhostRef = useRef(null);
-  const [dragOverKey, setDragOverKey] = useState(null);
-  const [openMarkerKey, setOpenMarkerKey] = useState(null);
   const [addTrackMenuOpen, setAddTrackMenuOpen] = useState(false);
   const [draggingClip, setDraggingClip] = useState(null); // clip.id sedang di-drag (untuk menampilkan zona ghost)
   const [dragHover, setDragHover] = useState(null); // { kind: 'track'|'ghost-top'|'ghost-bottom', trackId? }
@@ -4400,21 +4433,6 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
   };
 
-  const applyTransitionToMarker = (marker, transitionId) => {
-    if (marker.left) dispatchProject({ type: "APPLY_TRANSITION_SIDE", id: marker.left.id, side: "out", transitionId });
-    if (marker.right) dispatchProject({ type: "APPLY_TRANSITION_SIDE", id: marker.right.id, side: "in", transitionId });
-  };
-
-  const insertTransitionAtSeam = (marker, transitionId) => {
-    if (!marker.left || !marker.right || !transitionId || transitionId === "none") return;
-    dispatchProject({
-      type: "INSERT_TRANSITION_SLOT",
-      leftClipId: marker.left.id,
-      rightClipId: marker.right.id,
-      transitionId,
-    });
-  };
-
   const deleteTransitionSlot = (transitionId) => {
     if (!transitionId) return;
     dispatchProject({ type: "DELETE_TRANSITION_SLOT", transitionId });
@@ -4444,10 +4462,9 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
       const isText = track.type === "text";
       const packed = isText ? packLaneRows(raw, MAX_ROWS) : raw.map((c) => ({ clip: c, row: 0 }));
       const rowsUsed = packed.reduce((m, p) => Math.max(m, p.row + 1), 1);
-      const laneHeight = rowsUsed * ROW_H + TRANS_STRIP_H;
-      const markers = laneMarkers(raw);
+      const laneHeight = rowsUsed * ROW_H;
       const slots = (project.transitions || []).filter((t) => raw.some((c) => c.id === t.leftClipId));
-      return { track, clips: packed, rowsUsed, laneHeight, markers, slots };
+      return { track, clips: packed, rowsUsed, laneHeight, slots };
     });
   }, [project.tracks, project.clips, project.transitions]);
 
@@ -4465,7 +4482,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   // ulang tiap tick juga — itulah sumber utama "tersendat" saat play.
   // Dengan useMemo di sini, blok berat ini hanya dihitung ulang saat data
   // klip/track atau state drag-nya benar-benar berubah, bukan tiap tick.
-  const laneRows = useMemo(() => trackData.map(({ track, clips, laneHeight, markers, slots }) => {
+  const laneRows = useMemo(() => trackData.map(({ track, clips, laneHeight, slots }) => {
     const meta = TRACK_TYPES.find((t) => t.type === track.type);
     const color = meta?.color || trackColor(track.type);
     return (
@@ -4521,84 +4538,9 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
             </div>
           );
         })}
-        {markers.map((m) => {
-          const mk = `${track.id}-${m.key}`;
-          const gapStart = m.left ? m.left.start + m.left.duration : m.x;
-          const gapEnd = m.right ? m.right.start : m.x;
-          const gapMs = Math.max(0, gapEnd - gapStart);
-          const isSeam = !!m.left && !!m.right;
-          const slot = slots.find((s) => s.leftClipId === m.left?.id && s.rightClipId === m.right?.id);
-          const activeId = slot?.presetId || null;
-          const activeTrans = activeId ? getTransition(activeId) : null;
-          if (activeTrans) return null;
-          const markerStyle = isSeam ? {
-            left: `${(gapStart / timelineDuration) * 100}%`,
-            width: `${Math.max((gapMs / timelineDuration) * 100, 0.6)}%`,
-          } : { left: `${(m.x / timelineDuration) * 100}%` };
-          return (
-            <div
-              key={mk}
-              className={`mfs-transition-bar ${activeTrans ? "active" : ""} ${dragOverKey === mk ? "over" : ""} ${isSeam ? "seam-drop" : "invalid-drop"}`}
-              style={markerStyle}
-              title={activeTrans ? `Transisi: ${activeTrans.name} — drag keluar untuk menghapus` : isSeam ? "Lepaskan preset transisi di gap ini" : "Transisi hanya bisa dimasukkan di antara dua klip"}
-              draggable={false}
-              onDragOver={(e) => {
-                if (!isSeam) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "copy";
-              }}
-              onDragEnter={() => { if (isSeam) setDragOverKey(mk); }}
-              onDragLeave={() => setDragOverKey((k) => (k === mk ? null : k))}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOverKey(null);
-                if (!isSeam) return;
-                const slotId = e.dataTransfer.getData("text/transition-slot-id");
-                const presetId = e.dataTransfer.getData("text/transition-id");
-                if (slotId) {
-                  dispatchProject({ type: "MOVE_TRANSITION_SLOT", transitionId: slotId, leftClipId: m.left.id, rightClipId: m.right.id });
-                } else if (presetId) {
-                  insertTransitionAtSeam(m, presetId);
-                }
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!isSeam) return;
-                setOpenMarkerKey((k) => (k === mk ? null : mk));
-              }}
-            >
-              {openMarkerKey === mk && (
-                <>
-                  <div className="mfs-menu-backdrop" onClick={(e) => { e.stopPropagation(); setOpenMarkerKey(null); }} />
-                  <div className="mfs-popover mfs-transition-popover" onClick={(e) => e.stopPropagation()}>
-                    <div className="mfs-section-label" style={{ margin: "2px 6px 6px" }}>Info Sela</div>
-                    {activeTrans && (
-                      <>
-                        <div className="mfs-popover-item" style={{ cursor: "default", opacity: 0.8 }}>
-                          <Wand size={13} /> {activeTrans.name}
-                        </div>
-                        <div
-                          className="mfs-popover-item mfs-popover-danger"
-                          onClick={() => { deleteTransitionSlot(slot.id); setOpenMarkerKey(null); }}
-                        >
-                          <X size={13} /> Hapus Transisi
-                        </div>
-                      </>
-                    )}
-                    {!activeTrans && (
-                      <div className="mfs-popover-item" style={{ cursor: "default", opacity: 0.6, fontSize: 11 }}>
-                        Seret preset transisi ke sela ini untuk menambahkan
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          );
-        })}
       </div>
     );
-  }), [trackData, timelineDuration, project.selectedClipId, dragHover, dragOverKey, openMarkerKey, project.transitions]);
+  }), [trackData, timelineDuration, project.selectedClipId, dragHover, project.transitions]);
 
   return (
     <div className="mfs-timeline">

@@ -117,7 +117,7 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
   const result = await pipeline(inputPcm, {
     language: whisperLang,
     task: "transcribe",
-    return_timestamps: true,
+    return_timestamps: "word",
     chunk_length_s: 30,
   });
 
@@ -156,15 +156,39 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
     console.log("[AutoCaption] no segments/chunks, using full text fallback");
   }
 
-  if (rawSegments.length === 0) {
-    return [];
-  }
+  const normalized = [];
+  const pushWord = (text, start, end) => {
+    const clean = (text || "").trim();
+    if (!clean || !/[\p{L}\p{N}]/u.test(clean)) return;
+    const s = Number.isFinite(start) ? start : 0;
+    const e = Number.isFinite(end) && end > s ? end : s + 0.25;
+    normalized.push({ text: clean, start: Math.round(s * 1000), end: Math.round(e * 1000) });
+  };
 
-  return rawSegments.map((seg) => ({
-    text: (seg.text || "").trim(),
-    start: Math.round((seg.timestamp?.[0] ?? 0) * 1000),
-    end: Math.round((seg.timestamp?.[1] ?? 0) * 1000),
-  })).filter((s) => s.text.length > 0);
+  if (Array.isArray(result?.chunks) && result.chunks.length > 0) {
+    for (const ch of result.chunks) {
+      const ts = ch.timestamp || ch.timestamps?.[0] || [0, 0];
+      pushWord(ch.text, ts[0], ts[1]);
+    }
+  } else if (Array.isArray(result?.segments) && result.segments.length > 0) {
+    for (const seg of result.segments) {
+      const words = (seg.text || "").trim().split(/\s+/).filter(Boolean);
+      const start = Number(seg.timestamp?.[0] ?? 0);
+      const end = Number(seg.timestamp?.[1] ?? start + Math.max(words.length * 0.25, 0.25));
+      const totalChars = Math.max(words.reduce((sum, word) => sum + word.length, 0), 1);
+      let cursor = start;
+      for (const word of words) {
+        const span = Math.max((end - start) * (word.length / totalChars), 0.12);
+        pushWord(word, cursor, Math.min(end, cursor + span));
+        cursor += span;
+      }
+    }
+  } else if (result?.text) {
+    const words = result.text.trim().split(/\s+/).filter(Boolean);
+    const total = Math.max(audioBuffer.duration, words.length * 0.25);
+    words.forEach((word, i) => pushWord(word, (i / words.length) * total, ((i + 1) / words.length) * total));
+  }
+  return normalized;
 }
 
 /**

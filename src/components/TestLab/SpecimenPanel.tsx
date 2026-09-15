@@ -81,6 +81,7 @@ function EditableStage({
   activeGlyph,
   onActiveGlyphChange,
   focusNonce,
+  kerningContext,
 }: {
   text: string;
   onTextChange: (next: string) => void;
@@ -91,13 +92,19 @@ function EditableStage({
   activeGlyph: ActiveGlyph;
   onActiveGlyphChange: (next: ActiveGlyph) => void;
   focusNonce: number;
+  kerningContext: KerningContext;
 }) {
-  const glyphs = useAppStore((s) => s.glyphs);
-  const kerningPairs = useAppStore((s) => s.kerningPairs);
+  const glyphs = useAppStore((s) => s.glyphsByStyle[kerningContext === "shared" ? "regular" : kerningContext] ?? s.glyphs);
+  const sharedPairs = useAppStore((s) => s.kerningPairs);
+  const overridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
+  const kerningPairs = useMemo(
+    () => effectiveKerningPairs(sharedPairs, overridesByStyle, kerningContext === "shared" ? "regular" : kerningContext),
+    [sharedPairs, overridesByStyle, kerningContext]
+  );
   const metrics = useAppStore((s) => s.metrics);
-  const beginKerningDrag = useAppStore((s) => s.beginKerningDrag);
-  const setKerningPairLive = useAppStore((s) => s.setKerningPairLive);
-  const endKerningDrag = useAppStore((s) => s.endKerningDrag);
+  const beginKerningDrag = useAppStore((s) => s.beginFamilyKerningDrag);
+  const setKerningPairLive = useAppStore((s) => s.setFamilyKerningPairLive);
+  const endKerningDrag = useAppStore((s) => s.endFamilyKerningDrag);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
@@ -204,7 +211,7 @@ function EditableStage({
     const incoming = left ? kerningPairs[kerningKey(left, p.char)] ?? 0 : 0;
     const outgoing = right ? kerningPairs[kerningKey(p.char, right)] ?? 0 : 0;
 
-    beginKerningDrag();
+    beginKerningDrag(kerningContext === "shared" ? "shared" : kerningContext);
     setIsDragging(true);
     dragRef.current = {
       clientX: e.clientX,
@@ -232,11 +239,11 @@ function EditableStage({
       // glyph after it along with the drag — no counter-adjustment of the
       // outgoing pair, which would otherwise cancel the shift and pin the
       // rest of the line in place.
-      setKerningPairLive(drag.leftChar, drag.char, drag.leftValue + deltaUnits);
+      setKerningPairLive(kerningContext === "shared" ? "shared" : kerningContext, drag.leftChar, drag.char, drag.leftValue + deltaUnits);
     } else if (drag.rightChar) {
       // At the start of a line there is no incoming pair. The outgoing pair
       // remains the only meaningful kerning context.
-      setKerningPairLive(drag.char, drag.rightChar, drag.rightValue - deltaUnits);
+      setKerningPairLive(kerningContext === "shared" ? "shared" : kerningContext, drag.char, drag.rightChar, drag.rightValue - deltaUnits);
     }
   };
 
@@ -1748,82 +1755,58 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
     if (autoKernRunning) return;
     setAutoKernProgress(0);
     try {
-      if (kerningMode === "family") {
-        await autoKernAllPairsForContext(familyContext, setAutoKernProgress);
-      } else {
-        await autoKernAllPairs(setAutoKernProgress);
-      }
+      await autoKernAllPairsForContext(familyContext, setAutoKernProgress);
       setAutoKernProgress("done");
       window.setTimeout(() => setAutoKernProgress("idle"), 550);
     } catch (error) {
       console.error("[FontSeru] Auto Kerning failed.", error);
       setAutoKernProgress("idle");
     }
-  }, [autoKernRunning, autoKernAllPairs, autoKernAllPairsForContext, kerningMode, familyContext]);
+  }, [autoKernRunning, autoKernAllPairsForContext, familyContext]);
 
-  // Whether the currently active kerning layer (Shared, one style's
-  // override layer, or the whole font in Single Test) has ANY manually-set
-  // pair at all — used to grey out "Reset All" when there's nothing to
-  // reset back to Auto Metrik.
-  const hasAnyManualKerningInScope = kerningMode === "family"
-    ? Object.values(
-        familyContext === "shared" ? kerningManual : (kerningOverrideManualByStyle[familyContext] ?? {})
-      ).some(Boolean)
-    : Object.values(kerningManual).some(Boolean);
+  // Whether the currently active kerning layer has ANY manually-set
+  // pair — used to grey out "Reset All" when nothing to reset.
+  const hasAnyManualKerningInScope = (() => {
+    if (familyContext === "shared") return Object.values(kerningManual).some(Boolean);
+    return Object.values(kerningOverrideManualByStyle[familyContext] ?? {}).some(Boolean);
+  })();
 
   // Broader than hasAnyManualKerningInScope: true if there's ANY pair at
-  // all in scope (auto-computed or manual) — used to enable "Clear All",
-  // which wipes back to zero pairs rather than just recomputing Auto.
-  const hasAnyKerningInScope = kerningMode === "family"
-    ? Object.keys(
-        familyContext === "shared" ? kerningPairs : (kerningOverridesByStyle[familyContext] ?? {})
-      ).length > 0
-    : Object.keys(kerningPairs).length > 0;
+  // all in scope (auto-computed or manual) — used to enable "Clear All".
+  const hasAnyKerningInScope = (() => {
+    if (familyContext === "shared") return Object.keys(kerningPairs).length > 0;
+    return Object.keys(kerningOverridesByStyle[familyContext] ?? {}).length > 0;
+  })();
 
   const handleResetAllKerning = useCallback(async () => {
     if (autoKernRunning) return;
     setAutoKernProgress(0);
     try {
-      if (kerningMode === "family") {
-        await resetAllKerningToAutoForContext(familyContext, setAutoKernProgress);
-      } else {
-        await resetAllKerningToAuto(setAutoKernProgress);
-      }
+      await resetAllKerningToAutoForContext(familyContext, setAutoKernProgress);
       setAutoKernProgress("done");
       window.setTimeout(() => setAutoKernProgress("idle"), 550);
     } catch (error) {
       console.error("[FontSeru] Reset All Kerning failed.", error);
       setAutoKernProgress("idle");
     }
-  }, [autoKernRunning, resetAllKerningToAuto, resetAllKerningToAutoForContext, kerningMode, familyContext]);
+  }, [autoKernRunning, resetAllKerningToAutoForContext, familyContext]);
 
   const handleClearAllKerning = useCallback(() => {
     if (autoKernRunning) return;
     const confirmed = window.confirm(
-      kerningMode === "family"
-        ? `Wipe ALL kerning pairs (auto and manual) in ${familyContext === "shared" ? "Shared" : fontStyleLabel(familyContext, customFamilies)} back to zero? This can't be undone with Reset All — it removes the pairs entirely instead of recomputing them.`
-        : "Wipe ALL kerning pairs (auto and manual) back to zero? This can't be undone with Reset All — it removes the pairs entirely instead of recomputing them."
+      `Wipe ALL kerning pairs (auto and manual) in ${familyContext === "shared" ? "Shared" : fontStyleLabel(familyContext, customFamilies)} back to zero? This can't be undone with Reset All — it removes the pairs entirely instead of recomputing them.`
     );
     if (!confirmed) return;
-    if (kerningMode === "family") {
-      clearAllKerningToBlankForContext(familyContext);
-    } else {
-      clearAllKerningToBlank();
-    }
-  }, [autoKernRunning, clearAllKerningToBlank, clearAllKerningToBlankForContext, kerningMode, familyContext, customFamilies]);
+    clearAllKerningToBlankForContext(familyContext);
+  }, [autoKernRunning, clearAllKerningToBlankForContext, familyContext, customFamilies]);
 
   const [wordSpacingFlash, setWordSpacingFlash] = useState<number | null>(null);
 
   const handleAutoWordSpacing = useCallback(() => {
-    // Family Test must suggest/set word spacing for the style selected in
-    // "Kerning Context", not the single global metric — the same split
-    // handleAutoSpace already makes for glyph LSB/RSB spacing.
-    const value = kerningMode === "family"
-      ? autoWordSpacingForContext(familyContext)
-      : autoWordSpacing();
+    const value = autoWordSpacingForContext(familyContext);
     setWordSpacingFlash(value);
     window.setTimeout(() => setWordSpacingFlash(null), 1800);
-  }, [autoWordSpacing, autoWordSpacingForContext, kerningMode, familyContext]);
+  }, [autoWordSpacingForContext, familyContext]);
 
   const handleApplyTracking = useCallback(() => {
     if (tracking === 0) return;
@@ -1832,11 +1815,7 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
     // family/single split handleAutoSpace and handleAutoWordSpacing already
     // make. Without this, Apply always wrote to the actively-edited style
     // regardless of which family tab was selected in Test Lab.
-    if (kerningMode === "family") {
-      applyTrackingToAllGlyphsForContext(familyContext, tracking);
-    } else {
-      applyTrackingToAllGlyphs(tracking);
-    }
+    applyTrackingToAllGlyphsForContext(familyContext, tracking);
     // "Apply" bakes the current tracking value permanently into every
     // glyph's LSB/RSB — the font itself now IS that much more/less spaced.
     // The Test Lab preview still renders with the `tracking` slider's value
@@ -1852,7 +1831,7 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
     setTracking(0);
     setTrackingApplyFlash(true);
     window.setTimeout(() => setTrackingApplyFlash(false), 900);
-  }, [applyTrackingToAllGlyphs, applyTrackingToAllGlyphsForContext, kerningMode, familyContext, tracking]);
+  }, [applyTrackingToAllGlyphsForContext, familyContext, tracking]);
 
   const presetText = (id: TestId): string | null => {
     switch (id) {
@@ -1890,14 +1869,32 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
   const precisionLeft = leftChar ?? activeChar;
   const precisionRight = leftChar ? activeChar : rightChar;
   const hasPrecisionPair = Boolean(precisionLeft && precisionRight);
+  // Effective pairs for the active Single Test context (same merge logic
+  // as Family Test: shared pairs + sparse style override if context ≠ shared).
+  const singleEffectivePairs = useMemo(
+    () =>
+      effectiveKerningPairs(
+        kerningPairs,
+        kerningOverridesByStyle,
+        familyContext === "shared" ? "regular" : familyContext
+      ),
+    [kerningPairs, kerningOverridesByStyle, familyContext]
+  );
+  const singleEffectiveManual = useMemo(() => {
+    if (familyContext === "shared") return kerningManual;
+    const override = kerningOverrideManualByStyle[familyContext];
+    if (!override) return kerningManual;
+    return { ...kerningManual, ...override };
+  }, [familyContext, kerningManual, kerningOverrideManualByStyle]);
+
   const precisionValue =
     precisionLeft && precisionRight
-      ? kerningPairs[kerningKey(precisionLeft, precisionRight)] ?? 0
+      ? singleEffectivePairs[kerningKey(precisionLeft, precisionRight)] ?? 0
       : 0;
 
   const resetActiveContext = () => {
-    if (leftChar && activeChar) resetKerningPair(leftChar, activeChar);
-    if (activeChar && rightChar) resetKerningPair(activeChar, rightChar);
+    if (leftChar && activeChar) resetFamilyKerningPair(familyContext, leftChar, activeChar);
+    if (activeChar && rightChar) resetFamilyKerningPair(familyContext, activeChar, rightChar);
   };
 
   // ---------------------------- Family Test layered kerning derivation
@@ -1928,11 +1925,11 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
   const panelLeft = kerningMode === "single" ? precisionLeft : familyPrecisionLeft;
   const panelRight = kerningMode === "single" ? precisionRight : familyPrecisionRight;
 
-  // Origin badge: only meaningful in Single mode — a Family Test override
-  // is always a deliberate hand-set value for that style, i.e. always "manual".
+  // Origin badge: uses the effective manual layer for the active context
+  // so the indicator is correct for both Single and Family modes.
   const panelOrigin: KerningOrigin | null =
-    kerningMode === "single" && panelHasPair && panelLeft && panelRight
-      ? getKerningOrigin(kerningKey(panelLeft, panelRight), kerningManual)
+    panelHasPair && panelLeft && panelRight
+      ? getKerningOrigin(kerningKey(panelLeft, panelRight), singleEffectiveManual)
       : null;
   const panelOriginLabel: Record<KerningOrigin, string> = { manual: "Manual", auto: "Auto" };
   const panelOriginTitle: Record<KerningOrigin, string> = {
@@ -2003,6 +2000,7 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
               activeGlyph={activeGlyph}
               onActiveGlyphChange={setActiveGlyph}
               focusNonce={focusNonce}
+              kerningContext={familyContext}
             />
           </div>
         ) : (
@@ -2198,7 +2196,7 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
                 onChange={(value) => {
                   if (kerningMode === "single") {
                     if (precisionLeft && precisionRight) {
-                      setKerningPair(precisionLeft, precisionRight, value);
+                      setFamilyKerningPair(familyContext, precisionLeft, precisionRight, value);
                     }
                   } else if (familyPrecisionLeft && familyPrecisionRight) {
                     setFamilyKerningPair(
