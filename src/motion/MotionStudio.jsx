@@ -4399,6 +4399,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const [draggingClip, setDraggingClip] = useState(null); // clip.id sedang di-drag (untuk menampilkan zona ghost)
   const [dragHover, setDragHover] = useState(null); // { kind: 'track'|'ghost-top'|'ghost-bottom', trackId? }
   const [timelineZoom, setTimelineZoom] = useState(1);
+  const timelineDuration = useMemo(() => computeTimelineDuration(project.clips), [project.clips]);
   useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
