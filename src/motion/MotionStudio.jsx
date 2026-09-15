@@ -846,27 +846,52 @@ const TRACK_TYPES = [
 ];
 function trackColor(type) { return TRACK_TYPES.find((t) => t.type === type)?.color || "#7c6cff"; }
 
-function normalizePersistedMediaClips(clips, tracks) {
+function normalizePersistedMediaClips(clips, tracks, library) {
   const trackTypes = new Map((tracks || []).map((t) => [t.id, t.type]));
-  const media = (clips || []).filter((clip) => clip && clip.type !== "text");
-  const audioKeys = new Set(media.filter((clip) => clip.type === "audio").map((clip) => `${clip.src || ""}|${clip.name || ""}`));
+  const audioSourceKeys = new Set(
+    (clips || [])
+      .filter((c) => c && c.type === "audio")
+      .map((c) => `${c.src || ""}|${c.name || ""}`)
+  );
+  const audioAssetIds = new Set((library?.audios || []).map((a) => a.id));
+  const mediaAssetKinds = new Map();
+  for (const a of library?.images || []) mediaAssetKinds.set(a.id, "image");
+  for (const a of library?.videos || []) mediaAssetKinds.set(a.id, "video");
+  for (const a of library?.audios || []) mediaAssetKinds.set(a.id, "audio");
+
   const seen = new Set();
-  return (clips || []).filter((clip) => {
+  const cleaned = (clips || []).filter((clip) => {
     if (!clip || clip.type === "text") return true;
     const trackType = trackTypes.get(clip.trackId);
-    const normalizedType = ["image", "video", "audio"].includes(trackType) ? trackType : clip.type;
+    let normalizedType = ["image", "video", "audio"].includes(trackType) ? trackType : clip.type;
     const sourceKey = `${clip.src || ""}|${clip.name || ""}`;
-    if (normalizedType === "image" && (audioKeys.has(sourceKey) || clip.file?.type?.startsWith("audio/"))) return false;
-    // Media clips must never be attached to a track of another media type.
-    // Older saved projects could contain an audio clip on an image track;
-    // dropping that malformed entry prevents it from reappearing as a green
-    // image bar after hydration.
+    const assetKind = clip.assetId ? mediaAssetKinds.get(clip.assetId) : null;
+    const mime = clip.file?.type || "";
+    const ext = (clip.name || "").split(".").pop().toLowerCase();
+    const isAudioish =
+      assetKind === "audio" ||
+      clip.type === "audio" ||
+      audioAssetIds.has(clip.assetId) ||
+      audioSourceKeys.has(sourceKey) ||
+      mime.startsWith("audio/") ||
+      ["mp3", "wav", "ogg", "aac", "m4a", "flac", "wma"].includes(ext);
+
+    if (isAudioish && normalizedType !== "audio") return false;
+    if (normalizedType === "image" && isAudioish) return false;
     if (clip.type === "audio" && trackType && trackType !== "audio") return false;
+
     const identity = clip.assetId || `${normalizedType}|${sourceKey}`;
     if (seen.has(identity)) return false;
     seen.add(identity);
     return true;
   });
+
+  const remainingIds = new Set(cleaned.map((c) => c.id));
+  return {
+    clips: cleaned,
+    tracks: (tracks || []).filter((t) => cleaned.some((c) => c.trackId === t.id)),
+    removedClipIds: (clips || []).filter((c) => c && c.type !== "text" && !remainingIds.has(c.id)).map((c) => c.id),
+  };
 }
 
 function projectReducer(state, action) {
@@ -878,9 +903,8 @@ function projectReducer(state, action) {
       // sehingga fonts & clips tersimpan hilang setelah reload.
       return {
         ...state,
-        clips: normalizePersistedMediaClips(action.project.clips || state.clips, action.project.tracks || state.tracks),
+        ...(() => { const n = normalizePersistedMediaClips(action.project.clips || state.clips, action.project.tracks || state.tracks, action.project.library || state.library); return { clips: n.clips, tracks: n.tracks }; })(),
         fonts: action.project.fonts || state.fonts,
-        tracks: action.project.tracks || state.tracks,
         background: action.project.background || state.background,
         frameSize: action.project.frameSize || state.frameSize,
         transitions: Array.isArray(action.project.transitions) ? action.project.transitions : [],
@@ -2429,13 +2453,16 @@ const GlobalStyle = () => (
     .mfs-transition-popover { top:22px; left:-96px; right:auto; width:200px; max-height:280px; overflow-y:auto; }
     .mfs-zoom-badge { font-size:10.5px; color:var(--text-muted); font-family:'JetBrains Mono',monospace; min-width:38px; text-align:center; user-select:none; }
 
-    .mfs-timeline { grid-area:timeline; background:var(--bg-panel); border-top:1px solid var(--border); display:flex; flex-direction:column; min-height:0; max-height:100%; overflow:hidden; }
-    .mfs-timeline-head { height:32px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:0 14px; border-bottom:1px solid var(--border); }
-    .mfs-timeline-title { font-size:11px; color:var(--text-dim); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
-    .mfs-tracks-outer { flex:1; display:flex; min-height:0; padding:0 14px; overflow-y:auto; overflow-x:hidden; align-items:flex-start; }
-    .mfs-track-labels { width:60px; flex-shrink:0; display:flex; flex-direction:column; }
+    .mfs-tl-resize { height:6px; flex-shrink:0; cursor:row-resize; background:transparent; position:relative; z-index:2; }
+    .mfs-tl-resize::after { content:""; position:absolute; left:22px; right:22px; top:2px; height:1.5px; border-radius:1px; background:var(--border-light); opacity:0.85; transition:background .12s ease, opacity .12s ease; }
+    .mfs-tl-resize:hover::after, .mfs-tl-resize:active::after { background:var(--accent); opacity:1; }
+    .mfs-timeline { grid-area:timeline; background:var(--bg-panel); display:flex; flex-direction:column; min-height:0; max-height:100%; overflow:hidden; }
+    .mfs-timeline-head { height:28px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:0 14px; border-bottom:1px solid var(--border); }
+    .mfs-timeline-title { font-size:10.5px; color:var(--text-dim); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+    .mfs-tracks-outer { flex:1; display:flex; min-height:0; padding:0 12px; overflow-y:auto; overflow-x:hidden; align-items:flex-start; }
+    .mfs-track-labels { width:56px; flex-shrink:0; display:flex; flex-direction:column; }
     .mfs-track-labels .mfs-ruler-spacer { height:20px; display:flex; align-items:center; justify-content:center; position:sticky; top:0; z-index:5; background:var(--bg-panel); }
-    .mfs-track-label { height:38px; display:flex; align-items:center; gap:5px; font-size:10px; color:var(--text-muted); font-weight:600; position:relative; flex-shrink:0; }
+    .mfs-track-label { height:32px; display:flex; align-items:center; gap:5px; font-size:10px; color:var(--text-muted); font-weight:600; position:relative; flex-shrink:0; }
     .mfs-track-label .dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
     .mfs-track-label .label-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
     .mfs-track-label .mfs-track-del { opacity:0; width:14px; height:14px; flex-shrink:0; border:none; background:transparent; color:var(--text-dim); cursor:pointer; display:flex; align-items:center; justify-content:center; }
@@ -2447,9 +2474,9 @@ const GlobalStyle = () => (
     .mfs-track-ghost.over { border-color:var(--accent); background:var(--accent-soft); }
     .mfs-track-ghost-label { font-size:9.5px; color:var(--text-dim); display:flex; align-items:center; justify-content:center; height:100%; pointer-events:none; }
     .mfs-tracks-scroll { flex:1 0 auto; position:relative; min-width:0; min-height:max-content; overflow-x:auto; overflow-y:visible; }
-    .mfs-ruler { height:20px; border-bottom:1px solid var(--border-light); position:sticky; top:0; z-index:4; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
-    .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9.5px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; border-left:1px solid var(--border-light); padding-left:3px; }
-    .mfs-lane { position:relative; height:38px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
+    .mfs-ruler { height:18px; border-bottom:1px solid var(--border-light); position:sticky; top:0; z-index:4; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
+    .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; border-left:1px solid var(--border-light); padding-left:3px; }
+    .mfs-lane { position:relative; height:32px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
     .mfs-lane.track-over { background:var(--accent-soft); }
     .mfs-clip-block { position:absolute; top:3px; bottom:3px; border-radius:7px; cursor:grab; overflow:hidden; min-width:22px; border:1px solid; }
     .mfs-clip-block.selected { box-shadow:0 0 0 2px var(--accent-dim); border-color:var(--accent); z-index:5; }
@@ -4399,7 +4426,11 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const [draggingClip, setDraggingClip] = useState(null); // clip.id sedang di-drag (untuk menampilkan zona ghost)
   const [dragHover, setDragHover] = useState(null); // { kind: 'track'|'ghost-top'|'ghost-bottom', trackId? }
   const [timelineZoom, setTimelineZoom] = useState(1);
+  const [timelineHeight, setTimelineHeight] = useState(226);
+  const MIN_TL_H = 120;
+  const MAX_TL_H = Math.max(320, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) * 0.65));
   const timelineDuration = useMemo(() => computeTimelineDuration(project.clips), [project.clips]);
+
   useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
@@ -4420,6 +4451,23 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [timelineDuration, timelineZoom]);
+
+  const onResizeHandleDown = useCallback((e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = timelineHeight;
+    const onMove = (ev) => {
+      const next = Math.round(clamp(startH + (ev.clientY - startY), MIN_TL_H, MAX_TL_H));
+      setTimelineHeight(next);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [timelineHeight, MAX_TL_H]);
+
   tlDurRef.current = timelineDuration;
 
   // Saat memutar, geser garis playhead LANGSUNG lewat DOM tiap frame (tanpa
@@ -4637,6 +4685,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
 
   return (
     <div className="mfs-timeline">
+      <div className="mfs-tl-resize" onMouseDown={onResizeHandleDown} title="Seret untuk mengubah tinggi panel linimasa" />
       <div className="mfs-timeline-head">
         <span className="mfs-timeline-title">Linimasa — seret klip ke atas/bawah untuk pindah track, seret transisi ke sela klip</span>
         <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{Math.round(timelineZoom * 100)}%</span>
@@ -4662,11 +4711,6 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
       <div className="mfs-tracks-outer">
         <div className="mfs-track-labels">
           <div className="mfs-ruler-spacer" />
-          {/* Placeholder ini menyamai tinggi zona ghost di kolom linimasa
-              sebelah kanan, supaya label track tetap sejajar dengan lane-nya
-              masing-masing saat zona ghost sedang muncul karena ada klip
-              yang diseret. */}
-          <div className={`mfs-track-ghost ${draggingClip ? "showing" : ""}`} />
           {trackData.map(({ track, laneHeight, clips }) => {
             const meta = TRACK_TYPES.find((t) => t.type === track.type);
             const empty = clips.length === 0;
@@ -4682,7 +4726,6 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
               </div>
             );
           })}
-          <div className={`mfs-track-ghost ${draggingClip ? "showing" : ""}`} />
         </div>
         <div className="mfs-tracks-scroll" ref={trackRef}>
           <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative" }}>
@@ -5089,7 +5132,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="mfs-root" data-theme={theme} data-mpane={mobilePane || "none"}>
+      <div className="mfs-root" data-theme={theme} data-mpane={mobilePane || "none"} style={{ gridTemplateRows: `48px 1fr ${timelineHeight}px` }}>
         <GlobalStyle />
         <TopBar
           project={project}
