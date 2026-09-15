@@ -1038,6 +1038,10 @@ function projectReducer(state, action) {
       const ids = state.clips.map((c) => c.id);
       return { ...state, selectedClipId: ids[ids.length - 1] || null, selectedClipIds: ids };
     }
+    case "SET_SELECTED_CLIPS": {
+      const ids = [...new Set((action.ids || []).filter((id) => state.clips.some((c) => c.id === id)))];
+      return { ...state, selectedClipId: ids[ids.length - 1] || null, selectedClipIds: ids };
+    }
     case "SELECT_CLIP": {
       if (action.id === BG_SEL) return { ...state, selectedClipId: BG_SEL, selectedClipIds: [] };
       const current = state.selectedClipIds || (state.selectedClipId ? [state.selectedClipId] : []);
@@ -1072,7 +1076,7 @@ function projectReducer(state, action) {
     case "APPLY_PRESET": {
       const preset = getPreset(action.presetId);
       const ids = new Set(action.ids || [action.id]);
-      const clips = state.clips.map((c) => (ids.has(c.id) ? { ...c, presetId: preset.id, animateBy: preset.animateBy, stagger: preset.stagger } : c));
+      const clips = state.clips.map((c) => (ids.has(c.id) ? { ...c, presetId: preset.id, animateBy: preset.animateBy, stagger: preset.stagger, animateIn: true, animateOut: true } : c));
       return { ...state, clips };
     }
     case "APPLY_TRANSITION_BOTH": {
@@ -2474,9 +2478,9 @@ const GlobalStyle = () => (
     .mfs-track-ghost.over { border-color:var(--accent); background:var(--accent-soft); }
     .mfs-track-ghost-label { font-size:9.5px; color:var(--text-dim); display:flex; align-items:center; justify-content:center; height:100%; pointer-events:none; }
     .mfs-tracks-scroll { flex:1 0 auto; position:relative; min-width:0; min-height:max-content; overflow-x:auto; overflow-y:visible; }
-    .mfs-ruler { height:18px; border-bottom:1px solid var(--border-light); position:sticky; top:0; z-index:4; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
+    .mfs-ruler { height:18px; border-bottom:1px solid var(--border-light); position:sticky; top:0; z-index:8; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
     .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; border-left:1px solid var(--border-light); padding-left:3px; }
-    .mfs-lane { position:relative; height:32px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
+    .mfs-marquee { position:absolute; z-index:12; border:1px solid var(--accent); background:var(--accent-soft); pointer-events:none; }    .mfs-lane { position:relative; height:32px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
     .mfs-lane.track-over { background:var(--accent-soft); }
     .mfs-clip-block { position:absolute; top:3px; bottom:3px; border-radius:7px; cursor:grab; overflow:hidden; min-width:22px; border:1px solid; }
     .mfs-clip-block.selected { box-shadow:0 0 0 2px var(--accent-dim); border-color:var(--accent); z-index:5; }
@@ -4030,7 +4034,7 @@ function AutoCaptionControl({ clip, dispatch }) {
         setStatus(message);
         setProgress(clamp(fraction ?? 0, 0, 1));
       });
-      const segments = mode === "sentence" ? groupCaptionSentences(words) : words;
+      const segments = mode === "sentence" ? groupCaptionSentences(words, 550) : words;
       if (segments.length === 0) {
         setError("Tidak ada ucapan yang terdeteksi di audio ini.");
         return;
@@ -4426,6 +4430,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const [draggingClip, setDraggingClip] = useState(null); // clip.id sedang di-drag (untuk menampilkan zona ghost)
   const [dragHover, setDragHover] = useState(null); // { kind: 'track'|'ghost-top'|'ghost-bottom', trackId? }
   const [timelineZoom, setTimelineZoom] = useState(1);
+  const [marquee, setMarquee] = useState(null);
   const MIN_TL_H = 120;
   const MAX_TL_H = Math.max(320, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) * 0.65));
   const timelineDuration = useMemo(() => computeTimelineDuration(project.clips), [project.clips]);
@@ -4512,6 +4517,43 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
       }
     }
     return null;
+  };
+
+  const startMarquee = (e) => {
+    if (e.button !== 0 || e.target.closest(".mfs-clip-block,button")) return;
+    e.preventDefault();
+    const rect = trackRef.current.getBoundingClientRect();
+    const startX = e.clientX - rect.left + trackRef.current.scrollLeft;
+    const startY = e.clientY - rect.top + trackRef.current.scrollTop;
+    const additive = e.metaKey || e.ctrlKey;
+    const base = additive ? (project.selectedClipIds || []) : [];
+    const update = (ev) => {
+      const x = ev.clientX - rect.left + trackRef.current.scrollLeft;
+      const y = ev.clientY - rect.top + trackRef.current.scrollTop;
+      const left = Math.min(startX, x), right = Math.max(startX, x);
+      const top = Math.min(startY, y), bottom = Math.max(startY, y);
+      const ids = project.clips.filter((clip) => {
+        const clipLeft = (clip.start / timelineDuration) * trackRef.current.scrollWidth;
+        const clipRight = clipLeft + (clip.duration / timelineDuration) * trackRef.current.scrollWidth;
+        return clipRight >= left && clipLeft <= right && clip.trackId && (() => {
+          const lane = laneElRef.current[clip.trackId];
+          if (!lane) return false;
+          const lr = lane.getBoundingClientRect();
+          const laneTop = lr.top - rect.top + trackRef.current.scrollTop;
+          return laneTop <= bottom && laneTop + lr.height >= top;
+        })();
+      }).map((clip) => clip.id);
+      const selected = additive ? [...new Set([...base, ...ids])] : ids;
+      dispatchProject({ type: "SET_SELECTED_CLIPS", ids: selected });
+      setMarquee({ left, top, width: right - left, height: bottom - top });
+    };
+    const finish = () => {
+      window.removeEventListener("mousemove", update);
+      window.removeEventListener("mouseup", finish);
+      setMarquee(null);
+    };
+    window.addEventListener("mousemove", update);
+    window.addEventListener("mouseup", finish);
   };
 
   const startClipDrag = (e, clip, mode) => {
@@ -4726,11 +4768,12 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
             );
           })}
         </div>
-        <div className="mfs-tracks-scroll" ref={trackRef}>
+        <div className="mfs-tracks-scroll" ref={trackRef} onMouseDown={startMarquee}>
           <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative" }}>
-          <div className="mfs-ruler" onMouseDown={onRulerDown}>
-            {ticks.map((t) => <div key={t} className="mfs-ruler-tick" style={{ left: `${(t / timelineDuration) * 100}%` }}>{(t / 1000).toFixed(1)}dtk</div>)}
-          </div>
+            <div className="mfs-ruler" onMouseDown={(e) => { e.stopPropagation(); onRulerDown(e); }}>
+              {ticks.map((t) => <div key={t} className="mfs-ruler-tick" style={{ left: `${(t / timelineDuration) * 100}%` }}>{(t / 1000).toFixed(1)}dtk</div>)}
+            </div>
+            {marquee && <div className="mfs-marquee" style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }} />}
 
           {/* Zona kosong di paling atas — seret klip ke sini untuk membuat
               track baru di atas track yang sudah ada. Hanya "muncul" (punya

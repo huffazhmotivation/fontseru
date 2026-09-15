@@ -168,7 +168,21 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
   if (Array.isArray(result?.chunks) && result.chunks.length > 0) {
     for (const ch of result.chunks) {
       const ts = ch.timestamp || ch.timestamps?.[0] || [0, 0];
-      pushWord(ch.text, ts[0], ts[1]);
+      const text = String(ch.text || "").trim();
+      const parts = text.split(/\s+/).filter(Boolean);
+      if (parts.length <= 1) {
+        pushWord(text, ts[0], ts[1]);
+        continue;
+      }
+      const start = Number(ts[0]) || 0;
+      const end = Number(ts[1]) > start ? Number(ts[1]) : start + parts.length * 0.25;
+      const totalChars = Math.max(parts.reduce((sum, part) => sum + part.length, 0), 1);
+      let cursor = start;
+      for (const part of parts) {
+        const span = Math.max((end - start) * (part.length / totalChars), 0.08);
+        pushWord(part, cursor, Math.min(end, cursor + span));
+        cursor += span;
+      }
     }
   } else if (Array.isArray(result?.segments) && result.segments.length > 0) {
     for (const seg of result.segments) {
@@ -197,7 +211,7 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
  * yang cukup panjang. Timestamp kalimat tetap mencakup kata pertama sampai
  * kata terakhirnya.
  */
-export function groupCaptionSentences(words, gapMs = 1200) {
+export function groupCaptionSentences(words, gapMs = 550) {
   if (!Array.isArray(words) || words.length === 0) return [];
   const result = [];
   let current = null;
@@ -207,8 +221,8 @@ export function groupCaptionSentences(words, gapMs = 1200) {
     if (!text) continue;
     const start = Number.isFinite(word?.start) ? word.start : 0;
     const end = Number.isFinite(word?.end) && word.end > start ? word.end : start + 250;
-    const gap = current ? start - current.end : 0;
-    const shouldSplit = current && (gap > gapMs || /[.!?。！？؟]$/.test(current.text));
+    const gap = current ? Math.max(0, start - current.end) : 0;
+    const shouldSplit = current && (gap >= gapMs || /[.!?。！？؟]$/.test(current.text) || /^[¿¡]/.test(text));
 
     if (shouldSplit) {
       result.push(current);
