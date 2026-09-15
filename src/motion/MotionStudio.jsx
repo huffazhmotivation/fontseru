@@ -2257,7 +2257,7 @@ const GlobalStyle = () => (
       --popover-shadow:rgba(20,20,40,0.14); --stage-checker:#e6e6ea;
     }
     * { box-sizing: border-box; }
-    .mfs-root { font-family:'Inter',-apple-system,sans-serif; background:var(--bg); color:var(--text); height:100vh; width:100%; display:grid; grid-template-columns:200px 268px 1fr 200px 320px; grid-template-rows:48px 1fr 226px; grid-template-areas:"top top top top top" "left left center layers right" "timeline timeline timeline timeline timeline"; overflow:hidden; font-size:13px; transition:background .15s ease, color .15s ease; }
+    .mfs-root { font-family:'Inter',-apple-system,sans-serif; background:var(--bg); color:var(--text); height:100vh; width:100%; display:grid; grid-template-columns:240px minmax(0,1fr) 170px 280px; grid-template-rows:48px 1fr 226px; grid-template-areas:"top top top top" "left center layers right" "timeline timeline timeline timeline"; overflow:hidden; font-size:13px; transition:background .15s ease, color .15s ease; }
     .mfs-theme-toggle { position:relative; overflow:hidden; }
     .mfs-theme-toggle svg { transition:transform .2s ease, opacity .2s ease; }
     ::-webkit-scrollbar{width:8px;height:8px;} ::-webkit-scrollbar-thumb{background:var(--border-light);border-radius:4px;} ::-webkit-scrollbar-track{background:transparent;}
@@ -2302,7 +2302,7 @@ const GlobalStyle = () => (
     .mfs-progress > div { height:100%; background:linear-gradient(90deg,var(--accent),#a78bfa); border-radius:999px; transition:width 0.25s ease; }
 
     /* LAYERS (panel paling kiri, menetap) */
-    .mfs-layers { grid-area:layers; background:var(--bg-panel); border-left:1px solid var(--border); display:flex; flex-direction:column; min-height:0; }
+    .mfs-layers { grid-area:layers; background:var(--bg-panel); border-left:1px solid var(--border); border-right:1px solid var(--border); display:flex; flex-direction:column; min-height:0; }
     .mfs-layers-head { height:40px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid var(--border); }
     .mfs-layers-bg { border-top:1px solid var(--border); padding:8px; flex-shrink:0; }
     .mfs-popover { position:absolute; top:32px; right:0; background:var(--bg-elevated); border:1px solid var(--border-light); border-radius:var(--radius); box-shadow:0 12px 30px var(--popover-shadow); z-index:20; width:150px; overflow:hidden; padding:4px; }
@@ -2464,7 +2464,8 @@ const GlobalStyle = () => (
     .mfs-track-labels { width:56px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
     .mfs-track-labels .mfs-ruler-spacer { height:20px; display:flex; align-items:center; justify-content:center; background:var(--bg-panel); }
     .mfs-track-viewport { flex:1; min-width:0; min-height:0; overflow:hidden; position:relative; display:flex; flex-direction:column; }
-    .mfs-track-viewport .mfs-tracks-scroll { flex:1; min-height:0; overflow-y:auto; }
+    .mfs-track-viewport .mfs-tracks-scroll { flex:1; min-height:0; overflow-y:auto; overflow-x:auto; scrollbar-width:none; }
+    .mfs-track-viewport .mfs-tracks-scroll::-webkit-scrollbar { height:0; width:0; }
     .mfs-track-label { height:32px; display:flex; align-items:center; gap:5px; font-size:10px; color:var(--text-muted); font-weight:600; position:relative; flex-shrink:0; }
     .mfs-track-label .dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
     .mfs-track-label .label-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
@@ -2478,8 +2479,11 @@ const GlobalStyle = () => (
     .mfs-track-ghost-label { font-size:9.5px; color:var(--text-dim); display:flex; align-items:center; justify-content:center; height:100%; pointer-events:none; }
     .mfs-tracks-scroll { position:relative; min-width:0; min-height:max-content; overflow-x:auto; overflow-y:visible; }
     .mfs-ruler { height:18px; border-bottom:1px solid var(--border-light); position:relative; z-index:8; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
-    .mfs-ruler-fixed { height:18px; flex:0 0 18px; position:relative; z-index:10; background:var(--bg-panel); }
-    .mfs-timeline-hscroll { height:10px; flex:0 0 10px; overflow-x:auto; overflow-y:hidden; margin-left:56px; background:var(--bg-panel); }
+    .mfs-ruler-fixed { height:18px; flex:0 0 18px; position:relative; z-index:10; background:#15151b; border-bottom:1px solid var(--border-light); }
+    .mfs-timeline-hscroll { height:10px; flex:0 0 10px; overflow-x:auto; overflow-y:hidden; margin:0; background:var(--bg-panel); scrollbar-width:thin; }
+    .mfs-timeline-hscroll::-webkit-scrollbar { height:6px; }
+    .mfs-timeline-hscroll::-webkit-scrollbar-track { background:transparent; }
+    .mfs-timeline-hscroll::-webkit-scrollbar-thumb { background:var(--border-light); border-radius:99px; }
     .mfs-timeline-hscroll-inner { height:1px; }
     .mfs-playhead-marker { position:absolute; top:0; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid var(--accent); transform:translateX(-6px); z-index:12; pointer-events:none; }
     .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; border-left:1px solid var(--border-light); padding-left:3px; }
@@ -4020,6 +4024,15 @@ function AutoCaptionControl({ clip, dispatch }) {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
+  const sentenceSegments = (words) => {
+    const result = [];
+    for (let i = 0; i < words.length; i += 4) {
+      const group = words.slice(i, i + 4);
+      if (!group.length) continue;
+      result.push({ text: group.map((w) => w.text).join(" "), start: group[0].start, end: group[group.length - 1].end });
+    }
+    return result;
+  };
   const generate = async () => {
     if (busy) return;
     if (!clip.file) {
@@ -4036,7 +4049,7 @@ function AutoCaptionControl({ clip, dispatch }) {
         setStatus(message);
         setProgress(clamp(fraction ?? 0, 0, 1));
       });
-      const segments = mode === "sentence" ? groupCaptionSentences(words, 550) : words;
+      const segments = mode === "sentence" ? sentenceSegments(words) : words;
       if (segments.length === 0) {
         setError("Tidak ada ucapan yang terdeteksi di audio ini.");
         return;
