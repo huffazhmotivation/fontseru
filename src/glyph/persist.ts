@@ -15,6 +15,20 @@ const DB_NAME = "fontseru";
 const STORE = "project";
 const KEY = "current";
 const VERSION = 1;
+const DB_TIMEOUT_MS = 1200;
+
+function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: T) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const timer = window.setTimeout(() => finish(fallback), DB_TIMEOUT_MS);
+    promise.then((value) => { window.clearTimeout(timer); finish(value); }, () => { window.clearTimeout(timer); finish(fallback); });
+  });
+}
 
 interface ProjectSnapshot {
   /** Regular glyphs kept for backward compatibility with older snapshots. */
@@ -54,17 +68,23 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 export async function loadProject(): Promise<ProjectSnapshot | null> {
-  try {
-    const db = await openDB();
-    return await new Promise((resolve) => {
-      const tx = db.transaction(STORE, "readonly");
-      const req = tx.objectStore(STORE).get(KEY);
-      req.onsuccess = () => resolve((req.result as ProjectSnapshot) ?? null);
-      req.onerror = () => resolve(null);
-    });
-  } catch {
-    return null;
-  }
+  return withTimeout((async () => {
+    try {
+      const db = await openDB();
+      try {
+        return await new Promise<ProjectSnapshot | null>((resolve) => {
+          const tx = db.transaction(STORE, "readonly");
+          const req = tx.objectStore(STORE).get(KEY);
+          req.onsuccess = () => resolve((req.result as ProjectSnapshot) ?? null);
+          req.onerror = () => resolve(null);
+        });
+      } finally {
+        db.close();
+      }
+    } catch {
+      return null;
+    }
+  })(), null);
 }
 
 export async function saveProject(snapshot: ProjectSnapshot): Promise<void> {
