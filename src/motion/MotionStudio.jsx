@@ -2500,7 +2500,7 @@ const GlobalStyle = () => (
     .mfs-track-labels { width:56px; flex-shrink:0; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
     .mfs-track-labels .mfs-ruler-spacer { height:18px; flex:0 0 18px; display:flex; align-items:center; justify-content:center; background:#211538; border-bottom:1px solid #49316f; }
     .mfs-track-labels-scroll { flex:1; min-height:0; overflow:hidden; }
-    .mfs-track-viewport { flex:1; min-width:0; min-height:0; overflow:hidden; position:relative; display:flex; flex-direction:column; }
+    .mfs-track-viewport { flex:1; min-width:0; min-height:0; overflow:hidden; position:relative; display:flex; flex-direction:column; padding-bottom:0; }
     .mfs-track-viewport .mfs-tracks-scroll { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#9b6cff transparent; }
     .mfs-track-viewport .mfs-tracks-scroll::-webkit-scrollbar { width:7px; height:0; }
     .mfs-track-viewport .mfs-tracks-scroll::-webkit-scrollbar-track { background:transparent; }
@@ -4595,10 +4595,11 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
 
   const pxToTime = (px, width) => clamp((px / width) * timelineDuration, 0, timelineDuration);
   const scrub = (clientX) => {
-    const rect = trackRef.current.getBoundingClientRect();
+    const ruler = document.querySelector(".mfs-ruler-fixed");
+    const rect = (ruler || trackRef.current).getBoundingClientRect();
     const scrollLeft = horizontalScrollRef.current?.scrollLeft || 0;
-    const width = Math.max(trackRef.current.clientWidth, trackRef.current.scrollWidth);
-    const next = pxToTime(clientX - rect.left + scrollLeft, width);
+    const contentWidth = Math.max((ruler || trackRef.current).scrollWidth, rect.width);
+    const next = pxToTime(clientX - rect.left + scrollLeft, contentWidth);
     if (window.getSelection) window.getSelection().removeAllRanges();
     syncMediaPlayback(project.clips, mediaMapRef, next, false, transitionsRef.current);
     dispatchPlayback({ type: "SET_PLAYHEAD", value: next });
