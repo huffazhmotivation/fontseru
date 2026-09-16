@@ -6142,7 +6142,7 @@ input[type="number"]::-webkit-outer-spin-button {
   display: flex;
   align-items: center;
   gap: 8px;
-  max-width: calc(100% - 28px);
+  max-width: calc(100% - 210px);
   padding: 6px 10px;
   background: color-mix(in srgb, var(--panel) 90%, transparent);
   backdrop-filter: blur(10px);
@@ -6163,6 +6163,40 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 .fm-glyphview-switch { display: flex; gap: 2px; padding: 2px; background: var(--panel-2); border-radius: 9px; }
+
+/* Single ⇄ Multi switch, pinned to the canvas's top-right corner. Same
+   pill as .fm-glyphview-switch, but it carries its own chrome because it
+   no longer sits inside the controls bar's panel. z-index sits just above
+   the bar so the two can never fight if a very wide bar reaches the right
+   edge on a narrow window. */
+.fm-glyphview-mode {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 22;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 11px;
+  box-shadow: 0 10px 28px -16px rgba(0, 0, 0, 0.7);
+}
+.fm-root[data-browser="chromium"] .fm-glyphview-mode {
+  backdrop-filter: none;
+  background: var(--panel);
+}
+.fm-glyphview-mode button {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border: none; border-radius: 8px;
+  background: transparent; color: var(--text-dim);
+  font-size: 11.5px; font-weight: 600; cursor: pointer;
+  white-space: nowrap;
+}
+.fm-glyphview-mode button:hover { color: var(--text); }
+.fm-glyphview-mode button.on { background: var(--accent); color: var(--accent-ink); }
+.fm-glyphview-mode button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .fm-glyphview-switch button {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 5px 11px; border: none; border-radius: 7px;
@@ -6257,6 +6291,19 @@ input[type="number"]::-webkit-outer-spin-button {
 
 @media (max-width: 900px) {
   .fm-glyphview-bar { gap: 6px; padding: 5px 8px; font-size: 11px; }
+  /* Below this width the bar wraps under the pill instead of squeezing
+     past it, so neither one gets clipped. */
+  .fm-glyphview-bar { top: 58px; max-width: calc(100% - 28px); }
+  .fm-glyphview-mode button { padding: 5px 9px; font-size: 11px; }
   .fm-glyphview-slider input[type="range"] { width: 62px; }
   .fm-glyphview-search { width: 86px; }
 }
+
+/* ── Multi Glyph EDIT canvas ─────────────────────────────────────────
+   The editable multi-glyph surface. Unlike the read-only overview it is
+   a single font-unit plane with its own free pan/zoom, so it needs no
+   scrollbar affordance — just the frame, the cursors, and a hint strip
+   for the view gestures. */
+.fm-mx-frame { position: relative; overflow: hidden; }
+.fm-mx-frame svg { display: block; width: 100%; height: 100%; touch-action: none; }
+.fm-mx-frame .cursor-hand:active { cursor: grabbing; }

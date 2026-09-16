@@ -1,9 +1,26 @@
 import { memo, useMemo } from "react";
-import { LayoutGrid, Square, Minus, Plus, X } from "lucide-react";
+import { LayoutGrid, Square, Minus, Plus, X, Maximize2 } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
-import { GLYPH_FILTERS, OVERVIEW_SPACING_MAX, OVERVIEW_SPACING_MIN, OVERVIEW_ZOOM_MAX, OVERVIEW_ZOOM_MIN } from "@/types/glyphView";
+import { GLYPH_FILTERS, MULTI_COLUMNS_MAX, MULTI_ZOOM_MAX, MULTI_ZOOM_MIN, OVERVIEW_SPACING_MAX, OVERVIEW_SPACING_MIN } from "@/types/glyphView";
 import type { GlyphFilterId } from "@/types/glyphView";
 import { countDrawnGlyphs, filterGlyphChars } from "@/editor/glyphFilter";
+
+/**
+ * The zoom slider is logarithmic: the multi canvas spans roughly 8%–4000%
+ * so you can hold the whole alphabet on screen at one end and place a
+ * single node precisely at the other. A linear slider over that range
+ * would spend most of its travel in zoom levels nobody uses.
+ */
+function zoomToSlider(zoom: number): number {
+  const t = (Math.log(Math.max(MULTI_ZOOM_MIN, Math.min(MULTI_ZOOM_MAX, zoom))) - Math.log(MULTI_ZOOM_MIN)) /
+    (Math.log(MULTI_ZOOM_MAX) - Math.log(MULTI_ZOOM_MIN));
+  return Math.round(t * 100);
+}
+
+function sliderToZoom(value: number): number {
+  const t = Math.min(100, Math.max(0, value)) / 100;
+  return Math.exp(Math.log(MULTI_ZOOM_MIN) + t * (Math.log(MULTI_ZOOM_MAX) - Math.log(MULTI_ZOOM_MIN)));
+}
 
 /**
  * "Glyph View" control bar — the Single ⇄ Multi switch plus the overview's
@@ -23,8 +40,14 @@ function GlyphViewBarInner() {
   const setOverviewFilter = useAppStore((s) => s.setOverviewFilter);
   const query = useAppStore((s) => s.overviewQuery);
   const setOverviewQuery = useAppStore((s) => s.setOverviewQuery);
-  const zoom = useAppStore((s) => s.overviewZoom);
-  const setOverviewZoom = useAppStore((s) => s.setOverviewZoom);
+  // Zoom/columns/fit belong to the editable multi canvas (multiZoom is a
+  // px-per-font-unit scale with a real editing range, not the overview's
+  // thumbnail-size slider).
+  const zoom = useAppStore((s) => s.multiZoom);
+  const setMultiZoom = useAppStore((s) => s.setMultiZoom);
+  const columns = useAppStore((s) => s.multiColumns);
+  const setMultiColumns = useAppStore((s) => s.setMultiColumns);
+  const fitMultiCanvas = useAppStore((s) => s.fitMultiCanvas);
   const spacing = useAppStore((s) => s.overviewSpacing);
   const setOverviewSpacing = useAppStore((s) => s.setOverviewSpacing);
   const glyphs = useAppStore((s) => s.glyphs);
@@ -43,8 +66,21 @@ function GlyphViewBarInner() {
   const drawnCount = useMemo(() => (multi ? countDrawnGlyphs(glyphs) : 0), [multi, glyphs]);
 
   return (
-    <div className="fm-glyphview-bar" data-testid="glyph-view-bar" data-mode={editorMode}>
-      <div className="fm-glyphview-switch" role="group" aria-label="Glyph view mode">
+    <>
+      {/* The Single ⇄ Multi switch is anchored to the canvas's top-right
+          corner, on its own, rather than riding at the head of the
+          controls bar. Two reasons: it is the only control here that
+          means something in BOTH modes (everything else is Multi-only),
+          and pinning it to a fixed corner means it never shifts sideways
+          as the bar next to it grows or shrinks — so the button you reach
+          for to get back to Single is always in the same place. */}
+      <div
+        className="fm-glyphview-mode"
+        data-testid="glyph-view-mode"
+        data-mode={editorMode}
+        role="group"
+        aria-label="Glyph view mode"
+      >
         <button
           type="button"
           className={!multi ? "on" : ""}
@@ -58,7 +94,7 @@ function GlyphViewBarInner() {
           type="button"
           className={multi ? "on" : ""}
           onClick={() => setEditorMode("multi")}
-          title="Multi Glyph Mode — lihat semua glyph dalam satu canvas"
+          title="Multi Glyph Mode — gambar banyak glyph langsung di satu canvas"
           data-testid="glyph-view-multi"
         >
           <LayoutGrid size={13} /> Multi
@@ -66,9 +102,7 @@ function GlyphViewBarInner() {
       </div>
 
       {multi && (
-        <>
-          <div className="fm-glyphview-divider" />
-
+        <div className="fm-glyphview-bar" data-testid="glyph-view-bar" data-mode={editorMode}>
           <label className="fm-glyphview-field">
             <span>Filter</span>
             <select
@@ -111,37 +145,62 @@ function GlyphViewBarInner() {
             />
           </label>
 
+          <label className="fm-glyphview-field">
+            <span>Kolom</span>
+            <input
+              type="number"
+              min={0}
+              max={MULTI_COLUMNS_MAX}
+              step={1}
+              value={columns}
+              onChange={(e) => setMultiColumns(Number(e.target.value))}
+              title="Jumlah kolom grid. 0 = otomatis."
+              data-testid="glyph-view-columns"
+              style={{ width: 52 }}
+            />
+          </label>
+
           <label className="fm-glyphview-field fm-glyphview-slider">
             <span>Zoom</span>
             <button
               type="button"
               className="fm-icon-btn"
-              onClick={() => setOverviewZoom(zoom - 10)}
+              onClick={() => setMultiZoom(zoom * 0.8)}
               title="Perkecil"
             >
               <Minus size={12} />
             </button>
             <input
               type="range"
-              min={OVERVIEW_ZOOM_MIN}
-              max={OVERVIEW_ZOOM_MAX}
-              step={5}
-              value={zoom}
-              onChange={(e) => setOverviewZoom(Number(e.target.value))}
+              min={0}
+              max={100}
+              step={1}
+              value={zoomToSlider(zoom)}
+              onChange={(e) => setMultiZoom(sliderToZoom(Number(e.target.value)))}
               data-testid="glyph-view-zoom"
               style={{
-                ["--fm-range-fill" as string]: `${((zoom - OVERVIEW_ZOOM_MIN) / (OVERVIEW_ZOOM_MAX - OVERVIEW_ZOOM_MIN)) * 100}%`,
+                ["--fm-range-fill" as string]: `${zoomToSlider(zoom)}%`,
               }}
             />
             <button
               type="button"
               className="fm-icon-btn"
-              onClick={() => setOverviewZoom(zoom + 10)}
+              onClick={() => setMultiZoom(zoom * 1.25)}
               title="Perbesar"
             >
               <Plus size={12} />
             </button>
           </label>
+
+          <button
+            type="button"
+            className="fm-icon-btn"
+            onClick={fitMultiCanvas}
+            title="Pas-kan semua glyph ke layar"
+            data-testid="glyph-view-fit"
+          >
+            <Maximize2 size={12} />
+          </button>
 
           <div className="fm-glyphview-divider" />
 
@@ -160,9 +219,9 @@ function GlyphViewBarInner() {
               {selectedGlyphChars.length} dipilih <X size={11} />
             </button>
           )}
-        </>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 

@@ -15,7 +15,7 @@ import { RightPanel } from "@/components/RightPanel";
 import { BottomBar } from "@/components/BottomBar";
 import { ProductionPreviewBar } from "@/components/ProductionPreviewBar";
 import { GlyphCanvas } from "@/editor/GlyphCanvas";
-import { GlyphOverviewCanvas } from "@/editor/GlyphOverviewCanvas";
+import { GlyphMultiEditCanvas } from "@/editor/GlyphMultiEditCanvas";
 import { GlyphViewBar } from "@/components/GlyphViewBar";
 import { LoginModal } from "@/components/LoginModal";
 import { EmailConfirmedWelcome } from "@/components/EmailConfirmedWelcome";
@@ -206,8 +206,11 @@ export default function App() {
                 (single: zoom/pan — multi: overviewZoom/overviewScroll)
                 lives in the store too, so switching back and forth never
                 loses either surface's position or any glyph data. */}
-            {overviewMode ? <GlyphOverviewCanvas /> : <GlyphCanvas />}
-            {!overviewMode && <FloatingToolbar />}
+            {overviewMode ? <GlyphMultiEditCanvas /> : <GlyphCanvas />}
+            {/* The multi surface is now a real drawing board, so it needs
+                the same tool palette the single canvas has — Pen/Pencil/
+                Brush/Node/Select all act on whichever cell you point at. */}
+            <FloatingToolbar />
             {!sketchMode && <GlyphViewBar />}
             {!overviewMode && <SketchModeToggle />}
             {sketchMode && <SketchToolbar />}

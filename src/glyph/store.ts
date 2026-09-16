@@ -26,7 +26,7 @@ import { emptyFeatureConfig, nextFeatureRuleId } from "@/types/opentypeFeatures"
 import { nextFeatureGlyphUnicode, buildFeatureGlyph, isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { GlyphCategory } from "@/types/glyph";
 import type { EditorMode, GlyphFilterId } from "@/types/glyphView";
-import { clampOverviewSpacing, clampOverviewZoom } from "@/types/glyphView";
+import { clampMultiColumns, clampMultiZoom, clampOverviewSpacing, clampOverviewZoom } from "@/types/glyphView";
 
 export type Theme = "light" | "dark";
 export type PenMode = "shape" | "line";
@@ -319,6 +319,27 @@ interface AppState {
   setOverviewSpacing: (spacing: number) => void;
   /** Opens `char` in Single Mode (double-click a tile in the overview). */
   openGlyphInSingleMode: (char: string) => void;
+
+  /* ---------------------------------------- Multi Glyph EDIT canvas
+   * The multi surface is a real drawing plane, so it needs the same kind
+   * of view state the single-glyph editor has — a free 2D pan and a wide
+   * zoom range — rather than the overview's one-axis scroll. Kept in its
+   * own fields so Single ⇄ Multi never disturbs the other view, and, like
+   * every other field in this block, it is pure VIEW state: nothing here
+   * reads or writes glyph data. */
+  /** Zoom percent for the multi edit canvas. */
+  multiZoom: number;
+  setMultiZoom: (zoom: number) => void;
+  /** Pan, expressed as the world-space (font-unit) point at the centre of
+   *  the viewport — same convention as the single canvas's `pan`. */
+  multiPan: { x: number; y: number };
+  setMultiPan: (pan: { x: number; y: number }) => void;
+  /** Columns in the multi grid; 0 = auto from glyph count. */
+  multiColumns: number;
+  setMultiColumns: (columns: number) => void;
+  /** Bumped to ask the canvas to re-fit; mirrors `fitNonce`. */
+  multiFitNonce: number;
+  fitMultiCanvas: () => void;
 
   /** Glyph map for the currently selected family style. */
   glyphs: GlyphMap;
@@ -1086,6 +1107,13 @@ export const useAppStore = create<AppState>()((set, get) => {
     overviewZoom: 100,
     overviewScroll: { x: 0, y: 0 },
     overviewSpacing: 14,
+    // Multi EDIT canvas view state. multiFitNonce starts at 1 so the
+    // canvas fits the grid to the viewport the first time it mounts,
+    // instead of opening at an arbitrary pan/zoom.
+    multiZoom: 100,
+    multiPan: { x: 0, y: 0 },
+    multiColumns: 0,
+    multiFitNonce: 1,
     // Default ON: a brand-new font should let the just-drawn ink be the
     // reference and have LSB/RSB/position follow it automatically (see
     // `commitOutline`'s autoSpacingEnabled branch), not the other way
@@ -1319,11 +1347,20 @@ export const useAppStore = create<AppState>()((set, get) => {
     setOverviewFilter: (filter) =>
       // Changing the filter changes which rows exist, so any scroll
       // offset from the previous set is meaningless — reset to the top.
-      set({ overviewFilter: filter, overviewScroll: { x: 0, y: 0 } }),
-    setOverviewQuery: (query) => set({ overviewQuery: query, overviewScroll: { x: 0, y: 0 } }),
+      set((s) => ({ overviewFilter: filter, overviewScroll: { x: 0, y: 0 }, multiFitNonce: s.multiFitNonce + 1 })),
+    setOverviewQuery: (query) =>
+      set((s) => ({ overviewQuery: query, overviewScroll: { x: 0, y: 0 }, multiFitNonce: s.multiFitNonce + 1 })),
     setOverviewZoom: (zoom) => set({ overviewZoom: clampOverviewZoom(zoom) }),
     setOverviewScroll: (scroll) => set({ overviewScroll: scroll }),
     setOverviewSpacing: (spacing) => set({ overviewSpacing: clampOverviewSpacing(spacing) }),
+    setMultiZoom: (zoom) => set({ multiZoom: clampMultiZoom(zoom) }),
+    setMultiPan: (pan) => set({ multiPan: pan }),
+    setMultiColumns: (columns) => {
+      // Re-flowing the grid moves every cell, so the previous pan points
+      // at nothing meaningful — re-fit rather than leave the user lost.
+      set((s) => ({ multiColumns: clampMultiColumns(columns), multiFitNonce: s.multiFitNonce + 1 }));
+    },
+    fitMultiCanvas: () => set((s) => ({ multiFitNonce: s.multiFitNonce + 1 })),
     openGlyphInSingleMode: (char) => {
       const state = get();
       if (!state.glyphs[char]) return;

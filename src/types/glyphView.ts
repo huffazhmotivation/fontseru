@@ -76,3 +76,31 @@ export function clampOverviewSpacing(s: number): number {
   if (!Number.isFinite(s)) return 14;
   return Math.min(OVERVIEW_SPACING_MAX, Math.max(OVERVIEW_SPACING_MIN, Math.round(s)));
 }
+
+/* ------------------------------------------------------------------ *
+ * MULTI GLYPH EDIT CANVAS
+ *
+ * The editable multi-glyph surface is a single, continuous drawing
+ * plane in FONT UNITS (not a scrolling list of thumbnails), so it needs
+ * the same kind of view state the single-glyph editor has: a free 2D
+ * pan and a zoom that goes far past "thumbnail" range — you need to be
+ * able to zoom into one cell deep enough to place nodes precisely.
+ * ------------------------------------------------------------------ */
+
+/** Zoom range, percent. 100% ≈ one glyph cell at MULTI_BASE_CELL_PX tall. */
+export const MULTI_ZOOM_MIN = 8;
+export const MULTI_ZOOM_MAX = 4000;
+/** On-screen height of one glyph cell (ascender→descender) at zoom 100%. */
+export const MULTI_BASE_CELL_PX = 150;
+/** Manual column count range; 0 means "auto" (derived from glyph count). */
+export const MULTI_COLUMNS_MAX = 24;
+
+export function clampMultiZoom(z: number): number {
+  if (!Number.isFinite(z)) return 100;
+  return Math.min(MULTI_ZOOM_MAX, Math.max(MULTI_ZOOM_MIN, Math.round(z)));
+}
+
+export function clampMultiColumns(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(MULTI_COLUMNS_MAX, Math.max(0, Math.round(n)));
+}
