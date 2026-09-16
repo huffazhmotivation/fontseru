@@ -853,15 +853,24 @@ function normalizePersistedMediaClips(clips, tracks, library) {
       .filter((c) => c && c.type === "audio")
       .map((c) => `${c.src || ""}|${c.name || ""}`)
   );
+    const audioNames = new Set(
+      (clips || [])
+        .filter((c) => c && c.type === "audio")
+        .flatMap((c) => [c.name, c.text])
+        .filter(Boolean)
+        .map((value) => String(value).trim())
+    );
   const audioAssetIds = new Set((library?.audios || []).map((a) => a.id));
-  const mediaAssetKinds = new Map();
   for (const a of library?.images || []) mediaAssetKinds.set(a.id, "image");
   for (const a of library?.videos || []) mediaAssetKinds.set(a.id, "video");
   for (const a of library?.audios || []) mediaAssetKinds.set(a.id, "audio");
 
   const seen = new Set();
   const cleaned = (clips || []).filter((clip) => {
-    if (!clip || clip.type === "text") return true;
+    if (!clip || clip.type === "text") {
+      if (clip?.type === "text" && audioNames.has(String(clip.name || clip.text || "").trim())) return false;
+      return true;
+    }
     const trackType = trackTypes.get(clip.trackId);
     let normalizedType = ["image", "video", "audio"].includes(trackType) ? trackType : clip.type;
     const sourceKey = `${clip.src || ""}|${clip.name || ""}`;
@@ -4468,6 +4477,7 @@ const TimelineClipBlock = React.memo(function TimelineClipBlock({ clip, row, col
 
 function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, playClock, timelineHeight, setTimelineHeight }) {
   const trackRef = useRef(null);
+  const timelineViewportRef = useRef(null);
   const labelScrollRef = useRef(null);
   const playheadElRef = useRef(null);
   const tlDurRef = useRef(1);
@@ -4548,6 +4558,29 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
         const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
         setTimelineScroll(current + delta);
       }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [setTimelineScroll, timelineDuration, timelineZoom]);
+
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      if (!e.shiftKey) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const localX = e.clientX - rect.left;
+      const currentScroll = horizontalScrollRef.current?.scrollLeft || 0;
+      const oldWidth = Math.max(rect.width, rect.width * timelineZoom);
+      const timeAtCursor = ((currentScroll + localX) / oldWidth) * timelineDuration;
+      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const nextZoom = Math.round(clamp(timelineZoom * factor, 0.25, 8) * 100) / 100;
+      setTimelineZoom(nextZoom);
+      requestAnimationFrame(() => {
+        const nextWidth = Math.max(rect.width, rect.width * nextZoom);
+        setTimelineScroll(timeAtCursor / timelineDuration * nextWidth - localX);
+      });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
