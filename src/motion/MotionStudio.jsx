@@ -3317,6 +3317,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       // dispatch → tanpa re-render React), supaya animasi kanvas mulus dan
       // tidak lagi patah-patah saat diputar.
       if (playClock) playClock.notify(next);
+      else notifyPlayhead(next);
       if (timeTextRef.current) timeTextRef.current.textContent = fmtTime(next);
       if (fsTimeTextRef.current) fsTimeTextRef.current.textContent = fmtTime(next);
       if (stop) {
@@ -4584,7 +4585,14 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
 
   tlDurRef.current = timelineDuration;
 
-  // Saat memutar, geser garis playhead LANGSUNG lewat DOM tiap frame (tanpa
+  const notifyPlayhead = (v) => {
+    const fraction = v / (tlDurRef.current || 1);
+    const line = playheadElRef.current;
+    const marker = playheadMarkerRef.current;
+    if (line) line.style.left = `${fraction * 100}%`;
+    if (marker) marker.style.left = `${fraction * 100}%`;
+  };
+
   // re-render React) — inilah yang membuat linimasa & preview tidak lagi
   // patah-patah saat diputar.
   useEffect(() => {
@@ -4609,6 +4617,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     const next = pxToTime(clientX - rect.left + scrollLeft, contentWidth);
     if (window.getSelection) window.getSelection().removeAllRanges();
     syncMediaPlayback(project.clips, mediaMapRef, next, false, transitionsRef.current);
+    notifyPlayhead(next);
     dispatchPlayback({ type: "SET_PLAYHEAD", value: next });
   };
   const onRulerDown = (e) => {
@@ -4907,7 +4916,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
             <div className="mfs-timeline-hscroll-inner" style={{ width: `${Math.max(1, timelineZoom) * 100}%` }} />
           </div>
           <div className="mfs-tracks-scroll" ref={trackRef} onMouseDown={startMarquee}>
-          <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative", transform: `translateX(${-horizontalScroll}px)` }}>
+          <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative" }}>
             {marquee && <div className="mfs-marquee" style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }} />}
 
           {/* Zona kosong di paling atas — seret klip ke sini untuk membuat
