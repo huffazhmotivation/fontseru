@@ -1077,6 +1077,13 @@ function projectReducer(state, action) {
       const nextSelected = clips[0]?.id ?? null;
       return { ...state, clips, transitions, selectedClipId: nextSelected, selectedClipIds: nextSelected ? [nextSelected] : [] };
     }
+    case "PASTE_CLIPS": {
+      const pasted = (action.clips || []).filter((clip) => clip && clip.id);
+      if (pasted.length === 0) return state;
+      const clips = [...state.clips, ...pasted];
+      const ids = pasted.map((clip) => clip.id);
+      return { ...state, clips, selectedClipId: ids[ids.length - 1], selectedClipIds: ids };
+    }
     case "SELECT_ALL_CLIPS": {
       const ids = state.clips.map((c) => c.id);
       return { ...state, selectedClipId: ids[ids.length - 1] || null, selectedClipIds: ids };
@@ -2275,6 +2282,7 @@ function primeMediaElements(mediaMapRef) {
 }
 
 function syncMediaPlayback(clips, mediaMapRef, timeMs, playing, slotTransitions) {
+  const SEEK_TOLERANCE_S = 0.08;
   clips.forEach((c) => {
     if (c.type !== "video" && c.type !== "audio") return;
     const entry = mediaMapRef.current[c.type][c.id];
@@ -2290,10 +2298,13 @@ function syncMediaPlayback(clips, mediaMapRef, timeMs, playing, slotTransitions)
       const targetVol = clamp((c.volume ?? 1) * clamp(tp.opacity ?? 1, 0, 1), 0, 1);
       try { el.muted = c.type === "video" ? !!c.muted : false; el.volume = targetVol; } catch (e) {}
       if (playing) {
-        if (el.paused) {
-          try { el.currentTime = Math.max(0, local / 1000); } catch (e) {}
-          el.play().catch(() => {});
-        }
+        const targetTime = Math.max(0, local / 1000);
+        try {
+          if (!Number.isFinite(el.currentTime) || Math.abs(el.currentTime - targetTime) > SEEK_TOLERANCE_S) {
+            el.currentTime = targetTime;
+          }
+        } catch (e) {}
+        if (el.paused) el.play().catch(() => {});
       } else {
         if (!el.paused) el.pause();
         try { el.currentTime = Math.max(0, local / 1000); } catch (e) {}
@@ -3676,6 +3687,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     if (exporting) return;
     if (!playback.playing) {
       primeMediaElements(mediaMapRef);
+      syncMediaPlayback(clipsRef.current, mediaMapRef, playheadRef.current, false, transitionsRef.current);
       dispatchPlayback({ type: "SET_PLAYING", value: true });
     } else {
       // Saat menjeda, commit posisi playhead terkini (yang selama play cuma
@@ -5369,7 +5381,30 @@ export default function App() {
   const [mobilePane, setMobilePane] = useState(null);
   const toggleMobilePane = useCallback((p) => setMobilePane((cur) => (cur === p ? null : p)), []);
 
-  // Pintasan keyboard global: Ctrl/Cmd+Z untuk undo, Ctrl/Cmd+Shift+Z (atau
+  const [clipboard, setClipboard] = useState([]);
+  const selectedMotionClips = () => (project.selectedClipIds || [])
+    .map((id) => project.clips.find((clip) => clip.id === id))
+    .filter(Boolean);
+  const copyMotionClips = useCallback(() => {
+    const clips = selectedMotionClips();
+    if (clips.length) setClipboard(clips.map((clip) => ({ ...clip, offset: { ...(clip.offset || BASE_OFFSET) } })));
+  }, [project]);
+  const pasteMotionClips = useCallback((source = clipboard) => {
+    if (!source.length) return;
+    const minStart = Math.min(...source.map((clip) => clip.start));
+    const maxEnd = Math.max(...source.map((clip) => clip.start + clip.duration));
+    const selected = selectedMotionClips();
+    const pasteStart = selected.length ? Math.max(...selected.map((clip) => clip.start + clip.duration)) + 20 : computeTimelineDuration(project.clips);
+    const delta = pasteStart - minStart;
+    const pasted = source.map((clip) => ({ ...clip, id: uid("clip"), start: Math.max(0, Math.round(clip.start + delta)), offset: { ...(clip.offset || BASE_OFFSET) } }));
+    dispatchProject({ type: "PASTE_CLIPS", clips: pasted });
+  }, [clipboard, project]);
+  const cutMotionClips = useCallback(() => {
+    const clips = selectedMotionClips();
+    if (!clips.length) return;
+    setClipboard(clips.map((clip) => ({ ...clip, offset: { ...(clip.offset || BASE_OFFSET) } })));
+    dispatchProject({ type: "DELETE_SELECTED_CLIPS" });
+  }, [project]);
   // Ctrl+Y) untuk redo — dilewati kalau fokus sedang di input/textarea,
   // supaya tidak menabrak undo bawaan browser saat mengetik teks.
   useEffect(() => {
@@ -5390,6 +5425,10 @@ export default function App() {
         return;
       }
       const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "c") { e.preventDefault(); copyMotionClips(); return; }
+      if (mod && e.key.toLowerCase() === "x") { e.preventDefault(); cutMotionClips(); return; }
+      if (mod && e.key.toLowerCase() === "v") { e.preventDefault(); pasteMotionClips(); return; }
+      if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); copyMotionClips(); pasteMotionClips(selectedMotionClips()); return; }
       if (!mod) return;
       if (e.key.toLowerCase() === "z" && e.shiftKey) { e.preventDefault(); dispatchProject({ type: "REDO" }); }
       else if (e.key.toLowerCase() === "z") { e.preventDefault(); dispatchProject({ type: "UNDO" }); }
