@@ -847,7 +847,8 @@ const TRACK_TYPES = [
 function trackColor(type) { return TRACK_TYPES.find((t) => t.type === type)?.color || "#7c6cff"; }
 
 function normalizePersistedMediaClips(clips, tracks, library) {
-  const trackTypes = new Map((tracks || []).map((t) => [t.id, t.type]));
+  const validTracks = (tracks || []).filter((t) => t && t.id && TRACK_TYPES.some((kind) => kind.type === t.type));
+  const trackTypes = new Map(validTracks.map((t) => [t.id, t.type]));
   const audioSourceKeys = new Set(
     (clips || [])
       .filter((c) => c && c.type === "audio")
@@ -868,8 +869,8 @@ function normalizePersistedMediaClips(clips, tracks, library) {
 
   const seen = new Set();
   const cleaned = (clips || []).filter((clip) => {
-    if (!clip || clip.type === "text") {
-      if (clip?.type === "text" && audioNames.has(String(clip.name || clip.text || "").trim())) return false;
+    if (!clip || !clip.id || !trackTypes.has(clip.trackId)) return false;
+    if (clip.type === "text") {
       return true;
     }
     const trackType = trackTypes.get(clip.trackId);
@@ -908,21 +909,23 @@ function projectReducer(state, action) {
   switch (action.type) {
     case "HYDRATE_PROJECT": {
       if (!action.project) return state;
+      const normalized = normalizePersistedMediaClips(action.project.clips || state.clips, action.project.tracks || state.tracks, action.project.library || state.library);
+      const normalizedIds = new Set(normalized.clips.map((c) => c.id));
       // Muat seluruh field proyek tersimpan (clips, fonts, tracks, background,
       // frameSize, transitions) — sebelumnya hanya transitions yang dipulihkan,
       // sehingga fonts & clips tersimpan hilang setelah reload.
       return {
         ...state,
-        ...(() => { const n = normalizePersistedMediaClips(action.project.clips || state.clips, action.project.tracks || state.tracks, action.project.library || state.library); return { clips: n.clips, tracks: n.tracks }; })(),
+        ...(() => { const n = normalized; return { clips: n.clips, tracks: n.tracks }; })(),
         fonts: action.project.fonts || state.fonts,
         background: action.project.background || state.background,
         frameSize: action.project.frameSize || state.frameSize,
         transitions: Array.isArray(action.project.transitions) ? action.project.transitions : [],
         library: action.project.library || state.library,
-        selectedClipId: action.project.selectedClipId ?? state.selectedClipId,
+        selectedClipId: normalizedIds.has(action.project.selectedClipId) ? action.project.selectedClipId : null,
         selectedClipIds: Array.isArray(action.project.selectedClipIds)
-          ? action.project.selectedClipIds.filter((id) => (action.project.clips || []).some((c) => c.id === id))
-          : (action.project.selectedClipId ? [action.project.selectedClipId] : []),
+          ? action.project.selectedClipIds.filter((id) => normalizedIds.has(id))
+          : [],
       };
     }
     case "ADD_CLIP": {
