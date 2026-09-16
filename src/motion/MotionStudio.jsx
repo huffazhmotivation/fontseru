@@ -4483,6 +4483,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const timelineViewportRef = useRef(null);
   const labelScrollRef = useRef(null);
   const playheadElRef = useRef(null);
+  const playheadMarkerRef = useRef(null);
   const tlDurRef = useRef(1);
   const laneElRef = useRef({});
   const topGhostRef = useRef(null);
@@ -4588,7 +4589,13 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   // patah-patah saat diputar.
   useEffect(() => {
     if (!playClock) return;
-    const fn = (v) => { const el = playheadElRef.current; if (el) el.style.left = `${(v / (tlDurRef.current || 1)) * 100}%`; };
+    const fn = (v) => {
+      const fraction = v / (tlDurRef.current || 1);
+      const line = playheadElRef.current;
+      const marker = playheadMarkerRef.current;
+      if (line) line.style.left = `${fraction * 100}%`;
+      if (marker) marker.style.left = `${fraction * 100}%`;
+    };
     playClock.subs.add(fn);
     return () => playClock.subs.delete(fn);
   }, [playClock]);
@@ -4597,8 +4604,8 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const scrub = (clientX) => {
     const ruler = document.querySelector(".mfs-ruler-fixed");
     const rect = (ruler || trackRef.current).getBoundingClientRect();
+    const contentWidth = Math.max((ruler || trackRef.current).firstElementChild?.scrollWidth || 0, rect.width);
     const scrollLeft = horizontalScrollRef.current?.scrollLeft || 0;
-    const contentWidth = Math.max((ruler || trackRef.current).scrollWidth, rect.width);
     const next = pxToTime(clientX - rect.left + scrollLeft, contentWidth);
     if (window.getSelection) window.getSelection().removeAllRanges();
     syncMediaPlayback(project.clips, mediaMapRef, next, false, transitionsRef.current);
@@ -4606,8 +4613,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   };
   const onRulerDown = (e) => {
     e.preventDefault();
-    // Scrubbing is a seek operation, not playback: stop the transport first
-    // so the audio element cannot continue from its previous clock position.
+    if (e.button !== 0) return;
     dispatchPlayback({ type: "SET_PLAYING", value: false });
     scrub(e.clientX);
     const move = (ev) => { ev.preventDefault(); scrub(ev.clientX); };
@@ -4893,7 +4899,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
             <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative", transform: `translateX(${-horizontalScroll}px)` }}>
               <div className="mfs-ruler" onMouseDown={onRulerDown}>
                 {ticks.map((t) => <div key={t} className="mfs-ruler-tick" style={{ left: `${(t / timelineDuration) * 100}%` }}>{(t / 1000).toFixed(1)}dtk</div>)}
-                <div className="mfs-playhead-marker" style={{ left: `${(playback.playhead / timelineDuration) * 100}%` }} />
+                <div ref={playheadMarkerRef} className="mfs-playhead-marker" style={{ left: `${(playback.playhead / timelineDuration) * 100}%` }} />
               </div>
             </div>
           </div>
