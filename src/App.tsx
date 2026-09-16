@@ -94,9 +94,16 @@ export default function App() {
   const hydratedRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Restore the saved project from IndexedDB on first mount.
+  // Restore the saved project from IndexedDB on first mount. IndexedDB can
+  // hang indefinitely in a blocked/private browser context, so the editor
+  // must not wait forever for persistence before rendering.
   useEffect(() => {
     let cancelled = false;
+    const finish = () => {
+      if (cancelled) return;
+      hydratedRef.current = true;
+    };
+    const timeout = window.setTimeout(finish, 1500);
     loadProject().then((snap) => {
       if (cancelled) return;
       if (snap?.glyphs) useAppStore.getState().hydrate({
@@ -115,9 +122,12 @@ export default function App() {
         wordSpacingOverridesByStyle: snap.wordSpacingOverridesByStyle,
         featureConfig: snap.featureConfig,
       });
-      hydratedRef.current = true;
-    });
-    return () => { cancelled = true; };
+      finish();
+    }).catch(finish);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
   }, []);
 
   // Persist glyphs + font name (debounced) whenever they change, and flush
