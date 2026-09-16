@@ -2519,7 +2519,7 @@ const GlobalStyle = () => (
     .mfs-tracks-scroll { position:relative; min-width:0; min-height:max-content; overflow-x:auto; overflow-y:visible; }
     .mfs-ruler { height:18px; border-bottom:1px solid var(--border-light); position:relative; z-index:8; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
     .mfs-ruler-fixed { height:18px; flex:0 0 18px; position:relative; z-index:10; background:#211538; border-bottom:1px solid #49316f; }
-    .mfs-ruler { height:18px; border-bottom:none; position:relative; z-index:8; cursor:pointer; flex-shrink:0; background:transparent; }
+    .mfs-ruler { height:18px; border-bottom:none; position:relative; z-index:8; cursor:pointer; flex-shrink:0; background:transparent; user-select:none; -webkit-user-select:none; }
     .mfs-timeline-hscroll { height:12px; flex:0 0 12px; overflow-x:scroll; overflow-y:hidden; margin:0; padding:0; background:transparent; scrollbar-width:thin; scrollbar-color:#9b6cff transparent; }
     .mfs-timeline-hscroll { position:absolute; left:68px; right:12px; bottom:0; z-index:20; }
     .mfs-track-viewport { padding-bottom:12px; }
@@ -2528,7 +2528,7 @@ const GlobalStyle = () => (
     .mfs-timeline-hscroll::-webkit-scrollbar-thumb { background:#9b6cff; border:2px solid transparent; background-clip:padding-box; border-radius:99px; box-shadow:0 0 5px #9b6cff99; }
     .mfs-timeline-hscroll::-webkit-scrollbar-thumb:hover { background:#bd9cff; }
     .mfs-timeline-hscroll-inner { height:1px; }
-    .mfs-playhead-marker { position:absolute; top:0; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid var(--accent); transform:translateX(-6px); z-index:12; pointer-events:none; }
+    .mfs-playhead-marker { position:absolute; top:0; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid #b995ff; filter:drop-shadow(0 0 4px #a66cff); transform:translateX(-6px); z-index:12; pointer-events:none; }
     .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9px; color:#c8b7e8; font-family:'JetBrains Mono',monospace; border-left:1px solid #694b91; padding-left:3px; }
     .mfs-marquee { position:absolute; z-index:12; border:1px solid var(--accent); background:var(--accent-soft); pointer-events:none; }    .mfs-lane { position:relative; height:32px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
     .mfs-lane.track-over { background:var(--accent-soft); }
@@ -2541,7 +2541,7 @@ const GlobalStyle = () => (
     .mfs-clip-del { position:absolute; top:2px; right:2px; width:20px; height:20px; border-radius:4px; background:rgba(0,0,0,0.55); border:none; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3; opacity:0; transition:opacity .15s ease, color .15s ease; }
     .mfs-clip-block:hover .mfs-clip-del { opacity:1; }
     .mfs-clip-del:hover { color:#ff6b6b; }
-    .mfs-playhead { position:absolute; top:0; bottom:0; width:1px; background:var(--accent); z-index:6; pointer-events:none; }
+    .mfs-playhead { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:#b995ff; box-shadow:0 0 5px #9b6cff, 0 0 11px #9b6cff88; z-index:6; pointer-events:none; }
 
     /* Transisi hidup di STRIP TERSENDIRI di bagian bawah tiap lane — bukan
        lagi di atas/menimpa bar klip. Karena punya ruang sendiri, ia tidak
@@ -4598,11 +4598,18 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     const rect = trackRef.current.getBoundingClientRect();
     const scrollLeft = horizontalScrollRef.current?.scrollLeft || 0;
     const width = Math.max(trackRef.current.clientWidth, trackRef.current.scrollWidth);
-    dispatchPlayback({ type: "SET_PLAYHEAD", value: pxToTime(clientX - rect.left + scrollLeft, width) });
+    const next = pxToTime(clientX - rect.left + scrollLeft, width);
+    if (window.getSelection) window.getSelection().removeAllRanges();
+    syncMediaPlayback(project.clips, mediaMapRef, next, false, transitionsRef.current);
+    dispatchPlayback({ type: "SET_PLAYHEAD", value: next });
   };
   const onRulerDown = (e) => {
+    e.preventDefault();
+    // Scrubbing is a seek operation, not playback: stop the transport first
+    // so the audio element cannot continue from its previous clock position.
+    dispatchPlayback({ type: "SET_PLAYING", value: false });
     scrub(e.clientX);
-    const move = (ev) => scrub(ev.clientX);
+    const move = (ev) => { ev.preventDefault(); scrub(ev.clientX); };
     const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
     window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
   };
