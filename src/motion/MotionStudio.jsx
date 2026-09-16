@@ -861,6 +861,7 @@ function normalizePersistedMediaClips(clips, tracks, library) {
         .map((value) => String(value).trim())
     );
   const audioAssetIds = new Set((library?.audios || []).map((a) => a.id));
+  const mediaAssetKinds = new Map();
   for (const a of library?.images || []) mediaAssetKinds.set(a.id, "image");
   for (const a of library?.videos || []) mediaAssetKinds.set(a.id, "video");
   for (const a of library?.audios || []) mediaAssetKinds.set(a.id, "audio");
@@ -2520,6 +2521,8 @@ const GlobalStyle = () => (
     .mfs-ruler-fixed { height:18px; flex:0 0 18px; position:relative; z-index:10; background:#211538; border-bottom:1px solid #49316f; }
     .mfs-ruler { height:18px; border-bottom:none; position:relative; z-index:8; cursor:pointer; flex-shrink:0; background:transparent; }
     .mfs-timeline-hscroll { height:12px; flex:0 0 12px; overflow-x:scroll; overflow-y:hidden; margin:0; padding:0; background:transparent; scrollbar-width:thin; scrollbar-color:#9b6cff transparent; }
+    .mfs-timeline-hscroll { position:absolute; left:68px; right:12px; bottom:0; z-index:20; }
+    .mfs-track-viewport { padding-bottom:12px; }
     .mfs-timeline-hscroll::-webkit-scrollbar { height:8px; }
     .mfs-timeline-hscroll::-webkit-scrollbar-track { background:transparent; }
     .mfs-timeline-hscroll::-webkit-scrollbar-thumb { background:#9b6cff; border:2px solid transparent; background-clip:padding-box; border-radius:99px; box-shadow:0 0 5px #9b6cff99; }
@@ -4535,12 +4538,11 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     const el = trackRef.current;
     if (!el) return;
     const onWheel = (e) => {
-      if (e.shiftKey) {
+      if (e.metaKey || e.ctrlKey) {
         e.preventDefault();
-        const scrollEl = horizontalScrollRef.current;
         const rect = el.getBoundingClientRect();
         const localX = e.clientX - rect.left;
-        const currentScroll = scrollEl?.scrollLeft || 0;
+        const currentScroll = horizontalScrollRef.current?.scrollLeft || 0;
         const oldWidth = Math.max(rect.width, rect.width * timelineZoom);
         const timeAtCursor = ((currentScroll + localX) / oldWidth) * timelineDuration;
         const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
@@ -4552,35 +4554,12 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
         });
         return;
       }
-      if (e.metaKey || e.ctrlKey) {
+      if (e.shiftKey) {
         e.preventDefault();
         const current = horizontalScrollRef.current?.scrollLeft || 0;
         const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
         setTimelineScroll(current + delta);
       }
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [setTimelineScroll, timelineDuration, timelineZoom]);
-
-  useEffect(() => {
-    const el = trackRef.current;
-    if (!el) return;
-    const onWheel = (e) => {
-      if (!e.shiftKey) return;
-      e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const localX = e.clientX - rect.left;
-      const currentScroll = horizontalScrollRef.current?.scrollLeft || 0;
-      const oldWidth = Math.max(rect.width, rect.width * timelineZoom);
-      const timeAtCursor = ((currentScroll + localX) / oldWidth) * timelineDuration;
-      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-      const nextZoom = Math.round(clamp(timelineZoom * factor, 0.25, 8) * 100) / 100;
-      setTimelineZoom(nextZoom);
-      requestAnimationFrame(() => {
-        const nextWidth = Math.max(rect.width, rect.width * nextZoom);
-        setTimelineScroll(timeAtCursor / timelineDuration * nextWidth - localX);
-      });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -4901,7 +4880,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
           })}
           </div>
         </div>
-        <div className="mfs-track-viewport">
+        <div className="mfs-track-viewport" ref={timelineViewportRef}>
           <div className="mfs-ruler-fixed" style={{ overflow: "hidden" }}>
             <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative", transform: `translateX(${-horizontalScroll}px)` }}>
               <div className="mfs-ruler" onMouseDown={onRulerDown}>
