@@ -1291,19 +1291,7 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 }
 
 /* ------------------------------------------------------------------ CANVAS */
-.fm-glyph-view-toolbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; position:absolute; top:8px; left:8px; z-index:5; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); box-shadow:0 4px 16px #0002; font-size:11px; }
-.fm-glyph-view-toolbar button, .fm-glyph-view-toolbar select { border:1px solid var(--line); border-radius:5px; background:var(--panel-2); color:var(--text); padding:4px 7px; }
-.fm-glyph-view-toolbar button.on { color:var(--accent); border-color:var(--accent); }
-.fm-glyph-view-toolbar label { display:flex; align-items:center; gap:3px; }
-.fm-glyph-view-toolbar input { width:70px; }
-.fm-glyph-view-label { font-weight:600; margin-right:3px; }
-.fm-glyph-overview { overflow:hidden; }
-.fm-overview-cell { cursor:pointer; }
-.fm-overview-box { fill:var(--panel-2); stroke:var(--line); stroke-width:1; }
-.fm-overview-cell.selected .fm-overview-box { fill:var(--accent-soft); stroke:var(--accent); stroke-width:2; }
-.fm-overview-path { fill:var(--text); fill-rule:nonzero; }
-.fm-overview-cell text { fill:var(--text-muted); font-size:10px; pointer-events:none; }
-.fm-overview-marquee { fill:var(--accent-soft); stroke:var(--accent); stroke-dasharray:5 3; pointer-events:none; }
+.fm-canvas-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); contain: layout style; }
 .fm-canvas-area { flex: 1; min-height: 0; padding: 20px; display: flex; position: relative; contain: layout paint; }
 .fm-canvas-frame {
   flex: 1; min-width: 0;
@@ -6138,4 +6126,137 @@ input[type="number"]::-webkit-outer-spin-button {
 @media (max-width: 640px) {
   .fm-timelapse-modal { height: calc(100vh - 20px); height: calc(100dvh - 20px); }
   .fm-timelapse-speed-row, .fm-timelapse-export-row { flex-wrap: wrap; }
+}
+
+/* ================================================== MULTI GLYPH CANVAS
+   Glyph Overview mode: the "Glyph View" floating bar plus the grid
+   surface itself. Purely additive — nothing above is overridden, and
+   every rule is scoped to a class that only exists in Multi Mode. */
+
+.fm-glyphview-bar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 21;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 28px);
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 13px;
+  box-shadow: 0 10px 28px -16px rgba(0, 0, 0, 0.7);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fm-glyphview-bar::-webkit-scrollbar { display: none; }
+/* Chromium pays a real compositing cost for backdrop-filter over the live
+   canvas — same trade-off the app already makes elsewhere. */
+.fm-root[data-browser="chromium"] .fm-glyphview-bar {
+  backdrop-filter: none;
+  background: var(--panel);
+}
+
+.fm-glyphview-switch { display: flex; gap: 2px; padding: 2px; background: var(--panel-2); border-radius: 9px; }
+.fm-glyphview-switch button {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border: none; border-radius: 7px;
+  background: transparent; color: var(--text-dim);
+  font-size: 11.5px; font-weight: 600; cursor: pointer;
+  white-space: nowrap;
+}
+.fm-glyphview-switch button:hover { color: var(--text); }
+.fm-glyphview-switch button.on { background: var(--accent); color: var(--accent-ink); }
+.fm-glyphview-switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.fm-glyphview-divider { width: 1px; align-self: stretch; margin: 2px 2px; background: var(--line); flex: none; }
+
+.fm-glyphview-field { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.fm-glyphview-field > span { color: var(--text-faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+.fm-glyphview-field select {
+  padding: 4px 6px; border-radius: 7px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+  font-size: 11.5px; font-family: inherit; cursor: pointer;
+}
+.fm-glyphview-field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fm-glyphview-slider input[type="range"] { width: 88px; }
+
+.fm-glyphview-search {
+  width: 110px; padding: 5px 8px; border-radius: 7px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+  font-size: 11.5px; font-family: inherit;
+}
+.fm-glyphview-search:focus { border-color: var(--accent); outline: none; }
+
+.fm-glyphview-count { color: var(--text-faint); font-family: var(--mono); font-size: 10.5px; white-space: nowrap; }
+.fm-glyphview-selected {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 8px; border-radius: 7px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 10.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+
+/* ------------------------------------------------- the grid surface */
+.fm-ov-frame { position: relative; }
+.fm-ov-frame svg { display: block; width: 100%; height: 100%; touch-action: none; }
+.fm-ov-default { cursor: default; }
+.fm-ov-grab { cursor: grab; }
+.fm-ov-grabbing { cursor: grabbing; }
+
+.fm-ov-tile-box {
+  fill: color-mix(in srgb, var(--panel) 42%, transparent);
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.fm-ov-tile.drawn .fm-ov-tile-box { fill: color-mix(in srgb, var(--panel) 70%, transparent); }
+.fm-ov-tile:hover .fm-ov-tile-box { stroke: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.fm-ov-tile.selected .fm-ov-tile-box {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+.fm-ov-tile.active .fm-ov-tile-box { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 3; }
+
+.fm-ov-tile-baseline { stroke: var(--line); stroke-width: 1; opacity: 0.85; }
+.fm-ov-ink-fill { fill: var(--ink); stroke: none; }
+.fm-ov-ink { stroke: var(--ink); fill: none; }
+.fm-ov-placeholder { fill: var(--text-faint); opacity: 0.45; font-family: "Inter", system-ui, sans-serif; font-weight: 600; }
+.fm-ov-tile-label { fill: var(--text-faint); font-family: var(--mono); pointer-events: none; }
+.fm-ov-tile.selected .fm-ov-tile-label,
+.fm-ov-tile.active .fm-ov-tile-label { fill: var(--accent); }
+.fm-ov-done-dot { fill: var(--accent); opacity: 0.9; }
+
+.fm-ov-marquee {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.fm-ov-empty {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-faint); font-size: 12.5px; pointer-events: none;
+}
+
+.fm-ov-scrollbar {
+  position: absolute; top: 6px; right: 5px; bottom: 6px; width: 4px;
+  border-radius: 3px; background: color-mix(in srgb, var(--text) 6%, transparent);
+  pointer-events: none;
+}
+.fm-ov-scrollbar-thumb {
+  position: absolute; left: 0; width: 100%;
+  border-radius: 3px; background: color-mix(in srgb, var(--text) 26%, transparent);
+}
+
+@media (max-width: 900px) {
+  .fm-glyphview-bar { gap: 6px; padding: 5px 8px; font-size: 11px; }
+  .fm-glyphview-slider input[type="range"] { width: 62px; }
+  .fm-glyphview-search { width: 86px; }
 }

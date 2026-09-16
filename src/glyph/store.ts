@@ -25,6 +25,8 @@ import type { FeatureBuilderConfig, LigatureRule, AlternateRule, SwashRule, Feat
 import { emptyFeatureConfig, nextFeatureRuleId } from "@/types/opentypeFeatures";
 import { nextFeatureGlyphUnicode, buildFeatureGlyph, isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { GlyphCategory } from "@/types/glyph";
+import type { EditorMode, GlyphFilterId } from "@/types/glyphView";
+import { clampOverviewSpacing, clampOverviewZoom } from "@/types/glyphView";
 
 export type Theme = "light" | "dark";
 export type PenMode = "shape" | "line";
@@ -286,12 +288,37 @@ interface AppState {
    * already does per-glyph. */
   glyphSelectMode: boolean;
   selectedGlyphChars: string[];
-  glyphViewMode: "single" | "overview";
-  glyphOverviewFilter: "all" | "upper" | "lower" | "digits" | "punct" | "symbols" | "custom";
-  glyphOverviewSpacing: number;
-  glyphOverviewZoom: number;
-  glyphOverviewPan: { x: number; y: number };
-  overviewSelectedGlyphChars: string[];
+
+  // ------------------------------------------------ Multi Glyph Canvas
+  /**
+   * Which canvas surface the editor area shows: the pre-existing
+   * single-glyph node/bezier editor, or the new grid overview. Purely a
+   * VIEW switch — both surfaces read the exact same `glyphs` map, so no
+   * glyph data is ever duplicated between them and anything drawn in
+   * Single Mode shows up in Multi Mode immediately (and vice-versa).
+   * Session-only, like sketchMode: not written into the project file.
+   */
+  editorMode: EditorMode;
+  setEditorMode: (mode: EditorMode) => void;
+  toggleEditorMode: () => void;
+  /** Which glyph subset the overview renders. */
+  overviewFilter: GlyphFilterId;
+  setOverviewFilter: (filter: GlyphFilterId) => void;
+  /** Free-text narrowing on top of the filter (char / glyph name / U+hex). */
+  overviewQuery: string;
+  setOverviewQuery: (query: string) => void;
+  /** Overview-only zoom + scroll, kept separate from the single-glyph
+   *  editor's `zoom`/`pan` so switching modes never disturbs either
+   *  view's position. */
+  overviewZoom: number;
+  setOverviewZoom: (zoom: number) => void;
+  overviewScroll: { x: number; y: number };
+  setOverviewScroll: (scroll: { x: number; y: number }) => void;
+  /** Gap between tiles, as a percentage of tile size. */
+  overviewSpacing: number;
+  setOverviewSpacing: (spacing: number) => void;
+  /** Opens `char` in Single Mode (double-click a tile in the overview). */
+  openGlyphInSingleMode: (char: string) => void;
 
   /** Glyph map for the currently selected family style. */
   glyphs: GlyphMap;
@@ -418,14 +445,6 @@ interface AppState {
   metricFocus: keyof FontMetrics | null;
   setMetricFocus: (key: keyof FontMetrics | null) => void;
   setActiveChar: (char: string) => void;
-  setGlyphViewMode: (mode: "single" | "overview") => void;
-  setGlyphOverviewFilter: (filter: AppState["glyphOverviewFilter"]) => void;
-  setGlyphOverviewSpacing: (spacing: number) => void;
-  setGlyphOverviewZoom: (zoom: number) => void;
-  setGlyphOverviewPan: (pan: { x: number; y: number }) => void;
-  setOverviewGlyphSelection: (chars: string[]) => void;
-  toggleOverviewGlyphSelection: (char: string, additive?: boolean) => void;
-  clearOverviewGlyphSelection: () => void;
   setFontStyle: (style: FontStyle) => void;
   generateFromRegular: () => void;
   generateFamilyBold: (amount: number, replaceExisting?: boolean) => FamilyGenerationResult;
@@ -1058,12 +1077,15 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     glyphSelectMode: false,
     selectedGlyphChars: [],
-    glyphViewMode: "single",
-    glyphOverviewFilter: "all",
-    glyphOverviewSpacing: 72,
-    glyphOverviewZoom: 100,
-    glyphOverviewPan: { x: 0, y: 0 },
-    overviewSelectedGlyphChars: [],
+
+    // Multi Glyph Canvas — defaults chosen so an existing project opens
+    // in exactly the surface it always has (Single Mode).
+    editorMode: "single",
+    overviewFilter: "all",
+    overviewQuery: "",
+    overviewZoom: 100,
+    overviewScroll: { x: 0, y: 0 },
+    overviewSpacing: 14,
     // Default ON: a brand-new font should let the just-drawn ink be the
     // reference and have LSB/RSB/position follow it automatically (see
     // `commitOutline`'s autoSpacingEnabled branch), not the other way
@@ -1266,6 +1288,48 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ zoom: 100, pan: { x: metrics.unitsPerEm / 2, y: (metrics.ascender - metrics.descender) / 2 } });
     },
     fitGlyph: () => set((s) => ({ fitNonce: s.fitNonce + 1 })),
+
+    // -------------------------------------------- Multi Glyph Canvas
+    // Every action below only ever touches view state. None of them
+    // read, write, clone or reorder `glyphs`/`glyphsByStyle`, which is
+    // what guarantees Single and Multi Mode share one single copy of
+    // the glyph data and can never drift apart.
+    setEditorMode: (mode) => {
+      if (mode === get().editorMode) return;
+      // Flush any in-progress live outline first, exactly like
+      // setActiveChar does, so switching away mid-stroke commits the
+      // stroke instead of dropping it. Node/handle/object selections
+      // belong to the single-glyph surface and are cleared so the
+      // overview's own drag-rectangle selection can't fight with them
+      // (and so returning to Single Mode starts from a clean slate).
+      finalizeLive();
+      set({
+        editorMode: mode,
+        selectedNodes: [],
+        selectedHandle: null,
+        selectedObjectIds: [],
+        drawingContourId: null,
+        liveOutline: null,
+      });
+    },
+    toggleEditorMode: () => {
+      const next: EditorMode = get().editorMode === "single" ? "multi" : "single";
+      get().setEditorMode(next);
+    },
+    setOverviewFilter: (filter) =>
+      // Changing the filter changes which rows exist, so any scroll
+      // offset from the previous set is meaningless — reset to the top.
+      set({ overviewFilter: filter, overviewScroll: { x: 0, y: 0 } }),
+    setOverviewQuery: (query) => set({ overviewQuery: query, overviewScroll: { x: 0, y: 0 } }),
+    setOverviewZoom: (zoom) => set({ overviewZoom: clampOverviewZoom(zoom) }),
+    setOverviewScroll: (scroll) => set({ overviewScroll: scroll }),
+    setOverviewSpacing: (spacing) => set({ overviewSpacing: clampOverviewSpacing(spacing) }),
+    openGlyphInSingleMode: (char) => {
+      const state = get();
+      if (!state.glyphs[char]) return;
+      state.setActiveChar(char);
+      state.setEditorMode("single");
+    },
     toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
     setGridSize: (n) => set({ gridSize: Math.min(200, Math.max(2, Math.round(n))) }),
     toggleGuides: () => set((s) => ({ showGuides: !s.showGuides })),
@@ -1383,18 +1447,6 @@ export const useAppStore = create<AppState>()((set, get) => {
       finalizeLive();
       set({ activeChar: char, selectedNodes: [], selectedHandle: null, selectedObjectIds: [], drawingContourId: null });
     },
-    setGlyphViewMode: (mode) => set({ glyphViewMode: mode, overviewSelectedGlyphChars: mode === "single" ? [] : get().overviewSelectedGlyphChars }),
-    setGlyphOverviewFilter: (filter) => set({ glyphOverviewFilter: filter }),
-    setGlyphOverviewSpacing: (spacing) => set({ glyphOverviewSpacing: Math.max(24, Math.min(240, Math.round(spacing))) }),
-    setGlyphOverviewZoom: (zoom) => set({ glyphOverviewZoom: Math.max(40, Math.min(300, Math.round(zoom))) }),
-    setGlyphOverviewPan: (pan) => set({ glyphOverviewPan: pan }),
-    setOverviewGlyphSelection: (chars) => set({ overviewSelectedGlyphChars: [...new Set(chars)] }),
-    toggleOverviewGlyphSelection: (char, additive = false) => set((s) => ({
-      overviewSelectedGlyphChars: additive
-        ? (s.overviewSelectedGlyphChars.includes(char) ? s.overviewSelectedGlyphChars.filter((c) => c !== char) : [...s.overviewSelectedGlyphChars, char])
-        : [char],
-    })),
-    clearOverviewGlyphSelection: () => set({ overviewSelectedGlyphChars: [] }),
 
     setFontStyle: (style) => {
       if (style === get().fontStyle) return;

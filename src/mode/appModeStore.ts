@@ -16,9 +16,12 @@ export type AppMode = "font" | "motion";
 const STORAGE_KEY = "fontseru.appMode";
 
 function readInitialMode(): AppMode {
-  // Always boot the lightweight Font editor. Motion is still available from
-  // the mode switcher, but restoring Motion directly can strand the app on a
-  // heavy/corrupt saved Motion project before the user can reach recovery.
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === "motion" || saved === "font") return saved;
+  } catch {
+    /* localStorage may be unavailable (private mode, blocked) — ignore. */
+  }
   return "font";
 }
 

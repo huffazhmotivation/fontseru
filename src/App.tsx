@@ -16,7 +16,7 @@ import { BottomBar } from "@/components/BottomBar";
 import { ProductionPreviewBar } from "@/components/ProductionPreviewBar";
 import { GlyphCanvas } from "@/editor/GlyphCanvas";
 import { GlyphOverviewCanvas } from "@/editor/GlyphOverviewCanvas";
-import { GlyphViewToolbar } from "@/components/GlyphViewToolbar";
+import { GlyphViewBar } from "@/components/GlyphViewBar";
 import { LoginModal } from "@/components/LoginModal";
 import { EmailConfirmedWelcome } from "@/components/EmailConfirmedWelcome";
 import { ProUpsellModal } from "@/components/ProUpsellModal";
@@ -71,8 +71,13 @@ export default function App() {
   const traceOpen = useAppStore((s) => s.traceOpen);
   const featureBuilderOpen = useAppStore((s) => s.featureBuilderOpen);
   const timelapseOpen = useTimelapseUiStore((s) => s.open);
+  // Multi Glyph Canvas. Sketch Mode keeps its own dedicated single-glyph
+  // drawing surface (pen/tablet gestures, GlyphStepper, sketch toolbar),
+  // so the overview is only offered outside it — `overviewMode` is the
+  // single flag the whole layout below keys off.
+  const editorMode = useAppStore((s) => s.editorMode);
+  const overviewMode = editorMode === "multi" && !sketchMode;
   const appMode = useAppModeStore((s) => s.appMode);
-  const glyphViewMode = useAppStore((s) => s.glyphViewMode);
   useKeyboardShortcuts();
 
   // Once a heavy overlay has been opened for the first time, keep mounting
@@ -94,16 +99,9 @@ export default function App() {
   const hydratedRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Restore the saved project from IndexedDB on first mount. IndexedDB can
-  // hang indefinitely in a blocked/private browser context, so the editor
-  // must not wait forever for persistence before rendering.
+  // Restore the saved project from IndexedDB on first mount.
   useEffect(() => {
     let cancelled = false;
-    const finish = () => {
-      if (cancelled) return;
-      hydratedRef.current = true;
-    };
-    const timeout = window.setTimeout(finish, 1500);
     loadProject().then((snap) => {
       if (cancelled) return;
       if (snap?.glyphs) useAppStore.getState().hydrate({
@@ -122,12 +120,9 @@ export default function App() {
         wordSpacingOverridesByStyle: snap.wordSpacingOverridesByStyle,
         featureConfig: snap.featureConfig,
       });
-      finish();
-    }).catch(finish);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeout);
-    };
+      hydratedRef.current = true;
+    });
+    return () => { cancelled = true; };
   }, []);
 
   // Persist glyphs + font name (debounced) whenever they change, and flush
@@ -205,15 +200,20 @@ export default function App() {
       <div className="fm-body">
         <GlyphNav />
         <div className="fm-canvas-wrap">
-          <div className="fm-canvas-area">
-            <GlyphViewToolbar />
-            {glyphViewMode === "overview" ? <GlyphOverviewCanvas /> : <GlyphCanvas />}
-            <FloatingToolbar />
-            <SketchModeToggle />
+          <div className="fm-canvas-area" data-editor-mode={overviewMode ? "multi" : "single"}>
+            {/* Exactly one canvas surface is mounted at a time. Both read
+                the same glyph map from the store, and all view state
+                (single: zoom/pan — multi: overviewZoom/overviewScroll)
+                lives in the store too, so switching back and forth never
+                loses either surface's position or any glyph data. */}
+            {overviewMode ? <GlyphOverviewCanvas /> : <GlyphCanvas />}
+            {!overviewMode && <FloatingToolbar />}
+            {!sketchMode && <GlyphViewBar />}
+            {!overviewMode && <SketchModeToggle />}
             {sketchMode && <SketchToolbar />}
             {sketchMode && <GlyphStepper />}
             {sketchMode && <SketchRightPanelToggle />}
-            {!sketchMode && <GlyphSideNav />}
+            {!sketchMode && !overviewMode && <GlyphSideNav />}
             {!sketchMode && <MobileDrawerToggles />}
           </div>
           <ProductionPreviewBar />
