@@ -4635,11 +4635,11 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     const contentX = clamp(clientX - metrics.rect.left + scrollLeft, 0, metrics.width);
     const next = clamp((contentX / metrics.width) * timelineDuration, 0, timelineDuration);
     if (window.getSelection) window.getSelection().removeAllRanges();
-    syncMediaPlayback(project.clips, mediaMapRef, next, false, transitionsRef.current);
-    playheadRef.current = next;
+    // CenterStage menerima perubahan state ini dan langsung menyelaraskan
+    // canvas serta media pada frame yang sama.
     setPlayheadPosition(next);
     dispatchPlayback({ type: "SET_PLAYHEAD", value: next });
-  }, [dispatchPlayback, getTimelineMetrics, mediaMapRef, project.clips, setPlayheadPosition, timelineDuration]);
+  }, [dispatchPlayback, getTimelineMetrics, setPlayheadPosition, timelineDuration]);
 
   const onRulerDown = useCallback((e) => {
     if (e.button !== 0) return;
