@@ -983,6 +983,17 @@ function projectReducer(state, action) {
       // memilih track caption yang sudah ada.
       const { segments, audioStart, sourceClipId } = action;
       if (!segments || segments.length === 0) return state;
+      const existingForSource = sourceClipId
+        ? state.clips.filter((c) => c.captionSourceClipId === sourceClipId)
+        : [];
+      if (existingForSource.length > 0) {
+        const canonical = existingForSource[0];
+        const duplicateIds = new Set(existingForSource.slice(1).map((c) => c.id));
+        const duplicateTrackIds = new Set(existingForSource.slice(1).map((c) => c.trackId).filter(Boolean));
+        const clips = state.clips.filter((c) => !duplicateIds.has(c.id));
+        const tracks = state.tracks.filter((t) => !duplicateTrackIds.has(t.id) || clips.some((c) => c.trackId === t.id));
+        return { ...state, clips, tracks, selectedClipId: canonical.id, selectedClipIds: [canonical.id] };
+      }
       const existingTrackId = sourceClipId
         ? state.clips.find((c) => c.captionSourceClipId === sourceClipId)?.trackId
         : null;
@@ -2042,7 +2053,7 @@ function drawSelectionOverlay(ctx, bbox) {
    MEDIA ELEMENT MANAGEMENT (video/image/audio)
    ============================================================ */
 
-function useMediaElements(clips, onReady, onVideoDuration) {
+function useMediaElements(clips, onReady, onMediaDuration) {
   const mapRef = useRef({ image: {}, video: {}, audio: {} });
   const containerRef = useRef(null);
 
@@ -2121,7 +2132,7 @@ function useMediaElements(clips, onReady, onVideoDuration) {
             if (durationSynced) return;
             if (Number.isFinite(el.duration) && el.duration > 0) {
               durationSynced = true;
-              onVideoDuration && onVideoDuration(c.id, Math.round(el.duration * 1000));
+              onMediaDuration && onMediaDuration(c.id, Math.round(el.duration * 1000));
             }
           };
           // Beberapa browser (terutama di mobile / saat elemen video tak
@@ -2182,8 +2193,17 @@ function useMediaElements(clips, onReady, onVideoDuration) {
           el.__mfsFailed = false;
           el.preload = "auto";
           const markReady = () => { el.__mfsReady = true; onReady && onReady(); };
-          el.onloadeddata = markReady;
-          el.onloadedmetadata = markReady;
+          let durationSynced = false;
+          const syncAudioDuration = () => {
+            if (durationSynced) return;
+            if (Number.isFinite(el.duration) && el.duration > 0) {
+              durationSynced = true;
+              onMediaDuration && onMediaDuration(c.id, Math.round(el.duration * 1000));
+            }
+          };
+          el.onloadeddata = () => { markReady(); syncAudioDuration(); };
+          el.onloadedmetadata = () => { markReady(); syncAudioDuration(); };
+          el.ondurationchange = syncAudioDuration;
           el.onerror = () => {
             if (!el.__mfsTriedData && c.file) {
               el.__mfsTriedData = true;
@@ -2488,7 +2508,14 @@ const GlobalStyle = () => (
     .mfs-popover-item.mfs-popover-danger { color:#ff8a8a; }
     .mfs-popover-item.mfs-popover-danger:hover { background:#3a1a1e; }
     .mfs-transition-popover { top:22px; left:-96px; right:auto; width:200px; max-height:280px; overflow-y:auto; }
-    .mfs-zoom-badge { font-size:10.5px; color:var(--text-muted); font-family:'JetBrains Mono',monospace; min-width:38px; text-align:center; user-select:none; }
+    .mfs-auto-caption-card { margin-top:10px; padding:12px; border:1px solid rgba(155,108,255,.55); border-radius:10px; background:linear-gradient(135deg, rgba(124,108,255,.18), rgba(67,48,112,.12)); box-shadow:0 0 18px rgba(124,108,255,.12); }
+    .mfs-auto-caption-heading { display:flex; align-items:center; gap:6px; color:#d8c9ff; font-size:12px; font-weight:700; letter-spacing:.02em; }
+    .mfs-auto-caption-badge { margin-left:auto; padding:2px 6px; border-radius:999px; background:#9b6cff; color:#fff; font-size:9px; font-weight:800; }
+    .mfs-auto-caption-description { margin:6px 0 9px; font-size:10.5px; line-height:1.45; color:var(--text-muted); }
+    .mfs-auto-caption-card .mfs-btn { border-color:#a985ff; background:linear-gradient(135deg,#8f72ff,#664fe5); color:#fff; box-shadow:0 4px 12px rgba(124,108,255,.28); font-weight:700; }
+    .mfs-auto-caption-card .mfs-btn:hover:not(:disabled) { background:linear-gradient(135deg,#a98eff,#7660f5); transform:translateY(-1px); }
+    .mfs-auto-caption-card .mfs-btn:disabled { opacity:.62; }
+
 
     .mfs-tl-resize { height:6px; flex-shrink:0; cursor:row-resize; background:transparent; position:relative; z-index:2; }
     .mfs-tl-resize::after { content:""; position:absolute; left:22px; right:22px; top:2px; height:1.5px; border-radius:1px; background:var(--border-light); opacity:0.85; transition:background .12s ease, opacity .12s ease; }
@@ -3126,13 +3153,12 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
 
   const redrawRef = useRef(() => {});
   const notifyReady = useCallback(() => { redrawRef.current(); }, []);
-  // Begitu durasi asli sebuah file video terdeteksi, sinkronkan klipnya di
-  // linimasa (dibatasi ke rentang yang masuk akal untuk slider durasi klip)
-  // supaya klip video yang diimpor langsung punya panjang yang benar.
-  const onVideoDuration = useCallback((clipId, durationMs) => {
-    dispatchProject({ type: "UPDATE_CLIP", id: clipId, patch: { duration: clamp(durationMs, 300, 30000) } });
+  // Sinkronkan klip media dengan durasi intrinsik setelah metadata file tersedia.
+  const onMediaDuration = useCallback((clipId, durationMs) => {
+    if (!Number.isFinite(durationMs) || durationMs <= 0) return;
+    dispatchProject({ type: "UPDATE_CLIP", id: clipId, patch: { duration: Math.max(150, Math.round(durationMs)) } });
   }, [dispatchProject]);
-  const mediaMapRef = useMediaElements(project.clips, notifyReady, onVideoDuration);
+  const mediaMapRef = useMediaElements(project.clips, notifyReady, onMediaDuration);
 
   const clipsRef = useRef(project.clips);
   useEffect(() => { clipsRef.current = project.clips; }, [project.clips]);
@@ -4111,11 +4137,9 @@ function AutoCaptionControl({ clip, dispatch }) {
   };
 
   return (
-    <div className="mfs-field" style={{ marginTop: 10 }}>
-      <div className="mfs-section-label">Auto Caption</div>
-      <div style={{ fontSize: 10.5, color: "var(--text-dim)", lineHeight: 1.45, marginBottom: 7 }}>
-        Transkripsi berjalan lokal di browser. Model Whisper diunduh sekali saat pertama kali digunakan.
-      </div>
+    <div className="mfs-field mfs-auto-caption-card" style={{ marginTop: 10 }}>
+      <div className="mfs-auto-caption-heading"><Sparkles size={15} /><span>Auto Caption</span><span className="mfs-auto-caption-badge">AI</span></div>
+      <div className="mfs-auto-caption-description">Ubah suara menjadi caption otomatis dengan sinkronisasi waktu yang akurat.</div>
       <select className="mfs-input mfs-select" value={language} disabled={busy} onChange={(e) => setLanguage(e.target.value)}>
         {getLanguageOptions().map((option) => <option key={option.code} value={option.code}>{option.label}</option>)}
       </select>
