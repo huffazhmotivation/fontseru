@@ -136,6 +136,7 @@ interface PassiveCellProps {
   cellW: number;
   cellH: number;
   drawn: boolean;
+  showPlaceholder: boolean;
 }
 
 /**
@@ -143,6 +144,13 @@ interface PassiveCellProps {
  * character when nothing has been drawn yet. Memoized because panning
  * re-renders the container constantly while the individual cells' props
  * almost never change.
+ *
+ * The placeholder exists for exactly one reason: to say "this empty cell
+ * is the letter K". A ghost reference says the same thing, better and at
+ * the right size — so when a ghost is actually drawn in this cell the
+ * placeholder is switched off. Leaving both on is what produced the
+ * doubled letter: a small placeholder at 0.38 em sitting under a ghost at
+ * roughly 0.95 em, two different sizes at two different heights.
  */
 const PassiveCell = memo(function PassiveCell({
   glyph,
@@ -150,8 +158,10 @@ const PassiveCell = memo(function PassiveCell({
   cellW,
   cellH,
   drawn,
+  showPlaceholder,
 }: PassiveCellProps) {
   if (!drawn) {
+    if (!showPlaceholder) return null;
     return (
       <text
         className="fm-mx-placeholder"
@@ -286,13 +296,24 @@ const CellGhost = memo(function CellGhost({
     );
   }
 
-  if (!leftFamilyGlyph && !rightFamilyGlyph) return null;
+  // ONE family ghost, not two.
+  //
+  // Single Mode can afford to show both comparison styles because it has
+  // an empty lane either side of the glyph to park them in. Multi Mode has
+  // a neighbouring LETTER there instead, so both styles have to share the
+  // one em box — and two outlines stacked on the same box read as a
+  // doubled, smudged glyph rather than a comparison. So only the primary
+  // style is drawn here (Regular→Bold, Bold→Regular, Italic→Regular; see
+  // familyGhostOrder). The second style stays available in Single Mode,
+  // where the lanes make it legible.
+  const familyGlyph = leftFamilyGlyph ?? rightFamilyGlyph;
+  if (!familyGlyph) return null;
   return (
     <g className="fm-mx-ghost" data-ghost-mode="family" pointerEvents="none">
       <GhostGlyph
         mode="family"
         char={glyph.char}
-        glyph={leftFamilyGlyph}
+        glyph={familyGlyph}
         ascender={ascender}
         capHeight={capHeight}
         upm={upm}
@@ -301,21 +322,22 @@ const CellGhost = memo(function CellGhost({
         offsetX={offsetX}
         offsetY={offsetY}
       />
-      <GhostGlyph
-        mode="family"
-        char={glyph.char}
-        glyph={rightFamilyGlyph}
-        ascender={ascender}
-        capHeight={capHeight}
-        upm={upm}
-        opacity={opacity * 0.55}
-        scale={scale}
-        offsetX={offsetX}
-        offsetY={offsetY}
-      />
     </g>
   );
 });
+
+/** Does a ghost actually paint something in this cell? Drives whether the
+ *  empty-cell placeholder character is still needed — see PassiveCell. */
+function ghostRendersFor(
+  mode: "sample" | "family" | "image",
+  glyph: Glyph,
+  imageSrc: string | null | undefined,
+  familyGlyph: Glyph | undefined
+): boolean {
+  if (mode === "sample") return !isFeatureGlyphUnicode(glyph.unicode);
+  if (mode === "image") return !!imageSrc;
+  return !!familyGlyph;
+}
 
 /** Metric lines + ruler guides drawn inside one cell's own box. Every
  *  value is in font units, so this is identical geometry in every cell —
@@ -972,6 +994,7 @@ export function GlyphMultiEditCanvas() {
   const passiveDetail = detailForCellPx(cellPx);
   const showLabels = layout.labelH * sc >= 7;
   const ghostOn = ghost.enabled && ghost.opacity > 0;
+  const ghostMode = ghost.mode ?? "sample";
   const activeOrigin = useMemo(
     () => (activeIndex >= 0 ? cellOrigin(layout, activeIndex) : { x: 0, y: 0 }),
     [layout, activeIndex]
@@ -1081,6 +1104,13 @@ export function GlyphMultiEditCanvas() {
           const isActive = char === activeChar;
           const isSelected = selectedSet.has(char);
           const rx = layout.cellW * 0.014;
+          const cellFamilyGlyph =
+            ghostOn && ghostMode === "family"
+              ? matchingFamilyGlyph(leftGhostMap, cellGlyph, char) ??
+                matchingFamilyGlyph(rightGhostMap, cellGlyph, char)
+              : undefined;
+          const cellGhostVisible =
+            ghostOn && ghostRendersFor(ghostMode, cellGlyph, ghost.imageSrc, cellFamilyGlyph);
           return (
             <g
               key={char}
@@ -1119,10 +1149,10 @@ export function GlyphMultiEditCanvas() {
                   Mode: below the guides, below the ink, never hit-tested. */}
               {ghostOn && (
                 <CellGhost
-                  mode={ghost.mode ?? "sample"}
+                  mode={ghostMode}
                   glyph={cellGlyph}
-                  leftFamilyGlyph={matchingFamilyGlyph(leftGhostMap, cellGlyph, char)}
-                  rightFamilyGlyph={matchingFamilyGlyph(rightGhostMap, cellGlyph, char)}
+                  leftFamilyGlyph={cellFamilyGlyph}
+                  rightFamilyGlyph={undefined}
                   ascender={ascender}
                   capHeight={capHeight}
                   upm={upm}
@@ -1324,6 +1354,7 @@ export function GlyphMultiEditCanvas() {
                   cellW={layout.cellW}
                   cellH={layout.cellH}
                   drawn={hasOutline(cellGlyph)}
+                  showPlaceholder={!cellGhostVisible}
                 />
               )}
               {/* One label rule for every cell, focused or not. Labels are

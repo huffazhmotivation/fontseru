@@ -65,120 +65,120 @@ const REST_POSE = { x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, blur: 0, lett
 const pose = (overrides) => ({ ...REST_POSE, ...overrides });
 
 const PRESET_LIB = [
-  { id: "none", name: "Tanpa Animasi (Statis)", animateBy: "all", stagger: 0, entranceMs: 1, exitMs: 0, icon: Ban,
+  { id: "none", name: "Tanpa Animasi (Statis)", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 1, exitMs: 0, icon: Ban,
     curve: () => pose({}) },
-  { id: "apple", name: "Apple Style", animateBy: "char", stagger: 35, entranceMs: 420, exitMs: 360, icon: Feather,
+  { id: "apple", name: "Apple Style", group: "Bersih & Elegan", animateBy: "char", stagger: 35, entranceMs: 420, exitMs: 360, icon: Feather,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, y: 22 * (1 - e), scale: 0.94 + 0.06 * e, blur: 5 * (1 - e) }); } },
-  { id: "minimal", name: "Minimal", animateBy: "word", stagger: 60, entranceMs: 480, exitMs: 400, icon: Minus,
+  { id: "minimal", name: "Minimal", group: "Dasar", animateBy: "word", stagger: 60, entranceMs: 480, exitMs: 400, icon: Minus,
     curve: (t) => pose({ opacity: ease("linear", t) }) },
-  { id: "luxury", name: "Luxury", animateBy: "line", stagger: 150, entranceMs: 1000, exitMs: 650, icon: Gem,
+  { id: "luxury", name: "Luxury", group: "Bersih & Elegan", animateBy: "line", stagger: 150, entranceMs: 1000, exitMs: 650, icon: Gem,
     curve: (t) => { const e = ease("easeInOut", t); return pose({ opacity: e, blur: 8 * (1 - e), letterSpacing: 16 * (1 - e) }); } },
-  { id: "cinematic", name: "Cinematic", animateBy: "all", stagger: 0, entranceMs: 650, exitMs: 450, icon: Clapperboard,
+  { id: "cinematic", name: "Cinematic", group: "Sinematik", animateBy: "all", stagger: 0, entranceMs: 650, exitMs: 450, icon: Clapperboard,
     curve: (t) => { const e = cubicBezier(0.16, 1, 0.3, 1, t); const eo = ease("easeOut", t); return pose({ opacity: eo, scale: 1.35 - 0.35 * e, blur: 22 * (1 - eo) }); } },
-  { id: "modernui", name: "Modern UI", animateBy: "word", stagger: 70, entranceMs: 560, exitMs: 380, icon: LayoutGrid,
+  { id: "modernui", name: "Modern UI", group: "Digital & Retro", animateBy: "word", stagger: 70, entranceMs: 560, exitMs: 380, icon: LayoutGrid,
     curve: (t) => { const eo = ease("easeOut", Math.min(t * 2.6, 1)); const ey = elasticOut(t, 1); return pose({ opacity: eo, y: 34 * (1 - ey) }); } },
-  { id: "neon", name: "Neon Pulse", animateBy: "word", stagger: 50, entranceMs: 480, exitMs: 360, icon: Zap,
+  { id: "neon", name: "Neon Pulse", group: "Digital & Retro", animateBy: "word", stagger: 50, entranceMs: 480, exitMs: 360, icon: Zap,
     curve: (t) => { const eo = ease("easeOut", t); const eb = elasticOut(t, 0.35); return pose({ opacity: eo, scale: 0.85 + 0.15 * eb, blur: 12 * (1 - eo), y: 6 * (1 - eo) }); } },
-  { id: "typewriter", name: "Typewriter", animateBy: "char", stagger: 45, entranceMs: 60, exitMs: 200, icon: Keyboard,
+  { id: "typewriter", name: "Typewriter", group: "Digital & Retro", animateBy: "char", stagger: 45, entranceMs: 60, exitMs: 200, icon: Keyboard,
     curve: (t) => pose({ opacity: t < 0.4 ? 0 : 1, scale: t < 0.4 ? 1.15 : 1 }) },
-  { id: "glitch", name: "Glitch Digital", animateBy: "char", stagger: 18, entranceMs: 300, exitMs: 220, icon: Cpu,
+  { id: "glitch", name: "Glitch Digital", group: "Digital & Retro", animateBy: "char", stagger: 18, entranceMs: 300, exitMs: 220, icon: Cpu,
     curve: (t, seed = 0) => { const eo = ease("easeOut", t); const flick = t < 0.75 ? (Math.sin(seed * 97 + t * 60) > 0.15 ? 1 : 0.18) : 1;
       return pose({ opacity: Math.min(1, eo) * flick, x: (1 - eo) * Math.sin(seed * 53) * 14, rotation: (1 - eo) * Math.sin(seed * 13) * 6, blur: (1 - eo) * 3 }); } },
-  { id: "elastic", name: "Elastic Bounce", animateBy: "word", stagger: 80, entranceMs: 650, exitMs: 420, icon: Activity,
+  { id: "elastic", name: "Elastic Bounce", group: "Kinetic Typography", animateBy: "word", stagger: 80, entranceMs: 650, exitMs: 420, icon: Activity,
     curve: (t) => { const e = elasticOut(t, 1); const eo = ease("easeOut", Math.min(t * 2, 1)); return pose({ opacity: eo, scale: e }); } },
-  { id: "blurzoom", name: "Blur Zoom Blast", animateBy: "all", stagger: 0, entranceMs: 550, exitMs: 380, icon: Focus,
+  { id: "blurzoom", name: "Blur Zoom Blast", group: "Sinematik", animateBy: "all", stagger: 0, entranceMs: 550, exitMs: 380, icon: Focus,
     curve: (t) => { const e = cubicBezier(0.11, 0.84, 0.24, 1, t); const eo = ease("easeOut", Math.min(t * 2, 1)); return pose({ opacity: eo, scale: 1.8 - 0.8 * e, blur: 30 * (1 - e) }); } },
-  { id: "slidecinema", name: "Slide Cinematic", animateBy: "line", stagger: 120, entranceMs: 550, exitMs: 400, icon: MoveHorizontal,
+  { id: "slidecinema", name: "Slide Cinematic", group: "Sinematik", animateBy: "line", stagger: 120, entranceMs: 550, exitMs: 400, icon: MoveHorizontal,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, x: 80 * (1 - e), blur: 4 * (1 - e) }); } },
-  { id: "kinetic", name: "Kinetic Bounce", animateBy: "word", stagger: 90, entranceMs: 520, exitMs: 360, icon: Rocket,
+  { id: "kinetic", name: "Kinetic Bounce", group: "Kinetic Typography", animateBy: "word", stagger: 90, entranceMs: 520, exitMs: 360, icon: Rocket,
     curve: (t) => { const e = elasticOut(t, 0.7); const eo = ease("easeOut", Math.min(t * 2.2, 1)); return pose({ opacity: eo, y: -40 * (1 - e), rotation: -6 * (1 - e) }); } },
-  { id: "softfocus", name: "Soft Focus Dream", animateBy: "line", stagger: 200, entranceMs: 1300, exitMs: 850, icon: CloudFog,
+  { id: "softfocus", name: "Soft Focus Dream", group: "Bersih & Elegan", animateBy: "line", stagger: 200, entranceMs: 1300, exitMs: 850, icon: CloudFog,
     curve: (t) => { const e = ease("easeInOut", t); return pose({ opacity: e, blur: 20 * (1 - e), scale: 1.05 - 0.05 * e }); } },
-  { id: "flip3d", name: "Flip Masuk", animateBy: "char", stagger: 30, entranceMs: 380, exitMs: 300, icon: FlipHorizontal,
+  { id: "flip3d", name: "Flip Masuk", group: "Transformasi Huruf", animateBy: "char", stagger: 30, entranceMs: 380, exitMs: 300, icon: FlipHorizontal,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, rotation: (1 - e) * 35, scale: 0.5 + 0.5 * e }); } },
-  { id: "retrovhs", name: "Retro VHS", animateBy: "line", stagger: 100, entranceMs: 480, exitMs: 380, icon: Tv,
+  { id: "retrovhs", name: "Retro VHS", group: "Digital & Retro", animateBy: "line", stagger: 100, entranceMs: 480, exitMs: 380, icon: Tv,
     curve: (t, seed = 0) => { const e = ease("easeOut", t); return pose({ opacity: e, x: (1 - e) * Math.sin(seed * 71 + t * 30) * 10, rotation: (1 - e) * Math.sin(seed * 19) * 3, blur: (1 - e) * 6 }); } },
   // --- Tambahan: varian gaya Apple yang lebih halus/cinematic, dan
   // beberapa gaya kinetic-typography populer ala paket preset motion
   // (mis. "Mister Horse") — pop overshoot, whip-pan, split-flap, dst.
-  { id: "applesoft", name: "Apple Soft Reveal", animateBy: "word", stagger: 65, entranceMs: 560, exitMs: 420, icon: Feather,
+  { id: "applesoft", name: "Apple Soft Reveal", group: "Bersih & Elegan", animateBy: "word", stagger: 65, entranceMs: 560, exitMs: 420, icon: Feather,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, y: 14 * (1 - e), scale: 0.97 + 0.03 * e, blur: 6 * (1 - e), letterSpacing: 2 * (1 - e) }); } },
-  { id: "appletitle", name: "Apple Keynote Title", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 420, icon: Minus,
+  { id: "appletitle", name: "Apple Keynote Title", group: "Bersih & Elegan", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 420, icon: Minus,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, letterSpacing: 34 * (1 - e), scale: 1.02 - 0.02 * e, blur: 4 * (1 - e) }); } },
-  { id: "popbold", name: "Pop Bold Overshoot", animateBy: "word", stagger: 75, entranceMs: 460, exitMs: 340, icon: Flame,
+  { id: "popbold", name: "Pop Bold Overshoot", group: "Kinetic Typography", animateBy: "word", stagger: 75, entranceMs: 460, exitMs: 340, icon: Flame,
     curve: (t) => { const e = elasticOut(t, 1.15); const eo = ease("easeOut", Math.min(t * 3, 1)); return pose({ opacity: eo, scale: 0.35 + 0.65 * e, rotation: (1 - e) * -4 }); } },
-  { id: "wordwave", name: "Word Wave", animateBy: "word", stagger: 55, entranceMs: 520, exitMs: 380, icon: Waves,
+  { id: "wordwave", name: "Word Wave", group: "Kinetic Typography", animateBy: "word", stagger: 55, entranceMs: 520, exitMs: 380, icon: Waves,
     curve: (t, seed = 0) => { const e = ease("easeOut", t); return pose({ opacity: e, y: (1 - e) * 28 * Math.sin(seed * Math.PI * 2), scale: 0.92 + 0.08 * e }); } },
-  { id: "splitflap", name: "Split Flap Board", animateBy: "char", stagger: 22, entranceMs: 260, exitMs: 220, icon: AlignJustify,
+  { id: "splitflap", name: "Split Flap Board", group: "Digital & Retro", animateBy: "char", stagger: 22, entranceMs: 260, exitMs: 220, icon: AlignJustify,
     curve: (t, seed = 0) => { const e = ease("easeOut", t); const flick = t < 0.6 ? (Math.sin(seed * 80 + t * 90) > -0.1 ? 1 : 0.1) : 1; return { ...pose({ opacity: Math.min(1, e) * flick }), scaleX: 1, scaleY: Math.max(0.15 + 0.85 * e, 0.001) }; } },
-  { id: "whipswish", name: "Whip Pan Swish", animateBy: "all", stagger: 0, entranceMs: 360, exitMs: 280, icon: Wind,
+  { id: "whipswish", name: "Whip Pan Swish", group: "Sinematik", animateBy: "all", stagger: 0, entranceMs: 360, exitMs: 280, icon: Wind,
     curve: (t) => { const e = cubicBezier(0.65, 0, 0.35, 1, t); return pose({ opacity: e, x: (1 - e) * -170, blur: (1 - e) * 20 }); } },
-  { id: "risingconfidence", name: "Rising Confidence", animateBy: "line", stagger: 130, entranceMs: 620, exitMs: 420, icon: TrendingUp,
+  { id: "risingconfidence", name: "Rising Confidence", group: "Bersih & Elegan", animateBy: "line", stagger: 130, entranceMs: 620, exitMs: 420, icon: TrendingUp,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, y: 46 * (1 - e), scale: 0.94 + 0.06 * e }); } },
-  { id: "popcornchars", name: "Popcorn Chars", animateBy: "char", stagger: 26, entranceMs: 380, exitMs: 300, icon: Sparkles,
+  { id: "popcornchars", name: "Popcorn Chars", group: "Kinetic Typography", animateBy: "char", stagger: 26, entranceMs: 380, exitMs: 300, icon: Sparkles,
     curve: (t, seed = 0) => { const e = elasticOut(t, 0.8); const eo = ease("easeOut", Math.min(t * 2.4, 1)); return pose({ opacity: eo, y: (1 - e) * -18 * (0.4 + Math.abs(Math.sin(seed * 41))), rotation: (1 - e) * Math.sin(seed * 33) * 10, scale: 0.7 + 0.3 * e }); } },
   // ---- Paket tambahan: gaya kinetic-typography terbaik, termasuk gerak
   // MELINGKAR (orbit/spiral) yang diminta, plus varian bersih ala Reels/TikTok.
-  { id: "orbitin", name: "Melingkar Masuk (Orbit)", animateBy: "char", stagger: 22, entranceMs: 640, exitMs: 380, icon: RotateCcw,
+  { id: "orbitin", name: "Melingkar Masuk (Orbit)", group: "Melingkar & Orbit", animateBy: "char", stagger: 22, entranceMs: 640, exitMs: 380, icon: RotateCcw,
     curve: (t, seed = 0) => { const e = ease("easeOut", t); const a = seed * Math.PI * 2; const R = 130 * (1 - e); return pose({ opacity: Math.min(1, e * 1.4), x: Math.cos(a) * R, y: Math.sin(a) * R, rotation: (1 - e) * 180 * (seed < 0.5 ? 1 : -1), scale: 0.4 + 0.6 * e }); } },
-  { id: "spiralin", name: "Spiral Masuk", animateBy: "char", stagger: 26, entranceMs: 720, exitMs: 420, icon: Repeat,
+  { id: "spiralin", name: "Spiral Masuk", group: "Melingkar & Orbit", animateBy: "char", stagger: 26, entranceMs: 720, exitMs: 420, icon: Repeat,
     curve: (t, seed = 0) => { const e = ease("easeOut", t); const a = (1 - e) * Math.PI * 3 + seed * Math.PI * 2; const R = 170 * (1 - e); return pose({ opacity: e, x: Math.cos(a) * R, y: Math.sin(a) * R, rotation: (1 - e) * -160, scale: 0.3 + 0.7 * e }); } },
-  { id: "orbitword", name: "Orbit Kata", animateBy: "word", stagger: 60, entranceMs: 640, exitMs: 400, icon: Sparkles,
+  { id: "orbitword", name: "Orbit Kata", group: "Melingkar & Orbit", animateBy: "word", stagger: 60, entranceMs: 640, exitMs: 400, icon: Sparkles,
     curve: (t, seed = 0) => { const e = ease("easeOut", t); const a = seed * Math.PI * 2 + Math.PI / 4; const R = 95 * (1 - e); return pose({ opacity: e, x: Math.cos(a) * R, y: Math.sin(a) * R, scale: 0.7 + 0.3 * e, rotation: (1 - e) * 30 }); } },
   // Tata letak MELINGKAR sejati: huruf disusun membentuk lingkaran lalu
   // cincinnya berputar terus (bukan cuma animasi masuk). `layout: "circle"`
   // ditangani khusus di drawTextClip → drawCircularText.
-  { id: "circletext", name: "Teks Melingkar (Putar Kanan)", animateBy: "all", stagger: 0, entranceMs: 1, exitMs: 0, icon: RotateCcw, layout: "circle", spinDir: 1,
+  { id: "circletext", name: "Teks Melingkar (Putar Kanan)", group: "Melingkar & Orbit", animateBy: "all", stagger: 0, entranceMs: 1, exitMs: 0, icon: RotateCcw, layout: "circle", spinDir: 1,
     curve: () => pose({}) },
-  { id: "circletextccw", name: "Teks Melingkar (Putar Kiri)", animateBy: "all", stagger: 0, entranceMs: 1, exitMs: 0, icon: Repeat, layout: "circle", spinDir: -1,
+  { id: "circletextccw", name: "Teks Melingkar (Putar Kiri)", group: "Melingkar & Orbit", animateBy: "all", stagger: 0, entranceMs: 1, exitMs: 0, icon: Repeat, layout: "circle", spinDir: -1,
     curve: () => pose({}) },
-  { id: "riseup", name: "Naik Halus (Reels)", animateBy: "word", stagger: 70, entranceMs: 560, exitMs: 380, icon: TrendingUp,
+  { id: "riseup", name: "Naik Halus (Reels)", group: "Bersih & Elegan", animateBy: "word", stagger: 70, entranceMs: 560, exitMs: 380, icon: TrendingUp,
     curve: (t) => { const e = cubicBezier(0.22, 1, 0.36, 1, t); return pose({ opacity: Math.min(1, t * 2), y: 48 * (1 - e) }); } },
-  { id: "dropbounce", name: "Jatuh Memantul", animateBy: "char", stagger: 34, entranceMs: 720, exitMs: 380, icon: Activity,
+  { id: "dropbounce", name: "Jatuh Memantul", group: "Kinetic Typography", animateBy: "char", stagger: 34, entranceMs: 720, exitMs: 380, icon: Activity,
     curve: (t) => { const e = elasticOut(t, 0.9); const eo = ease("easeOut", Math.min(t * 2.2, 1)); return pose({ opacity: eo, y: -70 * (1 - e) }); } },
-  { id: "zoomkinetic", name: "Zoom Kinetik", animateBy: "word", stagger: 60, entranceMs: 520, exitMs: 360, icon: Rocket,
+  { id: "zoomkinetic", name: "Zoom Kinetik", group: "Kinetic Typography", animateBy: "word", stagger: 60, entranceMs: 520, exitMs: 360, icon: Rocket,
     curve: (t) => { const e = elasticOut(t, 0.5); const eo = ease("easeOut", Math.min(t * 2.5, 1)); return pose({ opacity: eo, scale: 0.2 + 0.8 * e, blur: 8 * (1 - eo) }); } },
-  { id: "wavevert", name: "Gelombang Vertikal", animateBy: "char", stagger: 40, entranceMs: 560, exitMs: 360, icon: Waves,
+  { id: "wavevert", name: "Gelombang Vertikal", group: "Kinetic Typography", animateBy: "char", stagger: 40, entranceMs: 560, exitMs: 360, icon: Waves,
     curve: (t, seed = 0) => { const e = ease("easeOut", t); return pose({ opacity: e, y: (1 - e) * 42 * Math.sin(seed * Math.PI * 3 + 0.6) }); } },
-  { id: "counterspin", name: "Putar Bergantian", animateBy: "char", stagger: 24, entranceMs: 520, exitMs: 340, icon: Redo2,
+  { id: "counterspin", name: "Putar Bergantian", group: "Melingkar & Orbit", animateBy: "char", stagger: 24, entranceMs: 520, exitMs: 340, icon: Redo2,
     curve: (t, seed = 0) => { const e = ease("easeOut", t); const dir = (Math.floor(seed * 10) % 2 === 0) ? 1 : -1; return pose({ opacity: e, rotation: (1 - e) * 90 * dir, scale: 0.5 + 0.5 * e }); } },
-  { id: "popchar", name: "Pop Per-Huruf", animateBy: "char", stagger: 28, entranceMs: 420, exitMs: 300, icon: Flame,
+  { id: "popchar", name: "Pop Per-Huruf", group: "Kinetic Typography", animateBy: "char", stagger: 28, entranceMs: 420, exitMs: 300, icon: Flame,
     curve: (t) => { const e = elasticOut(t, 1.1); const eo = ease("easeOut", Math.min(t * 3, 1)); return pose({ opacity: eo, scale: e }); } },
-  { id: "blurinfast", name: "Blur Masuk Cepat", animateBy: "word", stagger: 45, entranceMs: 440, exitMs: 320, icon: Focus,
+  { id: "blurinfast", name: "Blur Masuk Cepat", group: "Transformasi Huruf", animateBy: "word", stagger: 45, entranceMs: 440, exitMs: 320, icon: Focus,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, blur: 16 * (1 - e), scale: 1.08 - 0.08 * e }); } },
-  { id: "stretchin", name: "Regang Vertikal", animateBy: "char", stagger: 22, entranceMs: 420, exitMs: 300, icon: AlignJustify,
+  { id: "stretchin", name: "Regang Vertikal", group: "Transformasi Huruf", animateBy: "char", stagger: 22, entranceMs: 420, exitMs: 300, icon: AlignJustify,
     curve: (t) => { const e = elasticOut(t, 0.6); const eo = ease("easeOut", Math.min(t * 2.5, 1)); return { ...pose({ opacity: eo }), scaleX: 1, scaleY: Math.max(0.05, e) }; } },
-  { id: "flipline", name: "Flip Baris 3D", animateBy: "line", stagger: 140, entranceMs: 560, exitMs: 380, icon: FlipHorizontal,
+  { id: "flipline", name: "Flip Baris 3D", group: "Transformasi Huruf", animateBy: "line", stagger: 140, entranceMs: 560, exitMs: 380, icon: FlipHorizontal,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, rotation: (1 - e) * 50, scale: 0.6 + 0.4 * e, y: 20 * (1 - e) }); } },
-  { id: "neonflicker", name: "Neon Berkedip", animateBy: "char", stagger: 20, entranceMs: 460, exitMs: 320, icon: Zap,
+  { id: "neonflicker", name: "Neon Berkedip", group: "Digital & Retro", animateBy: "char", stagger: 20, entranceMs: 460, exitMs: 320, icon: Zap,
     curve: (t, seed = 0) => { const eo = ease("easeOut", t); const fl = t < 0.7 ? (Math.sin(seed * 61 + t * 50) > -0.2 ? 1 : 0.25) : 1; return pose({ opacity: Math.min(1, eo) * fl, scale: 0.9 + 0.1 * eo, blur: 6 * (1 - eo) }); } },
-  { id: "swingin", name: "Ayun Masuk", animateBy: "word", stagger: 65, entranceMs: 620, exitMs: 400, icon: Wind,
+  { id: "swingin", name: "Ayun Masuk", group: "Kinetic Typography", animateBy: "word", stagger: 65, entranceMs: 620, exitMs: 400, icon: Wind,
     curve: (t) => { const e = elasticOut(t, 0.7); return pose({ opacity: Math.min(1, t * 2), rotation: (1 - e) * -25, y: -20 * (1 - e) }); } },
   // Original pro-style kinetic typography set: each curve combines a distinct
   // spatial idea with the existing per-character/word/line sampler.
-  { id: "duosplit", name: "Duo Split Reveal", animateBy: "char", stagger: 28, entranceMs: 620, exitMs: 420, icon: MoveHorizontal,
+  { id: "duosplit", name: "Duo Split Reveal", group: "Kinetic Typography", animateBy: "char", stagger: 28, entranceMs: 620, exitMs: 420, icon: MoveHorizontal,
     curve: (t, seed = 0) => { const e = cubicBezier(0.22, 1, 0.36, 1, t); const side = seed < 0.5 ? -1 : 1; return pose({ opacity: Math.min(1, t * 2), x: side * 150 * (1 - e), rotation: side * 12 * (1 - e), scale: 0.86 + 0.14 * e }); } },
-  { id: "ribboncascade", name: "Ribbon Cascade", animateBy: "word", stagger: 95, entranceMs: 700, exitMs: 440, icon: Waves,
+  { id: "ribboncascade", name: "Ribbon Cascade", group: "Kinetic Typography", animateBy: "word", stagger: 95, entranceMs: 700, exitMs: 440, icon: Waves,
     curve: (t, seed = 0) => { const e = elasticOut(t, 0.65); return pose({ opacity: Math.min(1, t * 2), y: -58 * (1 - e), rotation: Math.sin(seed * 9) * 18 * (1 - e), scale: 0.9 + 0.1 * e }); } },
-  { id: "breathinglight", name: "Breathing Spotlight", animateBy: "all", stagger: 0, entranceMs: 900, exitMs: 520, icon: Eye,
+  { id: "breathinglight", name: "Breathing Spotlight", group: "Bersih & Elegan", animateBy: "all", stagger: 0, entranceMs: 900, exitMs: 520, icon: Eye,
     curve: (t) => { const e = ease("easeInOut", t); const breath = Math.sin(t * Math.PI * 1.5) * (1 - t) * 0.035; return pose({ opacity: e, scale: 0.96 + 0.04 * e + breath, blur: 10 * (1 - e) }); } },
-  { id: "marqueeping", name: "Marquee Ping-Pong", animateBy: "word", stagger: 42, entranceMs: 760, exitMs: 460, icon: ArrowLeftRight,
+  { id: "marqueeping", name: "Marquee Ping-Pong", group: "Transformasi Huruf", animateBy: "word", stagger: 42, entranceMs: 760, exitMs: 460, icon: ArrowLeftRight,
     curve: (t, seed = 0) => { const e = ease("easeInOut", t); const side = Math.floor(seed * 4) % 2 ? 1 : -1; return pose({ opacity: e, x: side * 210 * (1 - e), scaleX: 0.82 + 0.18 * e }); } },
-  { id: "pulsebeat", name: "Pulse Beat", animateBy: "char", stagger: 34, entranceMs: 520, exitMs: 360, icon: HeartPulse,
+  { id: "pulsebeat", name: "Pulse Beat", group: "Transformasi Huruf", animateBy: "char", stagger: 34, entranceMs: 520, exitMs: 360, icon: HeartPulse,
     curve: (t, seed = 0) => { const e = ease("easeOut", t); const beat = Math.max(0, Math.sin((t * 2.5 + seed) * Math.PI * 2)) * (1 - t) * 0.13; return pose({ opacity: e, scale: 0.82 + 0.18 * e + beat, y: beat * -24 }); } },
-  { id: "slideshade", name: "Slide Shade", animateBy: "line", stagger: 120, entranceMs: 620, exitMs: 420, icon: ScanLine,
+  { id: "slideshade", name: "Slide Shade", group: "Sinematik", animateBy: "line", stagger: 120, entranceMs: 620, exitMs: 420, icon: ScanLine,
     curve: (t) => { const e = cubicBezier(0.16, 1, 0.3, 1, t); return { ...pose({ opacity: Math.min(1, t * 2), x: -120 * (1 - e) }), scaleX: Math.max(0.08, e), scaleY: 1 }; } },
-  { id: "alternateroll", name: "Alternating Kinetic Roll", animateBy: "char", stagger: 26, entranceMs: 580, exitMs: 380, icon: Repeat,
+  { id: "alternateroll", name: "Alternating Kinetic Roll", group: "Kinetic Typography", animateBy: "char", stagger: 26, entranceMs: 580, exitMs: 380, icon: Repeat,
     curve: (t, seed = 0) => { const e = elasticOut(t, 0.55); const dir = Math.floor(seed * 10) % 2 ? 1 : -1; return pose({ opacity: e, rotation: dir * 75 * (1 - e), y: 28 * (1 - e), scale: 0.72 + 0.28 * e }); } },
-  { id: "parallaxstack", name: "Parallax Stack", animateBy: "line", stagger: 165, entranceMs: 820, exitMs: 500, icon: Layers,
+  { id: "parallaxstack", name: "Parallax Stack", group: "Sinematik", animateBy: "line", stagger: 165, entranceMs: 820, exitMs: 500, icon: Layers,
     curve: (t, seed = 0) => { const depth = 0.65 + seed * 0.55; const e = ease("easeOut", t); return pose({ opacity: e, x: -105 * depth * (1 - e), y: 34 * depth * (1 - e), scale: 0.88 + 0.12 * e, blur: 5 * depth * (1 - e) }); } },
-  { id: "typejump", name: "Typewriter Jump", animateBy: "char", stagger: 42, entranceMs: 70, exitMs: 220, icon: Keyboard,
+  { id: "typejump", name: "Typewriter Jump", group: "Digital & Retro", animateBy: "char", stagger: 42, entranceMs: 70, exitMs: 220, icon: Keyboard,
     curve: (t) => { const visible = t >= 0.35; const jump = visible ? Math.sin((t - 0.35) * Math.PI) * 16 : 0; return pose({ opacity: visible ? 1 : 0, y: -jump, scale: visible ? 1 : 1.08 }); } },
-  { id: "gravityrebound", name: "Gravity Rebound", animateBy: "char", stagger: 38, entranceMs: 860, exitMs: 460, icon: ArrowDownUp,
+  { id: "gravityrebound", name: "Gravity Rebound", group: "Kinetic Typography", animateBy: "char", stagger: 38, entranceMs: 860, exitMs: 460, icon: ArrowDownUp,
     curve: (t) => { const e = elasticOut(t, 1.05); return pose({ opacity: Math.min(1, t * 2), y: -130 * (1 - e), rotation: 8 * (1 - e), scale: 0.86 + 0.14 * e }); } },
-  { id: "prismscatter", name: "Prism Scatter", animateBy: "char", stagger: 24, entranceMs: 740, exitMs: 440, icon: Sparkles,
+  { id: "prismscatter", name: "Prism Scatter", group: "Transformasi Huruf", animateBy: "char", stagger: 24, entranceMs: 740, exitMs: 440, icon: Sparkles,
     curve: (t, seed = 0) => { const e = ease("easeOut", t); const a = seed * Math.PI * 8; const radius = 125 * (1 - e); return pose({ opacity: e, x: Math.cos(a) * radius, y: Math.sin(a) * radius, rotation: Math.sin(a) * 35 * (1 - e), scale: 0.45 + 0.55 * e, blur: 9 * (1 - e) }); } },
-  { id: "baselinewave", name: "Baseline Wave", animateBy: "word", stagger: 58, entranceMs: 680, exitMs: 420, icon: Activity,
+  { id: "baselinewave", name: "Baseline Wave", group: "Kinetic Typography", animateBy: "word", stagger: 58, entranceMs: 680, exitMs: 420, icon: Activity,
     curve: (t, seed = 0) => { const e = ease("easeOut", t); return pose({ opacity: e, y: Math.sin(seed * Math.PI * 3 + (1 - e) * Math.PI * 2) * 38 * (1 - e), rotation: Math.sin(seed * Math.PI * 2) * 8 * (1 - e), scale: 0.93 + 0.07 * e }); } },
 ];
 // PRESET_LIB[0] sekarang "none" (dipakai sebagai default klip gambar/video
@@ -624,8 +624,36 @@ function getPreset(id) { return PRESET_LIB.find((p) => p.id === id) || IMAGE_PRE
    STORE
    ============================================================ */
 
+/**
+ * ID unik untuk klip, track, dan aset.
+ *
+ * BUG YANG DIPERBAIKI DI SINI — penyebab "layer kembar yang tidak bisa
+ * dihapus", "bar masuk ke jalur yang salah", dan "tiba-tiba ada 2 objek
+ * padahal objeknya tidak ada".
+ *
+ * Dulu id-nya cuma nomor urut: clip_0, clip_1, clip_2… Nomor itu hidup di
+ * memori modul, jadi SETIAP kali halaman dimuat ulang, hitungannya balik
+ * ke nol — sementara proyek yang tersimpan di IndexedDB masih memakai
+ * nomor-nomor dari sesi sebelumnya. Begitu proyek lama dimuat lalu
+ * pengguna menambah satu gambar, id yang baru dicetak (mis. clip_3)
+ * bisa PERSIS SAMA dengan id klip yang sudah ada di proyek itu.
+ *
+ * Akibatnya berantai, dan semuanya terlihat seperti "aplikasinya ngaco":
+ *  • Panel Layer menampilkan dua baris ber-id sama → terlihat seperti
+ *    objek kembar yang tidak pernah dibuat pengguna.
+ *  • Tombol hapus memfilter berdasarkan id, jadi satu klik menghapus
+ *    KEDUANYA — atau menghapus yang salah, sehingga yang ditunjuk
+ *    pengguna terasa "menetap di situ saja".
+ *  • Track juga kena: track gambar baru bisa mewarisi id track teks yang
+ *    sudah ada, sehingga bar gambar muncul di jalur teks.
+ *
+ * Perbaikannya: setiap id sekarang membawa penanda sesi acak, jadi id
+ * yang dicetak di sesi mana pun tidak akan pernah bertabrakan dengan id
+ * dari sesi lain — berapa kali pun halaman dimuat ulang.
+ */
+const UID_SESSION = `${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
 let uidCounter = 0;
-const uid = (p) => `${p}_${(uidCounter++).toString(36)}`;
+const uid = (p) => `${p}_${UID_SESSION}${(uidCounter++).toString(36)}`;
 
 // Sebelumnya file media dibaca lewat URL.createObjectURL(file) — di
 // lingkungan preview yang sandboxed (mis. panel Artifact), blob: URL
@@ -974,7 +1002,73 @@ const TRACK_TYPES = [
 ];
 function trackColor(type) { return TRACK_TYPES.find((t) => t.type === type)?.color || "#7c6cff"; }
 
-function normalizePersistedMediaClips(clips, tracks, library) {
+/**
+ * Perbaikan proyek yang SUDAH terlanjur rusak oleh bug id berulang (lihat
+ * catatan panjang di atas `uid`). Memperbaiki pencetak id saja tidak cukup:
+ * proyek yang sudah tersimpan di IndexedDB masih membawa id kembarnya, jadi
+ * kerusakannya akan terus muncul setiap kali proyek itu dibuka.
+ *
+ * Tiga langkah, dijalankan sebelum penyaringan apa pun supaya tidak ada
+ * karya pengguna yang ikut terbuang:
+ *
+ *  1. Klip ber-id kembar diberi id baru (yang pertama mempertahankan id
+ *     lamanya). Isinya tidak disentuh — yang bermasalah cuma labelnya.
+ *  2. Track ber-id kembar disatukan, yang pertama menang.
+ *  3. Klip yang jenisnya tidak cocok dengan jenis track tempatnya berada
+ *     dipindahkan ke track yang benar (dibuatkan kalau belum ada). Ini yang
+ *     mengembalikan bar gambar/audio ke jalurnya sendiri alih-alih nyangkut
+ *     di jalur teks — dan dilakukan dengan MEMINDAHKAN, bukan membuang.
+ *
+ * Catatan: transisi yang menunjuk id kembar akan tetap menempel pada klip
+ * pertama. Menebak transisi mana milik klip yang mana mustahil dari data
+ * yang ada, dan menempel pada yang pertama jauh lebih tidak merusak
+ * daripada membuang transisinya.
+ */
+function repairClipIdentities(clips, tracks) {
+  const seenClipIds = new Set();
+  let repairedCount = 0;
+  const outClips = (clips || []).map((c) => {
+    if (!c || !c.id) return c;
+    if (!seenClipIds.has(c.id)) { seenClipIds.add(c.id); return c; }
+    const fresh = uid("clip");
+    seenClipIds.add(fresh);
+    repairedCount++;
+    return { ...c, id: fresh };
+  });
+
+  const seenTrackIds = new Set();
+  const outTracks = [];
+  for (const t of tracks || []) {
+    if (!t || !t.id || seenTrackIds.has(t.id)) { if (t && t.id) repairedCount++; continue; }
+    seenTrackIds.add(t.id);
+    outTracks.push(t);
+  }
+
+  const trackTypeById = new Map(outTracks.map((t) => [t.id, t.type]));
+  const rehomed = outClips.map((c) => {
+    if (!c || !c.id) return c;
+    const hostType = trackTypeById.get(c.trackId);
+    if (hostType === c.type) return c;
+    let host = outTracks.find((t) => t.type === c.type);
+    if (!host) {
+      host = makeTrack(c.type);
+      outTracks.push(host);
+      trackTypeById.set(host.id, host.type);
+    }
+    repairedCount++;
+    return { ...c, trackId: host.id };
+  });
+
+  return { clips: rehomed, tracks: outTracks, repairedCount };
+}
+
+function normalizePersistedMediaClips(rawClips, rawTracks, library) {
+  // Bereskan id kembar & track salah-jenis DULU, sebelum penyaringan di
+  // bawah berjalan — kalau urutannya dibalik, klip yang cuma "salah
+  // alamat" akan ikut terbuang sebagai sampah.
+  const repaired = repairClipIdentities(rawClips, rawTracks);
+  const clips = repaired.clips;
+  const tracks = repaired.tracks;
   const validTracks = (tracks || []).filter((t) => t && t.id && TRACK_TYPES.some((kind) => kind.type === t.type));
   const trackTypes = new Map(validTracks.map((t) => [t.id, t.type]));
   const audioSourceKeys = new Set(
@@ -1454,7 +1548,15 @@ function historyReducer(state, action) {
   // adalah titik awal yang baru, bukan hasil sebuah aksi edit.
   if (action.type === "HYDRATE_PROJECT") {
     if (!action.project) return state;
-    return { past: [], present: action.project, future: [], lastKey: null, lastTime: 0 };
+    // Dulu baris ini memasang action.project MENTAH-MENTAH sebagai present,
+    // melewati projectReducer sepenuhnya — artinya cabang HYDRATE_PROJECT di
+    // projectReducer (yang menjalankan normalizePersistedMediaClips) tidak
+    // pernah tereksekusi sama sekali: kode mati. Seluruh pembersihan proyek
+    // saat memuat — termasuk perbaikan id kembar & track salah-jenis — jadi
+    // percuma. Sekarang hydrate tetap melewati projectReducer; yang tidak
+    // berubah cuma riwayatnya, karena proyek yang dimuat memang titik awal
+    // baru, bukan hasil sebuah aksi edit.
+    return { past: [], present: projectReducer(state.present, action), future: [], lastKey: null, lastTime: 0 };
   }
   if (action.type === "UNDO") {
     if (state.past.length === 0) return state;
