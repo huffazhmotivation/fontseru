@@ -15,6 +15,8 @@ import { RightPanel } from "@/components/RightPanel";
 import { BottomBar } from "@/components/BottomBar";
 import { ProductionPreviewBar } from "@/components/ProductionPreviewBar";
 import { GlyphCanvas } from "@/editor/GlyphCanvas";
+import { GlyphOverviewCanvas } from "@/editor/GlyphOverviewCanvas";
+import { GlyphViewToolbar } from "@/components/GlyphViewToolbar";
 import { LoginModal } from "@/components/LoginModal";
 import { EmailConfirmedWelcome } from "@/components/EmailConfirmedWelcome";
 import { ProUpsellModal } from "@/components/ProUpsellModal";
@@ -70,6 +72,7 @@ export default function App() {
   const featureBuilderOpen = useAppStore((s) => s.featureBuilderOpen);
   const timelapseOpen = useTimelapseUiStore((s) => s.open);
   const appMode = useAppModeStore((s) => s.appMode);
+  const glyphViewMode = useAppStore((s) => s.glyphViewMode);
   useKeyboardShortcuts();
 
   // Once a heavy overlay has been opened for the first time, keep mounting
@@ -193,7 +196,8 @@ export default function App() {
         <GlyphNav />
         <div className="fm-canvas-wrap">
           <div className="fm-canvas-area">
-            <GlyphCanvas />
+            <GlyphViewToolbar />
+            {glyphViewMode === "overview" ? <GlyphOverviewCanvas /> : <GlyphCanvas />}
             <FloatingToolbar />
             <SketchModeToggle />
             {sketchMode && <SketchToolbar />}

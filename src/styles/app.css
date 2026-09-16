@@ -1291,7 +1291,19 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 }
 
 /* ------------------------------------------------------------------ CANVAS */
-.fm-canvas-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); contain: layout style; }
+.fm-glyph-view-toolbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; position:absolute; top:8px; left:8px; z-index:5; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); box-shadow:0 4px 16px #0002; font-size:11px; }
+.fm-glyph-view-toolbar button, .fm-glyph-view-toolbar select { border:1px solid var(--line); border-radius:5px; background:var(--panel-2); color:var(--text); padding:4px 7px; }
+.fm-glyph-view-toolbar button.on { color:var(--accent); border-color:var(--accent); }
+.fm-glyph-view-toolbar label { display:flex; align-items:center; gap:3px; }
+.fm-glyph-view-toolbar input { width:70px; }
+.fm-glyph-view-label { font-weight:600; margin-right:3px; }
+.fm-glyph-overview { overflow:hidden; }
+.fm-overview-cell { cursor:pointer; }
+.fm-overview-box { fill:var(--panel-2); stroke:var(--line); stroke-width:1; }
+.fm-overview-cell.selected .fm-overview-box { fill:var(--accent-soft); stroke:var(--accent); stroke-width:2; }
+.fm-overview-path { fill:var(--text); fill-rule:nonzero; }
+.fm-overview-cell text { fill:var(--text-muted); font-size:10px; pointer-events:none; }
+.fm-overview-marquee { fill:var(--accent-soft); stroke:var(--accent); stroke-dasharray:5 3; pointer-events:none; }
 .fm-canvas-area { flex: 1; min-height: 0; padding: 20px; display: flex; position: relative; contain: layout paint; }
 .fm-canvas-frame {
   flex: 1; min-width: 0;

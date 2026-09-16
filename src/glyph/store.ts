@@ -286,6 +286,12 @@ interface AppState {
    * already does per-glyph. */
   glyphSelectMode: boolean;
   selectedGlyphChars: string[];
+  glyphViewMode: "single" | "overview";
+  glyphOverviewFilter: "all" | "upper" | "lower" | "digits" | "punct" | "symbols" | "custom";
+  glyphOverviewSpacing: number;
+  glyphOverviewZoom: number;
+  glyphOverviewPan: { x: number; y: number };
+  overviewSelectedGlyphChars: string[];
 
   /** Glyph map for the currently selected family style. */
   glyphs: GlyphMap;
@@ -412,6 +418,14 @@ interface AppState {
   metricFocus: keyof FontMetrics | null;
   setMetricFocus: (key: keyof FontMetrics | null) => void;
   setActiveChar: (char: string) => void;
+  setGlyphViewMode: (mode: "single" | "overview") => void;
+  setGlyphOverviewFilter: (filter: AppState["glyphOverviewFilter"]) => void;
+  setGlyphOverviewSpacing: (spacing: number) => void;
+  setGlyphOverviewZoom: (zoom: number) => void;
+  setGlyphOverviewPan: (pan: { x: number; y: number }) => void;
+  setOverviewGlyphSelection: (chars: string[]) => void;
+  toggleOverviewGlyphSelection: (char: string, additive?: boolean) => void;
+  clearOverviewGlyphSelection: () => void;
   setFontStyle: (style: FontStyle) => void;
   generateFromRegular: () => void;
   generateFamilyBold: (amount: number, replaceExisting?: boolean) => FamilyGenerationResult;
@@ -1044,6 +1058,12 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     glyphSelectMode: false,
     selectedGlyphChars: [],
+    glyphViewMode: "single",
+    glyphOverviewFilter: "all",
+    glyphOverviewSpacing: 72,
+    glyphOverviewZoom: 100,
+    glyphOverviewPan: { x: 0, y: 0 },
+    overviewSelectedGlyphChars: [],
     // Default ON: a brand-new font should let the just-drawn ink be the
     // reference and have LSB/RSB/position follow it automatically (see
     // `commitOutline`'s autoSpacingEnabled branch), not the other way
@@ -1363,6 +1383,18 @@ export const useAppStore = create<AppState>()((set, get) => {
       finalizeLive();
       set({ activeChar: char, selectedNodes: [], selectedHandle: null, selectedObjectIds: [], drawingContourId: null });
     },
+    setGlyphViewMode: (mode) => set({ glyphViewMode: mode, overviewSelectedGlyphChars: mode === "single" ? [] : get().overviewSelectedGlyphChars }),
+    setGlyphOverviewFilter: (filter) => set({ glyphOverviewFilter: filter }),
+    setGlyphOverviewSpacing: (spacing) => set({ glyphOverviewSpacing: Math.max(24, Math.min(240, Math.round(spacing))) }),
+    setGlyphOverviewZoom: (zoom) => set({ glyphOverviewZoom: Math.max(40, Math.min(300, Math.round(zoom))) }),
+    setGlyphOverviewPan: (pan) => set({ glyphOverviewPan: pan }),
+    setOverviewGlyphSelection: (chars) => set({ overviewSelectedGlyphChars: [...new Set(chars)] }),
+    toggleOverviewGlyphSelection: (char, additive = false) => set((s) => ({
+      overviewSelectedGlyphChars: additive
+        ? (s.overviewSelectedGlyphChars.includes(char) ? s.overviewSelectedGlyphChars.filter((c) => c !== char) : [...s.overviewSelectedGlyphChars, char])
+        : [char],
+    })),
+    clearOverviewGlyphSelection: () => set({ overviewSelectedGlyphChars: [] }),
 
     setFontStyle: (style) => {
       if (style === get().fontStyle) return;
