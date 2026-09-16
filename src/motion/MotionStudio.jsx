@@ -5436,7 +5436,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [dispatchProject]);
+  }, [project, dispatchProject, copyMotionClips, cutMotionClips, pasteMotionClips]);
 
   return (
     <ErrorBoundary>
