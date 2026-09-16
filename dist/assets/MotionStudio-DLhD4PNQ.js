@@ -1,5 +1,5 @@
 const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/transformers-C7ZnQ3oA.js","assets/__vite-browser-external-DTHgcB49.js","assets/vendor-imagetrace-CtlIpPAx.js"])))=>i.map(i=>d[i]);
-import{c as G,r as m,j as s,C as _e,aw as Fe,W as Fa,ax as $a,ay as Ha,U as Ua,R as wa,at as Bt,aj as bt,L as Ia,az as Sa,aA as vt,T as rt,aB as ta,aq as at,X as Ya,o as ze,as as la,A as Ft,i as $t,m as Ht,ak as ut,aC as Wa,a6 as Ga,aD as Ka,aE as Xa,au as qa,aF as Ut,aG as ca,Z as Ve,aH as kt,z as Yt}from"./index-CWseL09W.js";import{_ as Va}from"./vendor-pdf-B9WxOCQl.js";import{M as Ue}from"./move-horizontal-ClkoyBkA.js";import"./vendor-imagetrace-CtlIpPAx.js";import"./vendor-supabase-D_t8kiev.js";/**
+import{c as G,r as m,j as s,C as _e,aw as Fe,W as Fa,ax as $a,ay as Ha,U as Ua,R as wa,at as Bt,aj as bt,L as Ia,az as Sa,aA as vt,T as rt,aB as ta,aq as at,X as Ya,o as ze,as as la,A as Ft,i as $t,m as Ht,ak as ut,aC as Wa,a6 as Ga,aD as Ka,aE as Xa,au as qa,aF as Ut,aG as ca,Z as Ve,aH as kt,z as Yt}from"./index-D-Q2UHA2.js";import{_ as Va}from"./vendor-pdf-B9WxOCQl.js";import{M as Ue}from"./move-horizontal-C0zCFkSS.js";import"./vendor-imagetrace-CtlIpPAx.js";import"./vendor-supabase-D_t8kiev.js";/**
  * @license lucide-react v0.454.0 - ISC
  *
  * This source code is licensed under the ISC license.
@@ -425,7 +425,7 @@ Studio`,0,"apple",e.id),a=Et("Klip 2","Edit Teks Anda",2200,"kinetic",e.id);retu
     .mfs-timeline-hscroll::-webkit-scrollbar-thumb { background:#9b6cff; border:2px solid transparent; background-clip:padding-box; border-radius:99px; box-shadow:0 0 5px #9b6cff99; }
     .mfs-timeline-hscroll::-webkit-scrollbar-thumb:hover { background:#bd9cff; }
     .mfs-timeline-hscroll-inner { height:1px; }
-    .mfs-playhead-marker { position:absolute; top:0; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid #b995ff; filter:drop-shadow(0 0 4px #a66cff); transform:translateX(0); z-index:12; pointer-events:none; }
+    .mfs-playhead-marker { position:absolute; top:0; width:12px; height:8px; background:#b995ff; clip-path:polygon(0 0, 100% 0, 50% 100%); filter:drop-shadow(0 0 4px #a66cff); transform:translateX(-50%); z-index:12; pointer-events:none; }
     .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9px; color:#c8b7e8; font-family:'JetBrains Mono',monospace; border-left:1px solid #694b91; padding-left:3px; }
     .mfs-marquee { position:absolute; z-index:12; border:1px solid var(--accent); background:var(--accent-soft); pointer-events:none; }    .mfs-lane { position:relative; height:32px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
     .mfs-lane.track-over { background:var(--accent-soft); }

@@ -2528,7 +2528,7 @@ const GlobalStyle = () => (
     .mfs-timeline-hscroll::-webkit-scrollbar-thumb { background:#9b6cff; border:2px solid transparent; background-clip:padding-box; border-radius:99px; box-shadow:0 0 5px #9b6cff99; }
     .mfs-timeline-hscroll::-webkit-scrollbar-thumb:hover { background:#bd9cff; }
     .mfs-timeline-hscroll-inner { height:1px; }
-    .mfs-playhead-marker { position:absolute; top:0; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid #b995ff; filter:drop-shadow(0 0 4px #a66cff); transform:translateX(0); z-index:12; pointer-events:none; }
+    .mfs-playhead-marker { position:absolute; top:0; width:12px; height:8px; background:#b995ff; clip-path:polygon(0 0, 100% 0, 50% 100%); filter:drop-shadow(0 0 4px #a66cff); transform:translateX(-50%); z-index:12; pointer-events:none; }
     .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9px; color:#c8b7e8; font-family:'JetBrains Mono',monospace; border-left:1px solid #694b91; padding-left:3px; }
     .mfs-marquee { position:absolute; z-index:12; border:1px solid var(--accent); background:var(--accent-soft); pointer-events:none; }    .mfs-lane { position:relative; height:32px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
     .mfs-lane.track-over { background:var(--accent-soft); }
