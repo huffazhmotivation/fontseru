@@ -15,6 +15,10 @@ import { contourToPath, toSvgPoint } from "./pathBuilder";
 import { pointHitsObject } from "./objectOps";
 import { hitTestSegments } from "./segmentHitTest";
 import { editorCanvasCss } from "./editorCanvasCss";
+import { GhostGlyph } from "./GhostGlyph";
+import { familyGhostOrder, ghostCenterX, matchingFamilyGlyph } from "./ghostRef";
+import { isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
+import type { GlyphMap } from "@/types/glyph";
 import {
   ObjectsLayer,
   NodesAndHandlesLayer,
@@ -93,77 +97,232 @@ type PointerMoveSample = {
   pressure: number;
 };
 
+/**
+ * How much chrome a cell draws.
+ *
+ * THIS IS THE DECLUTTERING RULE FOR MULTI MODE.
+ *
+ * The old surface drew the full single-glyph guide stack — five metric
+ * lines, the origin, LSB, advance, every ruler guide and the whole grid —
+ * inside EVERY cell. That is correct information and completely unusable
+ * information: forty cells on screen meant several hundred coloured lines
+ * competing with the letters you were trying to look at, which is the
+ * "ruwet" being complained about.
+ *
+ * So detail is now earned, by two rules that match how people actually
+ * use the surface:
+ *
+ *  • The cell you are DRAWING IN gets everything, always. Focus is where
+ *    precision is needed, so that is where precision lines belong.
+ *  • Every other cell gets as much as its size on screen can carry. A
+ *    cell 300 px tall can hold metric lines legibly; a 60 px thumbnail
+ *    can only hold the letter itself, so that is all it gets.
+ *
+ * Nothing is lost: zoom in and the detail comes back on its own, cell by
+ * cell, with no toggle to find and no setting to remember.
+ */
+type CellDetail = "full" | "metrics" | "lite" | "none";
+
+/** Screen height of one cell → how much chrome it can carry legibly. */
+function detailForCellPx(px: number): CellDetail {
+  if (px >= 250) return "metrics";
+  if (px >= 105) return "lite";
+  return "none";
+}
+
 interface PassiveCellProps {
   glyph: Glyph;
   ascender: number;
   cellW: number;
   cellH: number;
-  labelH: number;
-  selected: boolean;
   drawn: boolean;
 }
 
 /**
- * A non-focused cell: cached outline paths + its box/baseline/label only.
- * Memoized because panning re-renders the container constantly while the
- * individual cells' props almost never change.
+ * A non-focused cell's ink: cached outline paths, or a faint placeholder
+ * character when nothing has been drawn yet. Memoized because panning
+ * re-renders the container constantly while the individual cells' props
+ * almost never change.
  */
 const PassiveCell = memo(function PassiveCell({
   glyph,
   ascender,
   cellW,
   cellH,
-  labelH,
-  selected,
   drawn,
 }: PassiveCellProps) {
-  const label = glyph.char === " " ? "space" : glyph.name ?? glyph.char;
+  if (!drawn) {
+    return (
+      <text
+        className="fm-mx-placeholder"
+        x={cellW / 2}
+        y={cellH * 0.62}
+        textAnchor="middle"
+        fontSize={cellH * 0.38}
+      >
+        {glyph.char === " " ? "␣" : glyph.char}
+      </text>
+    );
+  }
   return (
     <>
-      {drawn ? (
-        getGlyphPaths(glyph, ascender).map((entry) =>
-          entry.kind === "stroke" ? (
-            <path
-              key={entry.id}
-              className="fm-mx-ink"
-              d={entry.d}
-              fill="none"
-              strokeWidth={entry.strokeWidth}
-              strokeLinecap={entry.cap as "round" | "butt" | "square"}
-              strokeLinejoin={entry.join as "round" | "miter" | "bevel"}
-            />
-          ) : (
-            <path key={entry.id} className="fm-mx-ink-fill" d={entry.d} fillRule="nonzero" />
-          )
+      {getGlyphPaths(glyph, ascender).map((entry) =>
+        entry.kind === "stroke" ? (
+          <path
+            key={entry.id}
+            className="fm-mx-ink"
+            d={entry.d}
+            fill="none"
+            strokeWidth={entry.strokeWidth}
+            strokeLinecap={entry.cap as "round" | "butt" | "square"}
+            strokeLinejoin={entry.join as "round" | "miter" | "bevel"}
+          />
+        ) : (
+          <path key={entry.id} className="fm-mx-ink-fill" d={entry.d} fillRule="nonzero" />
         )
-      ) : (
-        <text
-          className="fm-mx-placeholder"
-          x={cellW / 2}
-          y={cellH * 0.62}
-          textAnchor="middle"
-          fontSize={cellH * 0.4}
-        >
-          {glyph.char === " " ? "␣" : glyph.char}
-        </text>
       )}
-      <text
-        className={`fm-mx-label${selected ? " selected" : ""}`}
-        x={cellW / 2}
-        y={cellH + labelH * 0.8}
-        textAnchor="middle"
-        fontSize={labelH * 0.72}
-      >
-        {label}
-      </text>
     </>
+  );
+});
+
+/**
+ * GHOST REFERENCE INSIDE ONE CELL.
+ *
+ * A cell's local coordinate space IS glyph space: the cell group is
+ * translated to the cell origin, so x = 0 is that glyph's origin and
+ * y = 0 is its ascender line — the exact space the single-glyph canvas
+ * draws its ghost in.
+ *
+ * That is the whole trick behind "the ghost matches Single Mode". The
+ * props below are passed through untouched from the same store values
+ * (opacity/scale/offsetX/offsetY) and the anchor comes from the same
+ * shared `ghostCenterX` the single canvas uses, computed from THIS cell's
+ * own glyph. Same inputs, same function, same space — so a ghost drawn
+ * here and a ghost drawn in Single Mode for the same glyph land on the
+ * same font unit, and stay there when you drag the Scale or Offset
+ * sliders.
+ *
+ * The one deliberate difference is Family mode. Single Mode has empty
+ * canvas either side of the glyph and parks the two comparison styles in
+ * those side lanes; Multi Mode has a neighbouring GLYPH there instead, so
+ * lanes would draw one letter's reference on top of another letter's
+ * drawing area. Here the two styles are overlaid inside the cell's own em
+ * box (the second one fainter so the pair stays readable) — same size,
+ * same offsets, same em box, just stacked instead of side by side.
+ */
+const CellGhost = memo(function CellGhost({
+  mode,
+  glyph,
+  leftFamilyGlyph,
+  rightFamilyGlyph,
+  ascender,
+  capHeight,
+  upm,
+  totalH,
+  opacity,
+  scale,
+  offsetX,
+  offsetY,
+  imageSrc,
+  imageAspect,
+}: {
+  mode: "sample" | "family" | "image";
+  glyph: Glyph;
+  leftFamilyGlyph?: Glyph;
+  rightFamilyGlyph?: Glyph;
+  ascender: number;
+  capHeight: number;
+  upm: number;
+  totalH: number;
+  opacity: number;
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+  imageSrc?: string | null;
+  imageAspect?: number;
+}) {
+  const centerX = ghostCenterX(glyph, upm);
+
+  if (mode === "sample") {
+    if (isFeatureGlyphUnicode(glyph.unicode)) return null;
+    return (
+      <g className="fm-mx-ghost" data-ghost-mode="sample" pointerEvents="none">
+        <GhostGlyph
+          mode="sample"
+          char={glyph.char}
+          ascender={ascender}
+          capHeight={capHeight}
+          upm={upm}
+          opacity={opacity}
+          scale={scale}
+          offsetX={offsetX}
+          offsetY={offsetY}
+          centerX={centerX}
+        />
+      </g>
+    );
+  }
+
+  if (mode === "image") {
+    if (!imageSrc) return null;
+    return (
+      <g className="fm-mx-ghost" data-ghost-mode="image" pointerEvents="none">
+        <GhostGlyph
+          mode="image"
+          char={glyph.char}
+          ascender={ascender}
+          capHeight={capHeight}
+          upm={upm}
+          opacity={opacity}
+          scale={scale}
+          offsetX={offsetX}
+          offsetY={offsetY}
+          centerX={centerX}
+          totalH={totalH}
+          imageSrc={imageSrc}
+          imageAspect={imageAspect}
+        />
+      </g>
+    );
+  }
+
+  if (!leftFamilyGlyph && !rightFamilyGlyph) return null;
+  return (
+    <g className="fm-mx-ghost" data-ghost-mode="family" pointerEvents="none">
+      <GhostGlyph
+        mode="family"
+        char={glyph.char}
+        glyph={leftFamilyGlyph}
+        ascender={ascender}
+        capHeight={capHeight}
+        upm={upm}
+        opacity={opacity}
+        scale={scale}
+        offsetX={offsetX}
+        offsetY={offsetY}
+      />
+      <GhostGlyph
+        mode="family"
+        char={glyph.char}
+        glyph={rightFamilyGlyph}
+        ascender={ascender}
+        capHeight={capHeight}
+        upm={upm}
+        opacity={opacity * 0.55}
+        scale={scale}
+        offsetX={offsetX}
+        offsetY={offsetY}
+      />
+    </g>
   );
 });
 
 /** Metric lines + ruler guides drawn inside one cell's own box. Every
  *  value is in font units, so this is identical geometry in every cell —
- *  which is exactly what "a ruler guide per glyph box" means. */
+ *  which is exactly what "a ruler guide per glyph box" means. How MUCH of
+ *  it is drawn is decided by `detail`; see CellDetail above. */
 const CellGuides = memo(function CellGuides({
+  detail,
   cellW,
   cellH,
   ascender,
@@ -179,6 +338,7 @@ const CellGuides = memo(function CellGuides({
   guides,
   sc,
 }: {
+  detail: CellDetail;
   cellW: number;
   cellH: number;
   ascender: number;
@@ -194,8 +354,17 @@ const CellGuides = memo(function CellGuides({
   guides: { id: string; axis: "h" | "v"; position: number }[];
   sc: number;
 }) {
+  if (detail === "none") return null;
+
   const toY = (v: number) => ascender - v;
-  const lines = showGuides
+  const full = detail === "full";
+  // "lite" keeps only the two lines a letter is actually sat on — the
+  // baseline it stands on and the x-height it reaches. Those two are what
+  // let you judge a shape at a glance; ascender/cap/descender only matter
+  // once you are close enough to place a node, which is exactly when the
+  // cell has grown into "metrics" or "full".
+  const wantAllMetrics = (full || detail === "metrics") && showGuides;
+  const lines = wantAllMetrics
     ? [
         { key: "ascender", v: ascender, cls: "metric-ascender" },
         { key: "capHeight", v: capHeight, cls: "metric-cap" },
@@ -203,15 +372,23 @@ const CellGuides = memo(function CellGuides({
         { key: "baseline", v: baseline, cls: "metric-baseline" },
         { key: "descender", v: descender, cls: "metric-descender" },
       ]
+    : detail === "lite" && showGuides
+    ? [
+        { key: "xHeight", v: xHeight, cls: "metric-xheight" },
+        { key: "baseline", v: baseline, cls: "metric-baseline" },
+      ]
     : [{ key: "baseline", v: baseline, cls: "metric-baseline" }];
 
   return (
-    <g pointerEvents="none">
-      {showGrid &&
+    <g pointerEvents="none" className={`fm-mx-guides ${detail}`}>
+      {/* The grid is the single densest thing on the surface, so it stays
+          in the focused cell only — a grid repeated across every cell is
+          pure noise at any zoom where more than one cell is visible. */}
+      {full && showGrid &&
         Array.from({ length: Math.floor(cellW / gridSize) + 1 }).map((_, i) => (
           <line key={`gv${i}`} x1={i * gridSize} y1={0} x2={i * gridSize} y2={cellH} className="grid-line" />
         ))}
-      {showGrid &&
+      {full && showGrid &&
         Array.from({ length: Math.floor(cellH / gridSize) + 1 }).map((_, i) => (
           <line key={`gh${i}`} x1={0} y1={i * gridSize} x2={cellW} y2={i * gridSize} className="grid-line" />
         ))}
@@ -226,7 +403,9 @@ const CellGuides = memo(function CellGuides({
         );
       })}
 
-      {showGuides && (
+      {/* Origin / LSB / Advance are per-glyph spacing marks: three more
+          vertical lines per cell. Focused cell only. */}
+      {full && showGuides && (
         <>
           <line x1={0} y1={0} x2={0} y2={cellH} className="origin-line" />
           <line x1={lsb} y1={0} x2={lsb} y2={cellH} className="glyph-metric-guide-line" />
@@ -240,6 +419,9 @@ const CellGuides = memo(function CellGuides({
         </>
       )}
 
+      {/* Ruler guides are deliberate, hand-placed and usually few, so they
+          survive in every cell that draws anything at all — just quieter
+          away from focus (see .fm-mx-guides.metrics / .lite in the CSS). */}
       {guides.map((g) => {
         if (g.axis === "h") {
           const y = toY(g.position);
@@ -248,14 +430,16 @@ const CellGuides = memo(function CellGuides({
           return (
             <g key={g.id}>
               <line x1={0} y1={y} x2={cellW} y2={y} className="ruler-guide-line" />
-              <rect
-                x={-r}
-                y={y - r}
-                width={r * 2}
-                height={r * 2}
-                transform={`rotate(45, 0, ${y})`}
-                className="ruler-guide-endcap"
-              />
+              {full && (
+                <rect
+                  x={-r}
+                  y={y - r}
+                  width={r * 2}
+                  height={r * 2}
+                  transform={`rotate(45, 0, ${y})`}
+                  className="ruler-guide-endcap"
+                />
+              )}
             </g>
           );
         }
@@ -265,14 +449,16 @@ const CellGuides = memo(function CellGuides({
         return (
           <g key={g.id}>
             <line x1={x} y1={0} x2={x} y2={cellH} className="ruler-guide-line" />
-            <rect
-              x={x - r}
-              y={-r}
-              width={r * 2}
-              height={r * 2}
-              transform={`rotate(45, ${x}, 0)`}
-              className="ruler-guide-endcap"
-            />
+            {full && (
+              <rect
+                x={x - r}
+                y={-r}
+                width={r * 2}
+                height={r * 2}
+                transform={`rotate(45, ${x}, 0)`}
+                className="ruler-guide-endcap"
+              />
+            )}
           </g>
         );
       })}
@@ -300,6 +486,15 @@ export function GlyphMultiEditCanvas() {
   const showRuler = useAppStore((s) => s.showRuler);
   const rulerGuides = useAppStore((s) => s.rulerGuides);
   const liveOutline = useAppStore((s) => s.liveOutline);
+  // Ghost reference. Read from the SAME store slice the single-glyph
+  // canvas reads, so the two surfaces can never show a different ghost
+  // for the same settings — flipping between Single and Multi changes the
+  // layout around the ghost, never the ghost itself.
+  const ghost = useAppStore((s) => s.ghost);
+  const fontStyle = useAppStore((s) => s.fontStyle);
+  const [leftGhostStyle, rightGhostStyle] = familyGhostOrder(fontStyle);
+  const leftGhostMap = useAppStore((s) => s.glyphsByStyle[leftGhostStyle]) as GlyphMap | undefined;
+  const rightGhostMap = useAppStore((s) => s.glyphsByStyle[rightGhostStyle]) as GlyphMap | undefined;
   const brush = useAppStore((s) => s.brush);
   const brushCap = useAppStore((s) => s.brushCap);
   const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
@@ -770,6 +965,13 @@ export function GlyphMultiEditCanvas() {
     [layout, vbX, vbY, vbW, vbH]
   );
   const activeIndex = useMemo(() => chars.indexOf(activeChar), [chars, activeChar]);
+  // On-screen size of one cell, in CSS pixels. Everything cosmetic keys
+  // off this: how much guide detail a passive cell carries, and whether
+  // its name label is even large enough to be worth drawing.
+  const cellPx = layout.cellH * sc;
+  const passiveDetail = detailForCellPx(cellPx);
+  const showLabels = layout.labelH * sc >= 7;
+  const ghostOn = ghost.enabled && ghost.opacity > 0;
   const activeOrigin = useMemo(
     () => (activeIndex >= 0 ? cellOrigin(layout, activeIndex) : { x: 0, y: 0 }),
     [layout, activeIndex]
@@ -834,17 +1036,41 @@ export function GlyphMultiEditCanvas() {
         }}
       >
         <style>{editorCanvasCss(sc)}</style>
+        {/* Cell chrome. The whole point of this block is RESTRAINT: one
+            hairline per cell, one soft fill difference between drawn and
+            empty, and a single accent ring that sits OUTSIDE the em box
+            so it marks the focused cell without drawing a second line on
+            top of that glyph's own advance/origin marks. */}
         <style>{`
-          .fm-mx-cell-box { fill: var(--canvas); stroke: var(--line); stroke-width: ${1 / sc}; }
-          .fm-mx-cell.drawn .fm-mx-cell-box { fill: color-mix(in srgb, var(--panel) 70%, var(--canvas)); }
-          .fm-mx-cell.selected .fm-mx-cell-box { stroke: color-mix(in srgb, var(--accent) 60%, var(--line)); stroke-width: ${1.6 / sc}; }
-          .fm-mx-cell.active .fm-mx-cell-box { stroke: var(--accent); stroke-width: ${2.2 / sc}; }
+          .fm-mx-cell-box {
+            fill: var(--canvas);
+            stroke: color-mix(in srgb, var(--line) 62%, transparent);
+            stroke-width: ${1 / sc};
+          }
+          .fm-mx-cell.drawn .fm-mx-cell-box { fill: color-mix(in srgb, var(--panel) 42%, var(--canvas)); }
+          .fm-mx-cell.selected .fm-mx-cell-box {
+            fill: color-mix(in srgb, var(--accent) 8%, var(--canvas));
+            stroke: color-mix(in srgb, var(--accent) 42%, var(--line));
+          }
+          .fm-mx-cell.active .fm-mx-cell-box { fill: var(--canvas); stroke: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+          .fm-mx-cell-ring { fill: none; stroke: var(--accent); stroke-width: ${1.9 / sc}; }
+          .fm-mx-cell-ring.soft { stroke: color-mix(in srgb, var(--accent) 50%, transparent); stroke-width: ${1.3 / sc}; }
           .fm-mx-ink-fill { fill: var(--ink); stroke: none; }
           .fm-mx-ink { stroke: var(--ink); fill: none; }
-          .fm-mx-placeholder { fill: var(--text-faint); opacity: 0.35; font-family: var(--sans); font-weight: 600; }
-          .fm-mx-label { fill: var(--text-faint); font-family: var(--mono); }
-          .fm-mx-label.selected { fill: var(--accent); }
-          .fm-mx-cell.active .fm-mx-label { fill: var(--accent); }
+          /* Passive ink is a touch quieter than the cell being drawn in,
+             so the focused letter reads first without the others fading
+             into unreadability. */
+          .fm-mx-cell.passive .fm-mx-ink-fill,
+          .fm-mx-cell.passive .fm-mx-ink { opacity: 0.86; }
+          .fm-mx-placeholder { fill: var(--text-faint); opacity: 0.2; font-family: var(--sans); font-weight: 600; }
+          .fm-mx-label { fill: var(--text-faint); font-family: var(--mono); opacity: 0.72; }
+          .fm-mx-label.selected { fill: var(--accent); opacity: 1; }
+          .fm-mx-cell.active .fm-mx-label { fill: var(--accent); opacity: 1; }
+          /* Guide fade-out away from focus — see CellDetail. The lines are
+             still there when you need them, just no longer shouting. */
+          .fm-mx-guides.metrics { opacity: 0.5; }
+          .fm-mx-guides.lite { opacity: 0.34; }
+          .fm-mx-ghost { pointer-events: none; }
         `}</style>
 
         {visible.map((index) => {
@@ -854,17 +1080,63 @@ export function GlyphMultiEditCanvas() {
           const origin = cellOrigin(layout, index);
           const isActive = char === activeChar;
           const isSelected = selectedSet.has(char);
+          const rx = layout.cellW * 0.014;
           return (
             <g
               key={char}
-              className={`fm-mx-cell${isActive ? " active" : ""}${isSelected ? " selected" : ""}${
+              className={`fm-mx-cell${isActive ? " active" : " passive"}${isSelected ? " selected" : ""}${
                 hasOutline(cellGlyph) ? " drawn" : " empty"
               }`}
               data-char={char}
               transform={`translate(${origin.x} ${origin.y})`}
             >
-              <rect className="fm-mx-cell-box" x={0} y={0} width={layout.cellW} height={layout.cellH} />
+              <rect
+                className="fm-mx-cell-box"
+                x={0}
+                y={0}
+                rx={rx}
+                ry={rx}
+                width={layout.cellW}
+                height={layout.cellH}
+              />
+              {/* Focus/selection marker drawn as a ring OUTSIDE the em box.
+                  Putting it on the box itself meant the accent stroke and
+                  the glyph's own advance line landed on the same pixels —
+                  two different meanings, one line. Offsetting it keeps the
+                  box edge honest as a metric. */}
+              {(isActive || isSelected) && (
+                <rect
+                  className={`fm-mx-cell-ring${isActive ? "" : " soft"}`}
+                  x={-5 / sc}
+                  y={-5 / sc}
+                  rx={rx + 5 / sc}
+                  ry={rx + 5 / sc}
+                  width={layout.cellW + 10 / sc}
+                  height={layout.cellH + 10 / sc}
+                />
+              )}
+              {/* Ghost sits under everything else, exactly as in Single
+                  Mode: below the guides, below the ink, never hit-tested. */}
+              {ghostOn && (
+                <CellGhost
+                  mode={ghost.mode ?? "sample"}
+                  glyph={cellGlyph}
+                  leftFamilyGlyph={matchingFamilyGlyph(leftGhostMap, cellGlyph, char)}
+                  rightFamilyGlyph={matchingFamilyGlyph(rightGhostMap, cellGlyph, char)}
+                  ascender={ascender}
+                  capHeight={capHeight}
+                  upm={upm}
+                  totalH={totalH}
+                  opacity={ghost.opacity}
+                  scale={ghost.scale}
+                  offsetX={ghost.offsetX}
+                  offsetY={ghost.offsetY}
+                  imageSrc={ghost.imageSrc}
+                  imageAspect={ghost.imageAspect}
+                />
+              )}
               <CellGuides
+                detail={isActive ? "full" : passiveDetail}
                 cellW={layout.cellW}
                 cellH={layout.cellH}
                 ascender={ascender}
@@ -1044,15 +1316,6 @@ export function GlyphMultiEditCanvas() {
                       </g>
                     );
                   })()}
-                  <text
-                    className="fm-mx-label"
-                    x={layout.cellW / 2}
-                    y={layout.cellH + layout.labelH * 0.8}
-                    textAnchor="middle"
-                    fontSize={layout.labelH * 0.72}
-                  >
-                    {cellGlyph.char === " " ? "space" : cellGlyph.name ?? cellGlyph.char}
-                  </text>
                 </>
               ) : (
                 <PassiveCell
@@ -1060,10 +1323,23 @@ export function GlyphMultiEditCanvas() {
                   ascender={ascender}
                   cellW={layout.cellW}
                   cellH={layout.cellH}
-                  labelH={layout.labelH}
-                  selected={isSelected}
                   drawn={hasOutline(cellGlyph)}
                 />
+              )}
+              {/* One label rule for every cell, focused or not. Labels are
+                  dropped entirely once a cell is too small to render them
+                  at a readable size — below that they are a grey smear
+                  under every box and nothing more. */}
+              {showLabels && (
+                <text
+                  className={`fm-mx-label${isSelected ? " selected" : ""}`}
+                  x={layout.cellW / 2}
+                  y={layout.cellH + layout.labelH * 0.78}
+                  textAnchor="middle"
+                  fontSize={layout.labelH * 0.66}
+                >
+                  {cellLabel(cellGlyph)}
+                </text>
               )}
             </g>
           );
@@ -1075,6 +1351,16 @@ export function GlyphMultiEditCanvas() {
       )}
     </div>
   );
+}
+
+/** A cell's caption. Long Feature-Builder names ("uppercase.swash.alt")
+ *  are wider than the box they label and used to run into the neighbouring
+ *  cell's caption, which is a large part of why the grid read as cluttered;
+ *  they are clipped to a length the box can hold. */
+function cellLabel(glyph: Glyph): string {
+  if (glyph.char === " ") return "space";
+  const raw = glyph.name ?? glyph.char;
+  return raw.length > 12 ? `${raw.slice(0, 11)}…` : raw;
 }
 
 /** Overlap highlighting is a single-glyph review aid; it would cost an

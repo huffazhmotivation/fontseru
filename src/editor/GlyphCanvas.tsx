@@ -15,38 +15,13 @@ import { findOverlappingObjectIds } from "./overlapDetect";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { mergeOutlineBrushStrokes } from "./glyphPaths";
 import { GhostGlyph } from "./GhostGlyph";
+import { familyGhostOrder, ghostCenterX as ghostCenterXFor, matchingFamilyGlyph } from "./ghostRef";
 import { CanvasRuler, RulerGuideLines, RULER_SIZE } from "./CanvasRuler";
 import { editorCanvasCss } from "./editorCanvasCss";
 import { RecordingBadge } from "@/timelapse/RecordingBadge";
 import { isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { GlyphOutline, NodeType, Point, VectorObject } from "@/types/geometry";
-import type { FontStyle, Glyph, GlyphMap } from "@/types/glyph";
 
-const FAMILY_GHOST_ORDER: Record<string, readonly [FontStyle, FontStyle]> = {
-  regular: ["bold", "italic"],
-  bold: ["regular", "italic"],
-  italic: ["regular", "bold"],
-};
-
-/** Ghost-reference pair for the current style. Built-in styles use the
- * fixed table above; a custom family (or any id not in that table) falls
- * back to referencing Regular + Bold, since it has no natural counterpart. */
-function familyGhostOrder(style: FontStyle): readonly [FontStyle, FontStyle] {
-  return FAMILY_GHOST_ORDER[style] ?? ["regular", "bold"];
-}
-
-function matchingFamilyGlyph(map: GlyphMap | undefined, activeGlyph: Glyph, activeChar: string): Glyph | undefined {
-  if (!map) return undefined;
-  const exact = map[activeChar];
-  if (exact) return exact;
-
-  const activeCodes = new Set([activeGlyph.unicode, ...(activeGlyph.unicodes ?? [])]);
-  return Object.values(map).find((candidate) => {
-    if (activeCodes.has(candidate.unicode)) return true;
-    if (candidate.unicodes?.some((code) => activeCodes.has(code))) return true;
-    return candidate.char === activeGlyph.char;
-  });
-}
 
 type PointerMoveSample = {
   pointerId: number;
@@ -146,7 +121,7 @@ export function GlyphCanvas() {
   // not the full upm square. Keeps the reference character/image lined up
   // with where this glyph's ink is actually drawn, the same way LSB/RSB/
   // Advance already default to FontSeru's standard sidebearing metrics.
-  const ghostCenterX = glyph ? (glyph.advanceWidth + glyph.lsb - glyph.rsb) / 2 : upm * 0.5;
+  const ghostCenterX = ghostCenterXFor(glyph, upm);
   const leftFamilyGlyph = glyph
     ? matchingFamilyGlyph(leftGhostMap, glyph, activeChar)
     : undefined;

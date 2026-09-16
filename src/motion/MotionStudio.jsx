@@ -15,6 +15,7 @@ import {
   Sun, MoonStar,
   AlignLeft, AlignCenter, AlignRight,
   Download, FolderOpen, FilePlus2,
+  Aperture, Camera, Orbit, Frame, Contrast, Shuffle, Maximize2, Clock, Scaling, Anchor, Crop,
 } from "lucide-react";
 
 /* ============================================================
@@ -195,99 +196,215 @@ const DEFAULT_PRESET = PRESET_LIB.find((p) => p.id === "apple") || PRESET_LIB[0]
    ============================================================ */
 
 const IMAGE_PRESET_LIB = [
-  { id: "none", name: "Tanpa Animasi (Statis)", animateBy: "all", stagger: 0, entranceMs: 1, exitMs: 0, icon: Ban, curve: () => pose({}) },
-  { id: "img_fade", name: "Fade", animateBy: "all", stagger: 0, entranceMs: 500, exitMs: 400, icon: Eye,
+  { id: "none", name: "Tanpa Animasi (Statis)", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 1, exitMs: 0, icon: Ban, curve: () => pose({}) },
+  { id: "img_fade", name: "Fade", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 500, exitMs: 400, icon: Eye,
     curve: (t) => pose({ opacity: ease("easeOut", t) }) },
-  { id: "img_zoomin", name: "Zoom Masuk", animateBy: "all", stagger: 0, entranceMs: 560, exitMs: 400, icon: Focus,
+  { id: "img_zoomin", name: "Zoom Masuk", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 560, exitMs: 400, icon: Focus,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, scale: 0.6 + 0.4 * e }); } },
-  { id: "img_zoomout", name: "Zoom Keluar", animateBy: "all", stagger: 0, entranceMs: 560, exitMs: 400, icon: Focus,
+  { id: "img_zoomout", name: "Zoom Keluar", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 560, exitMs: 400, icon: Focus,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, scale: 1.4 - 0.4 * e }); } },
-  { id: "img_kenburns", name: "Ken Burns (Zoom Halus)", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: Film,
+  { id: "img_kenburns", name: "Ken Burns (Zoom Halus)", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: Film, sustain: true,
     // Zoom sangat lambat sepanjang klip — entranceMs dibuat kecil supaya
     // "pose sampai" cepat, lalu scale terus naik pelan mengikuti t di kurva.
     curve: (t) => pose({ opacity: Math.min(1, t * 8), scale: 1.04 + 0.12 * t }) },
-  { id: "img_slideup", name: "Geser Naik", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 380, icon: TrendingUp,
+  { id: "img_slideup", name: "Geser Naik", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 380, icon: TrendingUp,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, y: 80 * (1 - e) }); } },
-  { id: "img_slidedown", name: "Geser Turun", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 380, icon: TrendingUp,
+  { id: "img_slidedown", name: "Geser Turun", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 380, icon: TrendingUp,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, y: -80 * (1 - e) }); } },
-  { id: "img_slideleft", name: "Geser dari Kanan", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 380, icon: MoveHorizontal,
+  { id: "img_slideleft", name: "Geser dari Kanan", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 380, icon: MoveHorizontal,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, x: 90 * (1 - e) }); } },
-  { id: "img_slideright", name: "Geser dari Kiri", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 380, icon: MoveHorizontal,
+  { id: "img_slideright", name: "Geser dari Kiri", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 380, icon: MoveHorizontal,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, x: -90 * (1 - e) }); } },
-  { id: "img_rotatein", name: "Putar Masuk", animateBy: "all", stagger: 0, entranceMs: 560, exitMs: 400, icon: RotateCcw,
+  { id: "img_rotatein", name: "Putar Masuk", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 560, exitMs: 400, icon: RotateCcw,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, rotation: -160 * (1 - e), scale: 0.7 + 0.3 * e }); } },
-  { id: "img_bounce", name: "Bounce Masuk", animateBy: "all", stagger: 0, entranceMs: 640, exitMs: 420, icon: Activity,
+  { id: "img_bounce", name: "Bounce Masuk", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 640, exitMs: 420, icon: Activity,
     curve: (t) => { const e = elasticOut(t, 1); const eo = ease("easeOut", Math.min(t * 2, 1)); return pose({ opacity: eo, scale: e }); } },
-  { id: "img_pop", name: "Pop Overshoot", animateBy: "all", stagger: 0, entranceMs: 480, exitMs: 340, icon: Flame,
+  { id: "img_pop", name: "Pop Overshoot", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 480, exitMs: 340, icon: Flame,
     curve: (t) => { const e = elasticOut(t, 1.15); const eo = ease("easeOut", Math.min(t * 3, 1)); return pose({ opacity: eo, scale: 0.3 + 0.7 * e }); } },
-  { id: "img_blurin", name: "Blur Masuk", animateBy: "all", stagger: 0, entranceMs: 560, exitMs: 400, icon: CloudFog,
+  { id: "img_blurin", name: "Blur Masuk", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 560, exitMs: 400, icon: CloudFog,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, blur: 22 * (1 - e), scale: 1.06 - 0.06 * e }); } },
-  { id: "img_flip", name: "Flip Horizontal", animateBy: "all", stagger: 0, entranceMs: 500, exitMs: 360, icon: FlipHorizontal,
+  { id: "img_flip", name: "Flip Horizontal", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 500, exitMs: 360, icon: FlipHorizontal,
     curve: (t) => { const e = ease("easeOut", t); return { ...pose({ opacity: Math.min(1, t * 2) }), scaleX: Math.max(0.05, e), scaleY: 1 }; } },
-  { id: "img_whip", name: "Whip Pan", animateBy: "all", stagger: 0, entranceMs: 380, exitMs: 300, icon: Wind,
+  { id: "img_whip", name: "Whip Pan", group: "Dasar", animateBy: "all", stagger: 0, entranceMs: 380, exitMs: 300, icon: Wind,
     curve: (t) => { const e = cubicBezier(0.65, 0, 0.35, 1, t); return pose({ opacity: e, x: (1 - e) * -180, blur: (1 - e) * 18 }); } },
 
   // —— Ken Burns / Documentary (4) ——
-  { id: "img_kenburns_in", name: "Ken Burns Zoom In", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: Film,
+  { id: "img_kenburns_in", name: "Ken Burns Zoom In", group: "Ken Burns & Dokumenter", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: Film, sustain: true,
     curve: (t) => pose({ opacity: Math.min(1, t * 8), scale: 1.0 + 0.15 * t, x: -25 * t }) },
-  { id: "img_kenburns_out", name: "Ken Burns Zoom Out", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: Film,
+  { id: "img_kenburns_out", name: "Ken Burns Zoom Out", group: "Ken Burns & Dokumenter", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: Film, sustain: true,
     curve: (t) => pose({ opacity: Math.min(1, t * 8), scale: 1.15 - 0.15 * t, x: 25 * t }) },
-  { id: "img_kenpan_left", name: "Ken Burns Pan Left", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: MoveHorizontal,
+  { id: "img_kenpan_left", name: "Ken Burns Pan Left", group: "Ken Burns & Dokumenter", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: MoveHorizontal, sustain: true,
     curve: (t) => pose({ opacity: Math.min(1, t * 8), scale: 1.05, x: 60 * t }) },
-  { id: "img_kenpan_right", name: "Ken Burns Pan Right", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: MoveHorizontal,
+  { id: "img_kenpan_right", name: "Ken Burns Pan Right", group: "Ken Burns & Dokumenter", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: MoveHorizontal, sustain: true,
     curve: (t) => pose({ opacity: Math.min(1, t * 8), scale: 1.05, x: -60 * t }) },
 
   // —— Smooth Cinematic (5) ——
-  { id: "img_smoothscale", name: "Smooth Scale", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 500, icon: Focus,
+  { id: "img_smoothscale", name: "Smooth Scale", group: "Sinematik Halus", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 500, icon: Focus,
     curve: (t) => { const e = cubicBezier(0.22, 1, 0.36, 1, t); return pose({ opacity: e, scale: 0.85 + 0.15 * e }); } },
-  { id: "img_centralfocus", name: "Central Focus", animateBy: "all", stagger: 0, entranceMs: 800, exitMs: 500, icon: Focus,
+  { id: "img_centralfocus", name: "Central Focus", group: "Sinematik Halus", animateBy: "all", stagger: 0, entranceMs: 800, exitMs: 500, icon: Focus,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, scale: 1.2 - 0.2 * e, blur: 16 * (1 - e) }); } },
-  { id: "img_pushin", name: "Push In", animateBy: "all", stagger: 0, entranceMs: 900, exitMs: 600, icon: Rocket,
+  { id: "img_pushin", name: "Push In", group: "Sinematik Halus", animateBy: "all", stagger: 0, entranceMs: 900, exitMs: 600, icon: Rocket,
     curve: (t) => { const e = cubicBezier(0.16, 1, 0.3, 1, t); return pose({ opacity: e, scale: 0.9 + 0.15 * e, x: 30 * (1 - e) }); } },
-  { id: "img_pullback", name: "Pull Back", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 500, icon: Rocket,
+  { id: "img_pullback", name: "Pull Back", group: "Sinematik Halus", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 500, icon: Rocket,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, scale: 1.3 - 0.3 * e, y: -20 * (1 - e) }); } },
-  { id: "img_driftright", name: "Drift Right", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: MoveHorizontal,
+  { id: "img_driftright", name: "Drift Right", group: "Sinematik Halus", animateBy: "all", stagger: 0, entranceMs: 100, exitMs: 0, icon: MoveHorizontal, sustain: true,
     curve: (t) => pose({ opacity: Math.min(1, t * 6), x: -40 * t, scale: 1.0 + 0.06 * t }) },
 
   // —— Photo Album / Reveals (4) ——
-  { id: "img_photodrop", name: "Photo Drop", animateBy: "all", stagger: 0, entranceMs: 600, exitMs: 380, icon: Feather,
+  { id: "img_photodrop", name: "Photo Drop", group: "Album Foto & Reveal", animateBy: "all", stagger: 0, entranceMs: 600, exitMs: 380, icon: Feather,
     curve: (t) => { const e = elasticOut(t, 0.9); const eo = ease("easeOut", Math.min(t * 2.5, 1)); return pose({ opacity: eo, scale: 0.3 + 0.7 * e, rotation: -8 * (1 - e) }); } },
-  { id: "img_cardflip", name: "Card Flip", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 360, icon: FlipHorizontal,
+  { id: "img_cardflip", name: "Card Flip", group: "Album Foto & Reveal", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 360, icon: FlipHorizontal,
     curve: (t) => { const e = cubicBezier(0.16, 1, 0.3, 1, t); return { ...pose({ opacity: Math.min(1, t * 2.5) }), scaleX: Math.max(0.05, e), scaleY: 1 }; } },
-  { id: "img_paperfly", name: "Paper Fly-In", animateBy: "all", stagger: 0, entranceMs: 650, exitMs: 400, icon: Wind,
+  { id: "img_paperfly", name: "Paper Fly-In", group: "Album Foto & Reveal", animateBy: "all", stagger: 0, entranceMs: 650, exitMs: 400, icon: Wind,
     curve: (t) => { const e = elasticOut(t, 0.6); return pose({ opacity: Math.min(1, t * 2.5), x: 180 * (1 - e), y: -140 * (1 - e), rotation: 25 * (1 - e), scale: 0.7 + 0.3 * e }); } },
-  { id: "img_floatup", name: "Float Up Gentle", animateBy: "all", stagger: 0, entranceMs: 800, exitMs: 500, icon: TrendingUp,
+  { id: "img_floatup", name: "Float Up Gentle", group: "Album Foto & Reveal", animateBy: "all", stagger: 0, entranceMs: 800, exitMs: 500, icon: TrendingUp,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, y: 50 * (1 - e), scale: 0.96 + 0.04 * e }); } },
 
   // —— Dynamic / Energetic (4) ——
-  { id: "img_slam", name: "Slam In", animateBy: "all", stagger: 0, entranceMs: 360, exitMs: 280, icon: Flame,
+  { id: "img_slam", name: "Slam In", group: "Dinamis & Energik", animateBy: "all", stagger: 0, entranceMs: 360, exitMs: 280, icon: Flame,
     curve: (t) => { const e = cubicBezier(0.12, 0.8, 0.3, 1, t); return pose({ opacity: e, scale: 2.0 - 1.0 * e, blur: 6 * (1 - e) }); } },
-  { id: "img_kickback", name: "Kick Back", animateBy: "all", stagger: 0, entranceMs: 480, exitMs: 340, icon: Activity,
+  { id: "img_kickback", name: "Kick Back", group: "Dinamis & Energik", animateBy: "all", stagger: 0, entranceMs: 480, exitMs: 340, icon: Activity,
     curve: (t) => { const e = elasticOut(t, 1.1); const eo = ease("easeOut", Math.min(t * 3, 1)); return pose({ opacity: eo, scale: 0.5 + 0.5 * e }); } },
-  { id: "img_spinburst", name: "Spin Burst", animateBy: "all", stagger: 0, entranceMs: 620, exitMs: 380, icon: RotateCcw,
+  { id: "img_spinburst", name: "Spin Burst", group: "Dinamis & Energik", animateBy: "all", stagger: 0, entranceMs: 620, exitMs: 380, icon: RotateCcw,
     curve: (t) => { const e = elasticOut(t, 0.85); const eo = ease("easeOut", Math.min(t * 2, 1)); return pose({ opacity: eo, rotation: 360 * (1 - e), scale: 0.2 + 0.8 * e }); } },
-  { id: "img_riseup", name: "Rise Up", animateBy: "all", stagger: 0, entranceMs: 560, exitMs: 400, icon: TrendingUp,
+  { id: "img_riseup", name: "Rise Up", group: "Dinamis & Energik", animateBy: "all", stagger: 0, entranceMs: 560, exitMs: 400, icon: TrendingUp,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, y: 100 * (1 - e), scale: 0.9 + 0.1 * e, blur: 10 * (1 - e) }); } },
 
   // —— Transitions-as-Presets (4) ——
-  { id: "img_crosszoom", name: "Cross Zoom", animateBy: "all", stagger: 0, entranceMs: 450, exitMs: 350, icon: Focus,
+  { id: "img_crosszoom", name: "Cross Zoom", group: "Transisi sebagai Preset", animateBy: "all", stagger: 0, entranceMs: 450, exitMs: 350, icon: Focus,
     curve: (t) => { const e = ease("easeInOut", t); return pose({ opacity: Math.min(t * 3, 1), scale: 0.8 + 0.4 * e }); } },
-  { id: "img_lumaedge", name: "Luma Edge", animateBy: "all", stagger: 0, entranceMs: 420, exitMs: 300, icon: Zap,
+  { id: "img_lumaedge", name: "Luma Edge", group: "Transisi sebagai Preset", animateBy: "all", stagger: 0, entranceMs: 420, exitMs: 300, icon: Zap,
     curve: (t) => { const flick = t < 0.5 ? (Math.sin(t * 40) > 0 ? 1 : 0.3) : 1; return pose({ opacity: flick * Math.min(1, t * 3), scale: 1.0 + Math.sin(t * 12) * 0.04 * (1 - t) }); } },
-  { id: "img_warpzoom", name: "Warp Zoom", animateBy: "all", stagger: 0, entranceMs: 500, exitMs: 400, icon: Rocket,
+  { id: "img_warpzoom", name: "Warp Zoom", group: "Transisi sebagai Preset", animateBy: "all", stagger: 0, entranceMs: 500, exitMs: 400, icon: Rocket,
     curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: Math.min(t * 3, 1), scale: 3.5 - 2.5 * e, blur: 30 * (1 - e * e) }); } },
-  { id: "img_swish", name: "Swish Pan", animateBy: "all", stagger: 0, entranceMs: 360, exitMs: 280, icon: Wind,
+  { id: "img_swish", name: "Swish Pan", group: "Transisi sebagai Preset", animateBy: "all", stagger: 0, entranceMs: 360, exitMs: 280, icon: Wind,
     curve: (t) => { const e = cubicBezier(0.65, 0, 0.35, 1, t); return pose({ opacity: e, x: (1 - e) * -220, blur: (1 - e) * 24 }); } },
 
   // —— Time/Camera Effects (4) ——
-  { id: "img_speedramp", name: "Speed Ramp", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 0, icon: Rocket,
+  { id: "img_speedramp", name: "Speed Ramp", group: "Efek Waktu & Kamera", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 0, icon: Rocket,
     curve: (t) => { const s = t < 0.3 ? t / 0.3 * 0.3 : t < 0.7 ? 0.3 + (t - 0.3) / 0.4 * 0.5 : 0.8 + (t - 0.7) / 0.3 * 0.2; return pose({ opacity: Math.min(1, t * 5), scale: 0.9 + 0.2 * s }); } },
-  { id: "img_shutter", name: "Shutter Close", animateBy: "all", stagger: 0, entranceMs: 500, exitMs: 380, icon: ScanLine,
+  { id: "img_shutter", name: "Shutter Close", group: "Efek Waktu & Kamera", animateBy: "all", stagger: 0, entranceMs: 500, exitMs: 380, icon: ScanLine,
     curve: (t) => { const e = ease("easeInOut", t); return { ...pose({ opacity: e > 0.04 ? 1 : 0 }), scaleX: 1, scaleY: Math.max(0.01, e > 0.5 ? 0.01 + (e - 0.5) * 2 : 1 - e * 2) }; } },
-  { id: "img_viewfinder", name: "Viewfinder", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 380, icon: Eye,
+  { id: "img_viewfinder", name: "Viewfinder", group: "Efek Waktu & Kamera", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 380, icon: Eye,
     curve: (t) => { const e = cubicBezier(0.22, 1, 0.36, 1, t); return pose({ opacity: Math.min(t * 3, 1), scale: 0.1 + 0.9 * e, rotation: 360 * (1 - e) }); } },
-  { id: "img_fisheyeburst", name: "Fisheye Burst", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 360, icon: Gem,
+  { id: "img_fisheyeburst", name: "Fisheye Burst", group: "Efek Waktu & Kamera", animateBy: "all", stagger: 0, entranceMs: 520, exitMs: 360, icon: Gem,
     curve: (t) => { const e = elasticOut(t, 0.7); const eo = ease("easeOut", Math.min(t * 2.5, 1)); return pose({ opacity: eo, scale: 1.5 - 0.5 * e, blur: 14 * (1 - eo) }); } },
+
+  /* ————————————————————————————————————————————————————————————
+     BAHASA KAMERA — gerakan yang namanya dipakai sehari-hari di dunia
+     sinematografi & motion. Semuanya bekerja pada gambar diam apa pun
+     (PNG / JPG / SVG): tidak ada satu pun yang butuh data per-huruf,
+     per-lapis, atau alpha channel khusus.
+     ———————————————————————————————————————————————————————————— */
+  { id: "img_rackfocus", name: "Rack Focus", group: "Bahasa Kamera", animateBy: "all", stagger: 0, entranceMs: 900, exitMs: 500, icon: Aperture,
+    // Fokus ditarik, kamera diam. Tidak ada gerak sama sekali — justru
+    // itu intinya: mata penonton dipindahkan tanpa framing berubah.
+    curve: (t) => { const e = ease("easeInOut", t); return pose({ opacity: Math.min(1, t * 4), blur: 26 * (1 - e) }); } },
+  { id: "img_dollyzoom", name: "Dolly Zoom (Vertigo)", group: "Bahasa Kamera", animateBy: "all", stagger: 0, entranceMs: 1400, exitMs: 600, icon: Scaling, sustain: true,
+    // Vertigo asli = dolly mundur sambil zoom masuk, jadi subjek tetap
+    // seukuran tapi latarnya melar. Pada satu lapis gambar yang bisa
+    // ditiru adalah "rasanya": skala naik terus sementara bidangnya
+    // sedikit meregang ke samping, dengan blur tipis di puncaknya.
+    curve: (t) => { const e = ease("easeInOut", t); const s = 1 + 0.22 * e; return { ...pose({ opacity: Math.min(1, t * 5), blur: 5 * Math.sin(e * Math.PI) }), scaleX: s * (1 + 0.06 * Math.sin(e * Math.PI)), scaleY: s }; } },
+  { id: "img_crashzoom", name: "Crash Zoom", group: "Bahasa Kamera", animateBy: "all", stagger: 0, entranceMs: 260, exitMs: 200, icon: Rocket,
+    curve: (t) => { const e = cubicBezier(0.1, 0.9, 0.2, 1, t); return pose({ opacity: Math.min(1, t * 6), scale: 2.4 - 1.4 * e, blur: 14 * (1 - e) }); } },
+  { id: "img_handheld", name: "Handheld Camera", group: "Bahasa Kamera", animateBy: "all", stagger: 0, entranceMs: 320, exitMs: 0, icon: Camera, sustain: true,
+    // Goyangan operator: dua sinus berbeda frekuensi supaya polanya tidak
+    // pernah terasa berulang rapi seperti mesin.
+    curve: (t, seed = 0) => { const f = t * 12 + seed * 7; const intro = Math.min(1, t * 9);
+      return pose({ opacity: intro, x: (Math.sin(f) + Math.sin(f * 2.3) * 0.5) * 7, y: (Math.cos(f * 0.8) + Math.sin(f * 1.7) * 0.4) * 5, rotation: Math.sin(f * 0.6) * 0.7, scale: 1.03 }); } },
+  { id: "img_parallaxdrift", name: "Parallax Drift", group: "Bahasa Kamera", animateBy: "all", stagger: 0, entranceMs: 400, exitMs: 0, icon: Layers, sustain: true,
+    curve: (t) => pose({ opacity: Math.min(1, t * 8), x: -70 * t, y: -14 * t, scale: 1.08 + 0.06 * t }) },
+  { id: "img_orbitsweep", name: "Orbit Sweep", group: "Bahasa Kamera", animateBy: "all", stagger: 0, entranceMs: 820, exitMs: 480, icon: Orbit,
+    curve: (t) => { const e = cubicBezier(0.22, 1, 0.36, 1, t); const a = (1 - e) * Math.PI * 1.25; const r = 150 * (1 - e);
+      return pose({ opacity: Math.min(1, t * 3), x: Math.cos(a) * r, y: Math.sin(a) * r * 0.45, rotation: (1 - e) * 14, scale: 0.82 + 0.18 * e }); } },
+  { id: "img_tiltreveal", name: "Tilt Reveal", group: "Bahasa Kamera", animateBy: "all", stagger: 0, entranceMs: 720, exitMs: 460, icon: ArrowDownUp,
+    curve: (t) => { const e = cubicBezier(0.16, 1, 0.3, 1, t); return { ...pose({ opacity: Math.min(1, t * 2.5), y: 120 * (1 - e) }), scaleX: 1, scaleY: 0.55 + 0.45 * e }; } },
+  { id: "img_hyperlapse", name: "Hyperlapse Push", group: "Bahasa Kamera", animateBy: "all", stagger: 0, entranceMs: 600, exitMs: 0, icon: Clock, sustain: true,
+    // Dorongan bertahap, bukan mulus — meniru rasa frame yang dilompati.
+    curve: (t) => { const steps = 14; const q = Math.floor(t * steps) / steps; return pose({ opacity: Math.min(1, t * 9), scale: 1 + 0.3 * q, blur: 2 * (t - q) * steps }); } },
+
+  /* ————————————————————————————————————————————————————————————
+     TITLE SEQUENCE — gaya pembuka yang sudah jadi bahasa umum di
+     industri. Dipakai untuk logo, cover, dan gambar judul.
+     ———————————————————————————————————————————————————————————— */
+  { id: "img_keynote", name: "Keynote Reveal", group: "Title Sequence", animateBy: "all", stagger: 0, entranceMs: 620, exitMs: 420, icon: Feather,
+    curve: (t) => { const e = cubicBezier(0.16, 1, 0.3, 1, t); return pose({ opacity: ease("easeOut", t), y: 30 * (1 - e), scale: 0.93 + 0.07 * e, blur: 7 * (1 - ease("easeOut", t)) }); } },
+  { id: "img_titlepush", name: "Title Push", group: "Title Sequence", animateBy: "all", stagger: 0, entranceMs: 900, exitMs: 0, icon: Film, sustain: true,
+    // Dorongan lambat yang tak pernah berhenti — trik standar poster judul
+    // supaya gambar diam tetap terasa "hidup" tanpa menarik perhatian.
+    curve: (t) => pose({ opacity: Math.min(1, t * 10), scale: 1.02 + 0.1 * ease("easeInOut", t) }) },
+  { id: "img_materialrise", name: "Material Rise", group: "Title Sequence", animateBy: "all", stagger: 0, entranceMs: 500, exitMs: 340, icon: LayoutGrid,
+    curve: (t) => { const e = cubicBezier(0.2, 0, 0, 1, t); return pose({ opacity: Math.min(1, t * 2.6), y: 56 * (1 - e), scale: 0.97 + 0.03 * e }); } },
+  { id: "img_swissgrid", name: "Swiss Grid Snap", group: "Title Sequence", animateBy: "all", stagger: 0, entranceMs: 460, exitMs: 320, icon: Frame,
+    // Tanpa fade sama sekali: bidangnya yang dibuka. Ciri khas desain
+    // grafis Swiss — pergerakan tegas, tidak ada kabut.
+    curve: (t) => { const e = cubicBezier(0.76, 0, 0.24, 1, t); return { ...pose({ opacity: e > 0.02 ? 1 : 0 }), scaleX: Math.max(0.001, e), scaleY: 1 }; } },
+  { id: "img_brandstamp", name: "Brand Stamp", group: "Title Sequence", animateBy: "all", stagger: 0, entranceMs: 420, exitMs: 300, icon: Anchor,
+    curve: (t) => { const e = cubicBezier(0.2, 1.4, 0.35, 1, t); return pose({ opacity: Math.min(1, t * 5), scale: 1.7 - 0.7 * e, blur: 10 * (1 - Math.min(1, t * 3)) }); } },
+  { id: "img_luxeslide", name: "Luxe Slide", group: "Title Sequence", animateBy: "all", stagger: 0, entranceMs: 1100, exitMs: 700, icon: Gem,
+    curve: (t) => { const e = ease("easeInOut", t); return pose({ opacity: e, x: 130 * (1 - e), blur: 12 * (1 - e), scale: 1.04 - 0.04 * e }); } },
+
+  /* ————————————————————————————————————————————————————————————
+     PRINSIP ANIMASI — dua belas prinsip klasik Disney, yang sampai
+     sekarang jadi dasar penilaian "gerakannya enak atau tidak".
+     ———————————————————————————————————————————————————————————— */
+  { id: "img_anticipation", name: "Anticipation Pop", group: "Prinsip Animasi", animateBy: "all", stagger: 0, entranceMs: 620, exitMs: 380, icon: Activity,
+    // Mundur dulu sebelum maju. Tanpa ancang-ancang ini, sebuah "pop"
+    // selalu terbaca murah.
+    curve: (t) => { const o = Math.min(1, t * 6);
+      if (t < 0.32) { const a = t / 0.32; return pose({ opacity: o, scale: 1 - 0.18 * ease("easeOut", a) }); }
+      const e = elasticOut((t - 0.32) / 0.68, 0.9); return pose({ opacity: o, scale: 0.82 + 0.18 * e }); } },
+  { id: "img_squashstretch", name: "Squash & Stretch", group: "Prinsip Animasi", animateBy: "all", stagger: 0, entranceMs: 680, exitMs: 420, icon: Maximize2,
+    curve: (t) => { const e = elasticOut(t, 0.8); const sq = 1 + (1 - e) * 0.45;
+      return { ...pose({ opacity: Math.min(1, t * 4), y: -70 * (1 - ease("easeOut", t)) }), scaleX: 1 / sq, scaleY: sq }; } },
+  { id: "img_followthrough", name: "Follow Through", group: "Prinsip Animasi", animateBy: "all", stagger: 0, entranceMs: 780, exitMs: 460, icon: Waves,
+    // Badan berhenti duluan, ujungnya menyusul — di sini diwakili rotasi
+    // yang masih mengayun setelah posisinya sudah mendarat.
+    curve: (t) => { const body = cubicBezier(0.22, 1, 0.36, 1, t); const tail = elasticOut(clamp(t * 0.85, 0, 1), 1.1);
+      return pose({ opacity: Math.min(1, t * 3), y: 60 * (1 - body), rotation: (1 - tail) * -12, scale: 0.94 + 0.06 * body }); } },
+  { id: "img_overshoot", name: "Overshoot Settle", group: "Prinsip Animasi", animateBy: "all", stagger: 0, entranceMs: 540, exitMs: 360, icon: TrendingUp,
+    curve: (t) => { const e = cubicBezier(0.18, 1.5, 0.4, 1, t); return pose({ opacity: Math.min(1, t * 4), scale: 0.72 + 0.28 * e }); } },
+  { id: "img_arcmotion", name: "Arc Motion", group: "Prinsip Animasi", animateBy: "all", stagger: 0, entranceMs: 760, exitMs: 460, icon: Waves,
+    // Benda hidup tidak pernah bergerak lurus. x melaju rata, y melengkung.
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: Math.min(1, t * 3), x: -160 * (1 - e), y: -90 * Math.sin((1 - e) * Math.PI), rotation: (1 - e) * -10, scale: 0.9 + 0.1 * e }); } },
+  { id: "img_weightdrop", name: "Heavy Weight Drop", group: "Prinsip Animasi", animateBy: "all", stagger: 0, entranceMs: 700, exitMs: 380, icon: Flame,
+    curve: (t) => { const fall = ease("easeIn", Math.min(1, t / 0.55));
+      if (t < 0.55) return pose({ opacity: Math.min(1, t * 8), y: -260 * (1 - fall) });
+      const b = elasticOut((t - 0.55) / 0.45, 0.5); const sq = 1 + (1 - b) * 0.3;
+      return { ...pose({ opacity: 1 }), scaleX: sq, scaleY: 1 / sq }; } },
+
+  /* ————————————————————————————————————————————————————————————
+     EDITORIAL & TEKSTUR — tampilan yang populer di reel, dokumenter
+     pendek, dan konten sosial. Semua murni pose (tanpa shader), jadi
+     tetap ringan saat diekspor.
+     ———————————————————————————————————————————————————————————— */
+  { id: "img_bokehpull", name: "Bokeh Pull", group: "Editorial & Tekstur", animateBy: "all", stagger: 0, entranceMs: 1100, exitMs: 650, icon: Contrast,
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: Math.min(1, t * 3), blur: 34 * (1 - e), scale: 1.14 - 0.14 * e }); } },
+  { id: "img_lightleak", name: "Light Leak Reveal", group: "Editorial & Tekstur", animateBy: "all", stagger: 0, entranceMs: 780, exitMs: 480, icon: Sun,
+    // Kebocoran cahaya: terang berlebih di awal lalu turun ke normal.
+    curve: (t) => { const e = ease("easeOut", t); const flare = Math.sin(Math.min(1, t * 2.2) * Math.PI);
+      return pose({ opacity: Math.min(1, t * 2.4), blur: 18 * (1 - e) + flare * 6, scale: 1.1 - 0.1 * e + flare * 0.03 }); } },
+  { id: "img_filmburn", name: "Film Burn In", group: "Editorial & Tekstur", animateBy: "all", stagger: 0, entranceMs: 620, exitMs: 400, icon: Flame,
+    curve: (t, seed = 0) => { const e = ease("easeOut", t); const flick = t < 0.55 ? (Math.sin(t * 46 + seed * 17) > -0.25 ? 1 : 0.35) : 1;
+      return pose({ opacity: Math.min(1, e * 1.4) * flick, blur: 16 * (1 - e), scale: 1.12 - 0.12 * e }); } },
+  { id: "img_rgbsplit", name: "RGB Split", group: "Editorial & Tekstur", animateBy: "all", stagger: 0, entranceMs: 420, exitMs: 280, icon: Shuffle,
+    curve: (t, seed = 0) => { const e = ease("easeOut", t); const j = (1 - e) * 26;
+      return pose({ opacity: Math.min(1, t * 4) * (t < 0.6 && Math.sin(t * 60 + seed * 23) < -0.55 ? 0.35 : 1), x: Math.sin(t * 31 + seed * 11) * j, blur: (1 - e) * 4 }); } },
+  { id: "img_vhstrack", name: "VHS Tracking", group: "Editorial & Tekstur", animateBy: "all", stagger: 0, entranceMs: 500, exitMs: 300, icon: Tv, sustain: true,
+    curve: (t, seed = 0) => { const roll = Math.sin(t * 17 + seed * 5); const glitch = Math.sin(t * 53) > 0.88 ? 1 : 0;
+      return { ...pose({ opacity: Math.min(1, t * 10) * (glitch ? 0.72 : 1), x: glitch * roll * 22, y: roll * 4 }), scaleX: 1 + glitch * 0.03, scaleY: 1 }; } },
+  { id: "img_smearframe", name: "Smear Frame", group: "Editorial & Tekstur", animateBy: "all", stagger: 0, entranceMs: 400, exitMs: 280, icon: Wind,
+    // Frame smear: jarak tempuh besar diselesaikan dalam sedikit frame,
+    // jadi yang terlihat justru jejak kaburnya, bukan bendanya.
+    curve: (t) => { const e = cubicBezier(0.6, 0, 0.2, 1, t); return { ...pose({ opacity: Math.min(1, t * 5), x: (1 - e) * -280, blur: (1 - e) * 34 }), scaleX: 1 + (1 - e) * 0.5, scaleY: 1 - (1 - e) * 0.12 }; } },
+  { id: "img_polaroiddrop", name: "Polaroid Drop", group: "Editorial & Tekstur", animateBy: "all", stagger: 0, entranceMs: 640, exitMs: 400, icon: Crop,
+    curve: (t, seed = 0) => { const e = elasticOut(t, 0.7); const tilt = (Math.floor(seed * 10) % 2 ? 1 : -1) * 9;
+      return pose({ opacity: Math.min(1, t * 3), y: -150 * (1 - e), rotation: tilt * (1 - e) + tilt * 0.25, scale: 0.88 + 0.12 * e }); } },
+  { id: "img_snapcut", name: "Snap Cut", group: "Editorial & Tekstur", animateBy: "all", stagger: 0, entranceMs: 300, exitMs: 180, icon: Zap,
+    // Tanpa fade: muncul utuh pada satu titik, lalu satu denyut skala.
+    curve: (t) => { if (t < 0.25) return pose({ opacity: 0, scale: 1.14 });
+      const e = ease("easeOut", (t - 0.25) / 0.75); return pose({ opacity: 1, scale: 1.14 - 0.14 * e }); } },
 ];
 const DEFAULT_IMAGE_PRESET = IMAGE_PRESET_LIB[0];
 
@@ -469,7 +586,14 @@ function samplePose(preset, rank, staggerMs, localClipTime, clipDuration, seed, 
   const speed = (opts && opts.speed) || 1;
   const remap = (t) => (easing === "auto" ? t : ease(easing, t));
   const rankDelay = rank * staggerMs;
-  const adjustedEntrance = Math.max(1, preset.entranceMs / speed);
+  // `sustain: true` berarti "kurva ini memetakan SELURUH durasi klip",
+  // bukan cuma jendela masuknya. Tanpa ini, preset bergaya kamera yang
+  // memang harus bergerak terus sepanjang klip (handheld, parallax,
+  // hyperlapse, VHS) akan sampai di pose akhirnya dalam beberapa ratus
+  // milidetik lalu DIAM — persis masalah yang bikin gerakan "pelan dan
+  // panjang" mustahil dibuat sebelum ini. Dipakai hanya oleh preset yang
+  // menyatakannya sendiri, jadi preset lama tetap berperilaku sama persis.
+  const adjustedEntrance = Math.max(1, (preset.sustain ? clipDuration : preset.entranceMs) / speed);
   const adjustedExit = Math.max(1, preset.exitMs / speed);
   const exitStart = clipDuration - adjustedExit - rankDelay;
   if (animateOut && adjustedExit > 0 && localClipTime >= exitStart) {
@@ -773,6 +897,9 @@ function makeTextClip(name, text, start, presetId = "apple", trackId = null) {
     transitionOutId: "none",
     effectId: "none",
     effectIntensity: 0.5,
+    // Blur statis per-klip (px), terpisah dari blur yang datang dari
+    // preset/transisi/effect — lihat SliderField "Blur" di panel kanan.
+    blur: 0,
     offset: { ...BASE_OFFSET },
   };
 }
@@ -793,6 +920,7 @@ function makeMediaClip(kind, asset, start, trackId = null) {
     transitionOutId: isAudio ? "fade" : "none",
     effectId: "none",
     effectIntensity: 0.5,
+    blur: 0,
     volume: 1, muted: false,
     offset: { ...BASE_OFFSET },
     // File asli disimpan (referensi ringan, bukan salinan) supaya elemen media
@@ -1766,6 +1894,10 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
     if (effectDelta.scale) { const es = 1 + effectDelta.scale; p.scale = (p.scale ?? 1) * es; p.scaleX = (p.scaleX ?? p.scale ?? 1) * es; p.scaleY = (p.scaleY ?? p.scale ?? 1) * es; }
     if (effectDelta.opacity != null) p.opacity = clamp((p.opacity ?? 1) * effectDelta.opacity, 0, 1);
     if (effectDelta.blur) p.blur = Math.max(p.blur || 0, effectDelta.blur);
+    // Blur statis klip: DITAMBAHKAN (bukan max) di atas blur animasi, jadi
+    // klip yang di-set blur 8px tetap terlihat 8px lebih lembut walau
+    // preset-nya sendiri sedang tidak mem-blur apa pun.
+    p.blur = (p.blur || 0) + (clip.blur || 0);
     maxBlur = Math.max(maxBlur, p.blur || 0);
     offCtx.save();
     if (effectDelta.shadowBlur) {
@@ -1800,6 +1932,7 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
     if (effectDeltaAll.scale) { const es = 1 + effectDeltaAll.scale; p.scale = (p.scale ?? 1) * es; p.scaleX = (p.scaleX ?? p.scale ?? 1) * es; p.scaleY = (p.scaleY ?? p.scale ?? 1) * es; }
     if (effectDeltaAll.opacity != null) p.opacity = clamp((p.opacity ?? 1) * effectDeltaAll.opacity, 0, 1);
     if (effectDeltaAll.blur) p.blur = Math.max(p.blur || 0, effectDeltaAll.blur);
+    p.blur = (p.blur || 0) + (clip.blur || 0);
     maxBlur = p.blur || 0;
     offCtx.save();
     if (effectDeltaAll.shadowBlur) {
@@ -1959,6 +2092,9 @@ function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCt
   if (effectDelta.scale) { const es = 1 + effectDelta.scale; p.scale = (p.scale ?? 1) * es; p.scaleX = (p.scaleX ?? p.scale ?? 1) * es; p.scaleY = (p.scaleY ?? p.scale ?? 1) * es; }
   if (effectDelta.opacity != null) p.opacity = clamp((p.opacity ?? 1) * effectDelta.opacity, 0, 1);
   if (effectDelta.blur) p.blur = Math.max(p.blur || 0, effectDelta.blur);
+  // Blur statis klip (slider "Blur" di panel kanan) ditambahkan di atas
+  // blur animasi, sama seperti pada klip teks.
+  p.blur = (p.blur || 0) + (clip.blur || 0);
   const off = clip.offset;
 
   const naturalW = el?.naturalWidth || el?.videoWidth || 0;
@@ -2901,6 +3037,21 @@ function PresetPanel({ selectedClip, selectedClipIds = [], dispatch }) {
   // Tab "Teks" memakai preset teks; tab "Gambar & Video" memakai preset khusus
   // gambar (gerak satu objek utuh) — bukan lagi daftar yang sama dengan teks.
   const list = tab === "text" ? PRESET_LIB : IMAGE_PRESET_LIB;
+  // Daftar preset gambar sekarang cukup panjang untuk jadi satu gulungan
+  // tanpa ujung, jadi dipecah pakai judul kategori yang dibawa preset itu
+  // sendiri (field `group`). Urutannya mengikuti urutan kemunculan
+  // pertama di pustaka — bukan diurutkan ulang — supaya posisi setiap
+  // preset di layar tetap sama setiap kali panel dibuka, dan otot ingatan
+  // pengguna tidak dirusak tiap kali ada preset baru ditambahkan.
+  // Preset tanpa `group` (mis. seluruh pustaka teks) jatuh ke satu grup
+  // tanpa judul, jadi tampilan tab Teks persis seperti sebelumnya.
+  const groups = [];
+  for (const p of list) {
+    const label = p.group || "";
+    const bucket = groups.find((g) => g.label === label);
+    if (bucket) bucket.items.push(p);
+    else groups.push({ label, items: [p] });
+  }
 
   return (
     <div className="mfs-panel-body">
@@ -2913,17 +3064,21 @@ function PresetPanel({ selectedClip, selectedClipIds = [], dispatch }) {
           Klip yang sedang dipilih ({selectedClip.type === "text" ? "teks" : selectedClip.type}) bukan jenis ini — memilih preset di bawah akan tetap diterapkan ke klip yang sedang dipilih itu.
         </div>
       )}
-      <div className="mfs-section-label">Preset Animasi</div>
-      {list.map((p) => {
-        const Icon = p.icon || Sparkles;
-        const selected = selectedIds.includes(selectedClip.id) && selectedClip.presetId === p.id;
-        return (
-          <div key={p.id} className={`mfs-list-item ${selected ? "selected" : ""}`} onClick={() => dispatch({ type: "APPLY_PRESET", ids: selectedIds, presetId: p.id })}>
-            <Icon size={13} color={selected ? "var(--accent)" : "var(--text-dim)"} />
-            <span className="name">{p.name}</span>
-          </div>
-        );
-      })}
+      {groups.map(({ label, items }) => (
+        <React.Fragment key={label || "_"}>
+          <div className="mfs-section-label">{label || "Preset Animasi"}</div>
+          {items.map((p) => {
+            const Icon = p.icon || Sparkles;
+            const selected = selectedIds.includes(selectedClip.id) && selectedClip.presetId === p.id;
+            return (
+              <div key={p.id} className={`mfs-list-item ${selected ? "selected" : ""}`} onClick={() => dispatch({ type: "APPLY_PRESET", ids: selectedIds, presetId: p.id })}>
+                <Icon size={13} color={selected ? "var(--accent)" : "var(--text-dim)"} />
+                <span className="name">{p.name}</span>
+              </div>
+            );
+          })}
+        </React.Fragment>
+      ))}
     </div>
   );
 }
@@ -4368,6 +4523,15 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch: d
         <SliderField label="Opacity" value={clip.opacity ?? 1} min={0} max={1} step={0.01}
           format={(v) => `${Math.round(v * 100)}%`}
           onChange={(v) => updateSelected({ opacity: v })} />
+        {/* Blur statis klip. Ditaruh tepat di bawah Opacity karena
+            keduanya sama-sama "seberapa hadir layer ini", bukan "di mana
+            layer ini" — beda dari Posisi/Rotasi/Skala di atasnya. Nilainya
+            DITAMBAHKAN di atas blur dari preset/transisi/effect, jadi
+            slider ini tetap terasa walau animasinya sendiri tidak
+            mem-blur apa pun. */}
+        <SliderField label="Blur" value={clip.blur ?? 0} min={0} max={60} step={0.5}
+          format={(v) => (v <= 0 ? "Tidak ada" : `${v.toFixed(1)}px`)}
+          onChange={(v) => updateSelected({ blur: v })} />
         <div className="mfs-divider" />
         <AnimationControls clip={clip} dispatch={dispatch} updateSelected={updateSelected} />
       </div>
@@ -4443,6 +4607,9 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch: d
           <SliderField label="Opacity" value={clip.opacity ?? 1} min={0} max={1} step={0.01}
             format={(v) => `${Math.round(v * 100)}%`}
             onChange={(v) => updateSelected({ opacity: v })} />
+          <SliderField label="Blur" value={clip.blur ?? 0} min={0} max={60} step={0.5}
+            format={(v) => (v <= 0 ? "Tidak ada" : `${v.toFixed(1)}px`)}
+            onChange={(v) => updateSelected({ blur: v })} />
         </>
       )}
       <div className="mfs-divider" />
