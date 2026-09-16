@@ -2528,7 +2528,7 @@ const GlobalStyle = () => (
     .mfs-timeline-hscroll::-webkit-scrollbar-thumb { background:#9b6cff; border:2px solid transparent; background-clip:padding-box; border-radius:99px; box-shadow:0 0 5px #9b6cff99; }
     .mfs-timeline-hscroll::-webkit-scrollbar-thumb:hover { background:#bd9cff; }
     .mfs-timeline-hscroll-inner { height:1px; }
-    .mfs-playhead-marker { position:absolute; top:0; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid #b995ff; filter:drop-shadow(0 0 4px #a66cff); transform:translateX(-6px); z-index:12; pointer-events:none; }
+    .mfs-playhead-marker { position:absolute; top:0; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid #b995ff; filter:drop-shadow(0 0 4px #a66cff); transform:translateX(0); z-index:12; pointer-events:none; }
     .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9px; color:#c8b7e8; font-family:'JetBrains Mono',monospace; border-left:1px solid #694b91; padding-left:3px; }
     .mfs-marquee { position:absolute; z-index:12; border:1px solid var(--accent); background:var(--accent-soft); pointer-events:none; }    .mfs-lane { position:relative; height:32px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
     .mfs-lane.track-over { background:var(--accent-soft); }
@@ -4483,8 +4483,12 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const trackRef = useRef(null);
   const timelineViewportRef = useRef(null);
   const labelScrollRef = useRef(null);
+  const rulerRef = useRef(null);
+  const rulerContentRef = useRef(null);
+  const trackContentRef = useRef(null);
   const playheadElRef = useRef(null);
   const playheadMarkerRef = useRef(null);
+  const scrubCleanupRef = useRef(null);
   const tlDurRef = useRef(1);
   const laneElRef = useRef({});
   const topGhostRef = useRef(null);
@@ -4585,50 +4589,74 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
 
   tlDurRef.current = timelineDuration;
 
-  const notifyPlayhead = (v) => {
-    const fraction = v / (tlDurRef.current || 1);
+  const getTimelineMetrics = useCallback(() => {
+    const viewport = timelineViewportRef.current;
+    const rulerContent = rulerContentRef.current;
+    if (!viewport || !rulerContent) return null;
+    const rect = viewport.getBoundingClientRect();
+    const width = Math.max(rect.width, rulerContent.scrollWidth, trackContentRef.current?.scrollWidth || 0);
+    return { rect, width };
+  }, []);
+
+  const setPlayheadPosition = useCallback((value) => {
+    const metrics = getTimelineMetrics();
+    if (!metrics) return;
+    const x = clamp(value / (tlDurRef.current || 1), 0, 1) * metrics.width;
     const line = playheadElRef.current;
     const marker = playheadMarkerRef.current;
-    if (line) line.style.left = `${fraction * 100}%`;
-    if (marker) marker.style.left = `${fraction * 100}%`;
-  };
+    if (line) line.style.left = `${x}px`;
+    if (marker) marker.style.left = `${x}px`;
+  }, [getTimelineMetrics]);
 
-  // re-render React) — inilah yang membuat linimasa & preview tidak lagi
-  // patah-patah saat diputar.
+  const notifyPlayhead = useCallback((v) => {
+    setPlayheadPosition(v);
+  }, [setPlayheadPosition]);
+
+  useEffect(() => {
+    setPlayheadPosition(playback.playhead);
+  }, [playback.playhead, timelineDuration, timelineZoom, horizontalScroll, setPlayheadPosition]);
+
+  useEffect(() => () => {
+    scrubCleanupRef.current?.();
+  }, []);
+
+  // Posisi garis dan segitiga memakai satu koordinat piksel yang sama.
   useEffect(() => {
     if (!playClock) return;
-    const fn = (v) => {
-      const fraction = v / (tlDurRef.current || 1);
-      const line = playheadElRef.current;
-      const marker = playheadMarkerRef.current;
-      if (line) line.style.left = `${fraction * 100}%`;
-      if (marker) marker.style.left = `${fraction * 100}%`;
-    };
+    const fn = (v) => setPlayheadPosition(v);
     playClock.subs.add(fn);
     return () => playClock.subs.delete(fn);
-  }, [playClock]);
+  }, [playClock, setPlayheadPosition]);
 
-  const pxToTime = (px, width) => clamp((px / width) * timelineDuration, 0, timelineDuration);
-  const scrub = (clientX) => {
-    const ruler = document.querySelector(".mfs-ruler-fixed");
-    const rect = (ruler || trackRef.current).getBoundingClientRect();
-    const contentWidth = Math.max((ruler || trackRef.current).firstElementChild?.scrollWidth || 0, rect.width);
+  const seekFromClientX = useCallback((clientX) => {
+    const metrics = getTimelineMetrics();
+    if (!metrics || !metrics.width) return;
     const scrollLeft = horizontalScrollRef.current?.scrollLeft || 0;
-    const next = pxToTime(clientX - rect.left + scrollLeft, contentWidth);
+    const contentX = clamp(clientX - metrics.rect.left + scrollLeft, 0, metrics.width);
+    const next = clamp((contentX / metrics.width) * timelineDuration, 0, timelineDuration);
     if (window.getSelection) window.getSelection().removeAllRanges();
     syncMediaPlayback(project.clips, mediaMapRef, next, false, transitionsRef.current);
-    notifyPlayhead(next);
+    playheadRef.current = next;
+    setPlayheadPosition(next);
     dispatchPlayback({ type: "SET_PLAYHEAD", value: next });
-  };
-  const onRulerDown = (e) => {
-    e.preventDefault();
+  }, [dispatchPlayback, getTimelineMetrics, mediaMapRef, project.clips, setPlayheadPosition, timelineDuration]);
+
+  const onRulerDown = useCallback((e) => {
     if (e.button !== 0) return;
+    e.preventDefault();
     dispatchPlayback({ type: "SET_PLAYING", value: false });
-    scrub(e.clientX);
-    const move = (ev) => { ev.preventDefault(); scrub(ev.clientX); };
-    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
-    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
-  };
+    seekFromClientX(e.clientX);
+    const move = (ev) => { ev.preventDefault(); seekFromClientX(ev.clientX); };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      if (scrubCleanupRef.current === up) scrubCleanupRef.current = null;
+    };
+    scrubCleanupRef.current?.();
+    scrubCleanupRef.current = up;
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }, [dispatchPlayback, seekFromClientX]);
 
   // Cek posisi Y kursor terhadap tiap lane / zona ghost yang ada, untuk tahu
   // track mana yang sedang "disasar" saat sebuah klip diseret naik/turun.
@@ -4905,10 +4933,10 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
         </div>
         <div className="mfs-track-viewport" ref={timelineViewportRef}>
           <div className="mfs-ruler-fixed" style={{ overflow: "hidden" }}>
-            <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative", transform: `translateX(${-horizontalScroll}px)` }}>
-              <div className="mfs-ruler" onMouseDown={onRulerDown}>
+            <div ref={rulerContentRef} style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative", transform: `translateX(${-horizontalScroll}px)` }}>
+              <div ref={rulerRef} className="mfs-ruler" onMouseDown={onRulerDown}>
                 {ticks.map((t) => <div key={t} className="mfs-ruler-tick" style={{ left: `${(t / timelineDuration) * 100}%` }}>{(t / 1000).toFixed(1)}dtk</div>)}
-                <div ref={playheadMarkerRef} className="mfs-playhead-marker" style={{ left: `${(playback.playhead / timelineDuration) * 100}%` }} />
+                <div ref={playheadMarkerRef} className="mfs-playhead-marker" style={{ left: 0 }} />
               </div>
             </div>
           </div>
@@ -4916,7 +4944,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
             <div className="mfs-timeline-hscroll-inner" style={{ width: `${Math.max(1, timelineZoom) * 100}%` }} />
           </div>
           <div className="mfs-tracks-scroll" ref={trackRef} onMouseDown={startMarquee}>
-          <div style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative" }}>
+          <div ref={trackContentRef} style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative" }}>
             {marquee && <div className="mfs-marquee" style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }} />}
 
           {/* Zona kosong di paling atas — seret klip ke sini untuk membuat
