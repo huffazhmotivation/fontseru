@@ -1060,12 +1060,12 @@ function projectReducer(state, action) {
       return { ...state, library: { ...state.library, [key]: state.library[key].filter((a) => a.id !== action.id) } };
     }
     case "DELETE_CLIP": {
-      const ids = action.ids || [action.id];
-      const idSet = new Set(ids.filter(Boolean));
-      const clips = state.clips.filter((c) => !idSet.has(c.id));
-      const selectedClipId = idSet.has(state.selectedClipId) ? (clips[0]?.id ?? null) : state.selectedClipId;
-      const transitions = (state.transitions || []).filter((t) => !idSet.has(t.leftClipId) && !idSet.has(t.rightClipId));
-      const selectedClipIds = (state.selectedClipIds || []).filter((id) => !idSet.has(id));
+      const id = typeof action.id === "string" ? action.id : null;
+      if (!id) return state;
+      const clips = state.clips.filter((c) => c.id !== id);
+      const selectedClipId = state.selectedClipId === id ? (clips[0]?.id ?? null) : state.selectedClipId;
+      const transitions = (state.transitions || []).filter((t) => t.leftClipId !== id && t.rightClipId !== id);
+      const selectedClipIds = (state.selectedClipIds || []).filter((selectedId) => selectedId !== id && clips.some((c) => c.id === selectedId));
       return { ...state, clips, transitions, selectedClipId, selectedClipIds };
     }
     case "DELETE_SELECTED_CLIPS": {
@@ -1112,8 +1112,24 @@ function projectReducer(state, action) {
       const clips = state.clips.map((c) => (c.id === action.id ? { ...c, ...action.patch } : c));
       return { ...state, clips };
     }
+    case "UPDATE_CLIPS": {
+      const ids = new Set((action.ids || []).filter(Boolean));
+      if (ids.size === 0) return state;
+      const clips = state.clips.map((c) => (ids.has(c.id) ? { ...c, ...action.patch } : c));
+      return { ...state, clips };
+    }
     case "SET_OFFSET": {
       const clips = state.clips.map((c) => (c.id === action.id ? { ...c, offset: { ...c.offset, ...action.patch } } : c));
+      return { ...state, clips };
+    }
+    case "SET_OFFSETS": {
+      const ids = new Set((action.ids || []).filter(Boolean));
+      if (ids.size === 0) return state;
+      const clips = state.clips.map((c) => {
+        if (!ids.has(c.id)) return c;
+        const patch = action.patches?.[c.id] || action.patch;
+        return patch ? { ...c, offset: { ...c.offset, ...patch } } : c;
+      });
       return { ...state, clips };
     }
     case "APPLY_PRESET": {
@@ -1282,6 +1298,7 @@ function actionCoalesceKey(action) {
   switch (action.type) {
     case "UPDATE_CLIP": return `UPDATE_CLIP:${action.id}:${Object.keys(action.patch || {}).sort().join(",")}`;
     case "SET_OFFSET": return `SET_OFFSET:${action.id}:${Object.keys(action.patch || {}).sort().join(",")}`;
+    case "SET_OFFSETS": return `SET_OFFSETS:${(action.ids || []).slice().sort().join(",")}:${Object.keys(action.patch || {}).sort().join(",")}`;
     case "SET_BACKGROUND": return `SET_BACKGROUND:${Object.keys(action.patch || {}).sort().join(",")}`;
     case "SET_FRAME_CUSTOM": return "SET_FRAME_CUSTOM";
     default: return `${action.type}:${action.id || ""}`;
@@ -2681,7 +2698,7 @@ const LayerRow = React.memo(function LayerRow({ clip, selected, isDragging, show
         <span className="mfs-type-dot" style={{ background: color }} />
         <Icon size={13} color={selected ? "var(--accent)" : "var(--text-dim)"} />
         <span className="name">{clip.type === "text" ? (clip.text.split("\n")[0] || clip.name) : clip.name}</span>
-        <Trash2 size={13} className="del" onClick={(e) => { e.stopPropagation(); dispatch({ type: "DELETE_CLIP", id: clip.id }); }} />
+        <Trash2 size={13} className="del" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); dispatch({ type: "DELETE_CLIP", id: clip.id }); }} />
       </div>
     </React.Fragment>
   );
@@ -4048,7 +4065,7 @@ function BackgroundInspector({ background, dispatch }) {
 // Pemilih & pengunggah font, kini hidup di PANEL KANAN (sebelumnya di panel
 // kiri) menyatu dengan pengaturan teks lain. Font yang baru diunggah langsung
 // diterapkan ke klip teks yang sedang dipilih.
-function FontPicker({ fonts, clip, dispatch }) {
+function FontPicker({ fonts, clip, dispatch, updateSelected }) {
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const handleFiles = async (files) => {
@@ -4067,7 +4084,7 @@ function FontPicker({ fonts, clip, dispatch }) {
     }
     setBusy(false);
   };
-  const applyFont = (family) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { fontFamily: family } });
+  const applyFont = (family) => (updateSelected || ((patch) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch })))({ fontFamily: family });
   const active = clip.fontFamily;
   return (
     <>
@@ -4209,11 +4226,11 @@ function MediaPreviewVideo({ clip }) {
 // saat keluar; centang keluar saja → diam saat masuk; centang keduanya →
 // animasi masuk & keluar. Nama preset ditampilkan; pemilihannya tetap di
 // panel kiri (tab "Preset").
-function AnimationControls({ clip, dispatch }) {
+function AnimationControls({ clip, dispatch, updateSelected }) {
   const easing = clip.easing || "auto";
   const animIn = clip.animateIn !== false;
   const animOut = clip.animateOut !== false;
-  const set = (patch) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch });
+  const set = (patch) => (updateSelected || ((next) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: next })))(patch);
   return (
     <>
       <div className="mfs-section-label">Animasi (Preset)</div>
@@ -4238,7 +4255,7 @@ function AnimationControls({ clip, dispatch }) {
       </div>
       <SliderField label="Speed animasi" value={clip.speed ?? 1} min={0.25} max={3} step={0.05}
         format={(v) => `${v.toFixed(2)}×`}
-        onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { speed: v } })} />
+        onChange={(v) => updateSelected({ speed: v })} />
       {clip.effectId && clip.effectId !== "none" && (
         <>
           <div className="mfs-divider" />
@@ -4246,7 +4263,7 @@ function AnimationControls({ clip, dispatch }) {
           <div className="mfs-chip" style={{ marginBottom: 8 }}><Sparkles size={12} /> {getEffect(clip.effectId).name}</div>
           <SliderField label="Intensitas effect" value={clip.effectIntensity ?? 0.5} min={0.05} max={1} step={0.05}
             format={(v) => `${Math.round(v * 100)}%`}
-            onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { effectIntensity: v } })} />
+            onChange={(v) => updateSelected({ effectIntensity: v })} />
         </>
       )}
       <div style={{ fontSize: 10.5, color: "var(--text-dim)", marginTop: 8, lineHeight: 1.5 }}>Pilih preset di panel kiri (tab "Preset"). Effect di panel kiri (tab "Effect"). Transisi diseret ke sela-sela klip di linimasa.</div>
@@ -4254,7 +4271,8 @@ function AnimationControls({ clip, dispatch }) {
   );
 }
 
-const RightInspector = React.memo(function RightInspector({ project, dispatch }) {
+const RightInspector = React.memo(function RightInspector({ project, dispatch: dispatchProject }) {
+  const dispatch = dispatchProject;
   if (project.selectedClipId === BG_SEL) {
     return <BackgroundInspector background={project.background} dispatch={dispatch} />;
   }
@@ -4264,7 +4282,13 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch })
 
   const transInName = getTransition(clip.transitionInId).name;
   const transOutName = getTransition(clip.transitionOutId).name;
-
+  const selectedIds = (project.selectedClipIds || [])
+    .filter((id) => project.clips.some((c) => c.id === id && c.type === clip.type));
+  const targetIds = selectedIds.length > 0 ? selectedIds : [clip.id];
+  const updateSelected = (patch) => dispatchProject({ type: "UPDATE_CLIPS", ids: targetIds, patch });
+  const updateSelectedOffset = (patch) => dispatchProject({ type: "SET_OFFSETS", ids: targetIds, patch });
+  const updateOne = (patch) => dispatchProject({ type: "UPDATE_CLIP", id: clip.id, patch });
+  const updateOneOffset = (patch) => dispatchProject({ type: "SET_OFFSET", id: clip.id, patch });
   if (clip.type === "text") {
     return (
       <div className="mfs-right">
@@ -4273,45 +4297,45 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch })
           <textarea className="mfs-input" value={clip.text} onChange={(e) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { text: e.target.value } })} />
         </div>
         <div className="mfs-divider" />
-        <FontPicker fonts={project.fonts} clip={clip} dispatch={dispatch} />
+        <FontPicker fonts={project.fonts} clip={clip} dispatch={dispatch} updateSelected={updateSelected} />
         <div className="mfs-divider" />
         <div className="mfs-field">
           <label>Animasikan per</label>
           <div className="mfs-segmented">
             {[["char", "Huruf"], ["word", "Kata"], ["line", "Baris"], ["all", "Teks Penuh"]].map(([m, label]) => (
-              <button key={m} className={clip.animateBy === m ? "active" : ""} onClick={() => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { animateBy: m } })}>{label}</button>
+              <button key={m} className={clip.animateBy === m ? "active" : ""} onClick={() => updateSelected({ animateBy: m })}>{label}</button>
             ))}
           </div>
         </div>
         <div className="mfs-field">
           <SliderField label="Jeda antar elemen" value={clip.stagger} min={0} max={400} step={5} unit="ms"
-            onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { stagger: v } })} />
+            onChange={(v) => updateSelected({ stagger: v })} />
         </div>
         <div className="mfs-field">
           <SliderField label="Durasi klip" value={clip.duration / 1000} min={0.1} max={15} step={0.1}
             format={(v) => `${v.toFixed(1)}dtk`}
-            onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { duration: Math.max(150, Math.round(v * 1000)) } })} />
+            onChange={(v) => updateSelected({ duration: Math.max(150, Math.round(v * 1000)) })} />
         </div>
         <div className="mfs-divider" />
         <div className="mfs-field">
           <SliderField label="Ukuran font" value={clip.fontSize} min={8} max={600} step={1} unit="px"
-            onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { fontSize: v } })} />
+            onChange={(v) => updateSelected({ fontSize: v })} />
         </div>
-        <ColorPickerField label="Warna" value={clip.color} onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { color: v } })} />
+        <ColorPickerField label="Warna" value={clip.color} onChange={(v) => updateSelected({ color: v })} />
         <div className="mfs-field">
           <SliderField label="Jarak huruf" value={clip.letterSpacing ?? 0} min={-10} max={60} step={0.5} unit="px"
-            onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { letterSpacing: v } })} />
+            onChange={(v) => updateSelected({ letterSpacing: v })} />
         </div>
         <div className="mfs-field">
           <SliderField label="Jarak baris" value={clip.lineHeight ?? 1.25} min={0.8} max={2.6} step={0.05}
             format={(v) => `${v.toFixed(2)}×`}
-            onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { lineHeight: v } })} />
+            onChange={(v) => updateSelected({ lineHeight: v })} />
         </div>
         <div className="mfs-field">
           <label>Perataan teks</label>
           <div className="mfs-align-inline">
             {[["left", AlignLeft, "Kiri"], ["center", AlignCenter, "Tengah"], ["right", AlignRight, "Kanan"]].map(([a, Icon, title]) => (
-              <button key={a} className={`mfs-align-ibtn ${(clip.align || "center") === a ? "active" : ""}`} title={title} onClick={() => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { align: a } })}><Icon size={16} /></button>
+              <button key={a} className={`mfs-align-ibtn ${(clip.align || "center") === a ? "active" : ""}`} title={title} onClick={() => updateSelected({ align: a })}><Icon size={16} /></button>
             ))}
           </div>
         </div>
@@ -4319,21 +4343,21 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch })
         <div className="mfs-section-label">Transform</div>
         <SliderField label="Posisi X" value={clip.offset.x} min={-1000} max={1000} step={1}
           format={(v) => `${Math.round(v)}px`}
-          onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { x: v } })} />
+          onChange={(v) => updateSelectedOffset({ x: v })} />
         <SliderField label="Posisi Y" value={clip.offset.y} min={-1000} max={1000} step={1}
           format={(v) => `${Math.round(v)}px`}
-          onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { y: v } })} />
+          onChange={(v) => updateSelectedOffset({ y: v })} />
         <SliderField label="Rotasi" value={clip.offset.rotation} min={-180} max={180} step={1}
           format={(v) => `${Math.round(v)}°`}
-          onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { rotation: v } })} />
+          onChange={(v) => updateSelectedOffset({ rotation: v })} />
         <SliderField label="Skala" value={clip.offset.scale} min={0.05} max={5} step={0.05}
           format={(v) => `${v.toFixed(2)}×`}
-          onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { scale: v } })} />
+          onChange={(v) => updateSelectedOffset({ scale: v })} />
         <SliderField label="Opacity" value={clip.opacity ?? 1} min={0} max={1} step={0.01}
           format={(v) => `${Math.round(v * 100)}%`}
-          onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { opacity: v } })} />
+          onChange={(v) => updateSelected({ opacity: v })} />
         <div className="mfs-divider" />
-        <AnimationControls clip={clip} dispatch={dispatch} />
+        <AnimationControls clip={clip} dispatch={dispatch} updateSelected={updateSelected} />
       </div>
     );
   }
@@ -4373,7 +4397,7 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch })
         <div className="mfs-field">
           <SliderField label="Durasi klip" value={clip.duration / 1000} min={0.1} max={30} step={0.1}
             format={(v) => `${v.toFixed(1)}dtk`}
-            onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { duration: Math.max(150, Math.round(v * 1000)) } })} />
+            onChange={(v) => updateSelected({ duration: Math.max(150, Math.round(v * 1000)) })} />
         </div>
         <div className="mfs-field">
           <SliderField label="Volume" value={clip.volume ?? 1} min={0} max={1} step={0.05}
@@ -4394,19 +4418,19 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch })
           <div className="mfs-section-label">Transform</div>
           <SliderField label="Posisi X" value={clip.offset.x} min={-1000} max={1000} step={1}
             format={(v) => `${Math.round(v)}px`}
-            onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { x: v } })} />
+            onChange={(v) => updateSelectedOffset({ x: v })} />
           <SliderField label="Posisi Y" value={clip.offset.y} min={-1000} max={1000} step={1}
             format={(v) => `${Math.round(v)}px`}
-            onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { y: v } })} />
+            onChange={(v) => updateSelectedOffset({ y: v })} />
           <SliderField label="Rotasi" value={clip.offset.rotation} min={-180} max={180} step={1}
             format={(v) => `${Math.round(v)}°`}
-            onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { rotation: v } })} />
+            onChange={(v) => updateSelectedOffset({ rotation: v })} />
           <SliderField label="Skala" value={clip.offset.scale} min={0.05} max={5} step={0.05}
             format={(v) => `${v.toFixed(2)}×`}
-            onChange={(v) => dispatch({ type: "SET_OFFSET", id: clip.id, patch: { scale: v } })} />
+            onChange={(v) => updateSelectedOffset({ scale: v })} />
           <SliderField label="Opacity" value={clip.opacity ?? 1} min={0} max={1} step={0.01}
             format={(v) => `${Math.round(v * 100)}%`}
-            onChange={(v) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch: { opacity: v } })} />
+            onChange={(v) => updateSelected({ opacity: v })} />
         </>
       )}
       <div className="mfs-divider" />
@@ -4416,7 +4440,7 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch })
           <AutoCaptionControl clip={clip} dispatch={dispatch} />
         </>
       ) : (
-        <AnimationControls clip={clip} dispatch={dispatch} />
+        <AnimationControls clip={clip} dispatch={dispatch} updateSelected={updateSelected} />
       )}
     </div>
   );
@@ -4500,7 +4524,7 @@ const TimelineClipBlock = React.memo(function TimelineClipBlock({ clip, row, col
       </div>
       <div className="mfs-clip-handle right" onMouseDown={(e) => onClipMouseDown(e, clip, "resize-right")} />
       {selected && (
-        <button className="mfs-clip-del" onClick={(e) => { e.stopPropagation(); onDelete(clip.id); }}><Trash2 size={14} /></button>
+        <button type="button" className="mfs-clip-del" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(clip.id); }}><Trash2 size={14} /></button>
       )}
     </div>
   );
@@ -5360,7 +5384,9 @@ export default function App() {
       }
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
-        dispatchProject({ type: "DELETE_SELECTED_CLIPS" });
+        const validSelectedIds = (project.selectedClipIds || []).filter((id) => project.clips.some((clip) => clip.id === id));
+        if (validSelectedIds.length === 1) dispatchProject({ type: "DELETE_CLIP", id: validSelectedIds[0] });
+        else if (validSelectedIds.length > 1) dispatchProject({ type: "DELETE_SELECTED_CLIPS" });
         return;
       }
       const mod = e.ctrlKey || e.metaKey;
