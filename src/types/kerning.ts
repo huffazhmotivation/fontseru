@@ -1,0 +1,110 @@
+/**
+ * Kerning is intentionally kept out of the glyph geometry model
+ * (types/geometry.ts) — it's a font-level adjustment between a pair of
+ * glyphs, not part of either glyph's outline.
+ */
+export type KerningPairs = Record<string, number>;
+
+/** Which pair keys were set by the user directly (vs by an auto-kern suggestion). Auto-kern must never overwrite these. */
+export type KerningManualFlags = Record<string, boolean>;
+
+import type { FontStyle } from "./glyph";
+
+/**
+ * Family kerning stays layered: `kerningPairs` is the shared layer and these
+ * maps contain only style-specific differences. They are never materialized
+ * into full per-style copies in persisted project state.
+ */
+export type KerningOverridesByStyle = Partial<Record<FontStyle, KerningPairs>>;
+export type KerningOverrideManualByStyle = Partial<Record<FontStyle, KerningManualFlags>>;
+export type KerningContext = "shared" | FontStyle;
+
+/**
+ * Word spacing follows the same Shared + sparse Style Override layering as
+ * kerning above: `metrics.wordSpacing` is the shared/family value, and this
+ * map holds only the styles that have explicitly diverged from it (e.g. a
+ * Bold cut that needs a slightly wider space than Regular).
+ */
+export type WordSpacingOverridesByStyle = Partial<Record<FontStyle, number>>;
+
+export function effectiveWordSpacing(
+  shared: number | undefined,
+  overridesByStyle: WordSpacingOverridesByStyle,
+  style: FontStyle
+): number | undefined {
+  return overridesByStyle[style] ?? shared;
+}
+
+export function effectiveKerningValue(
+  shared: KerningPairs,
+  overridesByStyle: KerningOverridesByStyle,
+  style: FontStyle,
+  left: string,
+  right: string
+): number {
+  const key = kerningKey(left, right);
+  return overridesByStyle[style]?.[key] ?? shared[key] ?? 0;
+}
+
+/**
+ * Runtime-only merged view for layout/preview. The persisted model remains
+ * Shared + sparse Style Override layers.
+ */
+export function effectiveKerningPairs(
+  shared: KerningPairs,
+  overridesByStyle: KerningOverridesByStyle,
+  style: FontStyle
+): KerningPairs {
+  const override = overridesByStyle[style];
+  return override && Object.keys(override).length ? { ...shared, ...override } : shared;
+}
+
+export function kerningKey(left: string, right: string): string {
+  // URI-encoding keeps the legacy "A|V" form for ordinary glyphs while
+  // making pairs containing the literal "|" glyph unambiguous.
+  return `${encodeURIComponent(left)}|${encodeURIComponent(right)}`;
+}
+
+/** Inverse of `kerningKey` — recovers the [left, right] chars from a pair key. */
+export function decodeKerningKey(key: string): [string, string] {
+  const sep = key.indexOf("|");
+  if (sep === -1) return [key, ""];
+  return [decodeURIComponent(key.slice(0, sep)), decodeURIComponent(key.slice(sep + 1))];
+}
+
+export function parseKerningKey(key: string): { left: string; right: string } | null {
+  const idx = key.indexOf("|");
+  if (idx <= 0 || idx === key.length - 1) return null;
+  try {
+    return { left: decodeURIComponent(key.slice(0, idx)), right: decodeURIComponent(key.slice(idx + 1)) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Where a single flat `kerningPairs` entry currently "comes from", for the
+ * small origin badge in the Kerning panel:
+ *  - "manual" — hand-tuned by the user (kerningManual[key] === true).
+ *  - "auto"   — filled by the geometry-based Auto Kerning pass (global run
+ *               or a single accepted suggestion), or simply unset.
+ */
+export type KerningOrigin = "manual" | "auto";
+
+export function getKerningOrigin(key: string, manual: KerningManualFlags): KerningOrigin {
+  return manual[key] ? "manual" : "auto";
+}
+
+/** Useful pair shortcuts for the Kerning panel. Global auto-kerning is not limited to this list. */
+export const AUTO_KERN_PRIORITY_PAIRS: [string, string][] = [
+  ["A", "V"], ["V", "A"],
+  ["A", "W"], ["W", "A"],
+  ["A", "Y"], ["Y", "A"],
+  ["A", "T"], ["T", "A"],
+  ["T", "o"], ["T", "a"], ["T", "e"], ["T", "y"],
+  ["Y", "o"],
+  ["L", "T"], ["L", "Y"], ["L", "V"],
+  ["F", "A"], ["P", "A"],
+  ["R", "A"], ["R", "T"],
+  ["K", "O"], ["O", "O"],
+];

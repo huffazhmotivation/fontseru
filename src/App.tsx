@@ -1,0 +1,247 @@
+import { lazy, Suspense, useEffect, useRef } from "react";
+import { useAppStore } from "@/glyph/store";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { loadProject, saveProject } from "@/glyph/persist";
+import { TopBar } from "@/components/TopBar";
+import { FloatingToolbar } from "@/components/FloatingToolbar";
+import { SketchModeToggle } from "@/components/SketchModeToggle";
+import { SketchToolbar } from "@/components/SketchToolbar";
+import { SketchRightPanelToggle } from "@/components/SketchRightPanelToggle";
+import { MobileDrawerToggles } from "@/components/MobileDrawerToggles";
+import { GlyphStepper } from "@/components/GlyphStepper";
+import { GlyphSideNav } from "@/components/GlyphSideNav";
+import { GlyphNav } from "@/components/GlyphNav";
+import { RightPanel } from "@/components/RightPanel";
+import { BottomBar } from "@/components/BottomBar";
+import { ProductionPreviewBar } from "@/components/ProductionPreviewBar";
+import { GlyphCanvas } from "@/editor/GlyphCanvas";
+import { GlyphMultiEditCanvas } from "@/editor/GlyphMultiEditCanvas";
+import { GlyphViewBar } from "@/components/GlyphViewBar";
+import { LoginModal } from "@/components/LoginModal";
+import { EmailConfirmedWelcome } from "@/components/EmailConfirmedWelcome";
+import { ProUpsellModal } from "@/components/ProUpsellModal";
+import { ProductTour } from "@/components/ProductTour/ProductTour";
+import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
+import { useAppModeStore } from "@/mode/appModeStore";
+
+// Chromium currently has a much more expensive compositing path for
+// backdrop-filter over a large, live SVG surface than Safari/Firefox. Keep
+// the visual treatment for the other browsers, but let the CSS select a
+// cheaper opaque-surface fallback for Chrome/Edge/Opera.
+const isChromiumBrowser =
+  typeof navigator !== "undefined" &&
+  /Chrome|Chromium|Edg\/|OPR\//.test(navigator.userAgent);
+
+// These three overlays are heavy (Test Lab pulls in the whole specimen
+// renderer, Trace Image pulls in imagetracerjs, Family Auto-Generate pulls
+// in the bold/italic synthesis engine) but are only used occasionally.
+// Loading them lazily means their code is not downloaded/parsed/executed
+// until the user actually opens that feature, instead of on every app
+// load — this is one of the biggest wins for initial load speed.
+const TestLabOverlay = lazy(() =>
+  import("@/components/TestLab/TestLabOverlay").then((m) => ({ default: m.TestLabOverlay }))
+);
+const FamilyAutoGenerateOverlay = lazy(() =>
+  import("@/components/FamilyAutoGenerateOverlay").then((m) => ({ default: m.FamilyAutoGenerateOverlay }))
+);
+const TraceImageOverlay = lazy(() =>
+  import("@/components/TraceImage/TraceImageOverlay").then((m) => ({ default: m.TraceImageOverlay }))
+);
+const FeatureBuilderOverlay = lazy(() =>
+  import("@/components/FeatureBuilder/FeatureBuilderOverlay").then((m) => ({ default: m.FeatureBuilderOverlay }))
+);
+const TimelapseOverlay = lazy(() =>
+  import("@/timelapse/TimelapseOverlay").then((m) => ({ default: m.TimelapseOverlay }))
+);
+
+// The Motion Font Studio engine is a large, self-contained module that most
+// font-editing sessions never touch — load it lazily so its code is only
+// fetched the first time the user switches into Motion mode.
+const MotionStudio = lazy(() => import("@/motion/MotionStudio"));
+
+export default function App() {
+  const theme = useAppStore((s) => s.theme);
+  const sketchMode = useAppStore((s) => s.sketchMode);
+  const sketchRightPanelOpen = useAppStore((s) => s.sketchRightPanelOpen);
+  const mobileNavOpen = useAppStore((s) => s.mobileNavOpen);
+  const mobilePanelOpen = useAppStore((s) => s.mobilePanelOpen);
+  const closeMobilePanels = useAppStore((s) => s.closeMobilePanels);
+  const testLabOpen = useAppStore((s) => s.testLabOpen);
+  const familyOpen = useAppStore((s) => s.familyOpen);
+  const traceOpen = useAppStore((s) => s.traceOpen);
+  const featureBuilderOpen = useAppStore((s) => s.featureBuilderOpen);
+  const timelapseOpen = useTimelapseUiStore((s) => s.open);
+  // Multi Glyph Canvas. Sketch Mode keeps its own dedicated single-glyph
+  // drawing surface (pen/tablet gestures, GlyphStepper, sketch toolbar),
+  // so the overview is only offered outside it — `overviewMode` is the
+  // single flag the whole layout below keys off.
+  const editorMode = useAppStore((s) => s.editorMode);
+  const overviewMode = editorMode === "multi" && !sketchMode;
+  const appMode = useAppModeStore((s) => s.appMode);
+  useKeyboardShortcuts();
+
+  // Once a heavy overlay has been opened for the first time, keep mounting
+  // it forever afterwards (its own internal `if (!open) return null` hides
+  // it) so in-progress state like typed preview text or trace settings
+  // survives closing/reopening, exactly like before this change — the only
+  // difference is its code is not fetched until the first open.
+  const testLabEverOpened = useRef(false);
+  const familyEverOpened = useRef(false);
+  const traceEverOpened = useRef(false);
+  const featureBuilderEverOpened = useRef(false);
+  const timelapseEverOpened = useRef(false);
+  if (testLabOpen) testLabEverOpened.current = true;
+  if (familyOpen) familyEverOpened.current = true;
+  if (traceOpen) traceEverOpened.current = true;
+  if (featureBuilderOpen) featureBuilderEverOpened.current = true;
+  if (timelapseOpen) timelapseEverOpened.current = true;
+
+  const hydratedRef = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Restore the saved project from IndexedDB on first mount.
+  useEffect(() => {
+    let cancelled = false;
+    loadProject().then((snap) => {
+      if (cancelled) return;
+      if (snap?.glyphs) useAppStore.getState().hydrate({
+        glyphs: snap.glyphs,
+        glyphsByStyle: snap.glyphsByStyle,
+        fontStyle: snap.fontStyle,
+        customFamilies: snap.customFamilies,
+        fontName: snap.fontName,
+        fontInfo: snap.fontInfo,
+        exportInfo: snap.exportInfo,
+        metrics: snap.metrics,
+        kerningPairs: snap.kerningPairs,
+        kerningManual: snap.kerningManual,
+        kerningOverridesByStyle: snap.kerningOverridesByStyle,
+        kerningOverrideManualByStyle: snap.kerningOverrideManualByStyle,
+        wordSpacingOverridesByStyle: snap.wordSpacingOverridesByStyle,
+        featureConfig: snap.featureConfig,
+      });
+      hydratedRef.current = true;
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist glyphs + font name (debounced) whenever they change, and flush
+  // immediately when the tab is hidden/closed so a quick reload can't lose work.
+  useEffect(() => {
+    const flush = () => {
+      if (!hydratedRef.current) return;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      const state = useAppStore.getState();
+      saveProject({
+        glyphs: state.glyphsByStyle.regular,
+        glyphsByStyle: state.glyphsByStyle,
+        fontStyle: state.fontStyle,
+        customFamilies: state.customFamilies,
+        fontName: state.fontName,
+        fontInfo: state.fontInfo,
+        exportInfo: state.exportInfo,
+        metrics: state.metrics,
+        kerningPairs: state.kerningPairs,
+        kerningManual: state.kerningManual,
+        kerningOverridesByStyle: state.kerningOverridesByStyle,
+        kerningOverrideManualByStyle: state.kerningOverrideManualByStyle,
+        wordSpacingOverridesByStyle: state.wordSpacingOverridesByStyle,
+        featureConfig: state.featureConfig,
+      });
+    };
+    const unsub = useAppStore.subscribe(() => {
+      if (!hydratedRef.current) return;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(flush, 350);
+    });
+    const onHide = () => { if (document.visibilityState === "hidden") flush(); };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      unsub();
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", flush);
+    };
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    // Safari (macOS) renders its native overlay scrollbar's colour from the
+    // `color-scheme` CSS property, not from ::-webkit-scrollbar-thumb — that
+    // custom styling only kicks in when the system is set to "always show
+    // scrollbars". Without this, the overlay scrollbar stays light/white in
+    // dark mode no matter how the webkit pseudo-elements are styled.
+    document.documentElement.style.colorScheme = theme === "dark" ? "dark" : "light";
+  }, [theme]);
+
+  // Motion mode: hand the whole screen over to the Motion Font Studio engine.
+  // The font project state above keeps living/persisting in the background
+  // (all hooks already ran), so switching back to Font mode restores it
+  // untouched. The ModeTabs switcher is rendered inside the Motion top bar.
+  if (appMode === "motion") {
+    return (
+      <Suspense fallback={<div className="fm-motion-loading">Memuat Mode Motion…</div>}>
+        <MotionStudio />
+      </Suspense>
+    );
+  }
+
+  return (
+    <div
+      className="fm-root"
+      data-theme={theme}
+      data-browser={isChromiumBrowser ? "chromium" : "other"}
+      data-sketch-mode={sketchMode ? "true" : "false"}
+      data-sketch-panel-open={sketchRightPanelOpen ? "true" : "false"}
+      data-mobile-nav-open={mobileNavOpen ? "true" : "false"}
+      data-mobile-panel-open={mobilePanelOpen ? "true" : "false"}
+    >
+      <TopBar />
+      <div className="fm-body">
+        <GlyphNav />
+        <div className="fm-canvas-wrap">
+          <div className="fm-canvas-area" data-editor-mode={overviewMode ? "multi" : "single"}>
+            {/* Exactly one canvas surface is mounted at a time. Both read
+                the same glyph map from the store, and all view state
+                (single: zoom/pan — multi: overviewZoom/overviewScroll)
+                lives in the store too, so switching back and forth never
+                loses either surface's position or any glyph data. */}
+            {overviewMode ? <GlyphMultiEditCanvas /> : <GlyphCanvas />}
+            {/* The multi surface is now a real drawing board, so it needs
+                the same tool palette the single canvas has — Pen/Pencil/
+                Brush/Node/Select all act on whichever cell you point at. */}
+            <FloatingToolbar />
+            {!sketchMode && <GlyphViewBar />}
+            {!overviewMode && <SketchModeToggle />}
+            {sketchMode && <SketchToolbar />}
+            {sketchMode && <GlyphStepper />}
+            {sketchMode && <SketchRightPanelToggle />}
+            {!sketchMode && !overviewMode && <GlyphSideNav />}
+            {!sketchMode && <MobileDrawerToggles />}
+          </div>
+          <ProductionPreviewBar />
+          <BottomBar />
+        </div>
+        <RightPanel />
+        {/* Tap-outside-to-close scrim for the mobile drawer versions of
+            GlyphNav/RightPanel (see .fm-mobile-backdrop in app.css). Only
+            ever visible below the mobile breakpoint when a drawer is open;
+            harmless and invisible otherwise. */}
+        {(mobileNavOpen || mobilePanelOpen) && (
+          <div className="fm-mobile-backdrop" onClick={closeMobilePanels} aria-hidden="true" />
+        )}
+      </div>
+      <Suspense fallback={null}>
+        {testLabEverOpened.current && <TestLabOverlay />}
+        {familyEverOpened.current && <FamilyAutoGenerateOverlay />}
+        {traceEverOpened.current && <TraceImageOverlay />}
+        {featureBuilderEverOpened.current && <FeatureBuilderOverlay />}
+        {timelapseEverOpened.current && <TimelapseOverlay />}
+      </Suspense>
+      <LoginModal />
+      <ProductTour />
+      <EmailConfirmedWelcome />
+      <ProUpsellModal />
+    </div>
+  );
+}
