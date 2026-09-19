@@ -2654,7 +2654,7 @@ const GlobalStyle = () => (
     .mfs-clip-item .name, .mfs-list-item .name { flex:1; font-size:12.5px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .mfs-clip-item .del, .mfs-list-item .del { opacity:0; color:var(--text-dim); }
     .mfs-clip-item:hover .del, .mfs-list-item:hover .del { opacity:1; }
-    .mfs-layer-grip { cursor:grab; flex-shrink:0; }
+    .mfs-layer-grip { cursor:grab; flex-shrink:0; touch-action:none; }
     .mfs-layer-grip:active { cursor:grabbing; }
     .mfs-clip-item.dragging { opacity:0.4; }
     .mfs-layer-drop-line { height:2px; margin:0 8px 3px; border-radius:2px; background:var(--accent); }
@@ -2786,7 +2786,8 @@ const GlobalStyle = () => (
     .mfs-auto-caption-card .mfs-btn:disabled { opacity:.62; }
 
 
-    .mfs-tl-resize { height:6px; flex-shrink:0; cursor:row-resize; background:transparent; position:relative; z-index:2; }
+    .mfs-tl-resize { height:6px; flex-shrink:0; cursor:row-resize; background:transparent; position:relative; z-index:2; touch-action:none; }
+    .mfs-tl-resize::after { content:""; position:absolute; left:0; right:0; top:-8px; bottom:-8px; }
     .mfs-tl-resize::after { content:""; position:absolute; left:22px; right:22px; top:2px; height:1.5px; border-radius:1px; background:var(--border-light); opacity:0.85; transition:background .12s ease, opacity .12s ease; }
     .mfs-tl-resize:hover::after, .mfs-tl-resize:active::after { background:var(--accent); opacity:1; }
     .mfs-timeline { grid-area:timeline; background:var(--bg-panel); display:flex; flex-direction:column; min-height:0; max-height:100%; overflow:hidden; }
@@ -2813,9 +2814,9 @@ const GlobalStyle = () => (
     .mfs-track-ghost.over { border-color:var(--accent); background:var(--accent-soft); }
     .mfs-track-ghost-label { font-size:9.5px; color:var(--text-dim); display:flex; align-items:center; justify-content:center; height:100%; pointer-events:none; }
     .mfs-tracks-scroll { position:relative; min-width:0; min-height:max-content; overflow-x:auto; overflow-y:visible; }
-    .mfs-ruler { height:18px; border-bottom:1px solid var(--border-light); position:relative; z-index:8; cursor:pointer; flex-shrink:0; background:var(--bg-panel); }
+    .mfs-ruler { height:18px; border-bottom:1px solid var(--border-light); position:relative; z-index:8; cursor:pointer; flex-shrink:0; background:var(--bg-panel); touch-action:none; }
     .mfs-ruler-fixed { height:18px; flex:0 0 18px; position:relative; z-index:10; background:#211538; border-bottom:1px solid #49316f; }
-    .mfs-ruler { height:18px; border-bottom:none; position:relative; z-index:8; cursor:pointer; flex-shrink:0; background:transparent; user-select:none; -webkit-user-select:none; }
+    .mfs-ruler { height:18px; border-bottom:none; position:relative; z-index:8; cursor:pointer; flex-shrink:0; background:transparent; user-select:none; -webkit-user-select:none; touch-action:none; }
     .mfs-timeline-hscroll { height:12px; flex:0 0 12px; overflow-x:scroll; overflow-y:hidden; margin:0; padding:0; background:transparent; scrollbar-width:thin; scrollbar-color:#9b6cff transparent; }
     .mfs-timeline-hscroll { position:absolute; left:68px; right:12px; bottom:0; z-index:20; }
     .mfs-track-viewport { padding-bottom:12px; }
@@ -2828,11 +2829,11 @@ const GlobalStyle = () => (
     .mfs-ruler-tick { position:absolute; top:0; height:100%; display:flex; align-items:center; font-size:9px; color:#c8b7e8; font-family:'JetBrains Mono',monospace; border-left:1px solid #694b91; padding-left:3px; }
     .mfs-marquee { position:absolute; z-index:12; border:1px solid var(--accent); background:var(--accent-soft); pointer-events:none; }    .mfs-lane { position:relative; height:32px; border-bottom:1px solid var(--border); transition:height .12s ease, background .12s ease; flex-shrink:0; }
     .mfs-lane.track-over { background:var(--accent-soft); }
-    .mfs-clip-block { position:absolute; top:3px; bottom:3px; border-radius:7px; cursor:grab; overflow:hidden; min-width:22px; border:1px solid; }
+    .mfs-clip-block { position:absolute; top:3px; bottom:3px; border-radius:7px; cursor:grab; overflow:hidden; min-width:22px; border:1px solid; touch-action:none; }
     .mfs-clip-block.selected { box-shadow:0 0 0 2px var(--accent-dim); border-color:var(--accent); z-index:5; }
     .mfs-clip-body { padding:0 8px; display:flex; align-items:center; height:100%; pointer-events:none; }
     .mfs-clip-name { font-size:11px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .mfs-clip-handle { position:absolute; top:0; bottom:0; width:8px; cursor:ew-resize; z-index:2; }
+    .mfs-clip-handle { position:absolute; top:0; bottom:0; width:14px; cursor:ew-resize; z-index:2; touch-action:none; }
     .mfs-clip-handle.left { left:0; } .mfs-clip-handle.right { right:0; }
     .mfs-clip-del { position:absolute; top:2px; right:2px; width:20px; height:20px; border-radius:4px; background:rgba(0,0,0,0.55); border:none; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3; opacity:0; transition:opacity .15s ease, color .15s ease; }
     .mfs-clip-block:hover .mfs-clip-del { opacity:1; }
@@ -2876,6 +2877,13 @@ const GlobalStyle = () => (
     /* Tablet: ciutkan lebar panel samping supaya kanvas tetap lega. */
     @media (max-width: 1200px) and (min-width: 861px) {
       .mfs-root { grid-template-columns: 168px 216px 1fr 284px; }
+      /* Tanpa ini, semua tombol di topbar (grup rata objek + info klip +
+         undo/redo + preview/ekspor) dipaksa satu baris dan kepotong/tumpang
+         tindih di lebar ~1024px (iPad landscape). Bolehkan bungkus 2 baris,
+         sama seperti pola di breakpoint HP di bawah. */
+      .mfs-top { height:auto; min-height:48px; flex-wrap:wrap; row-gap:6px; padding:6px 14px; }
+      .mfs-top-left, .mfs-top-right { flex-wrap:wrap; gap:6px; }
+      .mfs-top-info { display:none; }
     }
 
     /* HP & tablet kecil (≤860px): satu kolom. Panel Layer/Kreasi/Atur jadi
@@ -2886,6 +2894,22 @@ const GlobalStyle = () => (
       .mfs-top { height:auto; min-height:48px; flex-wrap:wrap; row-gap:6px; padding:6px 10px; }
       .mfs-top-left, .mfs-top-right { gap:6px; flex-wrap:wrap; }
       .mfs-top-info { display:none; }
+      /* Grup "ratakan ke kanvas" itu tool presisi ala-desktop yang paling
+         banyak makan tempat (7 tombol + pemisah) — di HP ini yang paling
+         sering bikin topbar kebungkus jadi 3-4 baris dan terasa berantakan.
+         Diposisi/di-drag langsung di kanvas via sentuhan sudah cukup, jadi
+         disembunyikan saja di layar sempit. */
+      .mfs-align-group, .mfs-align-group + .mfs-top-sep { display:none; }
+      /* Nama panjang "Motion Font Studio" tidak krusial di HP — ikon kecil
+         di sebelahnya sudah cukup jadi penanda, dan ruangnya lebih berguna
+         untuk tab Font/Motion + kontrol ukuran frame. */
+      .mfs-brand-text { display:none; }
+      /* Jaring pengaman: popover melayang (ukuran frame, transisi, warna)
+         jangan sampai lebih lebar dari layar dan kepotong di tepi. */
+      .mfs-popover { max-width:calc(100vw - 24px); }
+      .mfs-frame-popover { width:210px; max-width:calc(100vw - 24px); }
+      .mfs-transition-popover { width:170px; max-width:calc(100vw - 24px); left:auto; right:0; }
+      .mfs-color-popover-hsv { width:190px; max-width:calc(100vw - 56px); }
       .mfs-center { flex:1 1 auto; min-height:0; }
       .mfs-timeline { height:150px; flex:0 0 150px; margin-bottom:56px; }
 
@@ -2943,11 +2967,11 @@ const LayerRow = React.memo(function LayerRow({ clip, selected, isDragging, show
         className={`mfs-clip-item ${selected ? "selected" : ""} ${isDragging ? "dragging" : ""}`}
         onClick={(e) => dispatch({ type: "SELECT_CLIP", id: clip.id, additive: e.metaKey || e.ctrlKey })}
       >
-        <GripVertical size={13} color="var(--text-dim)" className="mfs-layer-grip" onMouseDown={(e) => onGripDown(e, clip.id)} />
+        <GripVertical size={13} color="var(--text-dim)" className="mfs-layer-grip" onPointerDown={(e) => onGripDown(e, clip.id)} />
         <span className="mfs-type-dot" style={{ background: color }} />
         <Icon size={13} color={selected ? "var(--accent)" : "var(--text-dim)"} />
         <span className="name">{clip.type === "text" ? (clip.text.split("\n")[0] || clip.name) : clip.name}</span>
-        <Trash2 size={13} className="del" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); dispatch({ type: "DELETE_CLIP", id: clip.id }); }} />
+        <Trash2 size={13} className="del" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); dispatch({ type: "DELETE_CLIP", id: clip.id }); }} />
       </div>
     </React.Fragment>
   );
@@ -2975,6 +2999,7 @@ const LayersPanel = React.memo(function LayersPanel({ project, dispatch }) {
   const startLayerDrag = (e, clipId) => {
     e.stopPropagation();
     e.preventDefault();
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (err) {}
     const startY = e.clientY;
     const DRAG_THRESHOLD = 4;
     let hasStartedDrag = false;
@@ -3001,16 +3026,18 @@ const LayersPanel = React.memo(function LayersPanel({ project, dispatch }) {
       setDropBeforeId(lastBeforeId);
     };
     const up = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       if (hasStartedDrag) {
         dispatch({ type: "REORDER_CLIP", clipId, beforeId: lastBeforeId });
       }
       setDragClipId(null);
       setDropBeforeId(undefined);
     };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
   startLayerDragRef.current = startLayerDrag;
 
@@ -3647,6 +3674,10 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
 
   const onMouseDown = (e) => {
     if (playback.playing) return;
+    // Pakai Pointer Events supaya jari (touch) dan pena berlaku sama seperti
+    // mouse — satu jalur kode untuk drag geser/putar/skala objek di kanvas,
+    // baik di desktop maupun HP/tablet.
+    if (e.pointerType === "touch") e.preventDefault();
     const sel = selectedClipRef.current;
     const bbox = bboxRef.current;
     if (!sel || !bbox) {
@@ -3699,6 +3730,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       return;
     }
     dragRef.current = { mode, clipId: sel.id, ...init };
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (err) {}
 
     const onMove = (ev) => {
       const r = canvasRef.current.getBoundingClientRect();
@@ -3722,9 +3754,15 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
         dispatchProject({ type: "SET_OFFSET", id: d.clipId, patch: { scale: Math.round(nextScale * 100) / 100 } });
       }
     };
-    const onUp = () => { dragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   };
 
   const exportVideo = async () => {
@@ -3872,11 +3910,19 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       // digambar lalu di-capture manual — tidak bergantung ke loop playback
       // React sama sekali.
       const frameMs = 1000 / FPS;
+      // Wall-clock capture harus dipacing ke waktu asli: videoTrack.requestFrame()
+      // men-timestamp tiap frame berdasarkan kapan ia dipanggil (bukan nilai t),
+      // jadi kalau di-loop tanpa jeda nyata, seluruh durasi timeline terekam
+      // dalam waktu nyata yang jauh lebih singkat -> video hasil export jadi
+      // terasa dipercepat drastis dibanding preview. Jadwalkan tiap frame ke
+      // titik wall-clock absolutnya supaya durasi rekaman = durasi timeline.
+      const captureStart = performance.now();
       for (let t = 0; t <= duration; t += frameMs) {
         drawFrame(t);
         try { videoTrack.requestFrame(); } catch (e) {}
         setExportProgress(Math.min(99, Math.round((t / duration) * 100)));
-        await new Promise((r) => setTimeout(r, 0)); // beri napas ke recorder
+        const waitMs = captureStart + t + frameMs - performance.now();
+        if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
       }
       drawFrame(duration);
       try { videoTrack.requestFrame(); } catch (e) {}
@@ -4023,12 +4069,16 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       <div className={`mfs-canvas-wrap ${playback.previewOpen ? "is-playing" : ""}`} ref={wrapRef}>
         <canvas
           ref={canvasRef}
-          onMouseDown={onMouseDown}
-          onMouseMove={onCanvasHover}
+          onPointerDown={onMouseDown}
+          onPointerMove={onCanvasHover}
           style={{
             borderRadius: playback.previewOpen ? 0 : 10,
             boxShadow: playback.previewOpen ? "none" : "0 0 0 1px var(--border), 0 30px 80px rgba(0,0,0,0.5)",
             cursor: playback.previewOpen ? "default" : (canvasCursor || "move"),
+            // Matikan gestur bawaan browser (scroll/zoom) di atas kanvas supaya
+            // jari bisa langsung dipakai menggeser/memutar/menskalakan objek
+            // tanpa ketahan gestur sistem, sama enaknya seperti mouse.
+            touchAction: "none",
           }}
         />
         {playback.previewOpen && (
@@ -4797,15 +4847,15 @@ const TimelineClipBlock = React.memo(function TimelineClipBlock({ clip, row, col
     <div
       className={`mfs-clip-block ${selected ? "selected" : ""}`}
       style={blockStyle}
-      onMouseDown={(e) => onClipMouseDown(e, clip, "move")}
+      onPointerDown={(e) => onClipMouseDown(e, clip, "move")}
     >
-      <div className="mfs-clip-handle left" onMouseDown={(e) => onClipMouseDown(e, clip, "resize-left")} />
+      <div className="mfs-clip-handle left" onPointerDown={(e) => onClipMouseDown(e, clip, "resize-left")} />
       <div className="mfs-clip-body">
         <span className="mfs-clip-name">{clip.type === "text" ? (clip.text.split("\n")[0] || clip.name) : clip.name}</span>
       </div>
-      <div className="mfs-clip-handle right" onMouseDown={(e) => onClipMouseDown(e, clip, "resize-right")} />
+      <div className="mfs-clip-handle right" onPointerDown={(e) => onClipMouseDown(e, clip, "resize-right")} />
       {selected && (
-        <button type="button" className="mfs-clip-del" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(clip.id); }}><Trash2 size={14} /></button>
+        <button type="button" className="mfs-clip-del" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(clip.id); }}><Trash2 size={14} /></button>
       )}
     </div>
   );
@@ -4905,6 +4955,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
 
   const onResizeHandleDown = useCallback((e) => {
     e.preventDefault();
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (err) {}
     const startY = e.clientY;
     const startH = timelineHeight;
     const onMove = (ev) => {
@@ -4912,11 +4963,13 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
       setTimelineHeight(next);
     };
     const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   }, [timelineHeight, MAX_TL_H]);
 
   tlDurRef.current = timelineDuration;
@@ -4976,18 +5029,21 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const onRulerDown = useCallback((e) => {
     if (e.button !== 0) return;
     e.preventDefault();
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (err) {}
     dispatchPlayback({ type: "SET_PLAYING", value: false });
     seekFromClientX(e.clientX);
     const move = (ev) => { ev.preventDefault(); seekFromClientX(ev.clientX); };
     const up = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       if (scrubCleanupRef.current === up) scrubCleanupRef.current = null;
     };
     scrubCleanupRef.current?.();
     scrubCleanupRef.current = up;
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }, [dispatchPlayback, seekFromClientX]);
 
   // Cek posisi Y kursor terhadap tiap lane / zona ghost yang ada, untuk tahu
@@ -5012,15 +5068,23 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     return null;
   };
 
-  const startMarquee = (e) => {
-    if (e.button !== 0 || e.target.closest(".mfs-clip-block,button")) return;
-    e.preventDefault();
-    const rect = trackRef.current.getBoundingClientRect();
+  // Marquee (kotak seleksi) di area kosong linimasa. Untuk mouse, seret
+  // langsung memulai marquee seperti biasa. Untuk jari (touch), area ini
+  // masih perlu bisa digeser satu-jari untuk SCROLL linimasa — jadi marquee
+  // baru aktif kalau jari ditahan diam sejenak dulu ("tekan lama"), baru
+  // boleh diseret untuk menyeleksi. Kalau jari langsung bergerak sebelum
+  // waktu tahan tercapai, dianggap niatnya scroll dan marquee dibatalkan.
+  const MARQUEE_TOUCH_HOLD_MS = 420;
+  const MARQUEE_TOUCH_MOVE_TOLERANCE = 10;
+
+  const beginMarqueeDrag = (e, rect) => {
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (err) {}
     const startX = e.clientX - rect.left + (horizontalScrollRef.current?.scrollLeft || 0);
     const startY = e.clientY - rect.top + trackRef.current.scrollTop;
     const additive = e.metaKey || e.ctrlKey;
     const base = additive ? (project.selectedClipIds || []) : [];
     const update = (ev) => {
+      ev.preventDefault();
       const x = ev.clientX - rect.left + (horizontalScrollRef.current?.scrollLeft || 0);
       const y = ev.clientY - rect.top + trackRef.current.scrollTop;
       const left = Math.min(startX, x), right = Math.max(startX, x);
@@ -5041,16 +5105,67 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
       setMarquee({ left, top, width: right - left, height: bottom - top });
     };
     const finish = () => {
-      window.removeEventListener("mousemove", update);
-      window.removeEventListener("mouseup", finish);
+      window.removeEventListener("pointermove", update);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
       setMarquee(null);
     };
-    window.addEventListener("mousemove", update);
-    window.addEventListener("mouseup", finish);
+    window.addEventListener("pointermove", update);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  };
+
+  const startMarquee = (e) => {
+    if (e.button !== 0 || e.target.closest(".mfs-clip-block,button")) return;
+    const rect = trackRef.current.getBoundingClientRect();
+
+    if (e.pointerType !== "touch") {
+      // Mouse/pen: langsung mulai seperti sebelumnya.
+      e.preventDefault();
+      beginMarqueeDrag(e, rect);
+      return;
+    }
+
+    // Touch: tunggu jari ditahan diam MARQUEE_TOUCH_HOLD_MS sebelum memulai
+    // marquee, supaya gestur geser cepat tetap dipakai untuk scroll biasa.
+    const pointerId = e.pointerId;
+    const startClientX = e.clientX, startClientY = e.clientY;
+    let cancelled = false;
+
+    const cancelHold = () => {
+      cancelled = true;
+      window.removeEventListener("pointermove", onEarlyMove);
+      window.removeEventListener("pointerup", onEarlyUp);
+      window.removeEventListener("pointercancel", onEarlyUp);
+      clearTimeout(holdTimer);
+    };
+    const onEarlyMove = (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      const moved = Math.hypot(ev.clientX - startClientX, ev.clientY - startClientY);
+      if (moved > MARQUEE_TOUCH_MOVE_TOLERANCE) cancelHold();
+    };
+    const onEarlyUp = (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      cancelHold();
+    };
+    const holdTimer = setTimeout(() => {
+      if (cancelled) return;
+      window.removeEventListener("pointermove", onEarlyMove);
+      window.removeEventListener("pointerup", onEarlyUp);
+      window.removeEventListener("pointercancel", onEarlyUp);
+      // Getar halus (kalau didukung perangkat) sebagai tanda marquee aktif.
+      try { navigator.vibrate?.(12); } catch (err) {}
+      beginMarqueeDrag(e, rect);
+    }, MARQUEE_TOUCH_HOLD_MS);
+    window.addEventListener("pointermove", onEarlyMove);
+    window.addEventListener("pointerup", onEarlyUp);
+    window.addEventListener("pointercancel", onEarlyUp);
   };
 
   const startClipDrag = (e, clip, mode) => {
     e.stopPropagation();
+    if (e.pointerType === "touch") e.preventDefault();
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (err) {}
     dispatchProject({ type: "SELECT_CLIP", id: clip.id, additive: e.metaKey || e.ctrlKey });
     const rect = trackRef.current.getBoundingClientRect();
     const width = Math.max(trackRef.current.clientWidth, trackRef.current.scrollWidth);
@@ -5091,8 +5206,9 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
       }
     };
     const up = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       if (mode === "move" && hasStartedDrag) {
         if (lastHover?.kind === "track" && lastHover.trackId !== clip.trackId) {
           dispatchProject({ type: "MOVE_CLIP_TO_TRACK", clipId: clip.id, trackId: lastHover.trackId, start: lastStart });
@@ -5105,7 +5221,9 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
         setDragHover(null);
       }
     };
-    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   const deleteTransitionSlot = (transitionId) => {
@@ -5219,7 +5337,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
 
   return (
     <div className="mfs-timeline">
-      <div className="mfs-tl-resize" onMouseDown={onResizeHandleDown} title="Seret untuk mengubah tinggi panel linimasa" />
+      <div className="mfs-tl-resize" onPointerDown={onResizeHandleDown} title="Seret untuk mengubah tinggi panel linimasa" />
       <div className="mfs-timeline-head">
         <span className="mfs-timeline-title">Linimasa — seret klip ke atas/bawah untuk pindah track, seret transisi ke sela klip</span>
         <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{Math.round(timelineZoom * 100)}%</span>
@@ -5266,7 +5384,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
         <div className="mfs-track-viewport" ref={timelineViewportRef}>
           <div className="mfs-ruler-fixed" style={{ overflow: "hidden" }}>
             <div ref={rulerContentRef} style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative", transform: `translateX(${-horizontalScroll}px)` }}>
-              <div ref={rulerRef} className="mfs-ruler" onMouseDown={onRulerDown}>
+              <div ref={rulerRef} className="mfs-ruler" onPointerDown={onRulerDown}>
                 {ticks.map((t) => <div key={t} className="mfs-ruler-tick" style={{ left: `${(t / timelineDuration) * 100}%` }}>{(t / 1000).toFixed(1)}dtk</div>)}
                 <div ref={playheadMarkerRef} className="mfs-playhead-marker" style={{ left: 0 }} />
               </div>
@@ -5275,7 +5393,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
           <div className="mfs-timeline-hscroll" ref={horizontalScrollRef} onScroll={(e) => setTimelineScroll(e.currentTarget.scrollLeft)}>
             <div className="mfs-timeline-hscroll-inner" style={{ width: `${Math.max(1, timelineZoom) * 100}%` }} />
           </div>
-          <div className="mfs-tracks-scroll" ref={trackRef} onMouseDown={startMarquee}>
+          <div className="mfs-tracks-scroll" ref={trackRef} onPointerDown={startMarquee}>
           <div ref={trackContentRef} style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative" }}>
             {marquee && <div className="mfs-marquee" style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }} />}
 
@@ -5481,7 +5599,7 @@ const TopBar = React.memo(function TopBar({ project, dispatch, canUndo, canRedo,
   return (
     <div className="mfs-top">
       <div className="mfs-top-left">
-        <div className="mfs-brand"><div className="mfs-brand-mark"><Wand2 size={12} color="#fff" /></div>Motion Font Studio</div>
+        <div className="mfs-brand"><div className="mfs-brand-mark"><Wand2 size={12} color="#fff" /></div><span className="mfs-brand-text">Motion Font Studio</span></div>
         <ModeTabs />
         <FrameSizeControl frameSize={project.frameSize} dispatch={dispatch} />
         <ProjectMenu project={project} dispatch={dispatch} />
@@ -5706,6 +5824,59 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [project, dispatchProject, copyMotionClips, cutMotionClips, pasteMotionClips]);
+
+  // --- Gestur sentuh khusus HP/tablet: ketuk 2 jari = undo, 3 jari = redo -
+  // Dipasang global (window) memakai Touch Events mentah karena yang
+  // dibutuhkan di sini adalah JUMLAH jari yang menyentuh bersamaan, sesuatu
+  // yang tidak langsung didapat dari Pointer Events satu-per-satu. "Ketuk"
+  // dianggap sah kalau: semua jari turun-lalu-naik dalam waktu singkat, dan
+  // tidak ada jari yang bergeser jauh (supaya tidak bentrok dengan gestur
+  // 2-3 jari lain seperti pinch-zoom perangkat).
+  useEffect(() => {
+    const TAP_MAX_MS = 500;
+    const MOVE_TOLERANCE = 24;
+    const gesture = { active: new Map(), maxCount: 0, startTime: 0, cancelled: false };
+    const resetGesture = () => { gesture.active.clear(); gesture.maxCount = 0; gesture.cancelled = false; };
+
+    const onTouchStart = (e) => {
+      // Jangan ganggu mengetik di field teks / area yang bisa diedit.
+      const tag = e.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable) { resetGesture(); return; }
+      if (gesture.active.size === 0) { gesture.startTime = Date.now(); gesture.cancelled = false; }
+      for (const t of e.changedTouches) gesture.active.set(t.identifier, { x: t.clientX, y: t.clientY });
+      gesture.maxCount = Math.max(gesture.maxCount, e.touches.length);
+      if (e.touches.length > 3) gesture.cancelled = true; // lebih dari 3 jari bukan gestur ini
+    };
+    const onTouchMove = (e) => {
+      for (const t of e.changedTouches) {
+        const start = gesture.active.get(t.identifier);
+        if (!start) continue;
+        if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > MOVE_TOLERANCE) gesture.cancelled = true;
+      }
+    };
+    const onTouchEnd = (e) => {
+      if (e.touches.length === 0) {
+        const elapsed = Date.now() - gesture.startTime;
+        const count = gesture.maxCount;
+        if (!gesture.cancelled && elapsed <= TAP_MAX_MS && count === 2) {
+          dispatchProject({ type: "UNDO" });
+        } else if (!gesture.cancelled && elapsed <= TAP_MAX_MS && count === 3) {
+          dispatchProject({ type: "REDO" });
+        }
+        resetGesture();
+      }
+    };
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("touchend", onTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", resetGesture, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+      window.removeEventListener("touchcancel", resetGesture);
+    };
+  }, [dispatchProject]);
 
   return (
     <ErrorBoundary>
