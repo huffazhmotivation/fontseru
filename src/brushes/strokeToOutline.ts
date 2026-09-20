@@ -1513,19 +1513,24 @@ export function pixelLiquidOutline(
   const cells = pixelGridCells(centerline, cellSize);
   if (cells.length === 0) return [];
 
-  // Stamp: modestly larger than the raw cell, with a corner radius that
-  // stays well short of a full circle even at max smoothness (capped at
-  // 0.38 of the side) — a near-circular stamp is what caused the beaded
-  // look, since its silhouette pulls in sharply away from the touching
-  // edge instead of presenting a flat face to bridge against.
-  const side = cellSize * (1.02 + 0.1 * s);
-  const cornerRadius = side * (0.22 + 0.16 * s);
-  // Bridge: the full flat connector between two touching cells. At
-  // smoothness 0 it's noticeably narrower than the stamp (a softened,
-  // slightly "beaded" grid); at smoothness 1 it's exactly as wide as the
-  // stamps' touching face, so the bar reads as one continuous flat-sided
-  // liquid shape with no necking at all, matching the reference.
-  const barWidth = cellSize * (0.7 + 0.32 * s);
+  // Stamp: bigger than the raw cell, with a corner radius kept modest
+  // (16%–24% of the side) so most of each side stays FLAT — a wide corner
+  // radius was the earlier bug (bulat-bulat/beaded look).
+  const side = cellSize * (1.08 + 0.12 * s);
+  const cornerRadius = side * (0.16 + 0.08 * s);
+  // Bridge: the flat connector between two touching cells. Clamped to the
+  // stamp's own flat run (side minus both corners) so it can NEVER reach
+  // past where the stamp's edge starts curving — that clamp is what fixes
+  // the opposite bug from the previous version (an unclamped, nearly
+  // full-width bridge's sharp rectangular corners overpowered the stamps'
+  // rounded corners at every turn, so the whole glyph rendered as flat
+  // squared-off boxes instead of a liquid shape). With the clamp, the
+  // bridge always tucks inside the flat portion of the stamp, so turns and
+  // ends keep their curve no matter how wide `smoothness` asks the bridge
+  // to be.
+  const flatRun = side - 2 * cornerRadius;
+  const desiredBarWidth = cellSize * (0.85 + 0.1 * s);
+  const barWidth = Math.min(desiredBarWidth, flatRun);
   const extend = side / 2;
 
   const rings: Point[][] = cells.map(({ cx, cy }) =>
