@@ -865,8 +865,25 @@ export function centerlineToOutline(
     // ever sees it. That was silently defeating Rough's "rounded, gentle"
     // edge fix — its own coherent wave was just riding on top of this
     // sharper base noise instead of replacing it.
+    // Generic per-sample edge jitter (Pencil's fine hand-tremor grain, and
+    // any future preset that just wants simple per-sample edge noise).
+    // oilBrush/rough/grunge each build their own bespoke edge texture in
+    // the branches below and opt out here so this doesn't ALSO add noise
+    // on top of theirs. Strong Brush opts out for the same reason: its
+    // `jitter` controls the lane-streak/hair-strand strength added
+    // separately in strongBrushOutlineContours(), not per-sample edge
+    // noise — without this exclusion every sample along the ENTIRE body
+    // (not just Strong's dedicated comb-tooth caps) got a small random
+    // radius wobble, which is what made the whole stroke read as jagged
+    // rather than a clean bold body with torn ends.
     const jitterAmt = settings.jitter ?? 0;
-    if (jitterAmt > 0 && settings.type !== "oilBrush" && settings.type !== "rough" && settings.type !== "grunge") {
+    if (
+      jitterAmt > 0 &&
+      settings.type !== "oilBrush" &&
+      settings.type !== "rough" &&
+      settings.type !== "grunge" &&
+      settings.type !== "strong"
+    ) {
       const n1 = pseudoNoise(i * 12.37);
       const n2 = pseudoNoise(i * 7.91 + 100);
       const factor = 1 + jitterAmt * (n1 * 0.6 + n2 * 0.4) * 0.5;
@@ -1751,6 +1768,160 @@ function makeCombDash(center: Point, tangent: Point, length: number, thickness: 
 }
 
 /**
+ * Thin solid triangular sliver from a wide `base` to a genuine needle
+ * `tip` — the vector shape behind Strong Brush's trailing hair strands
+ * (see strongBrushOutlineContours). Unlike `makeCombDash` (a hole, tapered
+ * at BOTH ends to ~82% width) this is a filled, one-sided wedge: full
+ * `baseThickness` where it meets the body, narrowing to an actual point at
+ * the far end, so it reads as a loose bristle dragging free of the torn
+ * edge rather than another comb tooth.
+ */
+function makeHairStrand(base: Point, tip: Point, baseThickness: number, desiredSign: number): Contour {
+  const dx = tip.x - base.x;
+  const dy = tip.y - base.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const ht = baseThickness / 2;
+  // A slight forward belly (rawPts[1]) keeps the strand from reading as a
+  // perfectly straight ruled sliver — real bristles bow a little.
+  const bowed = { x: base.x + dx * 0.4 + nx * ht * 0.25, y: base.y + dy * 0.4 + ny * ht * 0.25 };
+  const rawPts: Point[] = [
+    { x: base.x + nx * ht, y: base.y + ny * ht },
+    bowed,
+    { x: tip.x, y: tip.y },
+    { x: base.x - nx * ht, y: base.y - ny * ht },
+  ];
+  const sign = Math.sign(signedArea(rawPts));
+  const pts = sign !== 0 && sign !== desiredSign ? [...rawPts].reverse() : rawPts;
+  return {
+    id: shortId("contour"),
+    closed: true,
+    nodes: pts.map((point) => ({ id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const })),
+  };
+}
+
+/**
+ * Strong Brush: a bold body (via centerlineToOutline, which already gives
+ * it torn "comb" tooth caps — see combToothCap) PLUS two more things a
+ * real, heavily-loaded flat brush dragged fast shows that a clean solid
+ * body and end caps alone can't:
+ *  - long, near-full-length lane streaks (holes) running lengthwise
+ *    through the WHOLE stroke, not just dashes confined near the ends —
+ *    the parallel gaps where the canvas shows through a stiff brush's
+ *    bristle channels the entire length of a fast pass.
+ *  - a handful of fine hair-strand slivers (real filled contours, not
+ *    holes) trailing past whichever end has the longer taper — the loose
+ *    bristles that drag free and thin out to nothing as the brush lifts
+ *    off, distinct from and longer/thinner than the comb teeth at the
+ *    OTHER (shorter-taper) end.
+ * `jitter` reuses the same "overall texture strength" meaning every other
+ * textured preset gives it (see its doc comment in types/brush.ts):
+ * higher = more/bolder streaks and more/longer strands.
+ */
+function strongBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
+  const main = centerlineToOutline(centerline, settings);
+  if (!main) return [];
+  const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
+  const holeSign = outerSign >= 0 ? -1 : 1;
+
+  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06));
+  if (dense.length < 2) return [main];
+
+  const cumulative: number[] = [0];
+  for (let i = 1; i < dense.length; i++) {
+    cumulative.push(cumulative[i - 1] + Math.hypot(dense[i].x - dense[i - 1].x, dense[i].y - dense[i - 1].y));
+  }
+  const totalLength = cumulative[cumulative.length - 1] || 0;
+  const halfWidth = Math.max(0.5, settings.size / 2);
+  const margin = Math.max(3, halfWidth * 0.35);
+  if (totalLength <= margin * 2) return [main];
+
+  const at = (t: number): { p: Point; tangent: Point; taper: number } => {
+    const clamped = Math.max(0, Math.min(totalLength, t));
+    let idx = 1;
+    while (idx < cumulative.length - 1 && cumulative[idx] < clamped) idx++;
+    const p0 = dense[idx - 1];
+    const p1 = dense[idx];
+    const segLen = cumulative[idx] - cumulative[idx - 1] || 1;
+    const frac = (clamped - cumulative[idx - 1]) / segLen;
+    const p = { x: p0.x + (p1.x - p0.x) * frac, y: p0.y + (p1.y - p0.y) * frac };
+    const tangent = { x: p1.x - p0.x, y: p1.y - p0.y };
+    const s = totalLength > 0 ? clamped / totalLength : 0;
+    return { p, tangent, taper: taperFactor(s, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd }) };
+  };
+  const normalOf = (tangent: Point): Point => {
+    const len = Math.hypot(tangent.x, tangent.y) || 1;
+    return { x: -tangent.y / len, y: tangent.x / len };
+  };
+
+  const strength = settings.jitter ?? 0.85;
+
+  // Long lane streaks: several parallel dry-brush lanes running the length
+  // of the body. Unlike a single long straight dash per lane (which would
+  // cut a visible straight chord across a curved stroke), each lane is a
+  // CHAIN of short segments, every one re-sampling its own local tangent —
+  // so the lane as a whole follows the stroke's curve, while individually
+  // short + closely spaced segments still read as one continuous hairline
+  // streak rather than separate dashes.
+  const laneCount = Math.round(5 + strength * 4); // ~7..9 lanes at default strength
+  const dashHoles: Contour[] = [];
+  for (let lane = 0; lane < laneCount; lane++) {
+    const laneFrac = (lane + 0.5) / laneCount - 0.5; // -0.5..0.5 across the nib
+    const laneSeed = lane * 91.7 + 12.3;
+    const segLen = Math.max(3, halfWidth * (2.6 + ((pseudoNoise(laneSeed) + 1) / 2) * 1.8));
+    const gap = segLen * 0.12;
+    const step = segLen + gap;
+    const laneStart = margin + ((pseudoNoise(laneSeed + 5) + 1) / 2) * step * 0.6;
+    for (let tCenter = laneStart; tCenter < totalLength - margin; tCenter += step) {
+      const segSeed = laneSeed + tCenter * 0.37;
+      const { p, tangent, taper } = at(tCenter);
+      if (taper < 0.22) continue;
+      const normal = normalOf(tangent);
+      const laneOffset = laneFrac * halfWidth * taper * 1.6;
+      const jitterOffset = pseudoNoise(segSeed + 21.4) * halfWidth * 0.06;
+      const center = { x: p.x + normal.x * (laneOffset + jitterOffset), y: p.y + normal.y * (laneOffset + jitterOffset) };
+      const thickness = Math.max(0.4, halfWidth * (0.03 + ((pseudoNoise(segSeed + 33.1) + 1) / 2) * 0.025) * (0.6 + strength * 0.6));
+      const usableHalf = halfWidth * taper;
+      if (Math.abs(laneOffset) + thickness >= usableHalf) continue;
+      dashHoles.push(makeCombDash(center, tangent, segLen, thickness, holeSign, segSeed));
+    }
+  }
+
+  // Fine hair strands: only at whichever end has the LONGER taper (the
+  // "lift-off" end) — the other, shorter-taper end already reads as the
+  // chunkier torn comb teeth from centerlineToOutline and shouldn't also
+  // sprout long wisps. A handful of thin needle slivers trail out past
+  // that end's own silhouette, longest/thinnest near the centerline and
+  // shorter/off to the sides, like a few bristles dragging free.
+  const strands: Contour[] = [];
+  if (settings.taperEnd !== settings.taperStart) {
+    const atEnd = settings.taperEnd > settings.taperStart;
+    const tipG = at(atEnd ? totalLength : 0);
+    const tipDir = atEnd ? tipG.tangent : { x: -tipG.tangent.x, y: -tipG.tangent.y };
+    const dLen = Math.hypot(tipDir.x, tipDir.y) || 1;
+    const fx = tipDir.x / dLen;
+    const fy = tipDir.y / dLen;
+    const tipNormal = normalOf(tipG.tangent);
+    const strandCount = Math.round(3 + strength * 3);
+    for (let k = 0; k < strandCount; k++) {
+      const seed = k * 67.9 + 133.1;
+      const lat = pseudoNoise(seed) * 0.55 * halfWidth;
+      // Strands nearer the centerline (small |lat|) reach further, echoing
+      // how a real brush's center bristles are the last to lift clear.
+      const centerBias = 1 - Math.min(1, Math.abs(lat) / (halfWidth * 0.55)) * 0.5;
+      const reach = halfWidth * (1.3 + ((pseudoNoise(seed + 3) + 1) / 2) * 2.8) * (0.5 + strength * 0.7) * centerBias;
+      const baseThickness = Math.max(0.4, halfWidth * (0.03 + ((pseudoNoise(seed + 6) + 1) / 2) * 0.04));
+      const base = { x: tipG.p.x + tipNormal.x * lat, y: tipG.p.y + tipNormal.y * lat };
+      const tip = { x: base.x + fx * reach, y: base.y + fy * reach };
+      strands.push(makeHairStrand(base, tip, baseThickness, outerSign));
+    }
+  }
+
+  return [main, ...dashHoles, ...strands];
+}
+
+/**
  * Rough Brush: the same constant-width elliptical-nib body every other
  * brush uses (via centerlineToOutline), plus a dense scatter of small
  * irregular counter-holes punched through the interior — real vector
@@ -2524,13 +2695,15 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
 /**
  * Multi-contour outline for a centerline. Pixel Brush forks entirely into
  * `pixelBlockOutline` (isolated behind `settings.gridSnap`), Rough Brush
- * adds counter-holes on top of the standard elliptical-nib body, Outline
- * Brush punches a single hole following the whole stroke, Spray Brush skips
- * the elliptical-nib body entirely for a scattered speck field (see
- * sprayBrushOutlineContours), and every other preset (including Strong
- * Brush, whose torn comb-tooth tips are built as a dedicated end cap inside
- * centerlineToOutline() — see combToothCap) uses the single elliptical-nib
- * contour directly.
+ * adds counter-holes on top of the standard elliptical-nib body, Strong
+ * Brush layers long lane streaks and trailing hair strands on top of its
+ * comb-tooth-capped body (see strongBrushOutlineContours; the comb-tooth
+ * tips themselves are still built as a dedicated end cap inside
+ * centerlineToOutline() — see combToothCap), Outline Brush punches a
+ * single hole following the whole stroke, Spray Brush skips the
+ * elliptical-nib body entirely for a scattered speck field (see
+ * sprayBrushOutlineContours), and every other preset uses the single
+ * elliptical-nib contour directly.
  */
 export function centerlineToOutlineContours(centerline: StrokeSample[], settings: BrushSettings, opts?: { fast?: boolean }): Contour[] {
   if (settings.type === "pixel" && settings.gridSnap === true) {
@@ -2540,6 +2713,9 @@ export function centerlineToOutlineContours(centerline: StrokeSample[], settings
   }
   if (settings.type === "rough") {
     return roughBrushOutlineContours(centerline, settings);
+  }
+  if (settings.type === "strong") {
+    return strongBrushOutlineContours(centerline, settings);
   }
   if (settings.type === "oilBrush") {
     return oilBrushOutlineContours(centerline, settings);

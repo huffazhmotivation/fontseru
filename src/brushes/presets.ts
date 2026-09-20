@@ -273,7 +273,7 @@ export const BRUSH_PRESETS: Record<BrushType, BrushPreset> = {
   strong: {
     id: "strong",
     label: "Strong",
-    description: "Bold, constant-width body whose ends fray into several sharp bristle-like teeth of varying height — a torn, dry-brush tip rather than one clean blade point.",
+    description: "Bold dry-brush stroke: long lane streaks run the whole body's length, one end tears into several short, thick bristle teeth, and the other thins out over a long taper into fine trailing hair strands.",
     settings: {
       size: 36,
       opacity: 1,
@@ -282,18 +282,39 @@ export const BRUSH_PRESETS: Record<BrushType, BrushPreset> = {
       stabilizer: 0.3,
       // Circular nib (roundness 1) and no pressure response: unlike
       // Calligraphic/Marker, width doesn't vary with direction or hand
-      // pressure — the ONLY things that shape the tips are the taper below
-      // and the torn "comb" teeth added in centerlineToOutline().
+      // pressure — the ONLY things that shape the tips are the taper below,
+      // the torn "comb" teeth added in centerlineToOutline(), and the
+      // lengthwise streaks + trailing hair strands added in
+      // strongBrushOutlineContours().
       roundness: 1,
       angle: 0,
-      // Short taper fraction (the shrink only happens in the last ~9% of
-      // the stroke at each end) combined with the bold base size above is
-      // what keeps the body reading as uniformly bold right up to where the
-      // torn tip teeth take over.
-      taperStart: 0.09,
-      taperEnd: 0.09,
+      // Deliberately asymmetric, unlike every other preset's matched pair:
+      // NO taper at the start (0 — full width all the way to the very tip,
+      // like Rough/Outline's flat-cut ends) so the comb-tooth cap there
+      // (see combToothCap in strokeToOutline.ts) gets the FULL nib size to
+      // zigzag across — short, thick, clearly separate torn bristle teeth
+      // — instead of shrinking to a near-invisible point. `taperFactor`
+      // floors every OTHER taper ramp at 8% of full width at its very
+      // endpoint regardless of how short that ramp is, which is why any
+      // taperStart > 0 here made the comb teeth collapse to a barely
+      // visible sliver; 0 sidesteps that floor entirely.
+      // The end, by contrast, gets a much longer taper that thins the body
+      // gradually all the way to a true needle point (`sharpEnd`) before
+      // the trailing hair strands (added in strongBrushOutlineContours,
+      // which puts those strands on whichever end has the longer taper)
+      // take over — a "lift-off" stroke, not a mirror of the start.
+      taperStart: 0,
+      taperEnd: 0.42,
+      // A genuine needle point at the long-taper end so the body itself
+      // thins all the way to ~0 width before the trailing hair strands
+      // take over, instead of stopping at a small rounded floor.
+      sharpEnd: true,
       pressureEnabled: false,
       pressureSensitivity: 0,
+      // Overall texture strength for the lane streaks and trailing hair
+      // strands — see strongBrushOutlineContours(). Higher = more/bolder
+      // streaks and more/longer strands.
+      jitter: 0.85,
     },
   },
   outline: {
