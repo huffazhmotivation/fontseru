@@ -209,101 +209,167 @@ function grungeEndDryness(dist: number, totalLength: number, size: number): numb
 }
 
 /**
- * Strong Brush's torn "comb" tip: several sharp saw-teeth of DIFFERENT
- * heights running all the way across the flat end of the stroke, instead
- * of one smooth blade point — a real dry brush fraying into separate
- * bristles as it lifts off, not a single clean vertex.
+ * ---------------------------------------------------------------------------
+ * STRONG = GRINDHOUSE DRY BRUSH
+ * ---------------------------------------------------------------------------
+ * A heavily loaded flat brush dragged hard across rough paper. What makes
+ * this silhouette read as "grindhouse" (and NOT as Grunge's fine sawtooth, or
+ * the old Strong's needle-tipped comb) is a handful of deliberate, separate
+ * traits — all built as real closed vector geometry, all keyed to ABSOLUTE
+ * distance along the stroke (so nothing reshuffles while the stroke is still
+ * growing under the pen, or when it's drawn faster/slower):
  *
- * Three earlier versions all got this wrong:
- *  - v1 added teeth PERPENDICULAR to the stroke (outward along the same
- *    normal used for width), sampled by distance ALONG the stroke near
- *    each end — teeth stuck out sideways off the edge, not past the tip.
- *  - v2 fixed the outward direction (radiating from the tip, roughly along
- *    the tangent) but spread full-height teeth evenly across the ENTIRE
- *    180° sweep from one side of the nib to the other. On a curved stroke
- *    that put full-length teeth pointing up to ~80° off the direction of
- *    travel — a splayed "hand"/claw shape instead of bristles that all
- *    lean the way the brush was moving.
- *  - v3 fixed the splaying by concentrating teeth in a narrow cone around
- *    the tangent direction — but that cone also killed height everywhere
- *    except right at the very center, so in practice only the middle of
- *    the flat end showed any tooth at all and the rest stayed a smooth
- *    round bulge (the curling point in the bug report), not a jagged edge.
+ *  - a SOLID, full-width body — no taper, no lane streaks, no hair strands;
+ *  - BLUNT chisel-cut ends: flat-ish, slightly skewed, corners rounded off
+ *    (see `bluntCap`) instead of a needle point or a fan of teeth;
+ *  - one "clean" edge that only drifts in a slow, low wave with the odd small
+ *    nick, and one "torn" edge made of many short rounded DRIPS separated by
+ *    sharp, steep-walled notches of very different depths (see
+ *    `makeGrindTrack`) — the way paint runs out unevenly bristle by bristle;
+ *  - a few tiny slit-shaped pinholes just inside the torn edge (see
+ *    `strongBrushOutlineContours`).
  *
- * This version does neither: it builds teeth along the FLAT CHORD that
- * spans the nib's full width (from one edge of the stroke to the other —
- * no curved bulge at all) and every tooth protrudes along the exact same
- * fixed direction: straight out along the stroke's own tangent (outward
- * at the end, backward at the start). That single shared direction is
- * what makes every spike "ikutin arah goresan" (follow the direction of
- * the stroke) rather than radiating out at different angles, and using
- * the flat chord as the base (not the curved rim) is what lets the
- * zigzag reach corner-to-corner instead of fading out a few teeth in.
+ * Both edges come from the SAME `strongEdgeProfile()` in centerlineToOutline
+ * (the body) and strongBrushOutlineContours (the pinholes), so a hole can
+ * never poke through the edge it was placed relative to.
  */
-function combToothCap(
-  cap: { center: Point; tangentAngle: number; semiA: number; semiB: number },
-  edgeStartAngle: number,
-  outwardAngle: number,
-  nibAngleRad: number,
-  edgeSeed: number
-): Point[] {
-  const segments = 32;
-  const toothCount = 6;
-  const toothAmp = Math.max(cap.semiA, cap.semiB) * 1.35;
 
-  // The two ends of the flat chord — the same edge points the smooth
-  // ("round") cap's arc would otherwise bulge out from. Interpolating
-  // straight between them (instead of sweeping the curved rim) is what
-  // keeps the zigzag a real flat-topped saw-tooth edge rather than teeth
-  // riding on top of an already-rounded bulge.
-  const vLeft = ellipseSupportVector(edgeStartAngle, nibAngleRad, cap.semiA, cap.semiB);
-  const vRight = ellipseSupportVector(edgeStartAngle - Math.PI, nibAngleRad, cap.semiA, cap.semiB);
-  const leftPt = { x: cap.center.x + vLeft.x, y: cap.center.y + vLeft.y };
-  const rightPt = { x: cap.center.x + vRight.x, y: cap.center.y + vRight.y };
+/** Fraction-of-half-width depth for one tooth, skewed toward shallow with an occasional deep bite. */
+function grindDepth(r: number): number {
+  return r < 0.6 ? 0.04 + 0.18 * Math.pow(r / 0.6, 1.2) : 0.22 + 0.42 * Math.pow((r - 0.6) / 0.4, 1.6);
+}
 
-  const fx = Math.cos(outwardAngle);
-  const fy = Math.sin(outwardAngle);
+interface GrindTrackOpts {
+  seed: number;
+  /** Tooth length range, in half-widths. */
+  minLen: number;
+  maxLen: number;
+  /** Scales every tooth depth (1 = up to ~0.64 half-width bite). */
+  depthScale: number;
+  /** 0..1 chance that a tooth sits flush (level 0) instead of biting inward. */
+  flatChance: number;
+  /** Round-top bulge height range (half-widths) added on top of each tooth's level. */
+  bulgeMin: number;
+  bulgeMax: number;
+  /** Width of the steep step between neighbouring teeth (half-widths). Smaller = sharper notch. */
+  ramp: number;
+  /** Chance a tooth pokes slightly OUTWARD (a proud bristle) instead of biting in. */
+  proudChance: number;
+}
 
-  // Each tooth's OUTWARD peak height AND its two flanking INWARD valley
-  // depths are all independently randomized — a real torn edge doesn't
-  // notch back to the same flush baseline between every spike, some cuts
-  // bite deeper than others. The two outermost valleys (index 0 and
-  // toothCount) are pinned to 0 so the zigzag still joins flush with the
-  // straight body edge on both sides, instead of leaving a gap/overhang
-  // at the corners.
-  const peaks: number[] = [];
-  for (let i = 0; i < toothCount; i++) {
-    // ~0.32x .. 1.5x toothAmp outward per peak.
-    peaks.push(0.32 + ((pseudoNoise(edgeSeed + i * 7.13) + 1) / 2) * 1.18);
-  }
-  const valleys: number[] = [0];
-  for (let i = 1; i < toothCount; i++) {
-    // ~-0.32x .. +0.06x toothAmp — mostly a shallow inward notch, varying
-    // per valley, occasionally almost flush.
-    valleys.push(-0.32 + ((pseudoNoise(edgeSeed + i * 3.71 + 50) + 1) / 2) * 0.38);
-  }
-  valleys.push(0);
+/**
+ * Piecewise "drip" track over distance, in half-width units (0 = flush with
+ * the nib edge, negative = inward bite). Each tooth: a steep step to its own
+ * level, then a rounded-top swell (`bulge * sin(pi*t)`), so consecutive teeth
+ * read as separate rounded drips split by V-notches of varying depth. Teeth
+ * are generated lazily by index from `seed`, independent of the stroke's
+ * total length, so extending the stroke never changes teeth already drawn.
+ */
+function makeGrindTrack(o: GrindTrackOpts): (distHW: number) => number {
+  const starts: number[] = [0];
+  const levels: number[] = [];
+  const lens: number[] = [];
+  const bulges: number[] = [];
+  const grow = (need: number) => {
+    while (starts[starts.length - 1] < need) {
+      const k = levels.length;
+      const rLen = (pseudoNoise(o.seed + k * 7.31) + 1) / 2;
+      const rDepth = (pseudoNoise(o.seed + k * 3.17 + 50) + 1) / 2;
+      const rFlat = (pseudoNoise(o.seed + k * 5.71 + 90) + 1) / 2;
+      const rBulge = (pseudoNoise(o.seed + k * 2.39 + 130) + 1) / 2;
+      const rProud = (pseudoNoise(o.seed + k * 4.13 + 170) + 1) / 2;
+      const len = o.minLen + Math.pow(rLen, 1.4) * (o.maxLen - o.minLen);
+      let level: number;
+      if (rProud < o.proudChance) level = 0.04 + rDepth * 0.1;
+      else if (rFlat < o.flatChance) level = -rDepth * 0.03;
+      else level = -o.depthScale * grindDepth(rDepth);
+      const bulge = Math.min(o.bulgeMin + rBulge * (o.bulgeMax - o.bulgeMin), len * 0.32);
+      levels.push(level);
+      lens.push(len);
+      bulges.push(bulge);
+      starts.push(starts[starts.length - 1] + len);
+    }
+  };
+  let idx = 0;
+  return (distHW: number) => {
+    const d = Math.max(0, distHW);
+    grow(d + o.maxLen + 1);
+    while (idx > 0 && d < starts[idx]) idx--;
+    while (idx < levels.length - 1 && d >= starts[idx + 1]) idx++;
+    const into = d - starts[idx];
+    const t = Math.min(1, into / lens[idx]);
+    const rw = Math.min(o.ramp, lens[idx] * 0.4);
+    const prev = idx > 0 ? levels[idx - 1] + bulges[idx - 1] * 0 : levels[idx];
+    let base = levels[idx];
+    if (idx > 0 && into < rw) {
+      const u = into / rw;
+      const s = u * u * (3 - 2 * u);
+      base = prev + (levels[idx] - prev) * s;
+    }
+    return base + bulges[idx] * Math.pow(Math.sin(Math.PI * t), 0.8);
+  };
+}
 
+/**
+ * The two edge profiles (half-width units) for Strong Brush: `torn` = the
+ * dripping edge, `clean` = the calm one. Both add a slow coherent wave so
+ * even the calm edge isn't ruler-straight. `dist` is absolute stroke distance
+ * in font units, `hw` the nib half-width. `k` is the overall texture strength
+ * (`jitter` / 0.85, clamped) so the Jitter slider scales tooth depth.
+ */
+function makeStrongEdgeProfile(hw: number, k: number): { torn: (dist: number) => number; clean: (dist: number) => number } {
+  const tornTrack = makeGrindTrack({
+    seed: 17.3, minLen: 0.24, maxLen: 1.9, depthScale: 1.1, flatChance: 0.05,
+    bulgeMin: 0.06, bulgeMax: 0.2, ramp: 0.05, proudChance: 0.08,
+  });
+  const cleanTrack = makeGrindTrack({
+    seed: 91.9, minLen: 1.1, maxLen: 3.8, depthScale: 0.32, flatChance: 0.62,
+    bulgeMin: 0.02, bulgeMax: 0.07, ramp: 0.05, proudChance: 0.0,
+  });
+  return {
+    torn: (dist) => {
+      const dHW = dist / hw;
+      const wave = coherentNoise1D(dHW / 3.6, 5.7) * 0.075;
+      return tornTrack(dHW) * k + wave;
+    },
+    clean: (dist) => {
+      const dHW = dist / hw;
+      const wave = coherentNoise1D(dHW / 4.8, 41.3) * 0.15;
+      return cleanTrack(dHW) * k + wave;
+    },
+  };
+}
+
+/**
+ * Strong Brush's blunt chisel end. Sits between the two edge end-points
+ * (`from` → `to`, in polygon order), pushed out along `outDir` (the direction
+ * the stroke is heading past this end):
+ *  - the two edge end-points themselves slide forward by different amounts
+ *    (`a`, `b`) — the edges run parallel to `outDir`, so this doesn't distort
+ *    them, it just skews where the cut lands: an angled chisel cut instead of
+ *    a perfectly square one;
+ *  - between them a superellipse (exponent 3) swells forward, giving a flat-
+ *    ish cut with rounded-off corners rather than a semicircle or a point;
+ *  - a touch of coherent wobble keeps it hand-cut rather than geometric.
+ */
+function bluntCap(from: Point, to: Point, outDir: Point, seed: number): Point[] {
+  const chord = Math.hypot(to.x - from.x, to.y - from.y);
+  const hw = chord / 2;
+  if (hw < 0.5) return [];
+  const a = pseudoNoise(seed) * 0.32 * hw;
+  const b = pseudoNoise(seed + 9.1) * 0.32 * hw;
+  const bulge = (0.14 + ((pseudoNoise(seed + 21.7) + 1) / 2) * 0.24) * hw;
+  const n = 16;
   const pts: Point[] = [];
-  for (let k = 1; k < segments; k++) {
-    const u = k / segments; // 0 at left edge, 1 at right edge — full chord width
-    const bx = leftPt.x + (rightPt.x - leftPt.x) * u;
-    const by = leftPt.y + (rightPt.y - leftPt.y) * u;
-
-    const local = u * toothCount;
-    const toothIndex = Math.min(toothCount - 1, Math.floor(local));
-    const t = local - toothIndex; // 0..1 across this one tooth
-    const vStart = valleys[toothIndex];
-    const vEnd = valleys[toothIndex + 1];
-    const peak = peaks[toothIndex];
-    // Peak sits at the tooth's midpoint; each side ramps independently
-    // from its own (differently sized) flanking valley, so a tooth can
-    // lean — steep climb out of a deep notch, shallow descent into a
-    // near-flush one, or vice versa.
-    const shape = t <= 0.5 ? vStart + (peak - vStart) * (t / 0.5) : peak + (vEnd - peak) * ((t - 0.5) / 0.5);
-    const protrusion = shape * toothAmp;
-
-    pts.push({ x: bx + fx * protrusion, y: by + fy * protrusion });
+  for (let k = 0; k <= n; k++) {
+    const u = k / n;
+    const bx = from.x + (to.x - from.x) * u;
+    const by = from.y + (to.y - from.y) * u;
+    const e = Math.abs(2 * u - 1);
+    const sup = Math.pow(Math.max(0, 1 - e * e * e), 1 / 3);
+    const wob = k === 0 || k === n ? 0 : coherentNoise1D(u * 3.2, seed + 3.3) * 0.035 * hw;
+    const push = a + (b - a) * u + bulge * sup + wob;
+    pts.push({ x: bx + outDir.x * push, y: by + outDir.y * push });
   }
   return pts;
 }
@@ -650,7 +716,17 @@ export function centerlineToOutline(
   // smooth away, so it keeps the untouched point stream.
   const pts = precomputed
     ? precomputed.pts
-    : catmullRomResample(centerline, settings.type === "grunge" ? grungeStep(settings) : Math.max(0.6, settings.size * 0.06));
+    : catmullRomResample(
+        centerline,
+        settings.type === "grunge"
+          ? grungeStep(settings)
+          // Strong's drips/notches are only a fraction of a half-width wide,
+          // so it needs a finer sweep than the 0.06x-size default to resolve
+          // them (the RDP pass below thins the straight runs back out).
+          : settings.type === "strong"
+            ? Math.max(0.5, settings.size * 0.028)
+            : Math.max(0.6, settings.size * 0.06)
+      );
   if (pts.length < 2) return null;
 
   const cumulative = precomputed ? precomputed.cumulative : [0];
@@ -669,13 +745,14 @@ export function centerlineToOutline(
   // between the last left/right offset points with a smooth outward bulge
   // that follows the nib's own ellipse — a closed, joined tip instead of a
   // straight cut (or, on a fold-prone tangent, a visible open notch).
-  // "comb" (Strong Brush only) instead replaces that chord with a torn,
-  // bristle-like fan (see combToothCap) — its own deliberate end treatment,
-  // built the same way as "round" structurally but jagged instead of smooth.
+  // "blunt" (Strong Brush only) instead replaces that chord with a flat-ish,
+  // skewed chisel cut with rounded corners (see bluntCap) — its own
+  // deliberate end treatment, built the same way as "round" structurally but
+  // squared-off instead of a semicircle.
   // Brushes with other deliberate end treatments (flat Rough/Outline, frayed
   // Oil Brush, spiky Grunge) opt out of both and keep their current look.
   const ROUND_CAP_TYPES: BrushType[] = ["round", "marker", "calligraphic", "pencil", "pressureTaper"];
-  const COMB_CAP_TYPES: BrushType[] = ["strong"];
+  const BLUNT_CAP_TYPES: BrushType[] = ["strong"];
   // Outline Brush's cap is user-controlled (see BrushSettings.outlineCapStyle).
   // All three styles ("round", "square", "open") now go through this SAME
   // outer+inner ring construction (see outlineBrushOutlineContours) instead
@@ -706,7 +783,7 @@ export function centerlineToOutline(
   // way to the tip, rather than a solid plate plugging it shut) — so it
   // maps to the plain "none" cap treatment (no cap geometry inserted at
   // all), same as any non-outline brush with no dedicated end cap.
-  const capMode: "round" | "comb" | "square" | "none" =
+  const capMode: "round" | "blunt" | "square" | "none" =
     settings.type === "outline"
       ? settings.outlineCapStyle === "round"
         ? "round"
@@ -715,8 +792,8 @@ export function centerlineToOutline(
           : "square"
       : ROUND_CAP_TYPES.includes(settings.type)
         ? "round"
-        : COMB_CAP_TYPES.includes(settings.type)
-          ? "comb"
+        : BLUNT_CAP_TYPES.includes(settings.type)
+          ? "blunt"
           : "none";
   let startCap: { center: Point; tangentAngle: number; semiA: number; semiB: number } | null = null;
   let endCap: { center: Point; tangentAngle: number; semiA: number; semiB: number } | null = null;
@@ -792,6 +869,12 @@ export function centerlineToOutline(
   const grungeFineRight = isGrunge ? makePlateauTrack(totalLength, 97.3, semiMajor * 0.05, semiMajor * 0.42, grungeStepLen * 0.9) : null;
   let grungeStartDir: Point | null = null;
   let grungeEndDir: Point | null = null;
+  // Strong (Grindhouse dry brush): one torn + one clean edge profile shared
+  // with strongBrushOutlineContours' pinholes — see makeStrongEdgeProfile.
+  const strongProfile =
+    settings.type === "strong"
+      ? makeStrongEdgeProfile(semiMajor, Math.max(0.2, Math.min(1.6, (settings.jitter ?? 0.85) / 0.85)))
+      : null;
   for (let i = 0; i < pts.length; i++) {
     const prev = pts[Math.max(0, i - 1)];
     const next = pts[Math.min(pts.length - 1, i + 1)];
@@ -987,6 +1070,21 @@ export function centerlineToOutline(
       if (i === pts.length - 1) grungeEndDir = { x: tangent.x / tLen, y: tangent.y / tLen };
       left.push({ x: pts[i].x + ux * leftMag, y: pts[i].y + uy * leftMag });
       right.push({ x: pts[i].x - ux * rightMag, y: pts[i].y - uy * rightMag });
+    } else if (strongProfile && (settings.jitter ?? 0) > 0) {
+      // Grindhouse dry-brush edge. The LEFT side (the +normal side, i.e. the
+      // brush's trailing edge as the hand moves) is the torn, dripping one;
+      // the RIGHT side is the calm one. Offsets are in half-width units, so
+      // the texture scales with the stroke's own size. Floored well above 0
+      // so even the deepest notch on one side can never pinch the body shut.
+      const mag = Math.hypot(vx, vy) || 1;
+      const ux = vx / mag;
+      const uy = vy / mag;
+      const dist = cumulative[i];
+      const minMag = mag * 0.3;
+      const leftMag = Math.max(minMag, mag + strongProfile.torn(dist) * semiMajor * scale);
+      const rightMag = Math.max(minMag, mag + strongProfile.clean(dist) * semiMajor * scale);
+      left.push({ x: pts[i].x + ux * leftMag, y: pts[i].y + uy * leftMag });
+      right.push({ x: pts[i].x - ux * rightMag, y: pts[i].y - uy * rightMag });
     } else if (settings.type === "rough" && (settings.jitter ?? 0) > 0) {
       // Gentle, rounded edge waver: smooth coherent noise (interpolated,
       // not per-sample independent) so the edge undulates in soft, rounded
@@ -1103,10 +1201,10 @@ export function centerlineToOutline(
   const endCapPts = isGrunge && grungeEndDir && left.length > 0 && right.length > 0
     ? raggedCap(left[left.length - 1], right[right.length - 1], grungeEndDir, 19.7)
     : endCap
-    ? capMode === "comb"
-      // Teeth point straight OUT along the direction of travel (the stroke
-      // is heading this way and keeps going past the tip).
-      ? combToothCap(endCap, endCap.tangentAngle + Math.PI / 2, endCap.tangentAngle, nibAngleRad, 11.3)
+    ? capMode === "blunt" && left.length > 0 && right.length > 0
+      // Chisel cut pushed straight OUT along the direction of travel (the
+      // stroke is heading this way and keeps going past the tip).
+      ? bluntCap(left[left.length - 1], right[right.length - 1], { x: Math.cos(endCap.tangentAngle), y: Math.sin(endCap.tangentAngle) }, 11.3)
       : capMode === "square"
         ? capSquare(endCap, endCap.tangentAngle + Math.PI / 2, endCap.tangentAngle)
         : capArc(endCap, endCap.tangentAngle + Math.PI / 2)
@@ -1114,10 +1212,10 @@ export function centerlineToOutline(
   const startCapPts = isGrunge && grungeStartDir && left.length > 0 && right.length > 0
     ? raggedCap(right[0], left[0], grungeStartDir, 61.3)
     : startCap
-    ? capMode === "comb"
-      // Teeth point straight BACK, opposite the direction of travel (the
-      // stroke starts here and heads forward, so the tip trails behind).
-      ? combToothCap(startCap, startCap.tangentAngle - Math.PI / 2, startCap.tangentAngle + Math.PI, nibAngleRad, 83.1)
+    ? capMode === "blunt" && left.length > 0 && right.length > 0
+      // Chisel cut pushed straight BACK, opposite the direction of travel
+      // (the stroke starts here and heads forward, so the cut trails behind).
+      ? bluntCap(right[0], left[0], { x: -Math.cos(startCap.tangentAngle), y: -Math.sin(startCap.tangentAngle) }, 83.1)
       : capMode === "square"
         ? capSquare(startCap, startCap.tangentAngle - Math.PI / 2, startCap.tangentAngle + Math.PI)
         : capArc(startCap, startCap.tangentAngle - Math.PI / 2)
@@ -1768,56 +1866,21 @@ function makeCombDash(center: Point, tangent: Point, length: number, thickness: 
 }
 
 /**
- * Thin solid triangular sliver from a wide `base` to a genuine needle
- * `tip` — the vector shape behind Strong Brush's trailing hair strands
- * (see strongBrushOutlineContours). Unlike `makeCombDash` (a hole, tapered
- * at BOTH ends to ~82% width) this is a filled, one-sided wedge: full
- * `baseThickness` where it meets the body, narrowing to an actual point at
- * the far end, so it reads as a loose bristle dragging free of the torn
- * edge rather than another comb tooth.
- */
-function makeHairStrand(base: Point, tip: Point, baseThickness: number, desiredSign: number): Contour {
-  const dx = tip.x - base.x;
-  const dy = tip.y - base.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = -dy / len;
-  const ny = dx / len;
-  const ht = baseThickness / 2;
-  // A slight forward belly (rawPts[1]) keeps the strand from reading as a
-  // perfectly straight ruled sliver — real bristles bow a little.
-  const bowed = { x: base.x + dx * 0.4 + nx * ht * 0.25, y: base.y + dy * 0.4 + ny * ht * 0.25 };
-  const rawPts: Point[] = [
-    { x: base.x + nx * ht, y: base.y + ny * ht },
-    bowed,
-    { x: tip.x, y: tip.y },
-    { x: base.x - nx * ht, y: base.y - ny * ht },
-  ];
-  const sign = Math.sign(signedArea(rawPts));
-  const pts = sign !== 0 && sign !== desiredSign ? [...rawPts].reverse() : rawPts;
-  return {
-    id: shortId("contour"),
-    closed: true,
-    nodes: pts.map((point) => ({ id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const })),
-  };
-}
-
-/**
- * Strong Brush: a bold body (via centerlineToOutline, which already gives
- * it torn "comb" tooth caps — see combToothCap) PLUS two more things a
- * real, heavily-loaded flat brush dragged fast shows that a clean solid
- * body and end caps alone can't:
- *  - long, near-full-length lane streaks (holes) running lengthwise
- *    through the WHOLE stroke, not just dashes confined near the ends —
- *    the parallel gaps where the canvas shows through a stiff brush's
- *    bristle channels the entire length of a fast pass.
- *  - a handful of fine hair-strand slivers (real filled contours, not
- *    holes) trailing past whichever end has the longer taper — the loose
- *    bristles that drag free and thin out to nothing as the brush lifts
- *    off, distinct from and longer/thinner than the comb teeth at the
- *    OTHER (shorter-taper) end.
- * `jitter` reuses the same "overall texture strength" meaning every other
- * textured preset gives it (see its doc comment in types/brush.ts):
- * higher = more/bolder streaks and more/longer strands.
+ * Strong Brush (Grindhouse dry brush): the body — solid, blunt-ended, one
+ * calm edge and one torn/dripping edge — is built entirely by
+ * centerlineToOutline() (see makeStrongEdgeProfile / bluntCap). This adds
+ * the last trait a loaded flat brush dragged hard shows: a few tiny slit-
+ * shaped pinholes where a bristle skipped, sitting just INSIDE the torn edge
+ * and running with the stroke. They are sparse on purpose (roughly one per
+ * five half-widths of length at default strength) — the look is a mostly
+ * solid mark with a handful of flaws, not a perforated one.
+ *
+ * Every candidate hole is tested against the torn-edge profile at several
+ * points along its length and dropped unless it clears the edge by a safe
+ * margin, so a hole can never break through the silhouette (which, with
+ * nonzero fill, would turn into stray filled ink outside the body).
+ * `jitter` scales how many holes there are, same "overall texture
+ * strength" meaning it has on every other textured preset.
  */
 function strongBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
   const main = centerlineToOutline(centerline, settings);
@@ -1833,11 +1896,14 @@ function strongBrushOutlineContours(centerline: StrokeSample[], settings: BrushS
     cumulative.push(cumulative[i - 1] + Math.hypot(dense[i].x - dense[i - 1].x, dense[i].y - dense[i - 1].y));
   }
   const totalLength = cumulative[cumulative.length - 1] || 0;
-  const halfWidth = Math.max(0.5, settings.size / 2);
-  const margin = Math.max(3, halfWidth * 0.35);
-  if (totalLength <= margin * 2) return [main];
+  const hw = Math.max(0.5, settings.size / 2);
+  const strength = settings.jitter ?? 0.85;
+  if (strength <= 0 || totalLength < hw * 3) return [main];
 
-  const at = (t: number): { p: Point; tangent: Point; taper: number } => {
+  const k = Math.max(0.2, Math.min(1.6, strength / 0.85));
+  const profile = makeStrongEdgeProfile(hw, k);
+
+  const at = (t: number): { p: Point; tangent: Point } => {
     const clamped = Math.max(0, Math.min(totalLength, t));
     let idx = 1;
     while (idx < cumulative.length - 1 && cumulative[idx] < clamped) idx++;
@@ -1845,80 +1911,38 @@ function strongBrushOutlineContours(centerline: StrokeSample[], settings: BrushS
     const p1 = dense[idx];
     const segLen = cumulative[idx] - cumulative[idx - 1] || 1;
     const frac = (clamped - cumulative[idx - 1]) / segLen;
-    const p = { x: p0.x + (p1.x - p0.x) * frac, y: p0.y + (p1.y - p0.y) * frac };
-    const tangent = { x: p1.x - p0.x, y: p1.y - p0.y };
-    const s = totalLength > 0 ? clamped / totalLength : 0;
-    return { p, tangent, taper: taperFactor(s, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd }) };
-  };
-  const normalOf = (tangent: Point): Point => {
-    const len = Math.hypot(tangent.x, tangent.y) || 1;
-    return { x: -tangent.y / len, y: tangent.x / len };
+    return {
+      p: { x: p0.x + (p1.x - p0.x) * frac, y: p0.y + (p1.y - p0.y) * frac },
+      tangent: { x: p1.x - p0.x, y: p1.y - p0.y },
+    };
   };
 
-  const strength = settings.jitter ?? 0.85;
-
-  // Long lane streaks: several parallel dry-brush lanes running the length
-  // of the body. Unlike a single long straight dash per lane (which would
-  // cut a visible straight chord across a curved stroke), each lane is a
-  // CHAIN of short segments, every one re-sampling its own local tangent —
-  // so the lane as a whole follows the stroke's curve, while individually
-  // short + closely spaced segments still read as one continuous hairline
-  // streak rather than separate dashes.
-  const laneCount = Math.round(5 + strength * 4); // ~7..9 lanes at default strength
-  const dashHoles: Contour[] = [];
-  for (let lane = 0; lane < laneCount; lane++) {
-    const laneFrac = (lane + 0.5) / laneCount - 0.5; // -0.5..0.5 across the nib
-    const laneSeed = lane * 91.7 + 12.3;
-    const segLen = Math.max(3, halfWidth * (2.6 + ((pseudoNoise(laneSeed) + 1) / 2) * 1.8));
-    const gap = segLen * 0.12;
-    const step = segLen + gap;
-    const laneStart = margin + ((pseudoNoise(laneSeed + 5) + 1) / 2) * step * 0.6;
-    for (let tCenter = laneStart; tCenter < totalLength - margin; tCenter += step) {
-      const segSeed = laneSeed + tCenter * 0.37;
-      const { p, tangent, taper } = at(tCenter);
-      if (taper < 0.22) continue;
-      const normal = normalOf(tangent);
-      const laneOffset = laneFrac * halfWidth * taper * 1.6;
-      const jitterOffset = pseudoNoise(segSeed + 21.4) * halfWidth * 0.06;
-      const center = { x: p.x + normal.x * (laneOffset + jitterOffset), y: p.y + normal.y * (laneOffset + jitterOffset) };
-      const thickness = Math.max(0.4, halfWidth * (0.03 + ((pseudoNoise(segSeed + 33.1) + 1) / 2) * 0.025) * (0.6 + strength * 0.6));
-      const usableHalf = halfWidth * taper;
-      if (Math.abs(laneOffset) + thickness >= usableHalf) continue;
-      dashHoles.push(makeCombDash(center, tangent, segLen, thickness, holeSign, segSeed));
+  const holes: Contour[] = [];
+  const spacing = (hw * 5) / k;
+  let n = 0;
+  for (let d = hw * 2.2; d < totalLength - hw * 2.2; d += spacing * (0.7 + ((pseudoNoise(n * 6.1 + 3) + 1) / 2) * 0.9), n++) {
+    const seed = n * 47.3 + 211.7;
+    // Skip some slots entirely so holes don't fall on a metronome.
+    if ((pseudoNoise(seed) + 1) / 2 < 0.28) continue;
+    const len = hw * (0.22 + ((pseudoNoise(seed + 4) + 1) / 2) * 0.45);
+    const thick = Math.max(0.7, hw * (0.07 + ((pseudoNoise(seed + 8) + 1) / 2) * 0.06));
+    const lat = hw * (0.5 + ((pseudoNoise(seed + 12) + 1) / 2) * 0.28);
+    // The edge's real position along the hole's whole run, +thickness and a
+    // safety margin, must stay farther out than the hole's far side.
+    let clear = true;
+    for (let j = -2; j <= 2; j++) {
+      const edge = hw * (1 + profile.torn(d + (j * len) / 4));
+      if (lat + thick + hw * 0.16 > edge) { clear = false; break; }
     }
+    if (!clear) continue;
+    const { p, tangent } = at(d);
+    const tl = Math.hypot(tangent.x, tangent.y) || 1;
+    const normal = { x: -tangent.y / tl, y: tangent.x / tl };
+    const center = { x: p.x + normal.x * lat, y: p.y + normal.y * lat };
+    holes.push(makeCombDash(center, tangent, len, thick, holeSign, seed));
   }
 
-  // Fine hair strands: only at whichever end has the LONGER taper (the
-  // "lift-off" end) — the other, shorter-taper end already reads as the
-  // chunkier torn comb teeth from centerlineToOutline and shouldn't also
-  // sprout long wisps. A handful of thin needle slivers trail out past
-  // that end's own silhouette, longest/thinnest near the centerline and
-  // shorter/off to the sides, like a few bristles dragging free.
-  const strands: Contour[] = [];
-  if (settings.taperEnd !== settings.taperStart) {
-    const atEnd = settings.taperEnd > settings.taperStart;
-    const tipG = at(atEnd ? totalLength : 0);
-    const tipDir = atEnd ? tipG.tangent : { x: -tipG.tangent.x, y: -tipG.tangent.y };
-    const dLen = Math.hypot(tipDir.x, tipDir.y) || 1;
-    const fx = tipDir.x / dLen;
-    const fy = tipDir.y / dLen;
-    const tipNormal = normalOf(tipG.tangent);
-    const strandCount = Math.round(3 + strength * 3);
-    for (let k = 0; k < strandCount; k++) {
-      const seed = k * 67.9 + 133.1;
-      const lat = pseudoNoise(seed) * 0.55 * halfWidth;
-      // Strands nearer the centerline (small |lat|) reach further, echoing
-      // how a real brush's center bristles are the last to lift clear.
-      const centerBias = 1 - Math.min(1, Math.abs(lat) / (halfWidth * 0.55)) * 0.5;
-      const reach = halfWidth * (1.3 + ((pseudoNoise(seed + 3) + 1) / 2) * 2.8) * (0.5 + strength * 0.7) * centerBias;
-      const baseThickness = Math.max(0.4, halfWidth * (0.03 + ((pseudoNoise(seed + 6) + 1) / 2) * 0.04));
-      const base = { x: tipG.p.x + tipNormal.x * lat, y: tipG.p.y + tipNormal.y * lat };
-      const tip = { x: base.x + fx * reach, y: base.y + fy * reach };
-      strands.push(makeHairStrand(base, tip, baseThickness, outerSign));
-    }
-  }
-
-  return [main, ...dashHoles, ...strands];
+  return [main, ...holes];
 }
 
 /**
@@ -2454,21 +2478,38 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   const totalLength = cumulative[cumulative.length - 1] || 0;
   if (totalLength <= 0) return [];
 
+  const halfWidthBase = Math.max(1, settings.size / 2);
   const at = (t: number): { p: Point; tangent: Point; taper: number } => {
     const clamped = Math.max(0, Math.min(totalLength, t));
-    let idx = 1;
-    while (idx < cumulative.length - 1 && cumulative[idx] < clamped) idx++;
+    // Binary search (was a linear scan from the start for every step, i.e.
+    // O(points) per step and O(points x steps) per call — the second-biggest
+    // cost after the speck count itself on a long stroke).
+    let lo = 1;
+    let hi = cumulative.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cumulative[mid] < clamped) lo = mid + 1;
+      else hi = mid;
+    }
+    const idx = lo;
     const p0 = dense[idx - 1];
     const p1 = dense[idx];
     const segLen = cumulative[idx] - cumulative[idx - 1] || 1;
     const frac = (clamped - cumulative[idx - 1]) / segLen;
     const p = { x: p0.x + (p1.x - p0.x) * frac, y: p0.y + (p1.y - p0.y) * frac };
     const tangent = { x: p1.x - p0.x, y: p1.y - p0.y };
-    const s = totalLength > 0 ? clamped / totalLength : 0;
-    return { p, tangent, taper: taperFactor(s, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd }) };
+    // Live preview: taper by ABSOLUTE distance from the start only (a short
+    // ease-in), never by the fraction of the total length. A fraction-based
+    // taper re-scales every speck already drawn each time the stroke grows,
+    // which both costs nothing extra to compute and looks like the whole
+    // spray shimmering as you draw. The committed field (fast=false) keeps
+    // the real start/end taper untouched.
+    const taper = fast
+      ? taperFactor(Math.min(1, clamped / (halfWidthBase * 5)), 1, 0)
+      : taperFactor(totalLength > 0 ? clamped / totalLength : 0, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd });
+    return { p, tangent, taper };
   };
 
-  const halfWidthBase = Math.max(1, settings.size / 2);
   // 1 (default-ish) keeps flecks close and tight; lower roundness loosens
   // them into a wider, coarser scatter.
   const spread = 0.6 + 0.55 * settings.roundness;
@@ -2479,16 +2520,23 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   // 16x cut in total speck count, which is what actually removes the lag
   // (specks-per-move, not step count alone, was the dominant cost). The
   // committed/final field (fast=false) is untouched.
-  const stepLen = Math.max(0.7, halfWidthBase * 0.2) * (fast ? 4 : 1);
-  const stepCount = Math.max(1, Math.round(totalLength / stepLen));
+  // Live preview is now FIXED-SPACING and hard-capped: steps sit at absolute
+  // multiples of `stepLen` along the path (never re-spread across the
+  // growing total length, which made every speck slide each frame), a few
+  // big soft dots per step stand in for the dense field, and the step count
+  // is capped so the preview's node count stays roughly constant no matter
+  // how long the stroke gets. The preview only needs to show WHERE you are
+  // spraying; the full-density field replaces it on pointer-up.
+  const FAST_MAX_STEPS = 80;
+  const stepLen = fast
+    ? Math.max(halfWidthBase * 0.5, totalLength / FAST_MAX_STEPS, 2.5)
+    : Math.max(0.7, halfWidthBase * 0.2);
+  const stepCount = Math.max(1, fast ? Math.floor(totalLength / stepLen) : Math.round(totalLength / stepLen));
   // BUG FIX (core dots too sparse to actually touch): raised again — this
   // needs to be dense enough that neighboring core dots' radii overlap and
   // fuse into one continuous solid patch, not just "densely scattered but
   // still individually visible".
-  const specksPerStep = Math.max(
-    fast ? 2 : 5,
-    Math.round(halfWidthBase * 1.15 * (0.6 + density) * (fast ? 0.25 : 1))
-  );
+  const specksPerStep = fast ? 6 : Math.max(5, Math.round(halfWidthBase * 1.15 * (0.6 + density)));
   const outerSign = 1;
   // Reach pushed out a bit further than before so the sparse mist genuinely
   // has room to fade out and scatter, instead of stopping right where the
@@ -2518,7 +2566,7 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   for (let i = 0; i <= stepCount; i++) {
     const jitterSeed = i * 17.3 + 4.2;
     const tJitter = pseudoNoise(jitterSeed) * 0.5 * stepLen;
-    const t = Math.max(0, Math.min(totalLength, (i / stepCount) * totalLength + tJitter));
+    const t = Math.max(0, Math.min(totalLength, fast ? i * stepLen : (i / stepCount) * totalLength + tJitter));
     const { p, tangent, taper } = at(t);
     if (taper <= 0.02) continue;
     const tLen = Math.hypot(tangent.x, tangent.y) || 1;
@@ -2564,7 +2612,14 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
       // the nonzero fill rule instead of risking a stray hole. `fast` uses a
       // cheaper 6-sided speckle instead of the full 12-sided one — half the
       // nodes per speck, invisible at live-preview scale/speed.
-      flecks.push(makeSpeckle(center, radius, seed, outerSign, fast ? 6 : 12));
+      // Preview: bigger dots (fewer of them must still read as a cloud) and
+      // 5 sides. Committed: side count follows the dot's own size — a dot a
+      // couple of font units wide is indistinguishable at 6-8 smooth sides
+      // from 12, and this alone roughly halves the committed field's node
+      // count (the cost of building/serialising/rendering it on pointer-up).
+      const drawRadius = fast ? radius * 1.9 : radius;
+      const sides = fast ? 5 : radius < 1.4 ? 6 : radius < 3 ? 8 : 12;
+      flecks.push(makeSpeckle(center, drawRadius, seed, outerSign, sides));
     }
   }
 
@@ -2696,10 +2751,10 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
  * Multi-contour outline for a centerline. Pixel Brush forks entirely into
  * `pixelBlockOutline` (isolated behind `settings.gridSnap`), Rough Brush
  * adds counter-holes on top of the standard elliptical-nib body, Strong
- * Brush layers long lane streaks and trailing hair strands on top of its
- * comb-tooth-capped body (see strongBrushOutlineContours; the comb-tooth
- * tips themselves are still built as a dedicated end cap inside
- * centerlineToOutline() — see combToothCap), Outline Brush punches a
+ * Brush adds a few pinhole slits on top of its Grindhouse dry-brush body
+ * (see strongBrushOutlineContours; the blunt chisel ends and the torn/clean
+ * edges are still built inside
+ * centerlineToOutline() — see bluntCap / makeStrongEdgeProfile), Outline Brush punches a
  * single hole following the whole stroke, Spray Brush skips the
  * elliptical-nib body entirely for a scattered speck field (see
  * sprayBrushOutlineContours), and every other preset uses the single
