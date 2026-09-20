@@ -2885,9 +2885,9 @@ const GlobalStyle = () => (
          columns follow grid-template-areas "left center layers right", so
          column 2 is the CANVAS (center) and column 3 is the Layer panel —
          this used to have them backwards (a fixed width in the center slot
-         and `1fr` in the layers slot), which squeezed the canvas down to a
+         and 1fr in the layers slot), which squeezed the canvas down to a
          tiny fixed strip and let the Layer panel balloon to fill the rest
-         of the screen. Canvas must stay the flexible `1fr` column; Layer
+         of the screen. Canvas must stay the flexible 1fr column; Layer
          panel stays a narrow fixed width, just like on desktop. */
       .mfs-root { grid-template-columns: 168px minmax(0,1fr) 190px 284px; }
       /* Tanpa ini, semua tombol di topbar (grup rata objek + info klip +
