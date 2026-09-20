@@ -1445,27 +1445,62 @@ function roundedSquareStamp(cx: number, cy: number, side: number, cornerRadius: 
 }
 
 /**
+ * A flat-sided rectangle connecting two cell centers, used as a "bridge"
+ * between orthogonally-adjacent filled cells in Pixel Liquid mode (below).
+ * Extended past both ends by half its own width so it plunges well into
+ * each cell's rounded-square stamp rather than just grazing its edge —
+ * this is what guarantees the union has a genuinely FLAT, seam-free wall
+ * along the whole span between two touching cells, instead of the union
+ * boundary being traced by the two stamps' round corners (which, for
+ * corners any rounder than barely-there, reads as a scalloped/beaded
+ * "pearl chain" rather than a solid liquid bar).
+ */
+function straightBridge(x1: number, y1: number, x2: number, y2: number, width: number, extend: number): Point[] {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const nx = -uy;
+  const ny = ux;
+  const half = width / 2;
+  const ax = x1 - ux * extend;
+  const ay = y1 - uy * extend;
+  const bx = x2 + ux * extend;
+  const by = y2 + uy * extend;
+  return [
+    { x: ax + nx * half, y: ay + ny * half },
+    { x: bx + nx * half, y: by + ny * half },
+    { x: bx - nx * half, y: by - ny * half },
+    { x: ax - nx * half, y: ay - ny * half },
+  ];
+}
+
+/**
  * Pixel Liquid mode: walks the exact same grid cells the crisp Pixel Brush
  * uses (pixelGridCells above), drops a rounded-square "stamp" on every one
- * of them, and takes their EXACT geometric union (polygon-clipping, via
- * `unionPolygonsToContours` — the same primitive-union machinery Monoline
- * uses for its stroke expansion) to fuse them into one shape.
+ * of them PLUS a full-width flat "bridge" rectangle between every pair of
+ * orthogonally-touching filled cells, and takes the EXACT geometric union
+ * of all of it (polygon-clipping, via `unionPolygonsToContours` — the same
+ * primitive-union machinery Monoline uses for its stroke expansion).
  *
- * This replaced an earlier approach that walked the cells as a single
- * skeleton path and re-stroked it with a round pen (centerlineToOutline).
- * That worked for a simple line of cells, but `centerlineToOutline`'s
- * offset-edge builder assumes the skeleton is roughly a simple, non-looping
- * curve: wherever a real letterform's cell-path doubled back near itself
- * (e.g. a "G"'s inner hook sitting one cell away from its own stem), the
- * left/right offset edges crossed in ways the per-side self-intersection
- * cleanup doesn't catch, producing a stray diagonal notch instead of a
- * smooth fused joint. A per-cell stamp union has no such notion of "path
- * order" or direction to go wrong — every stamp just gets merged with
- * whatever it geometrically overlaps, so arbitrarily branching/looping
- * pixel shapes fuse cleanly and smoothly no matter how the cells were
- * visited, which is what gives the continuous, "liquid"/gummy blob look
- * (smooth even at concave joints) rather than a pile of separately
- * blended pieces.
+ * Earlier revisions tried two other approaches that both fell short:
+ *  1. Re-stroking the visited cells, in visit order, with a round pen
+ *     (`centerlineToOutline`). That assumes the cell path is a simple,
+ *     non-looping curve — wherever a real letterform's cell-path doubled
+ *     back near itself (e.g. a "G"'s inner hook one cell from its own
+ *     stem), the offset edges crossed in ways the self-intersection
+ *     cleanup didn't catch, producing a stray diagonal notch.
+ *  2. Unioning ONLY per-cell stamps, relying on neighboring stamps simply
+ *     overlapping each other for fusion. That's order-independent and
+ *     fixed the notch bug, but at any real corner roundness the stamps'
+ *     round edges — not a flat wall — are what met at each seam, so the
+ *     result was a bumpy chain of beads rather than a smooth solid bar
+ *     (visible as "bulat-bulat" instead of a liquid bar in-app).
+ * Adding an explicit flat bridge between every touching pair (this
+ * version) is what actually guarantees a smooth flat wall along the
+ * whole span between two cells, with rounding confined to the stamps at
+ * genuine ends/corners/branches — matching the reference "liquid" look.
  */
 export function pixelLiquidOutline(
   centerline: { x: number; y: number }[],
@@ -1478,18 +1513,44 @@ export function pixelLiquidOutline(
   const cells = pixelGridCells(centerline, cellSize);
   if (cells.length === 0) return [];
 
-  // Slightly larger than the raw cell so adjacent stamps truly overlap
-  // (not just touch) — guards against union seams from floating-point
-  // edge-alignment, and gives `smoothness` a chunkier, more fused look as
-  // it increases. Corner radius scales with `smoothness` too: low values
-  // read as a softened block grid, high values read as a fully liquid,
-  // near-circular blob chain, matching the "blocks" <-> "liquid" spectrum.
-  const side = cellSize * (1.04 + 0.14 * s);
-  const cornerRadius = side * (0.24 + 0.24 * s);
+  // Stamp: modestly larger than the raw cell, with a corner radius that
+  // stays well short of a full circle even at max smoothness (capped at
+  // 0.38 of the side) — a near-circular stamp is what caused the beaded
+  // look, since its silhouette pulls in sharply away from the touching
+  // edge instead of presenting a flat face to bridge against.
+  const side = cellSize * (1.02 + 0.1 * s);
+  const cornerRadius = side * (0.22 + 0.16 * s);
+  // Bridge: the full flat connector between two touching cells. At
+  // smoothness 0 it's noticeably narrower than the stamp (a softened,
+  // slightly "beaded" grid); at smoothness 1 it's exactly as wide as the
+  // stamps' touching face, so the bar reads as one continuous flat-sided
+  // liquid shape with no necking at all, matching the reference.
+  const barWidth = cellSize * (0.7 + 0.32 * s);
+  const extend = side / 2;
 
-  const rings = cells.map(({ cx, cy }) =>
+  const rings: Point[][] = cells.map(({ cx, cy }) =>
     roundedSquareStamp((cx + 0.5) * cellSize, (cy + 0.5) * cellSize, side, cornerRadius)
   );
+
+  const filled = new Set(cells.map(({ cx, cy }) => `${cx},${cy}`));
+  for (const { cx, cy } of cells) {
+    // Only check +x/+y neighbors so each touching pair is bridged once.
+    for (const [dx, dy] of [[1, 0], [0, 1]] as const) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (!filled.has(`${nx},${ny}`)) continue;
+      rings.push(
+        straightBridge(
+          (cx + 0.5) * cellSize,
+          (cy + 0.5) * cellSize,
+          (nx + 0.5) * cellSize,
+          (ny + 0.5) * cellSize,
+          barWidth,
+          extend
+        )
+      );
+    }
+  }
 
   const contours = unionPolygonsToContours(rings, EXPAND_FIDELITY_SCALE);
   return contours.length > 0 ? contours : [];
