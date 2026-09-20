@@ -1417,61 +1417,82 @@ function pixelGridCells(centerline: { x: number; y: number }[], cellSize: number
 }
 
 /**
+ * One cell's "stamp" for Pixel Liquid mode: a rounded square (squircle-ish
+ * rounded rect) centered on the cell, traced as a dense polygon ring so the
+ * exact boolean union below (not a re-stroked skeleton) has clean arcs to
+ * work with. `archSegs` points per 90° corner is plenty dense for the union
+ * + `simplifyRingPreservingCorners`/`ringToSmoothNodes` refit pass in
+ * `unionPolygonsToContours` to reconstruct a genuinely round corner rather
+ * than a faceted one.
+ */
+function roundedSquareStamp(cx: number, cy: number, side: number, cornerRadius: number, archSegs = 8): Point[] {
+  const half = side / 2;
+  const r = Math.max(0, Math.min(cornerRadius, half));
+  const centers: { x: number; y: number; start: number }[] = [
+    { x: cx + half - r, y: cy - half + r, start: -Math.PI / 2 }, // top-right
+    { x: cx + half - r, y: cy + half - r, start: 0 }, // bottom-right
+    { x: cx - half + r, y: cy + half - r, start: Math.PI / 2 }, // bottom-left
+    { x: cx - half + r, y: cy - half + r, start: Math.PI }, // top-left
+  ];
+  const pts: Point[] = [];
+  for (const c of centers) {
+    for (let i = 0; i <= archSegs; i++) {
+      const a = c.start + (i / archSegs) * (Math.PI / 2);
+      pts.push({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r });
+    }
+  }
+  return pts;
+}
+
 /**
  * Pixel Liquid mode: walks the exact same grid cells the crisp Pixel Brush
- * uses (pixelGridCells above) as a single connected skeleton path, then
- * re-strokes that path with a round pen — the same round/pill stroking
- * machinery every other round brush already uses (see centerlineToOutline's
- * ROUND_CAP_TYPES + SMOOTH_EDGE_TYPES handling), just fed a grid-quantized
- * centerline instead of the raw pointer path. A round pen's own offset
- * geometry is what turns each 90° grid corner into a smooth, fused joint —
- * no separate per-cell shape or merge step needed, which is what gives a
- * clean, continuous rounded-pixel/"gummy" look (bars flowing smoothly into
- * each other at grid turns) rather than a pile of separately blended blobs.
+ * uses (pixelGridCells above), drops a rounded-square "stamp" on every one
+ * of them, and takes their EXACT geometric union (polygon-clipping, via
+ * `unionPolygonsToContours` — the same primitive-union machinery Monoline
+ * uses for its stroke expansion) to fuse them into one shape.
+ *
+ * This replaced an earlier approach that walked the cells as a single
+ * skeleton path and re-stroked it with a round pen (centerlineToOutline).
+ * That worked for a simple line of cells, but `centerlineToOutline`'s
+ * offset-edge builder assumes the skeleton is roughly a simple, non-looping
+ * curve: wherever a real letterform's cell-path doubled back near itself
+ * (e.g. a "G"'s inner hook sitting one cell away from its own stem), the
+ * left/right offset edges crossed in ways the per-side self-intersection
+ * cleanup doesn't catch, producing a stray diagonal notch instead of a
+ * smooth fused joint. A per-cell stamp union has no such notion of "path
+ * order" or direction to go wrong — every stamp just gets merged with
+ * whatever it geometrically overlaps, so arbitrarily branching/looping
+ * pixel shapes fuse cleanly and smoothly no matter how the cells were
+ * visited, which is what gives the continuous, "liquid"/gummy blob look
+ * (smooth even at concave joints) rather than a pile of separately
+ * blended pieces.
  */
 export function pixelLiquidOutline(
   centerline: { x: number; y: number }[],
   cellSize: number,
   smoothness: number,
-  settings: BrushSettings
+  _settings: BrushSettings
 ): Contour[] {
   if (centerline.length === 0 || cellSize <= 0) return [];
   const s = Math.max(0, Math.min(1, smoothness));
   const cells = pixelGridCells(centerline, cellSize);
   if (cells.length === 0) return [];
 
-  const skeleton: StrokeSample[] = cells.map(({ cx, cy }) => ({
-    x: (cx + 0.5) * cellSize,
-    y: (cy + 0.5) * cellSize,
-    pressure: 1,
-  }));
-  if (skeleton.length === 1) {
-    // A single tapped cell has no direction to stroke along — give it a
-    // hair of length so the round pen still draws a full round dot there.
-    skeleton.push({ x: skeleton[0].x + 0.01, y: skeleton[0].y, pressure: 1 });
-  }
+  // Slightly larger than the raw cell so adjacent stamps truly overlap
+  // (not just touch) — guards against union seams from floating-point
+  // edge-alignment, and gives `smoothness` a chunkier, more fused look as
+  // it increases. Corner radius scales with `smoothness` too: low values
+  // read as a softened block grid, high values read as a fully liquid,
+  // near-circular blob chain, matching the "blocks" <-> "liquid" spectrum.
+  const side = cellSize * (1.04 + 0.14 * s);
+  const cornerRadius = side * (0.24 + 0.24 * s);
 
-  // Wider than the raw cell size so neighboring/nearby cells' pen sweeps
-  // actually overlap into one continuous shape at grid turns instead of
-  // pinching to a thin waist; `smoothness` widens that overlap further for
-  // a chunkier, more fused "liquid" look.
-  const width = cellSize * (0.95 + 0.55 * s);
-  const roundSettings: BrushSettings = {
-    ...settings,
-    type: "round",
-    size: width,
-    roundness: 1,
-    angle: 0,
-    taperStart: 0,
-    taperEnd: 0,
-    sharpStart: false,
-    sharpEnd: false,
-    pressureEnabled: false,
-    jitter: 0,
-  };
+  const rings = cells.map(({ cx, cy }) =>
+    roundedSquareStamp((cx + 0.5) * cellSize, (cy + 0.5) * cellSize, side, cornerRadius)
+  );
 
-  const contour = centerlineToOutline(skeleton, roundSettings);
-  return contour ? [contour] : [];
+  const contours = unionPolygonsToContours(rings, EXPAND_FIDELITY_SCALE);
+  return contours.length > 0 ? contours : [];
 }
 
 function signedArea(points: Point[]): number {
