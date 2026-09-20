@@ -1070,9 +1070,24 @@ function BrushPanel() {
   const setBrush = useAppStore((s) => s.setBrush);
   const brushCap = useAppStore((s) => s.brushCap);
   const setBrushCap = useAppStore((s) => s.setBrushCap);
+  const brushDrawMode = useAppStore((s) => s.brushDrawMode);
+  const setBrushDrawMode = useAppStore((s) => s.setBrushDrawMode);
 
   return (
     <>
+      <Section title="Draw Mode">
+        <div className="fm-field">
+          <div className="fm-node-type-row">
+            <button className={`fm-node-type-btn ${brushDrawMode === "freehand" ? "active" : ""}`} onClick={() => setBrushDrawMode("freehand")} data-testid="brush-mode-freehand">Freehand</button>
+            <button className={`fm-node-type-btn ${brushDrawMode === "node" ? "active" : ""}`} onClick={() => setBrushDrawMode("node")} data-testid="brush-mode-node">Node</button>
+          </div>
+        </div>
+        <InfoTip>
+          {brushDrawMode === "node"
+            ? "Node: click to place anchor points, drag to pull a curve handle (like the Pen tool). Click the first anchor again to close the path, or double-click / Escape to finish it open."
+            : "Freehand: draw the stroke by dragging, same as before."}
+        </InfoTip>
+      </Section>
       <Section title="Brush Preset">
         <div className="fm-brush-grid" data-testid="brush-grid">
           {BRUSH_ORDER.map((id) => {

@@ -31,6 +31,15 @@ import { clampMultiColumns, clampMultiZoom, clampOverviewSpacing, clampOverviewZ
 export type Theme = "light" | "dark";
 export type PenMode = "shape" | "line";
 
+/** Brush tool only: how new strokes are captured.
+ *  - "freehand" pointer-drag drawing (the original behavior).
+ *  - "node"     Pen-tool-style: click to place anchor points, drag to pull
+ *               out a curve handle, click back on the first anchor to close
+ *               the path. The result is still a real "brush" object (full
+ *               nib/taper/texture applied along the path), not a plain
+ *               uniform Pen Line. */
+export type BrushDrawMode = "freehand" | "node";
+
 /** A user-dragged guide line created from the ruler strip. */
 export interface RulerGuide {
   id: string;
@@ -220,6 +229,9 @@ interface AppState {
   mobilePanelOpen: boolean;
   tool: ToolId;
   penMode: PenMode;
+  /** Brush tool only — see BrushDrawMode. Independent of `penMode`/`tool`
+   * so switching it never touches the actual Pen tool's own state. */
+  brushDrawMode: BrushDrawMode;
   /** Shape tool only: which primitive the next click-drag draws. Chosen
    * from the small popup under the floating toolbar's Shape button. */
   shapeKind: ShapeKind;
@@ -431,6 +443,7 @@ interface AppState {
   newProject: () => void;
   setTool: (tool: ToolId) => void;
   setPenMode: (mode: PenMode) => void;
+  setBrushDrawMode: (mode: BrushDrawMode) => void;
   setShapeKind: (kind: ShapeKind) => void;
   setPenAutoClose: (on: boolean) => void;
   setPencilSmoothing: (v: number) => void;
@@ -1066,6 +1079,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     mobilePanelOpen: false,
     tool: "select",
     penMode: "shape",
+    brushDrawMode: "freehand",
     shapeKind: "rectangle",
     penAutoClose: false,
     pencilSmoothing: 0.15,
@@ -1282,6 +1296,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       }));
     },
     setPenMode: (mode) => set({ penMode: mode }),
+    setBrushDrawMode: (mode) => set({ brushDrawMode: mode }),
     setShapeKind: (kind) => set({ shapeKind: kind }),
     setPenAutoClose: (on) => set({ penAutoClose: on }),
     togglePenAutoClose: () => set((s) => ({ penAutoClose: !s.penAutoClose })),

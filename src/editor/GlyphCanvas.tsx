@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent, 
 import { useAppStore, type GlyphMetricKey } from "@/glyph/store";
 import { useGlyphEditor } from "./useGlyphEditor";
 import { useBrushTool } from "./useBrushTool";
+import { useBrushNodeTool } from "./useBrushNodeTool";
 import { usePencilTool } from "./usePencilTool";
 import { useSelectTool, handlePositions, type HandleId, type SkewHandleId } from "./useSelectTool";
 import { useSketchGestures } from "./useSketchGestures";
@@ -88,6 +89,7 @@ export function GlyphCanvas() {
   const rightGhostMap = useAppStore((s) => s.glyphsByStyle[rightGhostStyle]);
   const brush = useAppStore((s) => s.brush);
   const brushCap = useAppStore((s) => s.brushCap);
+  const brushDrawMode = useAppStore((s) => s.brushDrawMode);
   const fitNonce = useAppStore((s) => s.fitNonce);
   const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
   const setTool = useAppStore((s) => s.setTool);
@@ -140,7 +142,14 @@ export function GlyphCanvas() {
 
   const editor = useGlyphEditor(hitScale);
   const brushTool = useBrushTool(hitScale);
+  const brushNodeTool = useBrushNodeTool(hitScale);
   const pencilTool = usePencilTool(hitScale);
+  // Brush tool, Node draw mode: same toolbar button as freehand Brush, just
+  // captured Pen-tool style (see BrushDrawMode). Kept as its own flag rather
+  // than switching `tool` to "pen" so it can never touch the real Pen
+  // tool's state, and every `tool === "brush"` check elsewhere just needs
+  // to additionally branch on this to pick which hook handles the pointer.
+  const isNodeBrush = tool === "brush" && brushDrawMode === "node";
   const selectTool = useSelectTool(hitScale);
 
   // Track the SVG canvas size for viewBox math — must use the SVG element
@@ -279,10 +288,11 @@ export function GlyphCanvas() {
   const getZoomNow = useCallback(() => useAppStore.getState().zoom, []);
   const cancelActiveInteraction = useCallback(() => {
     brushTool.cancel();
+    brushNodeTool.cancel();
     pencilTool.cancel();
     if (tool === "select") selectTool.pointerUp();
     else if (tool !== "brush" && tool !== "pencil") editor.pointerUp();
-  }, [brushTool, pencilTool, selectTool, editor, tool]);
+  }, [brushTool, brushNodeTool, pencilTool, selectTool, editor, tool]);
   // 2-finger drag pan: reuses the exact same hand-pan math as the "hand"
   // tool's single-pointer drag (panDragRef above), just driven by the
   // touch midpoint's frame-to-frame delta instead of a single pointer.
@@ -312,7 +322,7 @@ export function GlyphCanvas() {
       if (!p) return;
       // Hover is only rendered for Pen's rubber-band. Select's handle hover
       // has its own change guard in useSelectTool.
-      if (tool === "pen") setHover(p);
+      if (tool === "pen" || isNodeBrush) setHover(p);
       if (panDragRef.current) {
         setPan({
           x: panDragRef.current.startPan.x - (sample.clientX - panDragRef.current.startClient.x) / sc,
@@ -320,12 +330,12 @@ export function GlyphCanvas() {
         });
         return;
       }
-      if (tool === "brush") return brushTool.pointerMove(p, sample);
+      if (tool === "brush") return isNodeBrush ? brushNodeTool.pointerMove(p) : brushTool.pointerMove(p, sample);
       if (tool === "pencil") return pencilTool.pointerMove(p);
       if (tool === "select") return selectTool.pointerMove(p, sample.shiftKey, sample.pointerType, sample.metaKey);
       editor.pointerMove(p, sample.shiftKey, sample.altKey);
     },
-    [sketchGestures, getFontPoint, tool, setPan, sc, brushTool, pencilTool, selectTool, editor]
+    [sketchGestures, getFontPoint, tool, setPan, sc, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, editor]
   );
   pointerMoveProcessorRef.current = processPointerMove;
 
@@ -372,8 +382,8 @@ export function GlyphCanvas() {
   }, []);
 
   useEffect(() => {
-    if (tool !== "pen") setHover(null);
-  }, [tool]);
+    if (tool !== "pen" && !isNodeBrush) setHover(null);
+  }, [tool, isNodeBrush]);
 
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<SVGSVGElement>) => {
@@ -397,12 +407,12 @@ export function GlyphCanvas() {
         return;
       }
       if (tool === "zoom") return applyZoomAt(zoom * (e.shiftKey ? 0.8 : 1.25), e.clientX, e.clientY);
-      if (tool === "brush") return brushTool.pointerDown(p, e);
+      if (tool === "brush") return isNodeBrush ? brushNodeTool.pointerDown(p) : brushTool.pointerDown(p, e);
       if (tool === "pencil") return pencilTool.pointerDown(p);
       if (tool === "select") return selectTool.pointerDown(p, e.shiftKey, e.metaKey || e.ctrlKey);
       editor.pointerDown(p, e.shiftKey, e.altKey, e.metaKey || e.ctrlKey);
     },
-    [getFontPoint, tool, editor, brushTool, pencilTool, selectTool, pan, zoom, applyZoomAt, usingHandPan, sketchGestures, flushPointerMove]
+    [getFontPoint, tool, editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, pan, zoom, applyZoomAt, usingHandPan, sketchGestures, flushPointerMove]
   );
 
   const onPointerMove = queuePointerMove;
@@ -411,11 +421,11 @@ export function GlyphCanvas() {
     flushPointerMove();
     sketchGestures.handlePointerUp(e);
     panDragRef.current = null;
-    if (tool === "brush") return brushTool.pointerUp();
+    if (tool === "brush") return isNodeBrush ? brushNodeTool.pointerUp() : brushTool.pointerUp();
     if (tool === "pencil") return pencilTool.pointerUp();
     if (tool === "select") return selectTool.pointerUp();
     editor.pointerUp();
-  }, [editor, brushTool, pencilTool, selectTool, tool, sketchGestures, flushPointerMove]);
+  }, [editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, tool, sketchGestures, flushPointerMove]);
 
   const onDoubleClick = useCallback(
     (e: ReactMouseEvent<SVGSVGElement>) => {
@@ -426,6 +436,16 @@ export function GlyphCanvas() {
         // Double-click on the current endpoint commits the open path.
         if (editor.isCurrentEndpoint(p)) { editor.finishOpenContour(); return; }
         // Double-click outside any vector object → escape to Select.
+        const tol = 6 * hitScale;
+        const hitAny = editor.outline.objects.some((obj) => pointHitsObject(obj, p, tol));
+        if (!hitAny) setTool("select");
+        return;
+      }
+
+      if (isNodeBrush) {
+        // Double-click commits the open node-drawn path, exactly like the
+        // Pen tool's endpoint double-click above.
+        if (brushNodeTool.liveNodes.length >= 2) { brushNodeTool.finishOpen(); return; }
         const tol = 6 * hitScale;
         const hitAny = editor.outline.objects.some((obj) => pointHitsObject(obj, p, tol));
         if (!hitAny) setTool("select");
@@ -494,7 +514,7 @@ export function GlyphCanvas() {
         return;
       }
     },
-    [tool, getFontPoint, editor, hitScale, setTool, selectNodes, selectObjects]
+    [tool, isNodeBrush, brushNodeTool, getFontPoint, editor, hitScale, setTool, selectNodes, selectObjects]
   );
 
   useEffect(() => {
@@ -502,7 +522,7 @@ export function GlyphCanvas() {
       flushPointerMove();
       sketchGestures.handlePointerUp(e);
       panDragRef.current = null;
-      if (tool === "brush") brushTool.pointerUp();
+      if (tool === "brush") (isNodeBrush ? brushNodeTool.pointerUp() : brushTool.pointerUp());
       else if (tool === "pencil") pencilTool.pointerUp();
       else if (tool === "select") selectTool.pointerUp();
       else editor.pointerUp();
@@ -519,14 +539,19 @@ export function GlyphCanvas() {
       window.removeEventListener("pointerup", onWindowPointerUp);
       window.removeEventListener("pointercancel", onWindowPointerCancel);
     };
-  }, [editor, brushTool, pencilTool, selectTool, tool, sketchGestures, flushPointerMove]);
+  }, [editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, tool, sketchGestures, flushPointerMove]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
       if (e.code === "Space") spacePanRef.current = true;
-      if (e.key === "Escape") { editor.finishOpenContour(); brushTool.cancel(); pencilTool.cancel(); }
+      if (e.key === "Escape") {
+        editor.finishOpenContour();
+        brushTool.cancel();
+        if (isNodeBrush) brushNodeTool.escape();
+        pencilTool.cancel();
+      }
       if (tool === "node") {
         if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); editor.deleteSelectedNodes(); }
         const step = e.shiftKey ? 10 : 1;
@@ -540,7 +565,7 @@ export function GlyphCanvas() {
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); };
-  }, [editor, brushTool, pencilTool, tool]);
+  }, [editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, tool]);
 
   const beginGuideDrag = useCallback(
     (key: MetricGuideKey, e: ReactPointerEvent<SVGLineElement>) => {
@@ -725,7 +750,8 @@ export function GlyphCanvas() {
   );
 
   const cursorClass =
-    tool === "pen" ? "cursor-pen"
+    isNodeBrush ? "cursor-pen"
+    : tool === "pen" ? "cursor-pen"
     : tool === "node" ? "cursor-node"
     : tool === "shape" ? "cursor-shape"
     : tool === "hand" ? "cursor-hand"
@@ -1060,6 +1086,18 @@ export function GlyphCanvas() {
           />
         )}
 
+        {/* Brush tool, Node draw mode: live silhouette of the path placed so
+            far, built via the exact same brush engine as the freehand
+            preview above — see useBrushNodeTool.previewOutline. */}
+        {isNodeBrush && brushNodeTool.previewOutline.length > 0 && (
+          <path
+            d={brushNodeTool.previewOutline.map((c) => contourToPath(c, ascender)).join(" ")}
+            className="obj-fill"
+            fillRule="nonzero"
+            opacity={0.9}
+          />
+        )}
+
         {/* Pencil preview: the live curve-fit result, shown both as the
             open gesture drawn so far AND — faintly — as it will land once
             closed, so the eventual auto-close never comes as a surprise. */}
@@ -1083,6 +1121,19 @@ export function GlyphCanvas() {
         {/* Pen rubber-band */}
         {tool === "pen" && editor.drawingContourId && hover && (
           <RubberBand outline={editor.outline} contourId={editor.drawingContourId} hover={hover} ascender={ascender} hitScale={hitScale} />
+        )}
+
+        {/* Brush Node draw mode rubber-band — same idea as Pen's, tracking
+            brushNodeTool's own in-progress path instead of the shared
+            editor outline. */}
+        {isNodeBrush && brushNodeTool.liveNodes.length > 0 && hover && (
+          <RubberBand
+            outline={{ objects: [{ id: "brush-node-preview", kind: "brush", contours: [{ id: "brush-node-preview-contour", nodes: brushNodeTool.liveNodes, closed: false }] } as VectorObject] }}
+            contourId="brush-node-preview-contour"
+            hover={hover}
+            ascender={ascender}
+            hitScale={hitScale}
+          />
         )}
 
         {/* Node-tool marquee */}
@@ -1176,11 +1227,23 @@ export function GlyphCanvas() {
           </g>
         )}
 
-        {/* Nodes + handles (Node tool, or while drawing with Pen) — memoized layer,
-            see ObjectsLayer above for why. */}
-        {(tool === "node" || tool === "pen") ? (
+        {/* Nodes + handles (Node tool, while drawing with Pen, or Brush's
+            Node draw mode) — memoized layer, see ObjectsLayer above for why. */}
+        {(tool === "node" || tool === "pen" || (isNodeBrush && brushNodeTool.isDrawing)) ? (
           <NodesAndHandlesLayer
-            objects={tool === "node" ? editor.nodeableOutline.objects : objects}
+            objects={
+              tool === "node"
+                ? editor.nodeableOutline.objects
+                : isNodeBrush
+                ? (brushNodeTool.liveNodes.length > 0
+                    ? [{
+                        id: "brush-node-preview",
+                        kind: "brush",
+                        contours: [{ id: "brush-node-preview-contour", nodes: brushNodeTool.liveNodes, closed: false }],
+                      } as VectorObject]
+                    : [])
+                : objects
+            }
             ascender={ascender}
             hitScale={hitScale}
             tool={tool}
