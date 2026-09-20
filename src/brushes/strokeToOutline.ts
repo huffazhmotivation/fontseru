@@ -1380,11 +1380,27 @@ export function pixelBlockOutline(centerline: { x: number; y: number }[], cellSi
 /** Same Bresenham cell-walk as pixelBlockOutline, factored out so Pixel
  * Liquid mode (below) starts from the exact same set of grid cells the
  * crisp block mode would use — only what happens to those cells differs. */
-function pixelGridCells(centerline: { x: number; y: number }[], cellSize: number): { cx: number; cy: number }[] {
+function pixelGridCells(
+  centerline: { x: number; y: number }[],
+  cellSize: number,
+  diagonalVertices?: Set<string>
+): { cx: number; cy: number }[] {
   const toCell = (p: { x: number; y: number }) => ({ cx: Math.floor(p.x / cellSize), cy: Math.floor(p.y / cellSize) });
   const seen = new Set<string>();
   const cells: { cx: number; cy: number }[] = [];
+  // Consecutive cells of the walk (in stroke order, duplicates skipped). A
+  // step that changes both cx and cy is a diagonal step of the stroke itself;
+  // its shared grid vertex is recorded so Pixel Liquid only fuses diagonal
+  // neighbors the stroke actually stepped between, not ones that merely
+  // happen to touch at a corner.
+  let lastWalk: { cx: number; cy: number } | null = null;
   const addCell = (cx: number, cy: number) => {
+    if (diagonalVertices && lastWalk && (lastWalk.cx !== cx || lastWalk.cy !== cy)) {
+      if (Math.abs(cx - lastWalk.cx) === 1 && Math.abs(cy - lastWalk.cy) === 1) {
+        diagonalVertices.add(`${Math.max(cx, lastWalk.cx)},${Math.max(cy, lastWalk.cy)}`);
+      }
+    }
+    lastWalk = { cx, cy };
     const key = `${cx},${cy}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -1475,7 +1491,8 @@ export function pixelLiquidOutline(
 ): Contour[] {
   if (centerline.length === 0 || cellSize <= 0) return [];
   const s = Math.max(0, Math.min(1, smoothness));
-  const cells = pixelGridCells(centerline, cellSize);
+  const diagonalVertices = new Set<string>();
+  const cells = pixelGridCells(centerline, cellSize, diagonalVertices);
   if (cells.length === 0) return [];
 
   // Slightly larger than the raw cell so adjacent stamps truly overlap
@@ -1495,8 +1512,113 @@ export function pixelLiquidOutline(
     roundedSquareStamp((cx + 0.5) * cellSize, (cy + 0.5) * cellSize, side, cornerRadius)
   );
 
+  // Where cells meet only at a corner (a diagonal step), or wrap an inside
+  // corner, the stamps' own rounded corners leave a pinch/gap instead of a
+  // joint. Fill those meeting points so pixels fuse the same way everywhere.
+  rings.push(...pixelLiquidJunctionRings(cells, cellSize, (side - cellSize) / 2, cornerRadius, s, diagonalVertices));
+
   const contours = unionPolygonsToContours(rings, EXPAND_FIDELITY_SCALE);
   return contours.length > 0 ? contours : [];
+}
+
+/**
+ * Extra polygons for Pixel Liquid at every grid VERTEX where the surrounding
+ * four cells (NW/NE/SW/SE) form something other than a lone cell or a plain
+ * straight edge:
+ *  - two cells the stroke stepped between diagonally (the common "serong" step),
+ *  - three cells around an inside corner,
+ *  - all four cells (otherwise a tiny hole is left at the crossing).
+ * For those, each occupied quadrant gets a square that squares off its
+ * rounded stamp corner right at the vertex, and each EMPTY quadrant that is
+ * flanked by two occupied ones gets a small concave fillet patch (a corner
+ * square minus a quarter disc), so the outline runs tangent-smooth from one
+ * cell's straight edge, around the fillet, onto the next cell's edge — the
+ * same soft neck between neighboring pixels in the reference look.
+ * `overshoot` is how far each stamp extends past its cell edge; all
+ * shapes are measured from the stamps' real edges so nothing steps or lips.
+ */
+function pixelLiquidJunctionRings(
+  cells: { cx: number; cy: number }[],
+  cellSize: number,
+  overshoot: number,
+  cornerRadius: number,
+  smoothness: number,
+  diagonalVertices: Set<string>
+): Point[][] {
+  const occ = new Set(cells.map((c) => `${c.cx},${c.cy}`));
+  const has = (x: number, y: number) => occ.has(`${x},${y}`);
+  const eps = overshoot;
+  const rho = cellSize * (0.1 + 0.2 * smoothness); // fillet radius
+  const t = Math.max(cornerRadius, rho + 2 * eps); // corner square size
+  const eta = cellSize * 0.02; // tiny overlap into neighbors, avoids exact-coincident edges
+  const ARC_SEGS = 8;
+
+  // quadrant order: NW, NE, SW, SE  ->  (sx, sy) points from the vertex into that cell
+  const quads: { dx: number; dy: number; sx: number; sy: number }[] = [
+    { dx: -1, dy: -1, sx: -1, sy: -1 },
+    { dx: 0, dy: -1, sx: 1, sy: -1 },
+    { dx: -1, dy: 0, sx: -1, sy: 1 },
+    { dx: 0, dy: 0, sx: 1, sy: 1 },
+  ];
+
+  const vertices = new Set<string>();
+  for (const { cx, cy } of cells) {
+    vertices.add(`${cx},${cy}`);
+    vertices.add(`${cx + 1},${cy}`);
+    vertices.add(`${cx},${cy + 1}`);
+    vertices.add(`${cx + 1},${cy + 1}`);
+  }
+
+  const out: Point[][] = [];
+  for (const key of vertices) {
+    const [vx, vy] = key.split(",").map(Number);
+    const filled = quads.map((q) => has(vx + q.dx, vy + q.dy));
+    const count = filled.filter(Boolean).length;
+    // A lone diagonal contact only fuses if the stroke itself stepped
+    // diagonally across this vertex (see pixelGridCells).
+    const diagonalOnly =
+      count === 2 && ((filled[0] && filled[3]) || (filled[1] && filled[2])) && diagonalVertices.has(key);
+    if (!(count >= 3 || diagonalOnly)) continue;
+    const Q = { x: vx * cellSize, y: vy * cellSize };
+
+    quads.forEach((q, i) => {
+      const { sx, sy } = q;
+      if (filled[i]) {
+        // Square its stamp corner: from the stamp's true corner back by t.
+        const kx = Q.x - eps * sx;
+        const ky = Q.y - eps * sy;
+        const x2 = kx + t * sx;
+        const y2 = ky + t * sy;
+        out.push([
+          { x: kx, y: ky },
+          { x: x2, y: ky },
+          { x: x2, y: y2 },
+          { x: kx, y: y2 },
+        ]);
+        return;
+      }
+      // Empty quadrant: fillet its corner (its two neighbors are both filled here).
+      const cxq = Q.x + eps * sx;
+      const cyq = Q.y + eps * sy;
+      const center = { x: cxq + sx * rho, y: cyq + sy * rho };
+      const aStart = Math.atan2(-sy, 0); // toward P_a = (cxq + sx*rho, cyq)
+      const aEnd = Math.atan2(0, -sx); // toward P_b = (cxq, cyq + sy*rho)
+      let delta = aEnd - aStart;
+      while (delta > Math.PI) delta -= 2 * Math.PI;
+      while (delta <= -Math.PI) delta += 2 * Math.PI;
+      const ring: Point[] = [
+        { x: cxq - eta * sx, y: cyq - eta * sy },
+        { x: cxq + sx * rho, y: cyq - eta * sy },
+      ];
+      for (let k = 0; k <= ARC_SEGS; k++) {
+        const a = aStart + (k / ARC_SEGS) * delta;
+        ring.push({ x: center.x + Math.cos(a) * rho, y: center.y + Math.sin(a) * rho });
+      }
+      ring.push({ x: cxq - eta * sx, y: cyq + sy * rho });
+      out.push(ring);
+    });
+  }
+  return out;
 }
 
 function signedArea(points: Point[]): number {
