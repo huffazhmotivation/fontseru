@@ -33,6 +33,28 @@ export function snapToGridCell(p: Point, size: number): Point {
 }
 
 /**
+ * Pixel Brush diagonal-friendliness. A diagonal drag almost never passes
+ * exactly through cell corners: the pointer clips the edge of one of the two
+ * orthogonal "elbow" cells (the one above/beside the intended diagonal cell)
+ * for a single event before landing in the diagonal one, so a clean
+ * diagonal used to come out as an L-shaped staircase that was very hard to
+ * avoid by hand. A cell only counts as a deliberate stop if the pointer
+ * actually reached its CORE — the central (2 * PIXEL_CORE_HALF) square,
+ * measured as a fraction of the cell — at some point while inside it.
+ * See `isPixelCellCore` and its use in pointerMove.
+ */
+const PIXEL_CORE_HALF = 0.25; // core = central 50% of the cell on each axis
+
+function isPixelCellCore(p: Point, size: number): boolean {
+  const fx = p.x / size - Math.floor(p.x / size);
+  const fy = p.y / size - Math.floor(p.y / size);
+  return (
+    Math.abs(fx - 0.5) <= PIXEL_CORE_HALF &&
+    Math.abs(fy - 0.5) <= PIXEL_CORE_HALF
+  );
+}
+
+/**
  * Brush Stabilizer shares the same underlying engine as the Pencil tool's
  * Stabilizer (see `brushes/strokeSmoothing.ts`), but the two moments in a
  * stroke's life use it differently:
@@ -70,6 +92,9 @@ export function useBrushTool(hitScale: number) {
   // non-destructive Expand) is built separately, from the full engine, in
   // pointerUp — it does not reuse this ref.
   const samplesRef = useRef<StrokeSample[]>([]);
+  // Pixel Brush only, parallel to samplesRef/rawSamplesRef: whether the
+  // pointer ever reached the core of that sample's cell (see isPixelCellCore).
+  const pixelCoreRef = useRef<boolean[]>([]);
   // Pixel Brush's live preview is many square contours (one per grid cell),
   // not one nib-shaped contour, so this is always an array — empty for "no
   // preview" rather than null, which keeps the pixel and non-pixel paths
@@ -163,6 +188,7 @@ export function useBrushTool(hitScale: number) {
     const sample: StrokeSample = { x: snapped.x, y: snapped.y, pressure: pressureFor(snapped, e) };
     rawSamplesRef.current = [sample];
     samplesRef.current = [sample];
+    pixelCoreRef.current = pixelSnap ? [isPixelCellCore(p, gridSize)] : [];
     setIsDrawing(true);
     setPreviewOutline([]);
     setPreviewCenterline(null);
@@ -178,12 +204,44 @@ export function useBrushTool(hitScale: number) {
         // Pixel Brush stays on its own grid-snapped path, unaffected by
         // Stabilizer — a blocky brush has nothing to stabilize.
         const samples = samplesRef.current;
+        const cores = pixelCoreRef.current;
         const last = samples[samples.length - 1];
         const minMove = gridSize * 0.5;
-        if (Math.hypot(snapped.x - last.x, snapped.y - last.y) < minMove) return;
+        if (Math.hypot(snapped.x - last.x, snapped.y - last.y) < minMove) {
+          // Still inside the same cell: just remember if the pointer got to
+          // its core, so an intentional corner cell isn't mistaken for a
+          // clipped elbow below.
+          if (isPixelCellCore(p, gridSize)) cores[cores.length - 1] = true;
+          return;
+        }
+        // Diagonal fix: if the cell we're leaving (`last`) was only clipped
+        // (pointer never reached its core) and going prev -> last -> new is
+        // two orthogonal steps that together make a single diagonal step
+        // prev -> new, drop `last` so the stroke steps diagonally instead of
+        // detouring through the cell above/beside the diagonal one. A real
+        // L-shaped corner is unaffected: drawing one puts the pointer
+        // squarely inside the corner cell, which marks it as core.
+        if (samples.length >= 2 && !cores[cores.length - 1]) {
+          const prev = samples[samples.length - 2];
+          const lcx = Math.round(last.x / gridSize - 0.5);
+          const lcy = Math.round(last.y / gridSize - 0.5);
+          const pcx = Math.round(prev.x / gridSize - 0.5);
+          const pcy = Math.round(prev.y / gridSize - 0.5);
+          const ncx = Math.round(snapped.x / gridSize - 0.5);
+          const ncy = Math.round(snapped.y / gridSize - 0.5);
+          const orthoIn = Math.abs(lcx - pcx) + Math.abs(lcy - pcy) === 1;
+          const orthoOut = Math.abs(ncx - lcx) + Math.abs(ncy - lcy) === 1;
+          const diagonal = Math.abs(ncx - pcx) === 1 && Math.abs(ncy - pcy) === 1;
+          if (orthoIn && orthoOut && diagonal) {
+            samples.pop();
+            rawSamplesRef.current.pop();
+            cores.pop();
+          }
+        }
         const sample: StrokeSample = { x: snapped.x, y: snapped.y, pressure: pressureFor(snapped, e) };
         rawSamplesRef.current.push(sample);
         samples.push(sample);
+        cores.push(isPixelCellCore(p, gridSize));
         schedulePreviewUpdate();
         return;
       }
@@ -264,6 +322,7 @@ export function useBrushTool(hitScale: number) {
     const rawSamples = centerlineSamples.map((s) => ({ ...s }));
     rawSamplesRef.current = [];
     samplesRef.current = [];
+    pixelCoreRef.current = [];
     setPreviewOutline([]);
     setPreviewCenterline(null);
     clearQuickShapeHold();
@@ -289,6 +348,7 @@ export function useBrushTool(hitScale: number) {
   const cancel = useCallback(() => {
     rawSamplesRef.current = [];
     samplesRef.current = [];
+    pixelCoreRef.current = [];
     setIsDrawing(false);
     setPreviewOutline([]);
     setPreviewCenterline(null);
