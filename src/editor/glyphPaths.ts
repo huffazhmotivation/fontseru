@@ -244,7 +244,17 @@ export function getGlyphPaths(glyph: Glyph, ascender: number): GlyphPathEntry[] 
       // ("&", "8", looped "e") renders inverted — only the texture specks
       // show, the solid middle turns transparent. resolveTexturedBrushFill
       // fixes that; it's a no-op-ish fast path for non-self-crossing strokes.
-      const resolved = resolveTexturedBrushFill(brushOutlineContours(obj), TIGHT_CURVE_FIDELITY_SCALE);
+      // Spray Brush is the exception: it has NO body ring, only thousands of
+      // same-winding speck contours, so nonzero fill already unions them
+      // into the exact same picture the canvas draws. Running the polygon
+      // boolean on that many pieces took 3-18 SECONDS (grows with stroke
+      // length) and was the lag after lifting the pen — it also reshaped
+      // the specks, so thumbnails/overview looked different from the canvas.
+      // Font EXPORT still does its own real union (see expandStrokeObject).
+      const resolved =
+        obj.brushType === "sprayBrush"
+          ? brushOutlineContours(obj)
+          : resolveTexturedBrushFill(brushOutlineContours(obj), TIGHT_CURVE_FIDELITY_SCALE);
       entries.push({
         kind: "brushFill",
         id: obj.id,

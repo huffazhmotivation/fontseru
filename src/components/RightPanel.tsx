@@ -966,13 +966,11 @@ function PenPanel() {
  * three "Sharp" shapes true needle points (see taperFactor() in
  * strokeToOutline.ts): they remove that end's small rounded floor
  * entirely, so the ramp set by taperStart/taperEnd reaches genuine ~0
- * width on its own — no manual taper tuning required. The plain "Taper"
- * shapes keep the old soft/rounded floor, on purpose, as a gentler look. */
+ * width on its own — no manual taper tuning required. (The old plain
+ * "Taper start / Taper end / Taper both ends" presets were removed; the
+ * raw Taper Start/End sliders under "Edit width profile" still exist.) */
 const WIDTH_PROFILE_PRESETS: { id: string; label: string; taperStart: number; taperEnd: number; sharpStart: boolean; sharpEnd: boolean }[] = [
   { id: "constant", label: "Constant", taperStart: 0, taperEnd: 0, sharpStart: false, sharpEnd: false },
-  { id: "taper-start", label: "Taper start", taperStart: 0.28, taperEnd: 0, sharpStart: false, sharpEnd: false },
-  { id: "taper-end", label: "Taper end", taperStart: 0, taperEnd: 0.28, sharpStart: false, sharpEnd: false },
-  { id: "taper-both", label: "Taper both ends", taperStart: 0.2, taperEnd: 0.2, sharpStart: false, sharpEnd: false },
   { id: "sharp-start", label: "Sharp start", taperStart: 0.34, taperEnd: 0, sharpStart: true, sharpEnd: false },
   { id: "sharp-end", label: "Sharp end", taperStart: 0, taperEnd: 0.34, sharpStart: false, sharpEnd: true },
   { id: "sharp-both", label: "Sharp both ends", taperStart: 0.3, taperEnd: 0.3, sharpStart: true, sharpEnd: true },

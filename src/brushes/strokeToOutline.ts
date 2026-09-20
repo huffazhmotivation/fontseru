@@ -1794,41 +1794,58 @@ function makeRoughHole(center: Point, radius: number, seed: number, desiredSign:
  * Tiny filled speck — same winding as the main contour (adds ink, doesn't
  * punch through it) — used for Oil Brush's spatter dots near a frayed edge.
  */
-function makeSpeckle(center: Point, radius: number, seed: number, desiredSign: number, sides = 12): Contour {
+function makeSpeckle(center: Point, radius: number, seed: number, desiredSign: number, sides = 12, cornerNodes = false): Contour {
   // 12 sides + smooth (curved, not corner) nodes reads as a soft round ink
   // droplet. The previous 6-corner polygon with sharp "corner" node types
   // faceted into a visible little hexagon at real brush sizes, which is
   // what made the whole spray field look mechanical/blocky instead of like
   // fine atomized specks. `sides` is lowered (still smooth-noded, just
-  // coarser) for the Spray Brush's live-drawing `fast` preview — see
-  // sprayBrushOutlineContours' doc comment — where speed matters more than
-  // per-speck roundness.
-  const raw: Point[] = [];
+  // coarser) for the Spray Brush's live-drawing `fast` preview and for dots
+  // only a couple of font units wide — see sprayBrushOutlineContours.
+  //
+  // Built straight into the final point list (no intermediate array + copy):
+  // a spray stroke makes tens of thousands of these, and the allocations
+  // were the largest single cost (garbage collection) of committing one.
+  const pts: Point[] = new Array(sides);
+  let area2 = 0;
   for (let i = 0; i < sides; i++) {
     const a = (i / sides) * Math.PI * 2 + pseudoNoise(seed + i * 2.1) * 0.35;
     const wobble = 1 + pseudoNoise(seed + i * 4.3) * 0.45;
-    raw.push({ x: center.x + Math.cos(a) * radius * wobble, y: center.y + Math.sin(a) * radius * wobble });
+    pts[i] = { x: center.x + Math.cos(a) * radius * wobble, y: center.y + Math.sin(a) * radius * wobble };
   }
-  const sign = Math.sign(signedArea(raw));
-  const pts = sign !== 0 && sign !== desiredSign ? [...raw].reverse() : raw;
-  const n = pts.length;
-  return {
-    id: shortId("contour"),
-    closed: true,
-    nodes: pts.map((p, i) => {
-      const prev = pts[(i - 1 + n) % n];
-      const next = pts[(i + 1) % n];
-      const hx = (next.x - prev.x) / 6;
-      const hy = (next.y - prev.y) / 6;
-      return {
-        id: shortId("node"),
-        point: p,
-        handleIn: { x: p.x - hx, y: p.y - hy },
-        handleOut: { x: p.x + hx, y: p.y + hy },
-        type: "smooth" as const,
-      };
-    }),
-  };
+  for (let i = 0; i < sides; i++) {
+    const p1 = pts[i];
+    const p2 = pts[(i + 1) % sides];
+    area2 += p1.x * p2.y - p2.x * p1.y;
+  }
+  const sign = Math.sign(area2);
+  if (sign !== 0 && sign !== desiredSign) pts.reverse();
+  const n = sides;
+  // `cornerNodes`: plain polygon (no Bezier handles). For dots only a pixel
+  // or two wide this is visually identical to the smooth version, but it
+  // serialises to short "L" path commands instead of "C" ones and is much
+  // cheaper to allocate and rasterise.
+  if (cornerNodes) {
+    const nodes: PathNode[] = new Array(n);
+    for (let i = 0; i < n; i++) nodes[i] = { id: shortId("node"), point: pts[i], handleIn: null, handleOut: null, type: "corner" };
+    return { id: shortId("contour"), closed: true, nodes };
+  }
+  const nodes: PathNode[] = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const p = pts[i];
+    const prev = pts[(i - 1 + n) % n];
+    const next = pts[(i + 1) % n];
+    const hx = (next.x - prev.x) / 6;
+    const hy = (next.y - prev.y) / 6;
+    nodes[i] = {
+      id: shortId("node"),
+      point: p,
+      handleIn: { x: p.x - hx, y: p.y - hy },
+      handleOut: { x: p.x + hx, y: p.y + hy },
+      type: "smooth",
+    };
+  }
+  return { id: shortId("contour"), closed: true, nodes };
 }
 
 /**
@@ -2536,7 +2553,7 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   // needs to be dense enough that neighboring core dots' radii overlap and
   // fuse into one continuous solid patch, not just "densely scattered but
   // still individually visible".
-  const specksPerStep = fast ? 6 : Math.max(5, Math.round(halfWidthBase * 1.15 * (0.6 + density)));
+  const specksPerStep = fast ? 11 : Math.max(5, Math.round(halfWidthBase * 1.15 * (0.6 + density)));
   const outerSign = 1;
   // Reach pushed out a bit further than before so the sparse mist genuinely
   // has room to fade out and scatter, instead of stopping right where the
@@ -2617,9 +2634,9 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
       // couple of font units wide is indistinguishable at 6-8 smooth sides
       // from 12, and this alone roughly halves the committed field's node
       // count (the cost of building/serialising/rendering it on pointer-up).
-      const drawRadius = fast ? radius * 1.9 : radius;
-      const sides = fast ? 5 : radius < 1.4 ? 6 : radius < 3 ? 8 : 12;
-      flecks.push(makeSpeckle(center, drawRadius, seed, outerSign, sides));
+      const drawRadius = fast ? radius * 1.25 : radius;
+      const sides = fast ? 4 : radius < 1.4 ? 6 : radius < 3 ? 8 : 12;
+      flecks.push(makeSpeckle(center, drawRadius, seed, outerSign, sides, fast || radius < 1.6));
     }
   }
 
@@ -2898,7 +2915,33 @@ function resamplePressure(n: number, samples?: StrokeSample[]): number[] {
  * object's stored geometry stays a centerline — this is only for rendering and
  * thumbnails. Different presets => visibly different silhouettes on the same path.
  */
+// Spray Brush's committed field is thousands of speck contours (100k+ nodes
+// on a long stroke) and this function is called for the SAME stroke from
+// several places on every commit — the glyph canvas, thumbnail, overview,
+// ghost layer, glyph-path cache — each one used to rebuild it from scratch.
+// Cache per object, invalidated by anything the result depends on (contour
+// array identity, stroke width, settings snapshot, brush type). Spray only:
+// the other presets are cheap enough that a cache isn't worth the aliasing
+// risk of handing out shared arrays.
+const sprayOutlineCache = new WeakMap<
+  VectorObject,
+  { contours: VectorObject["contours"]; strokeWidth: number | undefined; brushSettings: VectorObject["brushSettings"]; brushType: VectorObject["brushType"]; result: Contour[] }
+>();
+
 export function brushOutlineContours(obj: VectorObject): Contour[] {
+  if (obj.brushType === "sprayBrush") {
+    const hit = sprayOutlineCache.get(obj);
+    if (hit && hit.contours === obj.contours && hit.strokeWidth === obj.strokeWidth && hit.brushSettings === obj.brushSettings && hit.brushType === obj.brushType) {
+      return hit.result;
+    }
+    const result = brushOutlineContoursUncached(obj);
+    sprayOutlineCache.set(obj, { contours: obj.contours, strokeWidth: obj.strokeWidth, brushSettings: obj.brushSettings, brushType: obj.brushType, result });
+    return result;
+  }
+  return brushOutlineContoursUncached(obj);
+}
+
+function brushOutlineContoursUncached(obj: VectorObject): Contour[] {
   const settings = brushSettingsForObject(obj);
   const contours: Contour[] = [];
   for (const c of obj.contours) {
