@@ -1445,9 +1445,79 @@ function roundedSquareStamp(cx: number, cy: number, side: number, cornerRadius: 
 }
 
 /**
+ * Same arc-corner construction as `roundedSquareStamp`, but each of the 4
+ * corners gets its OWN radius instead of one shared radius. Passing 0 for a
+ * corner isn't a special case — the arc's origin math collapses to the bare
+ * square vertex when r=0, so it just falls out of the same loop.
+ *
+ * This is what lets `pixelLiquidOutline` (below) round only the corners
+ * that are genuinely convex on the fused blob's silhouette, and leave every
+ * other corner flat — see that function's doc comment for why this matters.
+ */
+function roundedRectStampVariable(
+  cx: number,
+  cy: number,
+  side: number,
+  rTR: number,
+  rBR: number,
+  rBL: number,
+  rTL: number,
+  archSegs = 8
+): Point[] {
+  const half = side / 2;
+  const corners: { x: number; y: number; start: number; r: number }[] = [
+    { x: cx + half - rTR, y: cy - half + rTR, start: -Math.PI / 2, r: Math.max(0, rTR) },
+    { x: cx + half - rBR, y: cy + half - rBR, start: 0, r: Math.max(0, rBR) },
+    { x: cx - half + rBL, y: cy + half - rBL, start: Math.PI / 2, r: Math.max(0, rBL) },
+    { x: cx - half + rTL, y: cy - half + rTL, start: Math.PI, r: Math.max(0, rTL) },
+  ];
+  const pts: Point[] = [];
+  for (const c of corners) {
+    for (let i = 0; i <= archSegs; i++) {
+      const a = c.start + (i / archSegs) * (Math.PI / 2);
+      pts.push({ x: c.x + Math.cos(a) * c.r, y: c.y + Math.sin(a) * c.r });
+    }
+  }
+  return pts;
+}
+
+/**
+ * A short, flat-ended bar connecting two DIAGONALLY-touching cell centers
+ * (the two cells that meet only at a corner, with the two "in-between"
+ * cardinal cells empty). Its ends are hidden underneath the two cells' own
+ * `roundedRectStampVariable` stamps once unioned, so it needs no end caps —
+ * just a plain oriented rectangle.
+ *
+ * This is the actual fix for "kenapa brush pixel gabisa membuat pixel
+ * menyerongnya": the grid itself is, and has to stay, axis-aligned squares
+ * (`pixelGridCells` finds cells with `Math.floor`, so there is no such thing
+ * as a rotated/diagonal *cell*). A true diagonal *stroke* is normally drawn,
+ * in any pixel-grid tool, as a staircase of square cells that only share a
+ * corner — what was missing was something to fill the gap at that shared
+ * corner. This bar is that connective tissue: it doesn't add a diagonal
+ * pixel, it fuses the staircase so the union reads as one smooth diagonal
+ * edge instead of two blobs pinched to a single point.
+ */
+function diagonalBridgeStamp(cx0: number, cy0: number, cx1: number, cy1: number, cellSize: number, halfWidth: number): Point[] {
+  const p0 = { x: (cx0 + 0.5) * cellSize, y: (cy0 + 0.5) * cellSize };
+  const p1 = { x: (cx1 + 0.5) * cellSize, y: (cy1 + 0.5) * cellSize };
+  const dx = p1.x - p0.x;
+  const dy = p1.y - p0.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -(dy / len) * halfWidth;
+  const ny = (dx / len) * halfWidth;
+  return [
+    { x: p0.x + nx, y: p0.y + ny },
+    { x: p1.x + nx, y: p1.y + ny },
+    { x: p1.x - nx, y: p1.y - ny },
+    { x: p0.x - nx, y: p0.y - ny },
+  ];
+}
+
+/**
  * Pixel Liquid mode: walks the exact same grid cells the crisp Pixel Brush
- * uses (pixelGridCells above), drops a rounded-square "stamp" on every one
- * of them, and takes their EXACT geometric union (polygon-clipping, via
+ * uses (pixelGridCells above), drops a stamp on every one of them, and
+ * takes their EXACT geometric union (polygon-clipping, via
  * `unionPolygonsToContours` — the same primitive-union machinery Monoline
  * uses for its stroke expansion) to fuse them into one shape.
  *
@@ -1460,12 +1530,23 @@ function roundedSquareStamp(cx: number, cy: number, side: number, cornerRadius: 
  * left/right offset edges crossed in ways the per-side self-intersection
  * cleanup doesn't catch, producing a stray diagonal notch instead of a
  * smooth fused joint. A per-cell stamp union has no such notion of "path
- * order" or direction to go wrong — every stamp just gets merged with
- * whatever it geometrically overlaps, so arbitrarily branching/looping
- * pixel shapes fuse cleanly and smoothly no matter how the cells were
- * visited, which is what gives the continuous, "liquid"/gummy blob look
- * (smooth even at concave joints) rather than a pile of separately
- * blended pieces.
+ * order" or direction to go wrong.
+ *
+ * Each cell's stamp is a rounded rect whose 4 corners are radiused
+ * INDEPENDENTLY, based on that corner's own two edge-neighbor cells: a
+ * corner only rounds outward when BOTH neighbors sharing it are empty (a
+ * genuine convex corner of the fused blob's silhouette). If either neighbor
+ * is filled, that corner sits along a straight run or an interior/concave
+ * joint and stays flat. Using one shared radius on every corner regardless
+ * of context (the previous version) is what produced the "pertemuan antara
+ * pixelnya" mismatch: two adjacent filled cells each still rounded their
+ * touching corners away, so a straight run of cells came out as a chain of
+ * separate bulges/lobes with a pinched waist at every seam instead of one
+ * continuous straight-sided band like the reference. Corners that are
+ * empty on both sides but do have a filled DIAGONAL neighbor (the two cells
+ * touch only at that corner) still round outward here, and a
+ * `diagonalBridgeStamp` bar is added to fuse that corner-touch into a
+ * smooth diagonal edge — see that function's doc comment.
  */
 export function pixelLiquidOutline(
   centerline: { x: number; y: number }[],
@@ -1477,6 +1558,9 @@ export function pixelLiquidOutline(
   const s = Math.max(0, Math.min(1, smoothness));
   const cells = pixelGridCells(centerline, cellSize);
   if (cells.length === 0) return [];
+
+  const filled = new Set(cells.map(({ cx, cy }) => `${cx},${cy}`));
+  const has = (cx: number, cy: number) => filled.has(`${cx},${cy}`);
 
   // Slightly larger than the raw cell so adjacent stamps truly overlap
   // (not just touch) — guards against union seams from floating-point
@@ -1490,10 +1574,39 @@ export function pixelLiquidOutline(
   // round dot (matching a reference "liquid" look built from true circles)
   // instead of stopping just short of one.
   const cornerRadius = side * (0.24 + 0.26 * s);
+  // Diagonal bridge bars stay noticeably narrower than a full cell — they're
+  // connective tissue, not a third pixel — but still widen a bit with
+  // `smoothness` so they read as a soft diagonal fillet rather than a
+  // hairline seam once fully liquid.
+  const bridgeHalfWidth = side * (0.16 + 0.14 * s);
 
-  const rings = cells.map(({ cx, cy }) =>
-    roundedSquareStamp((cx + 0.5) * cellSize, (cy + 0.5) * cellSize, side, cornerRadius)
-  );
+  const rings: Point[][] = [];
+
+  for (const { cx, cy } of cells) {
+    const rightFilled = has(cx + 1, cy);
+    const leftFilled = has(cx - 1, cy);
+    const upFilled = has(cx, cy - 1);
+    const downFilled = has(cx, cy + 1);
+
+    const rTR = !rightFilled && !upFilled ? cornerRadius : 0;
+    const rBR = !rightFilled && !downFilled ? cornerRadius : 0;
+    const rBL = !leftFilled && !downFilled ? cornerRadius : 0;
+    const rTL = !leftFilled && !upFilled ? cornerRadius : 0;
+
+    rings.push(
+      roundedRectStampVariable((cx + 0.5) * cellSize, (cy + 0.5) * cellSize, side, rTR, rBR, rBL, rTL)
+    );
+
+    // Only test 2 of the 4 diagonals per cell (down-right, down-left) so
+    // each corner-touching pair is bridged exactly once, from whichever
+    // cell is "upper".
+    if (!rightFilled && !downFilled && has(cx + 1, cy + 1)) {
+      rings.push(diagonalBridgeStamp(cx, cy, cx + 1, cy + 1, cellSize, bridgeHalfWidth));
+    }
+    if (!leftFilled && !downFilled && has(cx - 1, cy + 1)) {
+      rings.push(diagonalBridgeStamp(cx, cy, cx - 1, cy + 1, cellSize, bridgeHalfWidth));
+    }
+  }
 
   const contours = unionPolygonsToContours(rings, EXPAND_FIDELITY_SCALE);
   return contours.length > 0 ? contours : [];
