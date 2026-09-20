@@ -1086,15 +1086,13 @@ export function GlyphCanvas() {
           />
         )}
 
-        {/* Brush tool, Node draw mode: live silhouette of the path placed so
-            far, built via the exact same brush engine as the freehand
-            preview above — see useBrushNodeTool.previewOutline. */}
-        {isNodeBrush && brushNodeTool.previewOutline.length > 0 && (
-          <path
-            d={brushNodeTool.previewOutline.map((c) => contourToPath(c, ascender)).join(" ")}
-            className="obj-fill"
-            fillRule="nonzero"
-            opacity={0.9}
+        {/* Brush tool, Node draw mode: live preview of the path placed so
+            far — see BrushNodeLivePreview. */}
+        {isNodeBrush && (
+          <BrushNodeLivePreview
+            outline={brushNodeTool.previewOutline}
+            strokeObject={brushNodeTool.previewStrokeObject}
+            ascender={ascender}
           />
         )}
 
@@ -1644,6 +1642,46 @@ export function RubberBand({
       <line x1={fromSvg.x} y1={fromSvg.y} x2={toSvg.x} y2={toSvg.y} className="rubber-line" />
       {nearFirst && <circle cx={firstSvg.x} cy={firstSvg.y} r={7 * hitScale} className="close-ring" />}
     </>
+  );
+}
+
+/**
+ * Live preview for the Brush tool's Node draw mode, shared by the Single and
+ * Multi Glyph canvases.
+ *
+ * - Variable-width brushes: the true nib/taper silhouette (`outline`), built
+ *   by the same engine that renders the committed object.
+ * - Monoline: painted with the native SVG stroke of the centerline using the
+ *   exact classes/width/cap/join a COMMITTED monoline uses in ObjectShape, at
+ *   full opacity — so what you see while placing nodes is the final result,
+ *   not an approximation of it.
+ */
+export function BrushNodeLivePreview({
+  outline, strokeObject, ascender,
+}: {
+  outline: ReturnType<typeof brushOutlineContours>;
+  strokeObject: VectorObject | null;
+  ascender: number;
+}) {
+  if (strokeObject) {
+    return (
+      <path
+        d={objectStrokePath(strokeObject, ascender)}
+        className="obj-stroke"
+        strokeWidth={strokeObject.strokeWidth ?? 20}
+        strokeLinecap={strokeObject.cap ?? "round"}
+        strokeLinejoin={strokeObject.join ?? "round"}
+      />
+    );
+  }
+  if (outline.length === 0) return null;
+  return (
+    <path
+      d={outline.map((c) => contourToPath(c, ascender)).join(" ")}
+      className="obj-fill"
+      fillRule="nonzero"
+      opacity={0.9}
+    />
   );
 }
 

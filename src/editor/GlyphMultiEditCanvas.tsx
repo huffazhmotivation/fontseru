@@ -4,11 +4,12 @@ import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent }
 import { useAppStore } from "@/glyph/store";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { clampMultiZoom, MULTI_BASE_CELL_PX } from "@/types/glyphView";
-import type { Point } from "@/types/geometry";
+import type { Point, VectorObject } from "@/types/geometry";
 import { getGlyphPaths } from "./glyphPaths";
 import { filterGlyphChars } from "./glyphFilter";
 import { useGlyphEditor } from "./useGlyphEditor";
 import { useBrushTool } from "./useBrushTool";
+import { useBrushNodeTool } from "./useBrushNodeTool";
 import { usePencilTool } from "./usePencilTool";
 import { useSelectTool, handlePositions, type HandleId, type SkewHandleId } from "./useSelectTool";
 import { contourToPath, toSvgPoint } from "./pathBuilder";
@@ -24,6 +25,7 @@ import {
   NodesAndHandlesLayer,
   SkeletonGuideLayer,
   RubberBand,
+  BrushNodeLivePreview,
   handleCursor,
 } from "./GlyphCanvas";
 import { MultiCanvasRuler, MULTI_RULER_SIZE } from "./MultiCanvasRuler";
@@ -519,6 +521,7 @@ export function GlyphMultiEditCanvas() {
   const rightGhostMap = useAppStore((s) => s.glyphsByStyle[rightGhostStyle]) as GlyphMap | undefined;
   const brush = useAppStore((s) => s.brush);
   const brushCap = useAppStore((s) => s.brushCap);
+  const brushDrawMode = useAppStore((s) => s.brushDrawMode);
   const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
   const penAutoCloseShape = useAppStore((s) => s.penAutoClose);
   const setTool = useAppStore((s) => s.setTool);
@@ -601,14 +604,19 @@ export function GlyphMultiEditCanvas() {
   // pointer-down decides below.
   const editor = useGlyphEditor(hitScale);
   const brushTool = useBrushTool(hitScale);
+  const brushNodeTool = useBrushNodeTool(hitScale);
   const pencilTool = usePencilTool(hitScale);
   const selectTool = useSelectTool(hitScale);
 
   // Fresh handles for use immediately after a synchronous activeChar
   // switch (see onPointerDown) — the callbacks captured in this render's
   // closure would still be bound to the PREVIOUS glyph.
-  const toolsRef = useRef({ editor, brushTool, pencilTool, selectTool });
-  toolsRef.current = { editor, brushTool, pencilTool, selectTool };
+  const toolsRef = useRef({ editor, brushTool, brushNodeTool, pencilTool, selectTool });
+  toolsRef.current = { editor, brushTool, brushNodeTool, pencilTool, selectTool };
+  // Brush tool, Node draw mode: same toolbar button as freehand Brush, just
+  // captured Pen-tool style. Same flag GlyphCanvas uses — without honouring
+  // it here the Multi canvas silently fell back to freehand drawing.
+  const isNodeBrush = tool === "brush" && brushDrawMode === "node";
 
   const applyZoomAt = useCallback(
     (nextZoom: number, clientX: number, clientY: number) => {
@@ -757,13 +765,14 @@ export function GlyphMultiEditCanvas() {
 
       const p = glyphPointFor(index, world);
       const t = toolsRef.current;
-      if (tool === "brush") return t.brushTool.pointerDown(p, e);
+      if (tool === "brush") return isNodeBrush ? t.brushNodeTool.pointerDown(p) : t.brushTool.pointerDown(p, e);
       if (tool === "pencil") return t.pencilTool.pointerDown(p);
       if (tool === "select") return t.selectTool.pointerDown(p, e.shiftKey, e.metaKey || e.ctrlKey);
       t.editor.pointerDown(p, e.shiftKey, e.altKey, e.metaKey || e.ctrlKey);
     },
     [
       tool,
+      isNodeBrush,
       pan,
       zoom,
       toWorld,
@@ -795,20 +804,20 @@ export function GlyphMultiEditCanvas() {
       // jumps glyphs just because the pointer crossed a cell boundary.
       const index =
         gestureCellRef.current ??
-        (tool === "pen" ? cellHitAtWorld(layout, world.x, world.y)?.index ?? null : null);
+        ((tool === "pen" || isNodeBrush) ? cellHitAtWorld(layout, world.x, world.y)?.index ?? null : null);
       if (index === null) return;
       const p = glyphPointFor(index, world);
-      if (tool === "pen" && chars[index] === activeChar) setHover(p);
+      if ((tool === "pen" || isNodeBrush) && chars[index] === activeChar) setHover(p);
       if (gestureCellRef.current === null) return;
 
       const t = toolsRef.current;
-      if (tool === "brush") return t.brushTool.pointerMove(p, e);
+      if (tool === "brush") return isNodeBrush ? t.brushNodeTool.pointerMove(p) : t.brushTool.pointerMove(p, e);
       if (tool === "pencil") return t.pencilTool.pointerMove(p);
       if (tool === "select")
         return t.selectTool.pointerMove(p, e.shiftKey, e.pointerType, e.metaKey);
       t.editor.pointerMove(p, e.shiftKey, e.altKey);
     },
-    [sc, toWorld, setMultiPan, tool, layout, chars, activeChar, glyphPointFor]
+    [sc, toWorld, setMultiPan, tool, isNodeBrush, layout, chars, activeChar, glyphPointFor]
   );
   processMoveRef.current = processPointerMove;
 
@@ -864,11 +873,11 @@ export function GlyphMultiEditCanvas() {
     panDragRef.current = null;
     gestureCellRef.current = null;
     const t = toolsRef.current;
-    if (tool === "brush") return t.brushTool.pointerUp();
+    if (tool === "brush") return isNodeBrush ? t.brushNodeTool.pointerUp() : t.brushTool.pointerUp();
     if (tool === "pencil") return t.pencilTool.pointerUp();
     if (tool === "select") return t.selectTool.pointerUp();
     t.editor.pointerUp();
-  }, [tool]);
+  }, [tool, isNodeBrush]);
 
   useEffect(() => {
     const onUp = () => endGesture();
@@ -877,8 +886,15 @@ export function GlyphMultiEditCanvas() {
   }, [endGesture]);
 
   useEffect(() => {
-    if (tool !== "pen") setHover(null);
-  }, [tool]);
+    if (tool !== "pen" && !isNodeBrush) setHover(null);
+  }, [tool, isNodeBrush]);
+
+  // Leaving Brush/Node (other tool, or back to Freehand) drops any
+  // half-placed node path instead of leaving it pending in the background.
+  const cancelBrushNode = brushNodeTool.cancel;
+  useEffect(() => {
+    if (!isNodeBrush) cancelBrushNode();
+  }, [isNodeBrush, cancelBrushNode]);
 
   // Space-to-pan + the Node tool's keyboard editing, same bindings as the
   // single-glyph canvas so muscle memory carries over.
@@ -890,6 +906,7 @@ export function GlyphMultiEditCanvas() {
       if (e.key === "Escape") {
         editor.finishOpenContour();
         brushTool.cancel();
+        if (isNodeBrush) brushNodeTool.escape();
         pencilTool.cancel();
       }
       if (tool === "node") {
@@ -913,7 +930,7 @@ export function GlyphMultiEditCanvas() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [editor, brushTool, pencilTool, tool]);
+  }, [editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, tool]);
 
   const onDoubleClick = useCallback(
     (e: ReactMouseEvent<SVGSVGElement>) => {
@@ -936,6 +953,12 @@ export function GlyphMultiEditCanvas() {
 
       if (tool === "pen") {
         if (t.editor.isCurrentEndpoint(p)) t.editor.finishOpenContour();
+        return;
+      }
+      if (isNodeBrush) {
+        // Double-click commits the open node-drawn path, like Pen's
+        // endpoint double-click.
+        if (t.brushNodeTool.liveNodes.length >= 2) t.brushNodeTool.finishOpen();
         return;
       }
       if (tool === "select") {
@@ -975,6 +998,7 @@ export function GlyphMultiEditCanvas() {
       glyphPointFor,
       hitScale,
       tool,
+      isNodeBrush,
       selectObjects,
       setTool,
       selectNodes,
@@ -1017,6 +1041,7 @@ export function GlyphMultiEditCanvas() {
     : tool === "shape" ? "cursor-shape"
     : tool === "hand" ? "cursor-hand"
     : tool === "zoom" ? "cursor-zoom"
+    : isNodeBrush ? "cursor-pen"
     : tool === "brush" ? "cursor-brush"
     : tool === "pencil" ? "cursor-pencil"
     : tool === "select" && selectTool.hoverHandle ? handleCursor(selectTool.hoverHandle)
@@ -1212,6 +1237,13 @@ export function GlyphMultiEditCanvas() {
                       strokeLinejoin="round"
                     />
                   )}
+                  {isNodeBrush && (
+                    <BrushNodeLivePreview
+                      outline={brushNodeTool.previewOutline}
+                      strokeObject={brushNodeTool.previewStrokeObject}
+                      ascender={ascender}
+                    />
+                  )}
                   {pencilTool.previewContour && (
                     <>
                       <path
@@ -1232,6 +1264,15 @@ export function GlyphMultiEditCanvas() {
                     <RubberBand
                       outline={editor.outline}
                       contourId={editor.drawingContourId}
+                      hover={hover}
+                      ascender={ascender}
+                      hitScale={hitScale}
+                    />
+                  )}
+                  {isNodeBrush && brushNodeTool.liveNodes.length > 0 && hover && (
+                    <RubberBand
+                      outline={{ objects: [{ id: "brush-node-preview", kind: "brush", contours: [{ id: "brush-node-preview-contour", nodes: brushNodeTool.liveNodes, closed: false }] } as VectorObject] }}
+                      contourId="brush-node-preview-contour"
                       hover={hover}
                       ascender={ascender}
                       hitScale={hitScale}
@@ -1311,9 +1352,21 @@ export function GlyphMultiEditCanvas() {
                       })}
                     </g>
                   )}
-                  {tool === "node" || tool === "pen" ? (
+                  {tool === "node" || tool === "pen" || (isNodeBrush && brushNodeTool.isDrawing) ? (
                     <NodesAndHandlesLayer
-                      objects={tool === "node" ? editor.nodeableOutline.objects : objects}
+                      objects={
+                        tool === "node"
+                          ? editor.nodeableOutline.objects
+                          : isNodeBrush
+                          ? (brushNodeTool.liveNodes.length > 0
+                              ? [{
+                                  id: "brush-node-preview",
+                                  kind: "brush",
+                                  contours: [{ id: "brush-node-preview-contour", nodes: brushNodeTool.liveNodes, closed: false }],
+                                } as VectorObject]
+                              : [])
+                          : objects
+                      }
                       ascender={ascender}
                       hitScale={hitScale}
                       tool={tool}
