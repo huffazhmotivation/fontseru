@@ -1663,7 +1663,12 @@ function pixelLiquidJunctionRings(
   const occ = new Set(cells.map((c) => `${c.cx},${c.cy}`));
   const has = (x: number, y: number) => occ.has(`${x},${y}`);
   const eps = overshoot;
-  const rho = cellSize * (0.1 + 0.2 * smoothness); // fillet radius
+  // Matched to `cornerRadius` (the same radius used for each cell's own
+  // rounded-square stamp) rather than its own independent formula, so the
+  // inside corner where a horizontal run meets a vertical one reads as the
+  // exact same roundness as the outside corners — a uniform-radius "melted
+  // union" look, not a smaller/weaker fillet at the inside turn.
+  const rho = cornerRadius; // fillet radius
   const t = Math.max(cornerRadius, rho + 2 * eps); // corner square size
   const eta = cellSize * 0.02; // tiny overlap into neighbors, avoids exact-coincident edges
   const ARC_SEGS = 8;
