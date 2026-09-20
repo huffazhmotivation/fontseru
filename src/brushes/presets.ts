@@ -183,24 +183,28 @@ export const BRUSH_PRESETS: Record<BrushType, BrushPreset> = {
   grunge: {
     id: "grunge",
     label: "Grunge",
-    description: "Rough, heavily distressed edge — still a real closed vector outline underneath, not a raster texture.",
+    description: "Dry brush: streaky ragged edge, bristle gaps, pitting and broken ends — real closed vector outline, not a raster texture.",
     settings: {
-      size: 38,
+      size: 44,
       opacity: 0.92,
-      // Denser resampling than any other brush: more samples means more
-      // high-frequency edge noise, which is what actually reads as "rough"
-      // rather than a wobbly-but-smooth line.
       spacing: 1,
-      smoothing: 0.04,
-      // Kept low, same reasoning as Pencil: heavy live stabilization would
-      // fight the deliberately noisy, distressed edge this brush is for.
-      stabilizer: 0.1,
-      roundness: 0.62,
+      // The dry-brush texture is generated from distance along the stroke
+      // (not from hand jitter), so this wants the same clean, steady
+      // centerline as every other brush — a shaky path would just make the
+      // streaks wobble.
+      smoothing: 0.35,
+      stabilizer: 0.25,
+      // Round nib: the streak lanes and pits assume an even width in every
+      // direction, like the reference dry-brush stroke.
+      roundness: 1,
       angle: 0,
-      taperStart: 0.12,
-      taperEnd: 0.18,
+      // Tail narrows into a few ragged bristles; the head stays nearly full
+      // width and just breaks up at the edge.
+      taperStart: 0.22,
+      taperEnd: 0.06,
       pressureEnabled: true,
-      pressureSensitivity: 0.65,
+      pressureSensitivity: 0.5,
+      // Overall texture strength (edge streaks, gaps, pits, flecks).
       jitter: 0.85,
     },
   },

@@ -119,6 +119,96 @@ function oilEdgeOffset(s: number, edgeSeed: number, amplitude: number): number {
 }
 
 /**
+ * ---------------------------------------------------------------------------
+ * GRUNGE = DRY BRUSH
+ * ---------------------------------------------------------------------------
+ * Grunge used to be a spike at (nearly) every raw pointer sample on both
+ * edges. That is white noise: it looks like a saw blade, and — because it was
+ * keyed to the sample INDEX — the texture changed with how fast the user
+ * drew. A real dry brush (the "epic" dry-brush style in Figma) reads
+ * completely differently:
+ *
+ *  - the EDGE is a stair-step of long plateaus running WITH the stroke — each
+ *    bristle bundle runs out of paint at a different distance, so the
+ *    silhouette is made of streaks, not spikes (`makePlateauTrack`);
+ *  - the BODY has thin bristle-gap slivers running lengthwise, and a peppering
+ *    of tiny pits (see `grungeBrushOutlineContours`);
+ *  - both ENDS break up into ragged bristle tips instead of a clean cut;
+ *  - stray flecks of paint sit just outside the edge.
+ *
+ * Everything is keyed to ABSOLUTE distance along the stroke (never sample
+ * index, never the stroke's total length), so the texture is identical no
+ * matter how fast it was drawn, and it doesn't reshuffle while the stroke is
+ * still growing under the pen. It is all real vector geometry, so it exports
+ * into the font like any other outline.
+ */
+function grungeStep(settings: BrushSettings): number {
+  return Math.max(0.7, settings.size * 0.026);
+}
+
+/** Overall texture strength from the shared Jitter slider (0.85 = preset default). */
+function grungeIntensity(settings: BrushSettings): number {
+  return Math.max(0.2, Math.min(1.6, (settings.jitter ?? 0.85) / 0.85));
+}
+
+/** Maps a uniform [0,1] draw to an edge-plateau height in about [-1, 0.4]:
+ *  mostly ink that has run OUT (notches of varying depth, skewed shallow),
+ *  sometimes a longer bristle that carries paint a bit further out. */
+function grungePlateauValue(r: number): number {
+  return r < 0.6 ? -Math.pow(1 - r / 0.6, 1.5) : ((r - 0.6) / 0.4) * 0.4;
+}
+
+/**
+ * Piecewise-constant "plateau" noise over distance. Each plateau has a random
+ * length in [minLen, maxLen] and a random height; a short smoothstep ramp
+ * joins neighbours so the transitions are near-vertical steps, not spikes.
+ * Returns a lookup that must be called with non-decreasing-ish distances
+ * (it keeps a cursor, and also walks backwards if it has to).
+ */
+function makePlateauTrack(
+  totalLength: number,
+  seed: number,
+  minLen: number,
+  maxLen: number,
+  ramp: number
+): (dist: number) => number {
+  const starts: number[] = [0];
+  const vals: number[] = [];
+  let pos = 0;
+  let k = 0;
+  while (pos < totalLength + maxLen) {
+    const rLen = (pseudoNoise(seed + k * 7.31) + 1) / 2;
+    const rVal = (pseudoNoise(seed + k * 3.17 + 50) + 1) / 2;
+    vals.push(grungePlateauValue(rVal));
+    pos += minLen + rLen * (maxLen - minLen);
+    starts.push(pos);
+    k++;
+  }
+  let idx = 0;
+  return (dist: number) => {
+    while (idx > 0 && dist < starts[idx]) idx--;
+    while (idx < vals.length - 1 && dist >= starts[idx + 1]) idx++;
+    const cur = vals[idx];
+    const into = dist - starts[idx];
+    if (idx > 0 && into < ramp) {
+      const t = into / ramp;
+      const u = t * t * (3 - 2 * t);
+      return vals[idx - 1] + (cur - vals[idx - 1]) * u;
+    }
+    return cur;
+  };
+}
+
+/** 0 mid-stroke, up to 1 right at either end — the brush is driest where it
+ *  lands and where it lifts. Uses absolute distance from the nearest end. */
+function grungeEndDryness(dist: number, totalLength: number, size: number): number {
+  const reach = Math.max(1, size * 3.5);
+  const t = Math.min(1, Math.min(dist, totalLength - dist) / reach);
+  const u = t * t * (3 - 2 * t);
+  return 1 - u;
+}
+
+/**
  * Strong Brush's torn "comb" tip: several sharp saw-teeth of DIFFERENT
  * heights running all the way across the flat end of the stroke, instead
  * of one smooth blade point — a real dry brush fraying into separate
@@ -419,20 +509,11 @@ export function catmullRomResample(points: StrokeSample[], spacing: number): Str
  * that isn't in screen-space, e.g. a stored preset re-processed offline). */
 export function samplesToCenterline(rawSamples: StrokeSample[], settings: BrushSettings, hitScale = 1): StrokeSample[] {
   if (rawSamples.length < 2) return rawSamples;
-  if (settings.type === "grunge") {
-    // Grunge needs dense edge events all along the stroke; a second
-    // smoothing pass or RDP simplification would erase the jagged profile
-    // that IS the brush, so it only ever gets the shared engine's first,
-    // roughness-boosted moving-average pass — never the full smoothStroke.
-    if (settings.smoothing <= 0) return rawSamples;
-    const roughness = estimateRoughness(rawSamples);
-    const effective = Math.max(0, Math.min(1, settings.smoothing + roughness * 0.5));
-    // Same length-aware cap as smoothStroke() — see windowRadiusFor()'s doc
-    // comment. Without it, a short/jittery Grunge stroke collapsed to a
-    // single point the same way every other brush did.
-    const windowRadius = windowRadiusFor(effective, rawSamples.length);
-    return movingAverageSamples(rawSamples, windowRadius);
-  }
+  // Grunge used to skip smoothStroke() so the raw hand jitter survived as
+  // edge noise. Its dry-brush texture is now generated from absolute
+  // distance along the stroke (see grungeBrushOutlineContours), so it wants
+  // the SAME clean centerline as every other brush — which also keeps the
+  // live preview and the committed result on one identical path.
   return smoothStroke(rawSamples, settings.smoothing, hitScale);
 }
 
@@ -569,9 +650,7 @@ export function centerlineToOutline(
   // smooth away, so it keeps the untouched point stream.
   const pts = precomputed
     ? precomputed.pts
-    : settings.type === "grunge"
-      ? centerline
-      : catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06));
+    : catmullRomResample(centerline, settings.type === "grunge" ? grungeStep(settings) : Math.max(0.6, settings.size * 0.06));
   if (pts.length < 2) return null;
 
   const cumulative = precomputed ? precomputed.cumulative : [0];
@@ -700,6 +779,19 @@ export function centerlineToOutline(
 
   const left: Point[] = [];
   const right: Point[] = [];
+  // Grunge (dry brush): independent plateau tracks per edge, so the two sides
+  // run out of paint at different places instead of pulsing in lockstep.
+  const isGrunge = settings.type === "grunge";
+  const grungeK = isGrunge ? grungeIntensity(settings) : 0;
+  const grungeStepLen = isGrunge ? grungeStep(settings) : 1;
+  const grungeTrackLeft = isGrunge ? makePlateauTrack(totalLength, 11.3, semiMajor * 0.35, semiMajor * 2.6, grungeStepLen * 1.2) : null;
+  const grungeTrackRight = isGrunge ? makePlateauTrack(totalLength, 73.9, semiMajor * 0.35, semiMajor * 2.6, grungeStepLen * 1.2) : null;
+  // A second, much finer pair of tracks: short plateaus that give the edge its
+  // fine bristle teeth on top of the long streaks.
+  const grungeFineLeft = isGrunge ? makePlateauTrack(totalLength, 29.1, semiMajor * 0.05, semiMajor * 0.42, grungeStepLen * 0.9) : null;
+  const grungeFineRight = isGrunge ? makePlateauTrack(totalLength, 97.3, semiMajor * 0.05, semiMajor * 0.42, grungeStepLen * 0.9) : null;
+  let grungeStartDir: Point | null = null;
+  let grungeEndDir: Point | null = null;
   for (let i = 0; i < pts.length; i++) {
     const prev = pts[Math.max(0, i - 1)];
     const next = pts[Math.min(pts.length - 1, i + 1)];
@@ -774,7 +866,7 @@ export function centerlineToOutline(
     // edge fix — its own coherent wave was just riding on top of this
     // sharper base noise instead of replacing it.
     const jitterAmt = settings.jitter ?? 0;
-    if (jitterAmt > 0 && settings.type !== "oilBrush" && settings.type !== "rough") {
+    if (jitterAmt > 0 && settings.type !== "oilBrush" && settings.type !== "rough" && settings.type !== "grunge") {
       const n1 = pseudoNoise(i * 12.37);
       const n2 = pseudoNoise(i * 7.91 + 100);
       const factor = 1 + jitterAmt * (n1 * 0.6 + n2 * 0.4) * 0.5;
@@ -857,28 +949,27 @@ export function centerlineToOutline(
       left.push({ x: pts[i].x + ux * leftMag, y: pts[i].y + uy * leftMag });
       right.push({ x: pts[i].x - ux * rightMag, y: pts[i].y - uy * rightMag });
     } else if (settings.type === "grunge") {
-      // Insert a sharp outward projection at nearly every centerline sample
-      // on BOTH edges. These are real corner nodes, so the distressed spikes
-      // remain editable vector geometry rather than a raster/noise effect.
-      const tx = tangent.x / tLen;
-      const ty = tangent.y / tLen;
-      const leftNoise = pseudoNoise(i * 19.17 + 3.1);
-      const rightNoise = pseudoNoise(i * 23.73 + 77.7);
-      const leftSpike = 1.25 + Math.abs(leftNoise) * 1.35;
-      const rightSpike = 1.25 + Math.abs(rightNoise) * 1.35;
-      const tangentJitter = settings.size * 0.28;
-
-      left.push(leftBase);
-      left.push({
-        x: pts[i].x + vx * leftSpike + tx * leftNoise * tangentJitter,
-        y: pts[i].y + vy * leftSpike + ty * leftNoise * tangentJitter,
-      });
-
-      right.push(rightBase);
-      right.push({
-        x: pts[i].x - vx * rightSpike + tx * rightNoise * tangentJitter,
-        y: pts[i].y - vy * rightSpike + ty * rightNoise * tangentJitter,
-      });
+      // Dry-brush edge: a broad gentle wave + long stair-step plateaus (the
+      // streaks) + a touch of fine fuzz, all keyed to absolute distance and
+      // scaled by the local taper so a narrowing tail stays proportionate.
+      // One point per sample per side — the texture comes from the plateau
+      // geometry, not from stuffing spikes between samples.
+      const mag = Math.hypot(vx, vy) || 1;
+      const ux = vx / mag;
+      const uy = vy / mag;
+      const dist = cumulative[i];
+      const dry = 1 + 1.3 * grungeEndDryness(dist, totalLength, settings.size);
+      const wave = (seedW: number) => coherentNoise1D(dist / (semiMajor * 3.2), seedW) * 0.1 * semiMajor;
+      const fine = (seedF: number) => pseudoNoise(dist * 1.618 + seedF) * 0.035 * semiMajor;
+      const leftOff = (wave(5.7) + (grungeTrackLeft ? grungeTrackLeft(dist) : 0) * 0.34 * semiMajor * grungeK + (grungeFineLeft ? grungeFineLeft(dist) : 0) * 0.17 * semiMajor * grungeK + fine(3.1) * grungeK) * dry * scale;
+      const rightOff = (wave(41.3) + (grungeTrackRight ? grungeTrackRight(dist) : 0) * 0.34 * semiMajor * grungeK + (grungeFineRight ? grungeFineRight(dist) : 0) * 0.17 * semiMajor * grungeK + fine(77.7) * grungeK) * dry * scale;
+      const minMag = semiMajor * 0.1 * scale;
+      const leftMag = Math.max(minMag, mag + leftOff);
+      const rightMag = Math.max(minMag, mag + rightOff);
+      if (i === 0) grungeStartDir = { x: -tangent.x / tLen, y: -tangent.y / tLen };
+      if (i === pts.length - 1) grungeEndDir = { x: tangent.x / tLen, y: tangent.y / tLen };
+      left.push({ x: pts[i].x + ux * leftMag, y: pts[i].y + uy * leftMag });
+      right.push({ x: pts[i].x - ux * rightMag, y: pts[i].y - uy * rightMag });
     } else if (settings.type === "rough" && (settings.jitter ?? 0) > 0) {
       // Gentle, rounded edge waver: smooth coherent noise (interpolated,
       // not per-sample independent) so the edge undulates in soft, rounded
@@ -974,7 +1065,27 @@ export function centerlineToOutline(
       { x: cap.center.x + oppositeV.x + forwardV.x, y: cap.center.y + oppositeV.y + forwardV.y },
     ];
   };
-  const endCapPts = endCap
+  // Grunge: instead of a clean chord across each end, a row of ragged
+  // bristle tips — mostly poking OUT past the end at random lengths, a few
+  // sitting slightly back — the way a dry brush breaks up as it lands/lifts.
+  const raggedCap = (from: Point, to: Point, outDir: Point, seed: number): Point[] => {
+    const chord = Math.hypot(to.x - from.x, to.y - from.y);
+    const n = Math.max(2, Math.min(16, Math.round(chord / Math.max(1.2, settings.size * 0.07))));
+    const out: Point[] = [];
+    for (let k = 1; k < n; k++) {
+      const t = k / n + pseudoNoise(seed + k * 5.3) * (0.3 / n);
+      const r = (pseudoNoise(seed + k * 3.3) + 1) / 2;
+      const reach = (Math.pow(r, 1.7) * 0.95 - 0.12) * chord * 0.9 * grungeK;
+      out.push({
+        x: from.x + (to.x - from.x) * t + outDir.x * reach,
+        y: from.y + (to.y - from.y) * t + outDir.y * reach,
+      });
+    }
+    return out;
+  };
+  const endCapPts = isGrunge && grungeEndDir && left.length > 0 && right.length > 0
+    ? raggedCap(left[left.length - 1], right[right.length - 1], grungeEndDir, 19.7)
+    : endCap
     ? capMode === "comb"
       // Teeth point straight OUT along the direction of travel (the stroke
       // is heading this way and keeps going past the tip).
@@ -983,7 +1094,9 @@ export function centerlineToOutline(
         ? capSquare(endCap, endCap.tangentAngle + Math.PI / 2, endCap.tangentAngle)
         : capArc(endCap, endCap.tangentAngle + Math.PI / 2)
     : [];
-  const startCapPts = startCap
+  const startCapPts = isGrunge && grungeStartDir && left.length > 0 && right.length > 0
+    ? raggedCap(right[0], left[0], grungeStartDir, 61.3)
+    : startCap
     ? capMode === "comb"
       // Teeth point straight BACK, opposite the direction of travel (the
       // stroke starts here and heads forward, so the tip trails behind).
@@ -1023,7 +1136,7 @@ export function centerlineToOutline(
   // (below) still covers all three for the SEPARATE post-cleanup RDP
   // simplification step, which is the pass that would actually flatten
   // Rough's fine texture away if it ran.
-  const SELF_INTERSECTION_LOOP_SKIP: BrushType[] = ["grunge", "oilBrush"];
+  const SELF_INTERSECTION_LOOP_SKIP: BrushType[] = ["oilBrush"];
   const cleanedLeft = SELF_INTERSECTION_LOOP_SKIP.includes(settings.type) ? left : removeSelfIntersectionLoops(left);
   const cleanedRight = SELF_INTERSECTION_LOOP_SKIP.includes(settings.type) ? right : removeSelfIntersectionLoops(right);
 
@@ -1624,6 +1737,257 @@ function roughBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
 }
 
 /**
+ * Thin lengthwise sliver (a bristle gap) that FOLLOWS the centerline, so it
+ * bends with a curved stroke instead of being a straight dash. `along` holds
+ * the centerline points/normals it sweeps through; `lateral` is its offset
+ * from the centerline; the sliver pinches to a point at both tips.
+ */
+function makeStreakSliver(
+  along: { p: Point; n: Point }[],
+  lateral: number,
+  thickness: number,
+  desiredSign: number,
+  seed = 0
+): Contour {
+  const K = along.length;
+  const sideA: Point[] = [];
+  const sideB: Point[] = [];
+  for (let k = 0; k < K; k++) {
+    const u = K <= 1 ? 0.5 : k / (K - 1);
+    const prof = Math.pow(Math.sin(Math.PI * u), 0.55);
+    // Each side gets its own random thickness per point, plus a little wander
+    // of the sliver's centre, so the gap reads as a ragged torn streak (as in
+    // a real dry-brush pass) instead of a smooth lens.
+    const halfA = (thickness / 2) * prof * (0.45 + 1.0 * ((pseudoNoise(seed + k * 3.7) + 1) / 2));
+    const halfB = (thickness / 2) * prof * (0.45 + 1.0 * ((pseudoNoise(seed + k * 5.9 + 40) + 1) / 2));
+    const wander = pseudoNoise(seed + k * 2.3 + 80) * thickness * 0.25;
+    const c = { x: along[k].p.x + along[k].n.x * (lateral + wander), y: along[k].p.y + along[k].n.y * (lateral + wander) };
+    sideA.push({ x: c.x + along[k].n.x * halfA, y: c.y + along[k].n.y * halfA });
+    sideB.push({ x: c.x - along[k].n.x * halfB, y: c.y - along[k].n.y * halfB });
+  }
+  const raw = [...sideA, ...sideB.reverse()];
+  const sign = Math.sign(signedArea(raw));
+  const pts = sign !== 0 && sign !== desiredSign ? raw.reverse() : raw;
+  return {
+    id: shortId("contour"),
+    closed: true,
+    nodes: pts.map((point) => ({ id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const })),
+  };
+}
+
+/**
+ * Grunge Brush = dry brush. The body is the ordinary swept nib, but with the
+ * streaky plateau edge and ragged bristle-tip ends built in
+ * `centerlineToOutline` (see the GRUNGE = DRY BRUSH note near the top of
+ * this file). On top of that this adds what a real dry-brush pass shows
+ * inside and around the stroke:
+ *
+ *  1. BRISTLE GAPS — thin lengthwise slivers in lanes across the width,
+ *     starting and stopping at random distances, denser near both ends where
+ *     the brush is driest.
+ *  2. PITTING — a scatter of tiny (mostly) and occasionally larger holes.
+ *  3. FLECKS — small solid specks of paint just outside the edge and past
+ *     both tips.
+ *
+ * Every feature is placed by walking ABSOLUTE distance along the stroke with
+ * a deterministic seed, so the texture doesn't depend on drawing speed and
+ * doesn't reshuffle as a stroke grows during live drawing. A small occupancy
+ * grid keeps holes from overlapping each other — under nonzero fill two
+ * overlapping opposite-wound holes would wind to -1 and read as SOLID ink,
+ * which is exactly the "specks turning into blobs" artefact to avoid.
+ */
+function grungeBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
+  const step = grungeStep(settings);
+  const pts = catmullRomResample(centerline, step);
+  if (pts.length < 2) return [];
+  const cumulative: number[] = [0];
+  for (let i = 1; i < pts.length; i++) {
+    cumulative.push(cumulative[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+  }
+  const totalLength = cumulative[cumulative.length - 1] || 0;
+  if (totalLength <= 0) return [];
+
+  const main = centerlineToOutline(centerline, settings, { pts, cumulative, totalLength });
+  if (!main) return [];
+  const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
+  const holeSign = outerSign >= 0 ? -1 : 1;
+
+  const K = grungeIntensity(settings);
+  const nibAngleRad = (settings.angle * Math.PI) / 180;
+  const semiMajor = Math.max(0.5, settings.size / 2);
+  const semiMinor = Math.max(0.3, (settings.size / 2) * settings.roundness);
+  const hw = semiMajor;
+  const sensitivity = settings.pressureSensitivity ?? 0;
+
+  // Position, unit normal and the LOCAL half-width of the swept body at a
+  // given distance — computed exactly as centerlineToOutline does (taper,
+  // pressure, nib ellipse), so features stay inside the real silhouette.
+  const at = (dist: number): { p: Point; n: Point; t: Point; half: number } => {
+    const d = Math.max(0, Math.min(totalLength, dist));
+    let lo = 0;
+    let hi = cumulative.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (cumulative[mid] < d) lo = mid;
+      else hi = mid;
+    }
+    const seg = cumulative[hi] - cumulative[lo] || 1;
+    const f = Math.max(0, Math.min(1, (d - cumulative[lo]) / seg));
+    const a = pts[lo];
+    const b = pts[hi];
+    const p = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+    const tx = b.x - a.x;
+    const ty = b.y - a.y;
+    const tl = Math.hypot(tx, ty) || 1;
+    const t = { x: tx / tl, y: ty / tl };
+    const n = { x: -t.y, y: t.x };
+    const pressure = settings.pressureEnabled ? a.pressure + (b.pressure - a.pressure) * f : 1;
+    const widthFromPressure = settings.size * (1 - sensitivity * (1 - pressure));
+    const taper = taperFactor(d / totalLength, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd });
+    const scale = ((widthFromPressure / 2) * taper) / semiMajor;
+    const v = ellipseSupportVector(Math.atan2(n.y, n.x), nibAngleRad, semiMajor * scale, semiMinor * scale);
+    return { p, n, t, half: Math.hypot(v.x, v.y) };
+  };
+
+  // --- occupancy grid: keeps hole-shaped features from overlapping ---------
+  const cell = Math.max(1, hw * 0.5);
+  const grid = new Map<string, { x: number; y: number; r: number }[]>();
+  const keyOf = (cx: number, cy: number) => `${cx},${cy}`;
+  const isFree = (c: Point, r: number): boolean => {
+    const x0 = Math.floor((c.x - r - cell) / cell), x1 = Math.floor((c.x + r + cell) / cell);
+    const y0 = Math.floor((c.y - r - cell) / cell), y1 = Math.floor((c.y + r + cell) / cell);
+    for (let gx = x0; gx <= x1; gx++) {
+      for (let gy = y0; gy <= y1; gy++) {
+        const bucket = grid.get(keyOf(gx, gy));
+        if (!bucket) continue;
+        for (const o of bucket) if (Math.hypot(o.x - c.x, o.y - c.y) < o.r + r) return false;
+      }
+    }
+    return true;
+  };
+  const occupy = (c: Point, r: number) => {
+    const gx = Math.floor(c.x / cell);
+    const gy = Math.floor(c.y / cell);
+    const key = keyOf(gx, gy);
+    const bucket = grid.get(key);
+    if (bucket) bucket.push({ x: c.x, y: c.y, r });
+    else grid.set(key, [{ x: c.x, y: c.y, r }]);
+  };
+
+  const holes: Contour[] = [];
+  const flecks: Contour[] = [];
+  // Keep features clear of the ragged edge (plateau notches reach ~0.34*hw
+  // deep, a bit more near the ends), so a hole never breaks through to the
+  // outside except where the EDGE itself already did.
+  const SAFE = 0.66;
+
+  // 1. Bristle-gap slivers -------------------------------------------------
+  const laneCount = Math.max(8, Math.min(24, Math.round(settings.size / 3.2)));
+  for (let lane = 0; lane < laneCount; lane++) {
+    const laneFrac = (lane + 0.5) / laneCount - 0.5; // -0.5..0.5
+    const laneSeed = lane * 91.7 + 13.1;
+    let d = ((pseudoNoise(laneSeed) + 1) / 2) * hw * 2.5;
+    let n = 0;
+    while (d < totalLength) {
+      const rSolid = (pseudoNoise(laneSeed + n * 4.13 + 1) + 1) / 2;
+      const rGap = (pseudoNoise(laneSeed + n * 6.77 + 2) + 1) / 2;
+      const rPick = (pseudoNoise(laneSeed + n * 2.39 + 3) + 1) / 2;
+      const rThick = (pseudoNoise(laneSeed + n * 8.51 + 4) + 1) / 2;
+      const rJit = pseudoNoise(laneSeed + n * 5.03 + 5);
+      n++;
+      d += hw * (0.12 + Math.pow(rSolid, 1.2) * 1.7);
+      const gapLen = hw * (0.22 + Math.pow(rGap, 1.7) * 2.6);
+      const dryness = 0.45 + 0.55 * grungeEndDryness(d + gapLen / 2, totalLength, settings.size);
+      if (d + gapLen > totalLength - hw * 0.4) break;
+      if (rPick > dryness * 0.95 * K) {
+        d += gapLen * 0.3;
+        continue;
+      }
+      const thickness = hw * (0.035 + rThick * 0.075);
+      const along: { p: Point; n: Point }[] = [];
+      const kSteps = Math.max(5, Math.round(gapLen / Math.max(0.8, hw * 0.11)));
+      let ok = true;
+      let minHalf = Infinity;
+      const lateralJit = rJit * hw * 0.03;
+      const samples: { c: Point; half: number }[] = [];
+      for (let k = 0; k <= kSteps; k++) {
+        const g = at(d + (gapLen * k) / kSteps);
+        minHalf = Math.min(minHalf, g.half);
+        along.push({ p: g.p, n: g.n });
+        samples.push({ c: g.p, half: g.half });
+      }
+      const lateral = laneFrac * 2 * minHalf * SAFE + lateralJit;
+      if (Math.abs(lateral) + thickness / 2 >= minHalf * SAFE || minHalf < hw * 0.32) ok = false;
+      const clearance = thickness * 0.6 + hw * 0.035;
+      const centers = samples.map((sm, k) => ({ c: { x: sm.c.x + along[k].n.x * lateral, y: sm.c.y + along[k].n.y * lateral }, r: clearance }));
+      if (ok) for (const c of centers) if (!isFree(c.c, c.r)) { ok = false; break; }
+      if (ok) {
+        holes.push(makeStreakSliver(along, lateral, thickness, holeSign, laneSeed + n * 1.3));
+        for (const c of centers) occupy(c.c, c.r);
+      }
+      d += gapLen;
+    }
+  }
+
+  // 2. Pitting -------------------------------------------------------------
+  const bucketLen = hw * 0.6;
+  const bucketCount = Math.ceil(totalLength / bucketLen);
+  for (let b = 0; b < bucketCount; b++) {
+    const bSeed = b * 37.9 + 5.5;
+    const d0 = b * bucketLen;
+    const dryMid = grungeEndDryness(d0 + bucketLen / 2, totalLength, settings.size);
+    // Pits cluster in patches (slowly varying density along the stroke)
+    // rather than spreading perfectly evenly.
+    const patch = 0.35 + 1.3 * ((coherentNoise1D(d0 / (hw * 5), 3.9) + 1) / 2);
+    const expected = (2.0 + 3.4 * dryMid) * patch * K;
+    const count = Math.floor(expected + ((pseudoNoise(bSeed) + 1) / 2));
+    for (let j = 0; j < count; j++) {
+      const sd = bSeed + j * 17.3;
+      const dist = d0 + ((pseudoNoise(sd + 1) + 1) / 2) * bucketLen;
+      const g = at(dist);
+      if (g.half < hw * 0.3) continue;
+      const rr = (pseudoNoise(sd + 3) + 1) / 2;
+      const radius = Math.max(0.45, hw * (rr < 0.82 ? 0.02 + (rr / 0.82) * 0.045 : 0.075 + ((rr - 0.82) / 0.18) * 0.1));
+      const lat = pseudoNoise(sd + 2) * (g.half * SAFE - radius);
+      if (g.half * SAFE - radius <= 0) continue;
+      const c = { x: g.p.x + g.n.x * lat, y: g.p.y + g.n.y * lat };
+      const clearance = radius * 1.25 + hw * 0.02;
+      if (!isFree(c, clearance)) continue;
+      holes.push(makeRoughHole(c, radius, sd, holeSign, hw * 0.09));
+      occupy(c, clearance);
+    }
+  }
+
+  // 3. Flecks just outside the edge, and past both tips ---------------------
+  for (let b = 0; b < bucketCount; b++) {
+    const bSeed = b * 53.3 + 91.1;
+    const d0 = b * bucketLen;
+    const dryMid = grungeEndDryness(d0 + bucketLen / 2, totalLength, settings.size);
+    if ((pseudoNoise(bSeed) + 1) / 2 > (0.3 + 0.6 * dryMid) * K) continue;
+    const dist = d0 + ((pseudoNoise(bSeed + 1) + 1) / 2) * bucketLen;
+    const g = at(dist);
+    const side = pseudoNoise(bSeed + 2) > 0 ? 1 : -1;
+    const reach = g.half * (1.08 + ((pseudoNoise(bSeed + 3) + 1) / 2) * 0.55);
+    const radius = Math.max(0.5, hw * (0.03 + ((pseudoNoise(bSeed + 4) + 1) / 2) * 0.06));
+    flecks.push(makeSpeckle({ x: g.p.x + g.n.x * side * reach, y: g.p.y + g.n.y * side * reach }, radius, bSeed, outerSign, 8));
+  }
+  for (const end of [0, 1]) {
+    const g = at(end === 0 ? 0 : totalLength);
+    const dir = end === 0 ? { x: -g.t.x, y: -g.t.y } : g.t;
+    const cnt = Math.round(9 * K);
+    for (let k = 0; k < cnt; k++) {
+      const sd = end * 211.3 + k * 29.7 + 7.7;
+      const out = hw * (0.15 + ((pseudoNoise(sd) + 1) / 2) * 1.7);
+      const lat = pseudoNoise(sd + 1) * Math.max(hw * 0.5, g.half);
+      const radius = Math.max(0.5, hw * (0.025 + ((pseudoNoise(sd + 2) + 1) / 2) * 0.055));
+      flecks.push(makeSpeckle({ x: g.p.x + dir.x * out + g.n.x * lat, y: g.p.y + dir.y * out + g.n.y * lat }, radius, sd, outerSign, 8));
+    }
+  }
+
+  return [main, ...holes, ...flecks];
+}
+
+/**
  * Oil Brush: the branching frayed edge (built directly into the left/right
  * arrays inside centerlineToOutline) plus two more things a real dry-brush
  * pass shows that an edge-only effect can't: parallel bristle "comb" gaps
@@ -2033,6 +2397,9 @@ export function centerlineToOutlineContours(centerline: StrokeSample[], settings
   if (settings.type === "oilBrush") {
     return oilBrushOutlineContours(centerline, settings);
   }
+  if (settings.type === "grunge") {
+    return grungeBrushOutlineContours(centerline, settings);
+  }
   if (settings.type === "outline") {
     return outlineBrushOutlineContours(centerline, settings);
   }
@@ -2158,10 +2525,7 @@ export function brushOutlineContours(obj: VectorObject): Contour[] {
   const contours: Contour[] = [];
   for (const c of obj.contours) {
     const flattened = flattenContour(c, 10);
-    const poly =
-      settings.type === "grunge"
-        ? flattened
-        : simplifyPolyline(flattened, Math.max(0.5, settings.size * 0.025));
+    const poly = simplifyPolyline(flattened, Math.max(0.5, settings.size * 0.025));
     if (poly.length < 2) continue;
     const pressures = resamplePressure(poly.length, obj.samples);
     const centerline: StrokeSample[] = poly.map((p, i) => ({ x: p.x, y: p.y, pressure: pressures[i] }));
