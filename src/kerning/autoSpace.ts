@@ -2,7 +2,8 @@ import type { Glyph, GlyphMap } from "@/types/glyph";
 import type { GlyphOutline } from "@/types/geometry";
 import { hasOutline } from "@/types/glyph";
 import type { FontMetrics } from "@/types/font";
-import { outlineBounds, translateObject, skewObject } from "@/editor/objectOps";
+import { outlineBounds, translateObject, skewObject, objectBounds, emptyBounds, mergeBounds, boundsValid } from "@/editor/objectOps";
+import type { VectorObject } from "@/types/geometry";
 import { inkExtentAtYIndexed, cachedInkIndex, INK_CONTOUR_STEPS } from "./autoKern";
 
 // Same flatten resolution — and the SAME shared cache, keyed by outline
@@ -43,6 +44,55 @@ export interface GlyphSpacingSuggestion {
   rsb: number;
 }
 
+/** Grid cell size (font units) of a Pixel Brush object, or 0 if `obj` isn't one. */
+function pixelCellSize(obj: VectorObject): number {
+  if (obj.kind !== "brush" || obj.brushType !== "pixel" || obj.brushSettings?.gridSnap !== true) return 0;
+  const size = obj.brushSettings.cellSize;
+  return typeof size === "number" && size > 0 ? size : 0;
+}
+
+/**
+ * Pixel Brush blocks live on a fixed grid: their centerline sits on cell
+ * centers and each rendered block is re-derived from it with floor(p / cell).
+ * Shifting such an object by a non-multiple of the cell size leaves its
+ * centerline off-lattice, and the accumulated offset then makes individual
+ * strokes suddenly hop a whole cell when it crosses half a cell — old and new
+ * strokes at different moments — instead of the glyph moving together. So
+ * Auto Spacing (a) puts every Pixel object's points back on exact cell
+ * centers first (visually a no-op: same floor() cell), (b) measures ink from
+ * the real block edges (cell size, not the brush Size slider), and (c) only
+ * ever slides the glyph by whole cells.
+ */
+function snapPixelObjectToLattice(obj: VectorObject): VectorObject {
+  const cell = pixelCellSize(obj);
+  if (!cell) return obj;
+  const snap = (p: { x: number; y: number }) => ({
+    x: (Math.floor(p.x / cell) + 0.5) * cell,
+    y: (Math.floor(p.y / cell) + 0.5) * cell,
+  });
+  return {
+    ...obj,
+    contours: obj.contours.map((c) => ({
+      ...c,
+      nodes: c.nodes.map((n) => ({ ...n, point: snap(n.point) })),
+    })),
+    samples: obj.samples ? obj.samples.map((s) => ({ ...snap(s), pressure: s.pressure })) : undefined,
+  };
+}
+
+function objectInkBounds(obj: VectorObject) {
+  const cell = pixelCellSize(obj);
+  if (!cell) return objectBounds(obj);
+  let b = emptyBounds();
+  const h = cell / 2;
+  for (const c of obj.contours) {
+    for (const n of c.nodes) {
+      b = mergeBounds(b, { minX: n.point.x - h, minY: n.point.y - h, maxX: n.point.x + h, maxY: n.point.y + h });
+    }
+  }
+  return b;
+}
+
 /**
  * Applies a `GlyphSpacingSuggestion` by anchoring to the outline's ACTUAL
  * current geometry (`outlineBounds`), not the glyph's previously stored
@@ -62,23 +112,41 @@ export interface GlyphSpacingSuggestion {
  * makes the result correct regardless of how the ink got there.
  */
 export function applyOpticalSidebearings(glyph: Glyph, suggestion: GlyphSpacingSuggestion): Glyph {
-  const bounds = outlineBounds(glyph.outline);
+  const objects = glyph.outline.objects.map(snapPixelObjectToLattice);
+  const cell = objects.reduce((acc, o) => acc || pixelCellSize(o), 0);
+  let b = emptyBounds();
+  for (const o of objects) b = mergeBounds(b, objectInkBounds(o));
+  const bounds = cell ? (boundsValid(b) ? b : null) : outlineBounds(glyph.outline);
   if (!bounds) {
     // No ink to anchor a translation to — just keep the metric fields
     // consistent with the suggestion so they're correct the moment ink
     // does appear, without touching advance/outline (nothing to move).
     return { ...glyph, lsb: Math.round(suggestion.lsb), rsb: Math.round(suggestion.rsb) };
   }
-  const lsb = Math.round(suggestion.lsb);
-  const rsb = Math.round(suggestion.rsb);
+  const lsbWanted = Math.round(suggestion.lsb);
+  const rsbWanted = Math.round(suggestion.rsb);
   const inkWidth = bounds.maxX - bounds.minX;
-  const dx = lsb - bounds.minX;
+  let dx = lsbWanted - bounds.minX;
+  if (!cell) {
+    return {
+      ...glyph,
+      lsb: lsbWanted,
+      rsb: rsbWanted,
+      advanceWidth: Math.max(1, Math.round(lsbWanted + inkWidth + rsbWanted)),
+      outline: { objects: glyph.outline.objects.map((o) => translateObject(o, dx, 0)) },
+    };
+  }
+  // Pixel glyph: slide by whole cells only, and let the advance width absorb
+  // the sub-cell remainder so the total spacing matches what was asked for.
+  dx = Math.round(dx / cell) * cell;
+  const advanceWidth = Math.max(1, Math.round(lsbWanted + inkWidth + rsbWanted));
+  const lsb = Math.round(bounds.minX + dx);
   return {
     ...glyph,
     lsb,
-    rsb,
-    advanceWidth: Math.max(1, Math.round(lsb + inkWidth + rsb)),
-    outline: { objects: glyph.outline.objects.map((o) => translateObject(o, dx, 0)) },
+    rsb: Math.round(advanceWidth - lsb - inkWidth),
+    advanceWidth,
+    outline: { objects: objects.map((o) => translateObject(o, dx, 0)) },
   };
 }
 
