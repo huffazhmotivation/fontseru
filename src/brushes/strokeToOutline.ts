@@ -6,7 +6,7 @@ import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor 
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
 import { cubicPoint } from "@/editor/bezier";
-import { normalizeSelfIntersectingContours, unionPolygonsToContours, resolveTexturedBrushFill, TIGHT_CURVE_FIDELITY_SCALE, EXPAND_FIDELITY_SCALE } from "@/editor/booleanOps";
+import { normalizeSelfIntersectingContours, unionPolygonsToContours, unionRingsThenSubtract, resolveTexturedBrushFill, TIGHT_CURVE_FIDELITY_SCALE, EXPAND_FIDELITY_SCALE } from "@/editor/booleanOps";
 
 /**
  * Correct offset vector for sweeping a fixed-orientation elliptical nib
@@ -1515,6 +1515,46 @@ function diagonalBridgeStamp(cx0: number, cy0: number, cx1: number, cy1: number,
 }
 
 /**
+ * The inward twin of `roundedRectStampVariable`'s corner rounding. A
+ * "staircase" of cells (the normal way ANY square grid draws a diagonal
+ * line — see `diagonalBridgeStamp`'s doc comment) is full of REFLEX/concave
+ * corners: at every step, one cell's corner has BOTH its edge-neighbors
+ * filled but the diagonal between them empty (a 3-cells-out-of-4 notch).
+ * Left alone that's a sharp 90° notch, which is exactly what reads as
+ * "snapped to vertical/horizontal" instead of diagonal — rounding only the
+ * convex (outward) corners still leaves every inner step perfectly square.
+ *
+ * A union-only pipeline can only ADD material, so this can't be done by
+ * stamping something extra — the fix has to SUBTRACT a small "bite" from
+ * the corner. This returns that bite as a single ring: the sharp corner
+ * point, a straight run out to a point `r` away on each of the two edges,
+ * and a quarter-circle arc joining them (center sitting `r` into the empty
+ * quadrant, so the arc is tangent to both edges) — i.e. a square corner
+ * wedge with a quarter-disc carved out of it, ready to subtract from the
+ * cell union in `pixelLiquidOutline`.
+ *
+ * `dirH`/`dirV` are which way (+1/-1) the empty diagonal quadrant sits from
+ * the corner point, e.g. for a cell's bottom-left corner where the empty
+ * diagonal cell is down-left, pass dirH=-1, dirV=+1.
+ */
+function concaveCornerBite(latticeX: number, latticeY: number, dirH: number, dirV: number, r: number, archSegs = 8): Point[] {
+  if (r <= 0) return [];
+  const centerX = latticeX + dirH * r;
+  const centerY = latticeY + dirV * r;
+  const angleV = Math.atan2(0, -dirH); // tangent point on the vertical edge
+  const angleH = Math.atan2(-dirV, 0); // tangent point on the horizontal edge
+  let delta = angleH - angleV;
+  while (delta > Math.PI) delta -= 2 * Math.PI;
+  while (delta < -Math.PI) delta += 2 * Math.PI;
+  const pts: Point[] = [{ x: latticeX, y: latticeY }];
+  for (let i = 0; i <= archSegs; i++) {
+    const a = angleV + (i / archSegs) * delta;
+    pts.push({ x: centerX + Math.cos(a) * r, y: centerY + Math.sin(a) * r });
+  }
+  return pts;
+}
+
+/**
  * Pixel Liquid mode: walks the exact same grid cells the crisp Pixel Brush
  * uses (pixelGridCells above), drops a stamp on every one of them, and
  * takes their EXACT geometric union (polygon-clipping, via
@@ -1547,6 +1587,20 @@ function diagonalBridgeStamp(cx0: number, cy0: number, cx1: number, cy1: number,
  * touch only at that corner) still round outward here, and a
  * `diagonalBridgeStamp` bar is added to fuse that corner-touch into a
  * smooth diagonal edge — see that function's doc comment.
+ *
+ * A diagonal STROKE, though, almost never produces that clean single-point
+ * touch — at normal sampling density it comes out as a "staircase" (every
+ * consecutive pair of visited cells shares a full edge; see
+ * `diagonalBridgeStamp`'s doc comment), and every inside step of a
+ * staircase is a concave/reflex corner (both edge-neighbors filled, the
+ * diagonal between them empty) rather than the isolated-touch case above.
+ * Leaving those flat is what actually caused "selalu ke snap vertikal dan
+ * horisontal": the outline was still a perfect right-angle staircase, just
+ * with its outer corners rounded — no different from a plain blocky one at
+ * a glance. Those reflex corners get a `concaveCornerBite` carved out of
+ * them (subtracted, not stamped — see that function's doc comment for why),
+ * which is the inward twin of the convex rounding above and is what turns a
+ * staircase into something that actually reads as a smooth diagonal edge.
  */
 export function pixelLiquidOutline(
   centerline: { x: number; y: number }[],
@@ -1581,6 +1635,7 @@ export function pixelLiquidOutline(
   const bridgeHalfWidth = side * (0.16 + 0.14 * s);
 
   const rings: Point[][] = [];
+  const bites: Point[][] = [];
 
   for (const { cx, cy } of cells) {
     const rightFilled = has(cx + 1, cy);
@@ -1599,16 +1654,43 @@ export function pixelLiquidOutline(
 
     // Only test 2 of the 4 diagonals per cell (down-right, down-left) so
     // each corner-touching pair is bridged exactly once, from whichever
-    // cell is "upper".
+    // cell is "upper". This only ever fires for a genuine single-point
+    // touch (both in-between cardinal cells empty) — a normal sampled
+    // staircase fills those in-between cells, so it's the concave bites
+    // below, not this bridge, that smooths a real drawn diagonal.
     if (!rightFilled && !downFilled && has(cx + 1, cy + 1)) {
       rings.push(diagonalBridgeStamp(cx, cy, cx + 1, cy + 1, cellSize, bridgeHalfWidth));
     }
     if (!leftFilled && !downFilled && has(cx - 1, cy + 1)) {
       rings.push(diagonalBridgeStamp(cx, cy, cx - 1, cy + 1, cellSize, bridgeHalfWidth));
     }
+
+    // Reflex corners: both edge-neighbors on this corner are filled, but
+    // the diagonal cell between them isn't — the "inside step" of a
+    // staircase. Carve a matching concave fillet at each one (see
+    // `concaveCornerBite`'s doc comment). Each such lattice point is only
+    // ever reported by exactly one of the (up to 4) cells around it, since
+    // the condition requires the CURRENT cell to be one of the 3 filled
+    // corners with the diagonal empty — so this never double-carves.
+    const x0 = cx * cellSize;
+    const y0 = cy * cellSize;
+    const x1 = x0 + cellSize;
+    const y1 = y0 + cellSize;
+    if (rightFilled && upFilled && !has(cx + 1, cy - 1)) {
+      bites.push(concaveCornerBite(x1, y0, 1, -1, cornerRadius));
+    }
+    if (rightFilled && downFilled && !has(cx + 1, cy + 1)) {
+      bites.push(concaveCornerBite(x1, y1, 1, 1, cornerRadius));
+    }
+    if (leftFilled && downFilled && !has(cx - 1, cy + 1)) {
+      bites.push(concaveCornerBite(x0, y1, -1, 1, cornerRadius));
+    }
+    if (leftFilled && upFilled && !has(cx - 1, cy - 1)) {
+      bites.push(concaveCornerBite(x0, y0, -1, -1, cornerRadius));
+    }
   }
 
-  const contours = unionPolygonsToContours(rings, EXPAND_FIDELITY_SCALE);
+  const contours = unionRingsThenSubtract(rings, bites, EXPAND_FIDELITY_SCALE);
   return contours.length > 0 ? contours : [];
 }
 

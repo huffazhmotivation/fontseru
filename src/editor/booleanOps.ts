@@ -735,6 +735,46 @@ export function unionPolygonsToContours(rings: Point[][], toleranceScale = 1): C
  * correctly keeps a counter open unless another object's real ink actually
  * covers it. This matches what the live editor shows.
  */
+/**
+ * Union `addRings`, then subtract the union of `subtractRings` from the
+ * result. `unionPolygonsToContours` can only ever ADD material (every ring
+ * just gets OR'd together), so it has no way to carve a concave ("inside
+ * corner") fillet — that needs an explicit subtract pass over the
+ * already-unioned body. Pixel Liquid mode uses this to round the reflex
+ * corners of a cell staircase inward, the same way `unionPolygonsToContours`
+ * already rounds convex corners outward — see `pixelLiquidOutline`'s doc
+ * comment in strokeToOutline.ts.
+ */
+export function unionRingsThenSubtract(addRings: Point[][], subtractRings: Point[][], toleranceScale = 1): Contour[] {
+  const toPolys = (rings: Point[][]): ClipPolygon[] => {
+    const out: ClipPolygon[] = [];
+    for (const r of rings) {
+      if (r.length < 3) continue;
+      const ring = toRing(dedupePoints(r));
+      if (ring.length < 3) continue;
+      out.push([[...ring, ring[0]] as unknown as [number, number][]]);
+    }
+    return out;
+  };
+  const addPolys = toPolys(addRings);
+  if (addPolys.length === 0) return [];
+  let bodyMulti: ClipMultiPolygon;
+  try {
+    bodyMulti = addPolys.length === 1 ? clipUnion(addPolys[0]) : clipUnion(addPolys[0], ...addPolys.slice(1));
+  } catch {
+    return [];
+  }
+  const subPolys = toPolys(subtractRings);
+  if (subPolys.length === 0) return multiPolygonToContours(bodyMulti, toleranceScale);
+  try {
+    const subMulti = subPolys.length === 1 ? clipUnion(subPolys[0]) : clipUnion(subPolys[0], ...subPolys.slice(1));
+    const carved = clipDifference(bodyMulti, subMulti);
+    return multiPolygonToContours(carved, toleranceScale);
+  } catch {
+    return multiPolygonToContours(bodyMulti, toleranceScale);
+  }
+}
+
 export function unionObjectsHoleAware(objects: VectorObject[], toleranceScale = 1): Contour[] {
   const multiPolys = objects
     .map(objectToMultiPolygon)
