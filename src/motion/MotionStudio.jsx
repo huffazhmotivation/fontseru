@@ -2669,7 +2669,12 @@ const GlobalStyle = () => (
     .mfs-list-item[draggable="true"] { cursor:grab; }
 
     .mfs-center { grid-area:center; background:var(--bg); display:flex; flex-direction:column; min-height:0; }
-    .mfs-canvas-wrap { flex:1; display:flex; align-items:center; justify-content:center; position:relative; overflow:auto; background-image:radial-gradient(circle,var(--stage-checker) 1px,transparent 1px); background-size:22px 22px; background-position:center; }
+    .mfs-canvas-wrap { flex:1; display:flex; align-items:center; justify-content:center; position:relative; overflow:auto; background-image:radial-gradient(circle,var(--stage-checker) 1px,transparent 1px); background-size:22px 22px; background-position:center;
+      /* Biar gestur cubit dua-jari (lihat pinch-to-zoom di CenterStage) jadi
+         milik kanvas, bukan direbut zoom/scroll bawaan browser di area
+         kosong sekitar kanvas — sama alasannya dengan touch-action:none di
+         elemen <canvas> sendiri. */
+      touch-action: none; }
     /* Mode preview penuh-layar: keluar dari tata letak grid (position:fixed
        menutupi seluruh viewport). PENTING soal performa: dulu lapisan ini
        memakai backdrop-filter: blur(34px) menutupi SELURUH viewport. Karena
@@ -2791,7 +2796,7 @@ const GlobalStyle = () => (
     .mfs-tl-resize::after { content:""; position:absolute; left:22px; right:22px; top:2px; height:1.5px; border-radius:1px; background:var(--border-light); opacity:0.85; transition:background .12s ease, opacity .12s ease; }
     .mfs-tl-resize:hover::after, .mfs-tl-resize:active::after { background:var(--accent); opacity:1; }
     .mfs-timeline { grid-area:timeline; background:var(--bg-panel); display:flex; flex-direction:column; min-height:0; max-height:100%; overflow:hidden; }
-    .mfs-timeline-head { height:28px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:0 14px; border-bottom:1px solid var(--border); }
+    .mfs-timeline-head { height:28px; flex-shrink:0; display:flex; align-items:center; justify-content:flex-end; gap:10px; padding:0 14px; border-bottom:1px solid var(--border); }
     .mfs-timeline-title { font-size:10.5px; color:var(--text-dim); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
     .mfs-tracks-outer { flex:1; display:flex; min-height:0; padding:0 12px; overflow:hidden; align-items:stretch; }
     .mfs-track-labels { width:56px; flex-shrink:0; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
@@ -2876,7 +2881,15 @@ const GlobalStyle = () => (
 
     /* Tablet: ciutkan lebar panel samping supaya kanvas tetap lega. */
     @media (max-width: 1200px) and (min-width: 861px) {
-      .mfs-root { grid-template-columns: 168px 216px 1fr 284px; }
+      /* BUG FIX ("panel Layer terlalu besar/lebar di iPad landscape"): grid
+         columns follow grid-template-areas "left center layers right", so
+         column 2 is the CANVAS (center) and column 3 is the Layer panel —
+         this used to have them backwards (a fixed width in the center slot
+         and `1fr` in the layers slot), which squeezed the canvas down to a
+         tiny fixed strip and let the Layer panel balloon to fill the rest
+         of the screen. Canvas must stay the flexible `1fr` column; Layer
+         panel stays a narrow fixed width, just like on desktop. */
+      .mfs-root { grid-template-columns: 168px minmax(0,1fr) 190px 284px; }
       /* Tanpa ini, semua tombol di topbar (grup rata objek + info klip +
          undo/redo + preview/ekspor) dipaksa satu baris dan kepotong/tumpang
          tindih di lebar ~1024px (iPad landscape). Bolehkan bungkus 2 baris,
@@ -3619,6 +3632,53 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     };
     wrap.addEventListener("wheel", onWheel, { passive: false });
     return () => wrap.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Pinch-to-zoom (dua jari) untuk tablet & HP — padanan sentuh dari scroll
+  // mouse di atas. Dipasang di elemen WRAP (bukan cuma kanvas-nya sendiri)
+  // supaya area kosong di sekitar kanvas juga ikut bisa dipakai mencubit,
+  // sama seperti scroll mouse yang juga bekerja di situ. Dibaca lewat
+  // TouchEvent asli (bukan Pointer Events) supaya bebas dari — dan tidak
+  // mengganggu — logika drag/rotate/scale objek satu-jari yang sudah pakai
+  // Pointer Events di kanvas: begitu jari kedua menyentuh, ini murni
+  // mengubah `zoom` tampilan, tidak pernah menyentuh state objek.
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    let startDist = null;
+    let startZoom = 1;
+
+    const distanceOf = (touches) => {
+      const [a, b] = touches;
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    };
+
+    const onTouchStart = (e) => {
+      if (e.touches.length === 2) {
+        startDist = distanceOf(e.touches);
+        startZoom = zoomRef.current;
+      }
+    };
+    const onTouchMove = (e) => {
+      if (e.touches.length !== 2 || !startDist) return;
+      e.preventDefault();
+      const scale = distanceOf(e.touches) / startDist;
+      setZoom(Math.round(clamp(startZoom * scale, 0.15, 4) * 100) / 100);
+    };
+    const onTouchEnd = (e) => {
+      if (e.touches.length < 2) startDist = null;
+    };
+
+    wrap.addEventListener("touchstart", onTouchStart, { passive: true });
+    wrap.addEventListener("touchmove", onTouchMove, { passive: false });
+    wrap.addEventListener("touchend", onTouchEnd, { passive: true });
+    wrap.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    return () => {
+      wrap.removeEventListener("touchstart", onTouchStart);
+      wrap.removeEventListener("touchmove", onTouchMove);
+      wrap.removeEventListener("touchend", onTouchEnd);
+      wrap.removeEventListener("touchcancel", onTouchEnd);
+    };
   }, []);
 
   useEffect(() => { resizeRef.current(); }, [zoom]);
@@ -5339,7 +5399,6 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     <div className="mfs-timeline">
       <div className="mfs-tl-resize" onPointerDown={onResizeHandleDown} title="Seret untuk mengubah tinggi panel linimasa" />
       <div className="mfs-timeline-head">
-        <span className="mfs-timeline-title">Linimasa — seret klip ke atas/bawah untuk pindah track, seret transisi ke sela klip</span>
         <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{Math.round(timelineZoom * 100)}%</span>
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ position: "relative" }}>

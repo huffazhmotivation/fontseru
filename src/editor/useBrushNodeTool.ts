@@ -1,11 +1,9 @@
 import { useCallback, useRef, useState } from "react";
-import type { Contour, PathNode, Point, VectorObject } from "@/types/geometry";
+import type { PathNode, Point, VectorObject } from "@/types/geometry";
 import { useAppStore } from "@/glyph/store";
 import { shortId } from "@/utils/id";
 import { reflect, subtract, length } from "@/utils/geometry";
-import { flattenContour } from "./objectOps";
-import { centerlineToOutlineContours } from "@/brushes/strokeToOutline";
-import type { StrokeSample } from "@/types/geometry";
+import { brushOutlineContours } from "@/brushes/strokeToOutline";
 
 /**
  * Brush tool, Node draw mode (see BrushDrawMode in glyph/store.ts).
@@ -40,6 +38,20 @@ export function useBrushNodeTool(hitScale: number) {
   const closeRadius = 14 * hitScale;
   const dragThreshold = 1.5 * hitScale;
 
+  const buildObject = useCallback(
+    (nodes: PathNode[], closed: boolean, id: string): VectorObject => ({
+      id,
+      kind: "brush",
+      contours: [{ id: `${id}-contour`, nodes: nodes.map((n) => ({ ...n })), closed }],
+      strokeWidth: brush.size,
+      cap: brush.type === "monoline" ? brushCap : "round",
+      join: "round",
+      brushType: brush.type,
+      brushSettings: { ...brush, gridSnap: undefined },
+    }),
+    [brush, brushCap]
+  );
+
   const reset = useCallback(() => {
     nodesRef.current = [];
     draggingIndexRef.current = null;
@@ -54,21 +66,11 @@ export function useBrushNodeTool(hitScale: number) {
         reset();
         return;
       }
-      const contour: Contour = { id: shortId("contour"), nodes: nodes.map((n) => ({ ...n })), closed };
-      const obj: VectorObject = {
-        id: shortId("obj"),
-        kind: "brush",
-        contours: [contour],
-        strokeWidth: brush.size,
-        cap: brush.type === "monoline" ? brushCap : "round",
-        join: "round",
-        brushType: brush.type,
-        brushSettings: { ...brush, gridSnap: undefined },
-      };
+      const obj = buildObject(nodes, closed, shortId("obj"));
       commitOutline(activeChar, { objects: [...glyph.outline.objects, obj] });
       reset();
     },
-    [glyph, brush, brushCap, activeChar, commitOutline, reset]
+    [glyph, activeChar, commitOutline, reset, buildObject]
   );
 
   const pointerDown = useCallback(
@@ -154,16 +156,20 @@ export function useBrushNodeTool(hitScale: number) {
   const cancel = useCallback(() => reset(), [reset]);
 
   /** Live variable-width outline (the true brush silhouette) for the path
-   * drawn so far, using the exact same engine as a freehand Brush stroke —
-   * so the Node draw mode's preview never looks different from the
-   * committed result. */
+   * drawn so far. Built by handing a same-shaped object straight to
+   * `brushOutlineContours` — the exact function every committed brush
+   * object (freehand or Node) is rendered with in ObjectsLayer/export —
+   * instead of a separate hand-rolled flatten+expand pipeline. That parallel
+   * pipeline was the bug: it diverged from the real renderer just enough
+   * (missing the RDP polyline simplification and the corner/join handling
+   * `brushOutlineContours` applies) to make the live preview look broken —
+   * a bare node/handle skeleton with no filled stroke — while the committed
+   * result, going through the real renderer, came out correctly. Preview
+   * and result now literally share one code path, so they can't diverge. */
   const previewOutline = (() => {
     if (liveNodes.length < 2) return [];
-    const contour: Contour = { id: "preview", nodes: liveNodes, closed: false };
-    const poly = flattenContour(contour, 12);
-    if (poly.length < 2) return [];
-    const centerline: StrokeSample[] = poly.map((pt) => ({ x: pt.x, y: pt.y, pressure: 1 }));
-    return centerlineToOutlineContours(centerline, brush);
+    const obj = buildObject(liveNodes, false, "brush-node-preview");
+    return brushOutlineContours(obj);
   })();
 
   return {
