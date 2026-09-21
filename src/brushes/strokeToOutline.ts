@@ -1708,6 +1708,14 @@ const PIXEL_LIQUID_ROUND_JOINT_MIN_SMOOTHNESS = 0.75;
  * outline runs tangent-continuous stamp -> fillet -> stamp with no spikes and
  * no square corners. Nothing is added beyond that kite, so it can never
  * poke past the round silhouette.
+ *
+ * One-cell-wide dead-end pockets (an empty cell walled in on three or four
+ * sides, e.g. the notch of a "V"/"U" stroke) get two fillets from the pocket's
+ * two neighbouring corners. At the full radius those two circles are wider
+ * than the pocket, so they cross each other and leave a sharp pointed tip at
+ * the bottom of the pocket. For those cells the fillet radius is reduced to
+ * the circle that is tangent to all the walls at once, so both fillets
+ * collapse into one and the pocket ends in a clean, soft round.
  */
 function pixelLiquidRoundJointRings(
   cells: { cx: number; cy: number }[],
@@ -1723,14 +1731,15 @@ function pixelLiquidRoundJointRings(
     has(vx + (u < 0 ? -1 : 0), vy + (v < 0 ? -1 : 0));
 
   const r = cornerRadius; // stamp corner-arc radius
-  const rho = cornerRadius; // fillet radius: same roundness as the outside corners
+  const rhoFull = cornerRadius; // fillet radius: same roundness as the outside corners
   // Distance (along each axis) from a grid vertex to the centre of the
   // nearest corner arc of a stamp sitting in a quadrant around it.
   const m = cellSize / 2 - side / 2 + r;
   const halfGap = Math.SQRT2 * m; // half the distance between the two flanking arc centres
-  const R = r + rho; // fillet centre -> flanking arc centre distance (externally tangent)
-  if (R <= halfGap) return []; // arcs already overlap: nothing to bridge
-  const h = Math.sqrt(R * R - halfGap * halfGap);
+  // Radius of the circle tangent to every wall of a one-cell-wide pocket: its
+  // centre sits at the middle of the pocket cell, i.e. cellSize/2 from the
+  // vertex along each axis (see the doc comment above).
+  const pocketRho = Math.sqrt((cellSize * cellSize) / 2 + halfGap * halfGap) - r;
   const ARC_SEGS = 16;
 
   const vertices = new Set<string>();
@@ -1762,6 +1771,14 @@ function pixelLiquidRoundJointRings(
       for (const sy of [-1, 1]) {
         if (quadFilled(vx, vy, sx, sy)) continue; // only EMPTY quadrants get a fillet
         if (!quadFilled(vx, vy, -sx, sy) || !quadFilled(vx, vy, sx, -sy)) continue; // both neighbours must be filled
+        // Filled edge-neighbours of the empty cell being filleted (>= 3 means a dead-end pocket).
+        const ex = vx + (sx < 0 ? -1 : 0);
+        const ey = vy + (sy < 0 ? -1 : 0);
+        const walls = (has(ex - 1, ey) ? 1 : 0) + (has(ex + 1, ey) ? 1 : 0) + (has(ex, ey - 1) ? 1 : 0) + (has(ex, ey + 1) ? 1 : 0);
+        const rho = walls >= 3 && pocketRho > 0 ? Math.min(rhoFull, pocketRho) : rhoFull;
+        const R = r + rho; // fillet centre -> flanking arc centre distance (externally tangent)
+        if (R <= halfGap) continue; // arcs already overlap: nothing to bridge
+        const h = Math.sqrt(R * R - halfGap * halfGap);
         const A1 = { x: Q.x - sx * m, y: Q.y + sy * m };
         const A2 = { x: Q.x + sx * m, y: Q.y - sy * m };
         const F = { x: Q.x + (sx * h) / Math.SQRT2, y: Q.y + (sy * h) / Math.SQRT2 };
