@@ -1623,8 +1623,14 @@ export function pixelLiquidOutline(
   // instead of stopping just short of one.
   const cornerRadius = side * (0.24 + 0.26 * s);
 
+  // High smoothness (see PIXEL_LIQUID_ROUND_JOINT_MIN_SMOOTHNESS): stamps are
+  // (nearly) full circles, so joints are built from the stamps' own round
+  // corners instead of the square-based patches below. Denser arc sampling
+  // there keeps the polygon stamp hugging the true circle the joint fillets
+  // are computed against.
+  const roundJoints = s >= PIXEL_LIQUID_ROUND_JOINT_MIN_SMOOTHNESS;
   const rings = cells.map(({ cx, cy }) =>
-    roundedSquareStamp((cx + 0.5) * cellSize, (cy + 0.5) * cellSize, side, cornerRadius)
+    roundedSquareStamp((cx + 0.5) * cellSize, (cy + 0.5) * cellSize, side, cornerRadius, roundJoints ? 16 : 8)
   );
 
   // A straight run of cells is a chain of same-shaped stamps spaced exactly
@@ -1668,10 +1674,115 @@ export function pixelLiquidOutline(
   // Where cells meet only at a corner (a diagonal step), or wrap an inside
   // corner, the stamps' own rounded corners leave a pinch/gap instead of a
   // joint. Fill those meeting points so pixels fuse the same way everywhere.
-  rings.push(...pixelLiquidJunctionRings(cells, cellSize, (side - cellSize) / 2, cornerRadius, s, diagonalVertices));
+  if (roundJoints) {
+    rings.push(...pixelLiquidRoundJointRings(cells, cellSize, side, cornerRadius, diagonalVertices));
+  } else {
+    rings.push(...pixelLiquidJunctionRings(cells, cellSize, (side - cellSize) / 2, cornerRadius, s, diagonalVertices));
+  }
 
   const contours = unionPolygonsToContours(rings, EXPAND_FIDELITY_SCALE);
   return contours.length > 0 ? contours : [];
+}
+
+/** Pixel Liquid smoothness (0..1) from which joints are built by
+ * `pixelLiquidRoundJointRings` instead of `pixelLiquidJunctionRings`. */
+const PIXEL_LIQUID_ROUND_JOINT_MIN_SMOOTHNESS = 0.75;
+
+/**
+ * Pixel Liquid joints for HIGH smoothness (>= PIXEL_LIQUID_ROUND_JOINT_MIN_SMOOTHNESS).
+ *
+ * `pixelLiquidJunctionRings` builds every joint from patches aligned to the
+ * cell's bounding-box lines, which is only tangent to a stamp while the stamp
+ * still has a flat edge. Past ~75% smoothness the stamps are (nearly) full
+ * circles with no flat edge, so those patches overshot the real circle and
+ * left thin horn/whisker spikes sticking out of the outline at every
+ * pixel-to-pixel joint, while the squared-off corner patches read as angular
+ * joints.
+ *
+ * Here each joint is instead a true concave fillet, computed against the
+ * stamps' real rounded corners: for every EMPTY quadrant at a grid vertex
+ * whose two neighbours are both filled, a fillet circle (radius = stamp
+ * corner radius, the same roundness as the outside corners) is placed
+ * externally tangent to both flanking stamp corner arcs. The patch is the
+ * kite between the two stamp corner-arc centres and the fillet arc, so the
+ * outline runs tangent-continuous stamp -> fillet -> stamp with no spikes and
+ * no square corners. Nothing is added beyond that kite, so it can never
+ * poke past the round silhouette.
+ */
+function pixelLiquidRoundJointRings(
+  cells: { cx: number; cy: number }[],
+  cellSize: number,
+  side: number,
+  cornerRadius: number,
+  diagonalVertices: Set<string>
+): Point[][] {
+  const occ = new Set(cells.map((c) => `${c.cx},${c.cy}`));
+  const has = (x: number, y: number) => occ.has(`${x},${y}`);
+  // Cell touching vertex (vx, vy) in quadrant direction (u, v), u/v = +-1.
+  const quadFilled = (vx: number, vy: number, u: number, v: number) =>
+    has(vx + (u < 0 ? -1 : 0), vy + (v < 0 ? -1 : 0));
+
+  const r = cornerRadius; // stamp corner-arc radius
+  const rho = cornerRadius; // fillet radius: same roundness as the outside corners
+  // Distance (along each axis) from a grid vertex to the centre of the
+  // nearest corner arc of a stamp sitting in a quadrant around it.
+  const m = cellSize / 2 - side / 2 + r;
+  const halfGap = Math.SQRT2 * m; // half the distance between the two flanking arc centres
+  const R = r + rho; // fillet centre -> flanking arc centre distance (externally tangent)
+  if (R <= halfGap) return []; // arcs already overlap: nothing to bridge
+  const h = Math.sqrt(R * R - halfGap * halfGap);
+  const ARC_SEGS = 16;
+
+  const vertices = new Set<string>();
+  for (const { cx, cy } of cells) {
+    vertices.add(`${cx},${cy}`);
+    vertices.add(`${cx + 1},${cy}`);
+    vertices.add(`${cx},${cy + 1}`);
+    vertices.add(`${cx + 1},${cy + 1}`);
+  }
+
+  const out: Point[][] = [];
+  for (const key of vertices) {
+    const [vx, vy] = key.split(",").map(Number);
+    const filledCount =
+      (quadFilled(vx, vy, -1, -1) ? 1 : 0) +
+      (quadFilled(vx, vy, 1, -1) ? 1 : 0) +
+      (quadFilled(vx, vy, -1, 1) ? 1 : 0) +
+      (quadFilled(vx, vy, 1, 1) ? 1 : 0);
+    // Same rule as the square-based joints: an inside corner (3 cells), or a
+    // diagonal contact the stroke itself stepped across.
+    const diagonalOnly =
+      filledCount === 2 &&
+      ((quadFilled(vx, vy, -1, -1) && quadFilled(vx, vy, 1, 1)) || (quadFilled(vx, vy, 1, -1) && quadFilled(vx, vy, -1, 1))) &&
+      diagonalVertices.has(key);
+    if (!(filledCount >= 3 || diagonalOnly)) continue;
+
+    const Q = { x: vx * cellSize, y: vy * cellSize };
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        if (quadFilled(vx, vy, sx, sy)) continue; // only EMPTY quadrants get a fillet
+        if (!quadFilled(vx, vy, -sx, sy) || !quadFilled(vx, vy, sx, -sy)) continue; // both neighbours must be filled
+        const A1 = { x: Q.x - sx * m, y: Q.y + sy * m };
+        const A2 = { x: Q.x + sx * m, y: Q.y - sy * m };
+        const F = { x: Q.x + (sx * h) / Math.SQRT2, y: Q.y + (sy * h) / Math.SQRT2 };
+        const T1 = { x: F.x + ((A1.x - F.x) * rho) / R, y: F.y + ((A1.y - F.y) * rho) / R };
+        const T2 = { x: F.x + ((A2.x - F.x) * rho) / R, y: F.y + ((A2.y - F.y) * rho) / R };
+        const a1 = Math.atan2(T1.y - F.y, T1.x - F.x);
+        const a2 = Math.atan2(T2.y - F.y, T2.x - F.x);
+        let delta = a2 - a1;
+        while (delta > Math.PI) delta -= 2 * Math.PI;
+        while (delta <= -Math.PI) delta += 2 * Math.PI;
+        const ring: Point[] = [A1, T1];
+        for (let k = 1; k < ARC_SEGS; k++) {
+          const a = a1 + (k / ARC_SEGS) * delta;
+          ring.push({ x: F.x + Math.cos(a) * rho, y: F.y + Math.sin(a) * rho });
+        }
+        ring.push(T2, A2);
+        out.push(ring);
+      }
+    }
+  }
+  return out;
 }
 
 /**
