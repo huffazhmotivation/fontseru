@@ -1707,7 +1707,15 @@ function pixelLiquidJunctionRings(
   // exact same roundness as the outside corners — a uniform-radius "melted
   // union" look, not a smaller/weaker fillet at the inside turn.
   const rho = cornerRadius; // fillet radius
-  const eta = cellSize * 0.02; // tiny overlap into neighbors, avoids exact-coincident edges
+  // Was `cellSize * 0.02`. That's fine as a seam-avoidance overlap while the
+  // stamps still have a flat edge to hide it in, but as smoothness -> 1 the
+  // stamps become full circles (see `pixelLiquidOutline`'s cornerRadius
+  // comment) with no flat edge left, so this overlap ear was left exposed —
+  // it showed up as a small squared-off nub poking out of an otherwise
+  // round joint, worst around 80–100% smoothness. Shrunk 40x: still enough
+  // to avoid exact-coincident-edge slivers in the polygon union, but small
+  // enough to stay sub-visible even with no flat edge to absorb it into.
+  const eta = cellSize * 0.0005; // tiny overlap into neighbors, avoids exact-coincident edges
   // Corner square size: just big enough to re-square the stamp's own rounded
   // corner (the notch a rounded corner cuts away from a true square corner
   // is exactly an r×r square, r = cornerRadius) plus a hairline `eta`
