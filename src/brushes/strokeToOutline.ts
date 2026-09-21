@@ -1627,6 +1627,44 @@ export function pixelLiquidOutline(
     roundedSquareStamp((cx + 0.5) * cellSize, (cy + 0.5) * cellSize, side, cornerRadius)
   );
 
+  // A straight run of cells is a chain of same-shaped stamps spaced exactly
+  // `cellSize` apart. At low smoothness there's enough flat edge left on
+  // each stamp (`side - 2*cornerRadius`) for neighboring stamps to align
+  // flush and cancel out in the union. But `cornerRadius` reaches `side/2`
+  // — a true circle, no flat edge at all — well before `s` reaches 1 (see
+  // note above), so two adjacent circles centered `cellSize` apart overlap
+  // but their union has a pinched waist between centers rather than a
+  // straight side: a chain of pixels reads as separate bulging bumps
+  // instead of one continuous strip. A plain straight-sided rectangle
+  // bridging each pair of grid-adjacent occupied cells, spanning center to
+  // center at the same `side` thickness as the stamps, fills exactly that
+  // waist regardless of how round the individual stamps are — so straight
+  // runs always fuse into one flat-sided strip, while open ends and actual
+  // turns still get their round cap / fillet from the stamps and junction
+  // rings below untouched.
+  const occSet = new Set(cells.map((c) => `${c.cx},${c.cy}`));
+  const halfSide = side / 2;
+  for (const { cx, cy } of cells) {
+    if (occSet.has(`${cx + 1},${cy}`)) {
+      const midY = (cy + 0.5) * cellSize;
+      rings.push([
+        { x: (cx + 0.5) * cellSize, y: midY - halfSide },
+        { x: (cx + 1.5) * cellSize, y: midY - halfSide },
+        { x: (cx + 1.5) * cellSize, y: midY + halfSide },
+        { x: (cx + 0.5) * cellSize, y: midY + halfSide },
+      ]);
+    }
+    if (occSet.has(`${cx},${cy + 1}`)) {
+      const midX = (cx + 0.5) * cellSize;
+      rings.push([
+        { x: midX - halfSide, y: (cy + 0.5) * cellSize },
+        { x: midX + halfSide, y: (cy + 0.5) * cellSize },
+        { x: midX + halfSide, y: (cy + 1.5) * cellSize },
+        { x: midX - halfSide, y: (cy + 1.5) * cellSize },
+      ]);
+    }
+  }
+
   // Where cells meet only at a corner (a diagonal step), or wrap an inside
   // corner, the stamps' own rounded corners leave a pinch/gap instead of a
   // joint. Fill those meeting points so pixels fuse the same way everywhere.
