@@ -1707,8 +1707,17 @@ function pixelLiquidJunctionRings(
   // exact same roundness as the outside corners — a uniform-radius "melted
   // union" look, not a smaller/weaker fillet at the inside turn.
   const rho = cornerRadius; // fillet radius
-  const t = Math.max(cornerRadius, rho + 2 * eps); // corner square size
   const eta = cellSize * 0.02; // tiny overlap into neighbors, avoids exact-coincident edges
+  // Corner square size: just big enough to re-square the stamp's own rounded
+  // corner (the notch a rounded corner cuts away from a true square corner
+  // is exactly an r×r square, r = cornerRadius) plus a hairline `eta`
+  // overlap to avoid seam gaps. This used to be `rho + 2 * eps` (`eps` =
+  // stamp overshoot), which scales up with `smoothness` — fine at low
+  // smoothness where `eps` is tiny, but at 80–100% `eps` grows large enough
+  // that the patch reached well past the stamp's real rounded silhouette,
+  // showing up as a squared-off, angular bump poking past the smooth
+  // "liquid" blob at every pixel-to-pixel joint/turn instead of a clean arc.
+  const t = rho + eta; // corner square size
   const ARC_SEGS = 8;
 
   // quadrant order: NW, NE, SW, SE  ->  (sx, sy) points from the vertex into that cell
