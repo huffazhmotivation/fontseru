@@ -11,7 +11,8 @@ export type BrushType =
   | "pixel"
   | "strong"
   | "outline"
-  | "sprayBrush";
+  | "sprayBrush"
+  | "tape";
 
 export interface BrushSettings {
   type: BrushType;
@@ -46,7 +47,7 @@ export interface BrushSettings {
    * (which still control how LONG the taper ramp is either way). */
   sharpStart?: boolean;
   sharpEnd?: boolean;
-  /** 0 = clean edge (all existing presets). >0 = irregular, distressed edge amplitude as a fraction of size (Grunge, Oil Brush). Spray Brush reuses this as the speck field's density/spread instead of an edge amplitude — see sprayBrushOutlineContours. */
+  /** 0 = clean edge (all existing presets). >0 = irregular, distressed edge amplitude as a fraction of size (Grunge, Oil Brush). Spray Brush reuses this as the speck field's density/spread instead of an edge amplitude — see sprayBrushOutlineContours. Tape Brush reuses this as the strength of BOTH its torn end-tears and its three fiber-line dashes together — see tapeBrushOutlineContours/tornCap. */
   jitter?: number;
   /** Rough Brush only: roughly how many small counter-holes per 18 font units of stroke length — a dense, pitted scatter, not a sparse one (see roughBrushOutlineContours). */
   holeDensity?: number;

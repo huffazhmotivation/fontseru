@@ -336,6 +336,35 @@ export const BRUSH_PRESETS: Record<BrushType, BrushPreset> = {
       outlineCapStyle: "square",
     },
   },
+  tape: {
+    id: "tape",
+    label: "Tape Brush",
+    description: "Constant-width strip with clean straight sides, both ends torn off ragged instead of cut, and three thin dashed fiber lines running down the middle.",
+    settings: {
+      size: 30,
+      // Tape reads as a slightly translucent adhesive strip, not solid ink.
+      opacity: 0.92,
+      spacing: 3,
+      smoothing: 0.35,
+      stabilizer: 0.3,
+      // Round nib, no taper, no pressure: the two long sides stay perfectly
+      // straight and parallel along the whole strip — every bit of this
+      // preset's character comes from the torn ends and fiber dashes below,
+      // not from the body's width profile.
+      roundness: 1,
+      angle: 0,
+      taperStart: 0,
+      taperEnd: 0,
+      pressureEnabled: false,
+      pressureSensitivity: 0,
+      // Overall texture strength, same meaning as every other textured
+      // preset: scales both how ragged the torn ends are and how bold the
+      // three fiber-line dashes read — see tornCap()/tapeBrushOutlineContours()
+      // in strokeToOutline.ts. 0.7 matches a real torn-off packing-tape strip;
+      // lower for a tidier tear, higher for a more shredded one.
+      jitter: 0.7,
+    },
+  },
   sprayBrush: {
     id: "sprayBrush",
     label: "Spray Brush",
@@ -380,4 +409,5 @@ export const BRUSH_ORDER: BrushType[] = [
   "strong",
   "outline",
   "sprayBrush",
+  "tape",
 ];

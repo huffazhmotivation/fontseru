@@ -375,6 +375,48 @@ function bluntCap(from: Point, to: Point, outDir: Point, seed: number): Point[] 
 }
 
 /**
+ * Tape Brush's torn-off end: unlike `bluntCap`'s smooth superellipse bulge,
+ * this walks the chord between the two edge end-points (`from` → `to`) as a
+ * dense zigzag — most steps a small in/out fiber tooth, a sparser handful a
+ * deeper rip — so the whole cut reads as ragged paper/adhesive torn by hand
+ * rather than sliced. `outDir` is the direction those teeth push along (the
+ * stroke's own travel direction past this end, same convention as
+ * `bluntCap`). The two endpoints themselves are pinned at zero offset so the
+ * zigzag joins the straight side rails without a seam. `strength` (0..1-ish,
+ * fed from `jitter`) scales both how deep the fine teeth bite and how often
+ * and how far the rarer deep tears reach.
+ */
+function tornCap(from: Point, to: Point, outDir: Point, seed: number, strength: number): Point[] {
+  const chord = Math.hypot(to.x - from.x, to.y - from.y);
+  const hw = chord / 2;
+  if (hw < 0.5) return [];
+  const k = Math.max(0.15, Math.min(1.6, strength));
+  // Fine teeth every ~0.16 half-widths of chord — dense enough to read as
+  // torn fiber, not a smooth wave.
+  const teeth = Math.max(8, Math.min(40, Math.round(chord / Math.max(0.6, hw * 0.16))));
+  const pts: Point[] = [];
+  for (let i = 1; i < teeth; i++) {
+    const u = i / teeth;
+    const bx = from.x + (to.x - from.x) * u;
+    const by = from.y + (to.y - from.y) * u;
+    // Fine, near-every-step jitter — the base "torn fiber" grain.
+    const fine = pseudoNoise(seed + i * 7.7) * 0.09 * hw * k;
+    // Sparse deeper rips: only ~1 in 4 teeth, and only some of those go deep,
+    // so the tear reads as mostly-fine grain with a few real notches/spikes
+    // poking through — not a metronomic sawtooth.
+    const ripRoll = (pseudoNoise(seed + i * 3.1 + 50) + 1) / 2;
+    const rip = ripRoll > 0.72 ? Math.pow((ripRoll - 0.72) / 0.28, 1.4) * 0.34 * hw * k : 0;
+    // Rip direction alternates roughly (some teeth tear outward past the cut,
+    // others gouge inward) using its own noise so it isn't locked to `fine`'s
+    // sign.
+    const ripSign = pseudoNoise(seed + i * 4.9 + 130) >= 0 ? 1 : -1;
+    const push = fine + ripSign * rip;
+    pts.push({ x: bx + outDir.x * push, y: by + outDir.y * push });
+  }
+  return pts;
+}
+
+/**
  * Intersection of segments (a0,a1) and (b0,b1), restricted to the segments
  * themselves (both parametric t/u in [0,1]). Returns null for parallel/
  * non-crossing segments.
@@ -753,6 +795,8 @@ export function centerlineToOutline(
   // Oil Brush, spiky Grunge) opt out of both and keep their current look.
   const ROUND_CAP_TYPES: BrushType[] = ["round", "marker", "calligraphic", "pencil", "pressureTaper"];
   const BLUNT_CAP_TYPES: BrushType[] = ["strong"];
+  // Tape Brush's own end treatment — a ragged hand-torn cut. See `tornCap`.
+  const TORN_CAP_TYPES: BrushType[] = ["tape"];
   // Outline Brush's cap is user-controlled (see BrushSettings.outlineCapStyle).
   // All three styles ("round", "square", "open") now go through this SAME
   // outer+inner ring construction (see outlineBrushOutlineContours) instead
@@ -783,7 +827,7 @@ export function centerlineToOutline(
   // way to the tip, rather than a solid plate plugging it shut) — so it
   // maps to the plain "none" cap treatment (no cap geometry inserted at
   // all), same as any non-outline brush with no dedicated end cap.
-  const capMode: "round" | "blunt" | "square" | "none" =
+  const capMode: "round" | "blunt" | "torn" | "square" | "none" =
     settings.type === "outline"
       ? settings.outlineCapStyle === "round"
         ? "round"
@@ -794,7 +838,9 @@ export function centerlineToOutline(
         ? "round"
         : BLUNT_CAP_TYPES.includes(settings.type)
           ? "blunt"
-          : "none";
+          : TORN_CAP_TYPES.includes(settings.type)
+            ? "torn"
+            : "none";
   let startCap: { center: Point; tangentAngle: number; semiA: number; semiB: number } | null = null;
   let endCap: { center: Point; tangentAngle: number; semiA: number; semiB: number } | null = null;
 
@@ -1205,9 +1251,11 @@ export function centerlineToOutline(
       // Chisel cut pushed straight OUT along the direction of travel (the
       // stroke is heading this way and keeps going past the tip).
       ? bluntCap(left[left.length - 1], right[right.length - 1], { x: Math.cos(endCap.tangentAngle), y: Math.sin(endCap.tangentAngle) }, 11.3)
-      : capMode === "square"
-        ? capSquare(endCap, endCap.tangentAngle + Math.PI / 2, endCap.tangentAngle)
-        : capArc(endCap, endCap.tangentAngle + Math.PI / 2)
+      : capMode === "torn" && left.length > 0 && right.length > 0
+        ? tornCap(left[left.length - 1], right[right.length - 1], { x: Math.cos(endCap.tangentAngle), y: Math.sin(endCap.tangentAngle) }, 11.3, settings.jitter ?? 0.7)
+        : capMode === "square"
+          ? capSquare(endCap, endCap.tangentAngle + Math.PI / 2, endCap.tangentAngle)
+          : capArc(endCap, endCap.tangentAngle + Math.PI / 2)
     : [];
   const startCapPts = isGrunge && grungeStartDir && left.length > 0 && right.length > 0
     ? raggedCap(right[0], left[0], grungeStartDir, 61.3)
@@ -1216,9 +1264,11 @@ export function centerlineToOutline(
       // Chisel cut pushed straight BACK, opposite the direction of travel
       // (the stroke starts here and heads forward, so the cut trails behind).
       ? bluntCap(right[0], left[0], { x: -Math.cos(startCap.tangentAngle), y: -Math.sin(startCap.tangentAngle) }, 83.1)
-      : capMode === "square"
-        ? capSquare(startCap, startCap.tangentAngle - Math.PI / 2, startCap.tangentAngle + Math.PI)
-        : capArc(startCap, startCap.tangentAngle - Math.PI / 2)
+      : capMode === "torn" && left.length > 0 && right.length > 0
+        ? tornCap(right[0], left[0], { x: -Math.cos(startCap.tangentAngle), y: -Math.sin(startCap.tangentAngle) }, 83.1, settings.jitter ?? 0.7)
+        : capMode === "square"
+          ? capSquare(startCap, startCap.tangentAngle - Math.PI / 2, startCap.tangentAngle + Math.PI)
+          : capArc(startCap, startCap.tangentAngle - Math.PI / 2)
     : [];
 
   // Clean up local self-intersections on each side independently (see
@@ -2151,6 +2201,97 @@ function strongBrushOutlineContours(centerline: StrokeSample[], settings: BrushS
 }
 
 /**
+ * Tape Brush: a constant-width strip (the plain elliptical-nib body from
+ * `centerlineToOutline`, whose torn ends are already built in — see
+ * `tornCap`) with the other trait real packing/washi tape shows: three thin
+ * dashed lines running lengthwise down the middle, like the fiber
+ * reinforcement woven into real tape. Each line sits at its own fixed
+ * lateral lane across the strip's width and follows the centerline's own
+ * curve (walked via distance + local tangent/normal, the same technique
+ * `strongBrushOutlineContours` uses for its pinholes), broken into evenly
+ * spaced dashes — real vector counter-holes cut through the body via
+ * `makeCombDash` reused end-on (its long axis run ALONG the tangent instead
+ * of across it), not a raster overlay, so the strip still exports cleanly
+ * into the font. Dashes stay clear of both torn ends by a margin so the
+ * fiber lines never collide with the ragged tear geometry there.
+ * `jitter` scales dash thickness/prominence, same "overall texture
+ * strength" meaning it has on every other textured preset (see `tornCap`
+ * for the end-tear side of that same field).
+ */
+function tapeBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
+  const main = centerlineToOutline(centerline, settings);
+  if (!main) return [];
+  const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
+  const holeSign = outerSign >= 0 ? -1 : 1;
+
+  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06));
+  if (dense.length < 2) return [main];
+
+  const cumulative: number[] = [0];
+  for (let i = 1; i < dense.length; i++) {
+    cumulative.push(cumulative[i - 1] + Math.hypot(dense[i].x - dense[i - 1].x, dense[i].y - dense[i - 1].y));
+  }
+  const totalLength = cumulative[cumulative.length - 1] || 0;
+  const hw = Math.max(0.5, settings.size / 2);
+  // Torn ends need real room to read (see tornCap) — keep the fiber dashes
+  // clear of them rather than racing right up to the ragged tear.
+  const margin = hw * 2.4;
+  if (totalLength < margin * 2 + hw) return [main];
+
+  const strength = Math.max(0.15, Math.min(1.6, settings.jitter ?? 0.7));
+
+  const at = (t: number): { p: Point; tangent: Point } => {
+    const clamped = Math.max(0, Math.min(totalLength, t));
+    let idx = 1;
+    while (idx < cumulative.length - 1 && cumulative[idx] < clamped) idx++;
+    const p0 = dense[idx - 1];
+    const p1 = dense[idx];
+    const segLen = cumulative[idx] - cumulative[idx - 1] || 1;
+    const frac = (clamped - cumulative[idx - 1]) / segLen;
+    return {
+      p: { x: p0.x + (p1.x - p0.x) * frac, y: p0.y + (p1.y - p0.y) * frac },
+      tangent: { x: p1.x - p0.x, y: p1.y - p0.y },
+    };
+  };
+
+  // Three lanes spanning most of the strip's width, evenly split above,
+  // through, and below the centerline — matching a real strip's woven
+  // fiber lines rather than crowding them all to one side.
+  const lanes = [-0.42, 0, 0.42];
+  const dashes: Contour[] = [];
+  const usable = totalLength - margin * 2;
+  const dashLen = Math.max(2, hw * 1.15);
+  const gapLen = Math.max(1.5, hw * 0.85);
+  const step = dashLen + gapLen;
+  const dashCount = Math.max(1, Math.floor(usable / step));
+  // Re-center the run of dashes in the usable span so both lanes' dashes
+  // read as evenly inset from the torn ends rather than flush to one side.
+  const start = margin + (usable - (dashCount * step - gapLen)) / 2;
+
+  for (let laneIdx = 0; laneIdx < lanes.length; laneIdx++) {
+    const lat = lanes[laneIdx] * hw;
+    for (let i = 0; i < dashCount; i++) {
+      const seed = laneIdx * 331.7 + i * 53.1 + 17.3;
+      // Small per-dash jitter in position/length so the line reads as
+      // hand-torn fiber, not a mechanically perfect dashed rule.
+      const jitterAlong = pseudoNoise(seed) * gapLen * 0.35;
+      const d = start + i * step + dashLen / 2 + jitterAlong;
+      const lenJitter = 0.85 + ((pseudoNoise(seed + 6) + 1) / 2) * 0.3;
+      const len = dashLen * lenJitter;
+      const thick = Math.max(0.6, hw * (0.05 + ((pseudoNoise(seed + 11) + 1) / 2) * 0.03) * strength);
+      const latJitter = lat + pseudoNoise(seed + 16) * hw * 0.035;
+      const { p, tangent } = at(d);
+      const tl = Math.hypot(tangent.x, tangent.y) || 1;
+      const normal = { x: -tangent.y / tl, y: tangent.x / tl };
+      const center = { x: p.x + normal.x * latJitter, y: p.y + normal.y * latJitter };
+      dashes.push(makeCombDash(center, tangent, len, thick, holeSign, seed));
+    }
+  }
+
+  return [main, ...dashes];
+}
+
+/**
  * Rough Brush: the same constant-width elliptical-nib body every other
  * brush uses (via centerlineToOutline), plus a dense scatter of small
  * irregular counter-holes punched through the interior — real vector
@@ -2988,6 +3129,9 @@ export function centerlineToOutlineContours(centerline: StrokeSample[], settings
   }
   if (settings.type === "sprayBrush") {
     return sprayBrushOutlineContours(centerline, settings, opts?.fast ?? false);
+  }
+  if (settings.type === "tape") {
+    return tapeBrushOutlineContours(centerline, settings);
   }
   const single = centerlineToOutline(centerline, settings);
   return single ? [single] : [];
