@@ -1004,14 +1004,24 @@ export function centerlineToOutline(
     // noise — without this exclusion every sample along the ENTIRE body
     // (not just Strong's dedicated comb-tooth caps) got a small random
     // radius wobble, which is what made the whole stroke read as jagged
-    // rather than a clean bold body with torn ends.
+    // rather than a clean bold body with torn ends. Tape Brush opts out
+    // for the exact same reason, and for the exact same visible symptom:
+    // with this branch left on, `jitter` (which Tape uses to drive its
+    // torn end caps — see `tornCap` — and its fiber-dash strength) was
+    // ALSO adding independent, uncorrelated per-sample noise down the
+    // ENTIRE length of both long sides, so the whole strip read as
+    // jagged/serrated edge-to-edge instead of the intended clean, straight
+    // sides with raggedness confined to the two torn ends. Its own much
+    // gentler, coherent (smoothly-interpolated, not per-sample-independent)
+    // wave is added in the dedicated `tape` branch below instead.
     const jitterAmt = settings.jitter ?? 0;
     if (
       jitterAmt > 0 &&
       settings.type !== "oilBrush" &&
       settings.type !== "rough" &&
       settings.type !== "grunge" &&
-      settings.type !== "strong"
+      settings.type !== "strong" &&
+      settings.type !== "tape"
     ) {
       const n1 = pseudoNoise(i * 12.37);
       const n2 = pseudoNoise(i * 7.91 + 100);
@@ -1159,6 +1169,28 @@ export function centerlineToOutline(
       const rightNoise = coherentNoise1D(cumulative[i] / roughWavelength, 133.1);
       const leftMag = Math.max(mag * 0.95, mag + leftNoise * roughJitter * semiMajor * 0.055);
       const rightMag = Math.max(mag * 0.95, mag + rightNoise * roughJitter * semiMajor * 0.055);
+      left.push({ x: pts[i].x + ux * leftMag, y: pts[i].y + uy * leftMag });
+      right.push({ x: pts[i].x - ux * rightMag, y: pts[i].y - uy * rightMag });
+    } else if (settings.type === "tape" && (settings.jitter ?? 0) > 0) {
+      // Tape Brush's long sides: a real strip is die-cut, not torn, along
+      // its length — so unlike its own ragged ends (`tornCap`, applied once
+      // per end below) these two edges should read as essentially straight,
+      // just with the faint, smooth, hand-applied waver real tape has
+      // rather than a ruler-perfect line. Coherent (interpolated) noise
+      // like Rough's, not independent per-sample noise like the generic
+      // branch this brush opts out of above — that's what keeps this a
+      // gentle "bergelombang tipis" undulation instead of a jagged edge.
+      // Long wavelength and a small multiplier (≈1/3 of Rough's) keep the
+      // amplitude thin even at max `jitter`.
+      const tapeJitter = Math.min(1, settings.jitter ?? 0);
+      const mag = Math.hypot(vx, vy) || 1;
+      const ux = vx / mag;
+      const uy = vy / mag;
+      const tapeWavelength = semiMajor * 10;
+      const leftNoise = coherentNoise1D(cumulative[i] / tapeWavelength, 21.7);
+      const rightNoise = coherentNoise1D(cumulative[i] / tapeWavelength, 201.3);
+      const leftMag = mag + leftNoise * tapeJitter * semiMajor * 0.02;
+      const rightMag = mag + rightNoise * tapeJitter * semiMajor * 0.02;
       left.push({ x: pts[i].x + ux * leftMag, y: pts[i].y + uy * leftMag });
       right.push({ x: pts[i].x - ux * rightMag, y: pts[i].y - uy * rightMag });
     } else {
