@@ -400,16 +400,17 @@ function tornCap(from: Point, to: Point, outDir: Point, seed: number, strength: 
     const bx = from.x + (to.x - from.x) * u;
     const by = from.y + (to.y - from.y) * u;
     // Fine, near-every-step jitter — the base "torn fiber" grain.
-    const fine = pseudoNoise(seed + i * 7.7) * 0.09 * hw * k;
-    // Sparse deeper rips: only ~1 in 4 teeth, and only some of those go deep,
-    // so the tear reads as mostly-fine grain with a few real notches/spikes
-    // poking through — not a metronomic sawtooth.
+    const fine = pseudoNoise(seed + i * 7.7) * 0.13 * hw * k;
+    // Sparse deeper rips: roughly a third of teeth, so the tear reads as
+    // mostly-fine grain with real notches/spikes poking through — not a
+    // metronomic sawtooth.
     const ripRoll = (pseudoNoise(seed + i * 3.1 + 50) + 1) / 2;
-    const rip = ripRoll > 0.72 ? Math.pow((ripRoll - 0.72) / 0.28, 1.4) * 0.34 * hw * k : 0;
-    // Rip direction alternates roughly (some teeth tear outward past the cut,
-    // others gouge inward) using its own noise so it isn't locked to `fine`'s
-    // sign.
-    const ripSign = pseudoNoise(seed + i * 4.9 + 130) >= 0 ? 1 : -1;
+    const rip = ripRoll > 0.66 ? Math.pow((ripRoll - 0.66) / 0.34, 1.4) * 0.46 * hw * k : 0;
+    // Rip direction: biased inward (missing material reads as "torn" far
+    // more convincingly than material sticking out past the cut) but not
+    // exclusively — roughly 2 in 3 rips dig in, the rest still poke out a
+    // little for a natural, uneven tear.
+    const ripSign = pseudoNoise(seed + i * 4.9 + 130) > 0.32 ? -1 : 1;
     const push = fine + ripSign * rip;
     pts.push({ x: bx + outDir.x * push, y: by + outDir.y * push });
   }
@@ -1174,23 +1175,24 @@ export function centerlineToOutline(
     } else if (settings.type === "tape" && (settings.jitter ?? 0) > 0) {
       // Tape Brush's long sides: a real strip is die-cut, not torn, along
       // its length — so unlike its own ragged ends (`tornCap`, applied once
-      // per end below) these two edges should read as essentially straight,
-      // just with the faint, smooth, hand-applied waver real tape has
-      // rather than a ruler-perfect line. Coherent (interpolated) noise
-      // like Rough's, not independent per-sample noise like the generic
-      // branch this brush opts out of above — that's what keeps this a
-      // gentle "bergelombang tipis" undulation instead of a jagged edge.
-      // Long wavelength and a small multiplier (≈1/3 of Rough's) keep the
-      // amplitude thin even at max `jitter`.
+      // per end below) these two edges should read as basically straight,
+      // just with a faint hint of texture rather than a ruler-perfect line:
+      // a smooth coherent (interpolated) undulation carrying most of it, PLUS
+      // a much smaller independent per-sample grain layered on top for a
+      // soft "sedikit bergerigi" bite — kept deliberately minor (~1/3 the
+      // weight of the wave) so it never reads as a jagged/torn edge, which
+      // stays exclusive to the two ends.
       const tapeJitter = Math.min(1, settings.jitter ?? 0);
       const mag = Math.hypot(vx, vy) || 1;
       const ux = vx / mag;
       const uy = vy / mag;
-      const tapeWavelength = semiMajor * 10;
-      const leftNoise = coherentNoise1D(cumulative[i] / tapeWavelength, 21.7);
-      const rightNoise = coherentNoise1D(cumulative[i] / tapeWavelength, 201.3);
-      const leftMag = mag + leftNoise * tapeJitter * semiMajor * 0.02;
-      const rightMag = mag + rightNoise * tapeJitter * semiMajor * 0.02;
+      const tapeWavelength = semiMajor * 7;
+      const leftWave = coherentNoise1D(cumulative[i] / tapeWavelength, 21.7);
+      const rightWave = coherentNoise1D(cumulative[i] / tapeWavelength, 201.3);
+      const leftGrain = pseudoNoise(i * 9.13 + 4.1);
+      const rightGrain = pseudoNoise(i * 9.13 + 88.6);
+      const leftMag = mag + (leftWave * 0.028 + leftGrain * 0.01) * tapeJitter * semiMajor;
+      const rightMag = mag + (rightWave * 0.028 + rightGrain * 0.01) * tapeJitter * semiMajor;
       left.push({ x: pts[i].x + ux * leftMag, y: pts[i].y + uy * leftMag });
       right.push({ x: pts[i].x - ux * rightMag, y: pts[i].y - uy * rightMag });
     } else {
