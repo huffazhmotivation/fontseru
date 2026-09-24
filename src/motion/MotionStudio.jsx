@@ -891,7 +891,9 @@ function getRecoloredSvgDataUrl(svgText, color) {
 // (derajat) memiringkan bidangnya, perspective (0–100) = seberapa kuat efek
 // kedalamannya. Semua 0 = datar seperti biasa. Proyek lama yang belum punya
 // field ini otomatis dianggap 0 (lihat has3D/needsMesh).
-const BASE_OFFSET = { x: 0, y: 0, rotation: 0, scale: 1, rotateX: 0, rotateY: 0, skewX: 0, skewY: 0, perspective: 60 };
+// blur3D (px) = blur bertingkat menurut kedalaman (depth of field);
+// focus3D (0–100) = bagian yang tajam: 0 = paling depan, 100 = paling belakang.
+const BASE_OFFSET = { x: 0, y: 0, rotation: 0, scale: 1, rotateX: 0, rotateY: 0, skewX: 0, skewY: 0, perspective: 60, blur3D: 0, focus3D: 100 };
 const BG_SEL = "__background__";
 
 /* ============================================================
@@ -2104,9 +2106,13 @@ function blit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, flat)
   const rx = (off.rotateX || 0) * DEG2RAD, ry = (off.rotateY || 0) * DEG2RAD;
   const cxr = Math.cos(rx), sxr = Math.sin(rx), cyr = Math.cos(ry), syr = Math.sin(ry);
   const dist = perspectiveToPx(off.perspective);
-  const n = clamp(Math.ceil(Math.max(Math.abs(off.rotateX || 0), Math.abs(off.rotateY || 0)) / 9) + 5, 6, 12);
+  const depthAmt = Math.max(0, off.blur3D || 0);
+  const wantDepth = depthAmt > 0.3;
+  let n = clamp(Math.ceil(Math.max(Math.abs(off.rotateX || 0), Math.abs(off.rotateY || 0)) / 9) + 5, 6, 12);
+  if (wantDepth) n = Math.max(n, 10); // kisi lebih rapat supaya gradasi blur halus
   const stride = n + 1;
-  const vx = new Float32Array(stride * stride), vy = new Float32Array(stride * stride);
+  const vx = new Float32Array(stride * stride), vy = new Float32Array(stride * stride), vz = new Float32Array(stride * stride);
+  let zmin = Infinity, zmax = -Infinity;
   for (let j = 0; j <= n; j++) {
     for (let i = 0; i <= n; i++) {
       let X = dx + (i / n) * dw, Y = dy + (j / n) * dh;
@@ -2116,20 +2122,93 @@ function blit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, flat)
       const y2 = y1 * cxr, z2 = y1 * sxr;                 // rotateX
       const x3 = x1 * cyr + z2 * syr, z3 = -x1 * syr + z2 * cyr; // rotateY
       const wv = Math.max(0.08, 1 - z3 / dist);           // perspektif
-      vx[j * stride + i] = pivX + x3 / wv;
-      vy[j * stride + i] = pivY + y2 / wv;
+      const k = j * stride + i;
+      vx[k] = pivX + x3 / wv;
+      vy[k] = pivY + y2 / wv;
+      vz[k] = z3;
+      if (z3 < zmin) zmin = z3;
+      if (z3 > zmax) zmax = z3;
     }
   }
+
+  // ---- Blur kedalaman (depth of field) ----
+  // Tiap titik jaring punya jarak ke "bidang fokus" (0 = paling depan/dekat
+  // kamera, 1 = paling belakang). Makin jauh dari titik fokus makin blur.
+  // Sumber di-blur sekali ke beberapa tingkat (kanvas kecil = murah), lalu
+  // tiap segitiga memilih tingkat blur sesuai kedalamannya dan dicampur
+  // (cross-fade) dengan tingkat di sebelahnya supaya gradasinya mulus.
+  const LV = 3;
+  let levels = null, vbl = null, maxB = 0;
+  if (wantDepth && zmax - zmin > 1e-3) {
+    const fsx = flat ? Math.hypot(flat[0], flat[1]) : 1, fsy = flat ? Math.hypot(flat[2], flat[3]) : 1;
+    const zRef = 0.5 * Math.max(dw * fsx, dh * fsy, 1);
+    // Miring tipis → blur tipis; sekitar 30° ke atas → blur penuh.
+    maxB = depthAmt * clamp((zmax - zmin) / zRef, 0, 1);
+    if (maxB >= 0.4) {
+      const pf = clamp((off.focus3D ?? 100) / 100, 0, 1);
+      const norm = Math.max(pf, 1 - pf, 0.001);
+      vbl = new Float32Array(stride * stride);
+      for (let k = 0; k < vbl.length; k++) {
+        const d01 = (zmax - vz[k]) / (zmax - zmin);
+        vbl[k] = maxB * clamp(Math.abs(d01 - pf) / norm, 0, 1);
+      }
+      const srcPerDest = sw / Math.max(1, dw * fsx); // piksel sumber per piksel layar
+      levels = [];
+      for (let q = 1; q <= LV; q++) {
+        const bpx = (maxB * q) / LV;
+        const kk = Math.min(clamp(1 - bpx / 60, 0.35, 1), 1200 / Math.max(sw, sh, 1));
+        const lw = Math.max(1, Math.round(sw * kk)), lh = Math.max(1, Math.round(sh * kk));
+        const cv = getDepthBlurCanvas(q - 1);
+        if (cv.width !== lw) cv.width = lw;
+        if (cv.height !== lh) cv.height = lh;
+        const c2 = cv.getContext("2d");
+        c2.clearRect(0, 0, lw, lh);
+        c2.filter = `blur(${bpx * srcPerDest * kk}px)`;
+        c2.drawImage(src, sx, sy, sw, sh, 0, 0, lw, lh);
+        c2.filter = "none";
+        levels.push({ img: cv, kx: lw / sw, ky: lh / sh, lw, lh });
+      }
+    }
+  }
+
   const bx = sx, by = sy, bex = sx + sw, bey = sy + sh;
+  const tri = (ia, ib, ic, u0, v0, u1, v1, u2, v2) => {
+    const paint = (li) => {
+      if (li === 0) {
+        drawTexTri(ctx, src, u0, v0, u1, v1, u2, v2, vx[ia], vy[ia], vx[ib], vy[ib], vx[ic], vy[ic], bx, by, bex, bey);
+      } else {
+        const L = levels[li - 1];
+        drawTexTri(ctx, L.img, (u0 - sx) * L.kx, (v0 - sy) * L.ky, (u1 - sx) * L.kx, (v1 - sy) * L.ky, (u2 - sx) * L.kx, (v2 - sy) * L.ky,
+          vx[ia], vy[ia], vx[ib], vy[ib], vx[ic], vy[ic], 0, 0, L.lw, L.lh);
+      }
+    };
+    if (!levels) { paint(0); return; }
+    const pos = clamp(((vbl[ia] + vbl[ib] + vbl[ic]) / 3 / maxB) * LV, 0, LV);
+    const lo = Math.min(LV - 1, Math.floor(pos)), fr = pos - lo;
+    paint(lo);
+    if (fr > 0.04) {
+      const ga = ctx.globalAlpha;
+      ctx.globalAlpha = ga * fr;
+      paint(lo + 1);
+      ctx.globalAlpha = ga;
+    }
+  };
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const i00 = j * stride + i, i10 = i00 + 1, i01 = i00 + stride, i11 = i01 + 1;
       const u0 = sx + (i / n) * sw, u1 = sx + ((i + 1) / n) * sw;
       const v0 = sy + (j / n) * sh, v1 = sy + ((j + 1) / n) * sh;
-      drawTexTri(ctx, src, u0, v0, u1, v0, u0, v1, vx[i00], vy[i00], vx[i10], vy[i10], vx[i01], vy[i01], bx, by, bex, bey);
-      drawTexTri(ctx, src, u1, v0, u1, v1, u0, v1, vx[i10], vy[i10], vx[i11], vy[i11], vx[i01], vy[i01], bx, by, bex, bey);
+      tri(i00, i10, i01, u0, v0, u1, v0, u0, v1);
+      tri(i10, i11, i01, u1, v0, u1, v1, u0, v1);
     }
   }
+}
+
+// Kanvas sementara untuk tingkat blur kedalaman (dipakai ulang tiap frame).
+const depthBlurCanvases = [];
+function getDepthBlurCanvas(i) {
+  if (!depthBlurCanvases[i]) depthBlurCanvases[i] = document.createElement("canvas");
+  return depthBlurCanvases[i];
 }
 
 // TEKS MELINGKAR — huruf disusun mengelilingi sebuah lingkaran (bukan pada
@@ -4698,7 +4777,7 @@ function SliderField({ label, value, min, max, step, unit = "", onChange, format
 // jadi ikut tersalin, ter-undo, dan tersimpan otomatis bersama proyek.
 function Transform3DFields({ offset, onChange }) {
   const o = offset || {};
-  const active = !!(o.rotateX || o.rotateY || o.skewX || o.skewY);
+  const active = !!(o.rotateX || o.rotateY || o.skewX || o.skewY || o.blur3D);
   const deg = (v) => `${Math.round(v)}°`;
   return (
     <>
@@ -4713,9 +4792,21 @@ function Transform3DFields({ offset, onChange }) {
         format={deg} onChange={(v) => onChange({ skewY: v })} />
       <SliderField label="Kedalaman perspektif" value={o.perspective ?? 60} min={0} max={100} step={1}
         format={(v) => `${Math.round(v)}%`} onChange={(v) => onChange({ perspective: v })} />
+      <SliderField label="Blur 3D (depth of field)" value={o.blur3D || 0} min={0} max={60} step={0.5}
+        format={(v) => (v <= 0 ? "Mati" : `${v.toFixed(1)}px`)} onChange={(v) => onChange({ blur3D: v })} />
+      {(o.blur3D || 0) > 0 && (
+        <>
+          <SliderField label="Titik fokus" value={o.focus3D ?? 100} min={0} max={100} step={1}
+            format={(v) => (v >= 97 ? "Belakang tajam" : v <= 3 ? "Depan tajam" : v >= 47 && v <= 53 ? "Tengah tajam" : `${Math.round(v)}%`)}
+            onChange={(v) => onChange({ focus3D: v })} />
+          {!(o.rotateX || o.rotateY) && (
+            <div className="mfs-field" style={{ fontSize: 11, opacity: 0.7 }}>Blur 3D aktif saat Rotasi X atau Y tidak nol.</div>
+          )}
+        </>
+      )}
       {active && (
         <div className="mfs-field">
-          <button className="mfs-btn mfs-btn-sm" onClick={() => onChange({ rotateX: 0, rotateY: 0, skewX: 0, skewY: 0, perspective: 60 })}>
+          <button className="mfs-btn mfs-btn-sm" onClick={() => onChange({ rotateX: 0, rotateY: 0, skewX: 0, skewY: 0, perspective: 60, blur3D: 0, focus3D: 100 })}>
             <RotateCcw size={13} /> Reset 3D
           </button>
         </div>
