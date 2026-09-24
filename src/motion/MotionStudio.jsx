@@ -2086,6 +2086,222 @@ function drawTexTri(ctx, src, sx0, sy0, sx1, sy1, sx2, sy2, dx0, dy0, dx1, dy1, 
   ctx.restore();
 }
 
+/* ------------------------------------------------------------
+   RENDERER WEBGL untuk Transform 3D
+   ------------------------------------------------------------
+   Jaring segitiga 2D (di bawah) itu lambat dan meninggalkan garis
+   sambungan ("kotak-kotak") saat tampilan di-zoom, karena tiap
+   segitiga hanya affine + tepinya di-antialias sendiri-sendiri.
+   Di GPU, bidang cukup digambar sebagai SATU persegi dengan
+   koordinat homogen (w) sehingga teksturnya terinterpolasi
+   perspective-correct per piksel: tidak ada sambungan, tajam saat
+   zoom, dan blur kedalaman dihitung langsung di fragment shader
+   (lebih halus dari tingkat-tingkat blur per segitiga).
+   Kalau WebGL2 tidak tersedia / gagal, blit3D otomatis jatuh
+   kembali ke jaring segitiga 2D.
+   ------------------------------------------------------------ */
+const GL_VERT = `#version 300 es
+in vec4 aPos;
+in vec2 aUv;
+in float aD;
+out vec2 vUv;
+out float vD;
+void main() { gl_Position = aPos; vUv = aUv; vD = aD; }`;
+const GL_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+uniform vec2 uTexSize;
+uniform vec4 uRect;   // u0,v0,u1,v1: area tekstur yang valid
+uniform vec3 uBlur;   // maks blur (px layar), titik fokus (0..1), normalisasi
+in vec2 vUv;
+in float vD;
+out vec4 outColor;
+vec4 tap(vec2 uv, float lod) {
+  vec2 ins = step(uRect.xy, uv) * step(uv, uRect.zw);
+  return textureLod(uTex, uv, lod) * (ins.x * ins.y);
+}
+void main() {
+  if (gl_FragCoord.w > 12.5) discard;
+  vec2 dx = dFdx(vUv), dy = dFdy(vUv);
+  float tpp = max(length(dx * uTexSize), length(dy * uTexSize)); // texel per piksel layar
+  float baseLod = max(0.0, log2(max(tpp, 1e-4)));
+  float r = uBlur.x * clamp(abs(vD - uBlur.y) / uBlur.z, 0.0, 1.0);
+  if (r < 0.35) { outColor = tap(vUv, baseLod); return; }
+  float lod = max(baseLod, log2(max(1.0, r * tpp * 0.5)));
+  vec4 acc = vec4(0.0);
+  const int N = 24;
+  for (int i = 0; i < N; i++) {
+    float fi = float(i) + 0.5;
+    float rr = sqrt(fi / float(N));
+    float a = fi * 2.39996323;
+    vec2 p = vec2(cos(a), sin(a)) * rr * r;
+    acc += tap(vUv + dx * p.x + dy * p.y, lod);
+  }
+  outColor = acc / float(N);
+}`;
+
+let glState = null; // null = belum dibuat, false = tidak tersedia
+
+function getGL(w, h) {
+  if (glState === false) return null;
+  if (!glState) {
+    try {
+      if (typeof document === "undefined") { glState = false; return null; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: true, depth: false, stencil: false, preserveDrawingBuffer: false });
+      if (!gl) { glState = false; return null; }
+      const compile = (type, src) => {
+        const sh = gl.createShader(type);
+        gl.shaderSource(sh, src); gl.compileShader(sh);
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh) || "shader");
+        return sh;
+      };
+      const prog = gl.createProgram();
+      gl.attachShader(prog, compile(gl.VERTEX_SHADER, GL_VERT));
+      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, GL_FRAG));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) || "link");
+      const buf = gl.createBuffer();
+      const S = {
+        canvas, gl, prog, buf, texCache: new WeakMap(), data: new Float32Array(28),
+        aPos: gl.getAttribLocation(prog, "aPos"), aUv: gl.getAttribLocation(prog, "aUv"), aD: gl.getAttribLocation(prog, "aD"),
+        uTex: gl.getUniformLocation(prog, "uTex"), uTexSize: gl.getUniformLocation(prog, "uTexSize"),
+        uRect: gl.getUniformLocation(prog, "uRect"), uBlur: gl.getUniformLocation(prog, "uBlur"),
+      };
+      canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); glState = null; });
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.enable(gl.SCISSOR_TEST);
+      glState = S;
+    } catch (e) { glState = false; return null; }
+  }
+  if (glState.canvas.width !== w || glState.canvas.height !== h) { glState.canvas.width = w; glState.canvas.height = h; }
+  return glState;
+}
+
+// Mengunggah sumber (canvas/video/gambar) sebagai tekstur. Gambar statis
+// hanya diunggah sekali dan di-cache; canvas & video diunggah tiap frame.
+function getSrcTexture(S, src) {
+  const gl = S.gl;
+  const tag = (src.tagName || "").toUpperCase();
+  const isVideo = tag === "VIDEO", isCanvas = tag === "CANVAS";
+  const w = isVideo ? src.videoWidth : isCanvas ? src.width : (src.naturalWidth || src.width);
+  const h = isVideo ? src.videoHeight : isCanvas ? src.height : (src.naturalHeight || src.height);
+  if (!w || !h) return null;
+  let t = S.texCache.get(src);
+  if (!t) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    t = { tex, w: 0, h: 0, key: null, mips: false };
+    S.texCache.set(src, t);
+  }
+  const dynamic = isVideo || isCanvas;
+  const key = dynamic ? null : (src.currentSrc || src.src || "");
+  if (dynamic || t.key !== key || t.w !== w || t.h !== h) {
+    gl.bindTexture(gl.TEXTURE_2D, t.tex);
+    if (dynamic && t.w === w && t.h === h) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    t.w = w; t.h = h; t.key = key; t.mips = false;
+  }
+  return t;
+}
+
+// Mengembalikan true bila berhasil digambar lewat GPU.
+function glBlit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, flat) {
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  const S = getGL(cw, ch);
+  if (!S) return false;
+  const gl = S.gl;
+  if (gl.isContextLost()) return false;
+  const t = getSrcTexture(S, src);
+  if (!t) return false;
+
+  const tkx = skewTan(off.skewX), tky = skewTan(off.skewY);
+  const rx = (off.rotateX || 0) * DEG2RAD, ry = (off.rotateY || 0) * DEG2RAD;
+  const cxr = Math.cos(rx), sxr = Math.sin(rx), cyr = Math.cos(ry), syr = Math.sin(ry);
+  const dist = perspectiveToPx(off.perspective);
+  const D = S.data;
+  const scrX = [0, 0, 0, 0], scrY = [0, 0, 0, 0], zs = [0, 0, 0, 0];
+  let zmin = Infinity, zmax = -Infinity;
+  for (let k = 0; k < 4; k++) {
+    const cu = k & 1, cv = k >> 1;
+    let X = dx + cu * dw, Y = dy + cv * dh;
+    if (flat) { const fx = flat[0] * X + flat[2] * Y + flat[4]; const fy = flat[1] * X + flat[3] * Y + flat[5]; X = fx; Y = fy; }
+    const x = X - pivX, y = Y - pivY;
+    const x1 = x + tkx * y, y1 = y + tky * x;
+    const y2 = y1 * cxr, z2 = y1 * sxr;
+    const x3 = x1 * cyr + z2 * syr, z3 = -x1 * syr + z2 * cyr;
+    let wv = 1 - z3 / dist;
+    if (Math.abs(wv) < 1e-4) wv = 1e-4;
+    const wc = Math.max(0.08, wv); // hanya untuk kotak pembatas & luas
+    scrX[k] = pivX + x3 / wc; scrY[k] = pivY + y2 / wc;
+    zs[k] = z3;
+    if (z3 < zmin) zmin = z3;
+    if (z3 > zmax) zmax = z3;
+    const o = k * 7;
+    // Koordinat clip homogen → GPU menginterpolasi tekstur perspective-correct.
+    D[o] = ((pivX + x3 / wv) / cw * 2 - 1) * wv;
+    D[o + 1] = (1 - (pivY + y2 / wv) / ch * 2) * wv;
+    D[o + 2] = 0; D[o + 3] = wv;
+    D[o + 4] = (sx + cu * sw) / t.w; D[o + 5] = (sy + cv * sh) / t.h;
+  }
+  // Blur kedalaman: d01 = 0 (paling dekat) … 1 (paling jauh)
+  const depthAmt = Math.max(0, off.blur3D || 0);
+  let maxB = 0, pf = 1, norm = 1;
+  const zr = zmax - zmin;
+  if (depthAmt > 0.3 && zr > 1e-3) {
+    const fsx = flat ? Math.hypot(flat[0], flat[1]) : 1, fsy = flat ? Math.hypot(flat[2], flat[3]) : 1;
+    const zRef = 0.5 * Math.max(dw * fsx, dh * fsy, 1);
+    maxB = depthAmt * clamp(zr / zRef, 0, 1);
+    pf = clamp((off.focus3D ?? 100) / 100, 0, 1);
+    norm = Math.max(pf, 1 - pf, 0.001);
+  }
+  for (let k = 0; k < 4; k++) D[k * 7 + 6] = zr > 1e-3 ? (zmax - zs[k]) / zr : 0;
+
+  // Kotak pembatas hasil proyeksi (dipagari ke kanvas).
+  let minX = Math.min(scrX[0], scrX[1], scrX[2], scrX[3]), maxX = Math.max(scrX[0], scrX[1], scrX[2], scrX[3]);
+  let minY = Math.min(scrY[0], scrY[1], scrY[2], scrY[3]), maxY = Math.max(scrY[0], scrY[1], scrY[2], scrY[3]);
+  const bx0 = Math.max(0, Math.floor(minX) - 2), by0 = Math.max(0, Math.floor(minY) - 2);
+  const bx1 = Math.min(cw, Math.ceil(maxX) + 2), by1 = Math.min(ch, Math.ceil(maxY) + 2);
+  if (bx1 <= bx0 || by1 <= by0) return true; // seluruhnya di luar frame
+  // Luas bidang di layar vs luas sumber → perlu mipmap kalau mengecil banyak.
+  const area = Math.abs((scrX[0] * scrY[1] - scrX[1] * scrY[0]) + (scrX[1] * scrY[3] - scrX[3] * scrY[1]) + (scrX[3] * scrY[2] - scrX[2] * scrY[3]) + (scrX[2] * scrY[0] - scrX[0] * scrY[2])) / 2;
+  const needMips = maxB >= 0.35 || (sw * sh) / Math.max(area, 1) > 1.5;
+
+  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  if (needMips) {
+    if (!t.mips) { gl.generateMipmap(gl.TEXTURE_2D); t.mips = true; }
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  } else {
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  }
+
+  gl.viewport(0, 0, cw, ch);
+  gl.scissor(bx0, ch - by1, bx1 - bx0, by1 - by0);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.useProgram(S.prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, S.buf);
+  gl.bufferData(gl.ARRAY_BUFFER, D, gl.DYNAMIC_DRAW);
+  const stride = 28;
+  gl.enableVertexAttribArray(S.aPos); gl.vertexAttribPointer(S.aPos, 4, gl.FLOAT, false, stride, 0);
+  gl.enableVertexAttribArray(S.aUv); gl.vertexAttribPointer(S.aUv, 2, gl.FLOAT, false, stride, 16);
+  gl.enableVertexAttribArray(S.aD); gl.vertexAttribPointer(S.aD, 1, gl.FLOAT, false, stride, 24);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.uniform1i(S.uTex, 0);
+  gl.uniform2f(S.uTexSize, t.w, t.h);
+  gl.uniform4f(S.uRect, sx / t.w, sy / t.h, (sx + sw) / t.w, (sy + sh) / t.h);
+  gl.uniform3f(S.uBlur, maxB, pf, norm);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  ctx.drawImage(S.canvas, bx0, by0, bx1 - bx0, by1 - by0, bx0, by0, bx1 - bx0, by1 - by0);
+  return true;
+}
+
 // Menempelkan src[sx,sy,sw,sh] ke persegi tujuan (dx,dy,dw,dh) — lalu
 // seluruh bidang itu dikenai skew + rotasi 3D + perspektif terhadap pivot.
 // `flat` (opsional) = matriks 2D [a,b,c,d,e,f] yang diterapkan lebih dulu
@@ -2103,6 +2319,8 @@ function blit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, flat)
     ctx.restore();
     return;
   }
+  // Jalur utama: GPU (WebGL2). Jaring 2D di bawah hanya cadangan.
+  try { if (glBlit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, flat)) return; } catch (e) { /* jatuh ke jaring 2D */ }
   const rx = (off.rotateX || 0) * DEG2RAD, ry = (off.rotateY || 0) * DEG2RAD;
   const cxr = Math.cos(rx), sxr = Math.sin(rx), cyr = Math.cos(ry), syr = Math.sin(ry);
   const dist = perspectiveToPx(off.perspective);
