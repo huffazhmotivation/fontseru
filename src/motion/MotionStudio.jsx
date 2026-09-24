@@ -180,6 +180,62 @@ const PRESET_LIB = [
     curve: (t, seed = 0) => { const e = ease("easeOut", t); const a = seed * Math.PI * 8; const radius = 125 * (1 - e); return pose({ opacity: e, x: Math.cos(a) * radius, y: Math.sin(a) * radius, rotation: Math.sin(a) * 35 * (1 - e), scale: 0.45 + 0.55 * e, blur: 9 * (1 - e) }); } },
   { id: "baselinewave", name: "Baseline Wave", group: "Kinetic Typography", animateBy: "word", stagger: 58, entranceMs: 680, exitMs: 420, icon: Activity,
     curve: (t, seed = 0) => { const e = ease("easeOut", t); return pose({ opacity: e, y: Math.sin(seed * Math.PI * 3 + (1 - e) * Math.PI * 2) * 38 * (1 - e), rotation: Math.sin(seed * Math.PI * 2) * 8 * (1 - e), scale: 0.93 + 0.07 * e }); } },
+
+  // ============================================================
+  // BORDER & OUTLINE — kategori baru: teks dengan garis luar (stroke
+  // outline) ATAU kotak/pil berbingker (chip/badge), gaya bersih &
+  // profesional kekinian ala caption Apple/Reels/CapCut. Lihat
+  // `textStyle` & paintStyledUnit() di atas drawTextClip untuk cara
+  // kerjanya — dua "kind" yang didukung: "outline" (garis di sekitar
+  // huruf) dan "chip" (kotak/pil di belakang teks, boleh solid atau
+  // cuma garis tepi/transparan).
+  // ============================================================
+  { id: "outline_apple_thin", name: "Apple Thin Outline", group: "Border & Outline", animateBy: "word", stagger: 55, entranceMs: 460, exitMs: 340, icon: Contrast,
+    textStyle: { kind: "outline", stroke: "rgba(0,0,0,0.55)", strokeWRatio: 0.035 },
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, y: 14 * (1 - e), scale: 0.97 + 0.03 * e }); } },
+  { id: "outline_bold_pop", name: "Bold Pop Outline", group: "Border & Outline", animateBy: "char", stagger: 24, entranceMs: 420, exitMs: 300, icon: Zap,
+    textStyle: { kind: "outline", stroke: "#000000", strokeWRatio: 0.16 },
+    curve: (t) => { const e = elasticOut(t, 1.15); const eo = ease("easeOut", Math.min(t * 3, 1)); return pose({ opacity: eo, scale: 0.55 + 0.45 * e }); } },
+  { id: "outline_neon_glow", name: "Neon Outline Glow", group: "Border & Outline", animateBy: "word", stagger: 48, entranceMs: 480, exitMs: 360, icon: Sparkles,
+    textStyle: { kind: "outline", stroke: "#9b6cff", strokeWRatio: 0.09, glow: true },
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, scale: 0.9 + 0.1 * e, blur: 4 * (1 - e) }); } },
+  { id: "outline_reverse_retro", name: "Retro Reverse Outline", group: "Border & Outline", animateBy: "char", stagger: 30, entranceMs: 440, exitMs: 320, icon: Tv,
+    textStyle: { kind: "outline", stroke: "#ffffff", strokeWRatio: 0.12, fill: "#0d0d10" },
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, y: 10 * (1 - e), rotation: (1 - e) * -6 }); } },
+  { id: "chip_dark_badge", name: "Dark Badge Chip", group: "Border & Outline", animateBy: "word", stagger: 70, entranceMs: 420, exitMs: 320, icon: Square,
+    textStyle: { kind: "chip", bg: "rgba(13,13,16,0.92)", border: "rgba(255,255,255,0.14)", borderW: 1.5, radius: 10, fill: "#ffffff" },
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, scale: 0.85 + 0.15 * e, y: 8 * (1 - e) }); } },
+  { id: "chip_light_badge", name: "Light Badge Chip", group: "Border & Outline", animateBy: "word", stagger: 70, entranceMs: 420, exitMs: 320, icon: RectangleHorizontal,
+    textStyle: { kind: "chip", bg: "#ffffff", border: "rgba(0,0,0,0.08)", borderW: 1.5, radius: "pill", fill: "#14141a" },
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, scale: 0.85 + 0.15 * e, y: 8 * (1 - e) }); } },
+  { id: "chip_outline_frame", name: "Outline Badge (Transparan)", group: "Border & Outline", animateBy: "word", stagger: 65, entranceMs: 440, exitMs: 320, icon: Frame,
+    textStyle: { kind: "chip", bg: "transparent", border: "rgba(255,255,255,0.65)", borderW: 1.5, radius: 8 },
+    curve: (t) => { const e = ease("easeOut", t); return pose({ opacity: e, scale: 0.92 + 0.08 * e }); } },
+  { id: "chip_pill_accent", name: "Accent Pill Badge", group: "Border & Outline", animateBy: "word", stagger: 75, entranceMs: 460, exitMs: 340, icon: Scaling,
+    textStyle: { kind: "chip", bg: "#7c6cff", border: "rgba(255,255,255,0.35)", borderW: 1.5, radius: "pill", fill: "#ffffff" },
+    curve: (t) => { const e = elasticOut(t, 0.5); const eo = ease("easeOut", Math.min(t * 2.4, 1)); return pose({ opacity: eo, scale: 0.55 + 0.45 * e }); } },
+
+  // ============================================================
+  // EFEK MODERN BARU — gerakan yang sengaja dibuat beda arah & rasa
+  // dari seluruh preset di atas: snap magnetik, ledakan confetti,
+  // shutter kamera, tirai vertikal, morph cair, dan punch zoom.
+  // ============================================================
+  { id: "magneticsnap", name: "Magnetic Snap", group: "Efek Modern Baru", animateBy: "char", stagger: 20, entranceMs: 460, exitMs: 320, icon: Anchor,
+    curve: (t, seed = 0) => { const e = elasticOut(t, 0.4); const eo = ease("easeOut", Math.min(t * 2.6, 1)); const a = seed * Math.PI * 2; const R = 60 * (1 - e); return pose({ opacity: eo, x: Math.cos(a) * R, y: Math.sin(a) * R * 0.4, scale: 0.7 + 0.3 * e }); } },
+  { id: "confettipop", name: "Confetti Pop", group: "Efek Modern Baru", animateBy: "char", stagger: 18, entranceMs: 560, exitMs: 340, icon: Gem,
+    curve: (t, seed = 0) => { const e = elasticOut(t, 0.85); const eo = ease("easeOut", Math.min(t * 3, 1)); const dir = seed < 0.5 ? -1 : 1; return pose({ opacity: eo, y: -34 * dir * (1 - e), rotation: dir * 50 * (1 - e), scale: 0.4 + 0.6 * e }); } },
+  { id: "glassshatter", name: "Glass Shatter Reveal", group: "Efek Modern Baru", animateBy: "char", stagger: 16, entranceMs: 620, exitMs: 380, icon: Aperture,
+    curve: (t, seed = 0) => { const e = ease("easeOut", t); const a = seed * Math.PI * 6; const R = 90 * (1 - e); return pose({ opacity: e, x: Math.cos(a) * R, y: Math.sin(a) * R, rotation: (1 - e) * (seed - 0.5) * 260, blur: 10 * (1 - e), scale: 0.5 + 0.5 * e }); } },
+  { id: "chromaticflicker", name: "Chromatic Flicker", group: "Efek Modern Baru", animateBy: "word", stagger: 40, entranceMs: 420, exitMs: 300, icon: Cpu,
+    curve: (t, seed = 0) => { const eo = ease("easeOut", t); const fl = t < 0.55 ? (Math.sin(seed * 71 + t * 90) > 0 ? 1 : 0.3) : 1; return pose({ opacity: Math.min(1, eo) * fl, x: (1 - eo) * Math.sin(seed * 13) * 10, blur: 5 * (1 - eo) }); } },
+  { id: "shutterwipe", name: "Shutter Wipe", group: "Efek Modern Baru", animateBy: "line", stagger: 110, entranceMs: 480, exitMs: 340, icon: Camera,
+    curve: (t) => { const e = ease("easeOut", t); return { ...pose({ opacity: Math.min(1, t * 3) }), scaleX: 1, scaleY: Math.max(0.06, e) }; } },
+  { id: "verticalblinds", name: "Vertical Blinds", group: "Efek Modern Baru", animateBy: "line", stagger: 90, entranceMs: 520, exitMs: 360, icon: AlignCenter,
+    curve: (t) => { const e = ease("easeOut", t); return { ...pose({ opacity: Math.min(1, t * 2), y: (1 - e) * -14 }), scaleX: Math.max(0.05, e), scaleY: 1 }; } },
+  { id: "liquidmorph", name: "Liquid Morph Rise", group: "Efek Modern Baru", animateBy: "word", stagger: 64, entranceMs: 640, exitMs: 400, icon: Waves,
+    curve: (t) => { const e = ease("easeOut", t); const wobble = Math.sin(t * Math.PI * 2) * (1 - t) * 0.12; return pose({ opacity: e, y: 30 * (1 - e), scale: 0.9 + 0.1 * e + wobble }); } },
+  { id: "snappunch", name: "Snap Zoom Punch", group: "Sinematik", animateBy: "all", stagger: 0, entranceMs: 340, exitMs: 260, icon: Maximize2,
+    curve: (t) => { const e = elasticOut(t, 0.35); const eo = ease("easeOut", Math.min(t * 3.2, 1)); return pose({ opacity: eo, scale: 1.5 - 0.5 * e, blur: 6 * (1 - eo) }); } },
 ];
 // PRESET_LIB[0] sekarang "none" (dipakai sebagai default klip gambar/video
 // yang belum diberi animasi apa pun) — fallback preset untuk id yang tak
@@ -1653,6 +1709,83 @@ function drawSpacedText(ctx, text, x, y, spacing) {
   for (const ch of text) { ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + spacing; }
 }
 
+/* ------------------------------------------------------------
+   BORDER & OUTLINE — dukungan render untuk preset teks berbingkai
+   (kategori "Border & Outline"). Sebuah preset boleh menaruh objek
+   `textStyle` untuk minta gaya visual tambahan di atas fillText
+   polos, tanpa mengubah sistem pose sama sekali:
+     { kind: "outline", stroke, strokeWRatio, fill?, glow? }
+       → menggambar garis tepi (stroke) di sekeliling huruf sebelum
+         fillText, ala caption tebal kekinian / outline tipis Apple.
+     { kind: "chip", bg, border?, borderW?, radius, fill? }
+       → menggambar kotak/pil bulat (dengan isi dan/atau garis
+         bingkai) di belakang teks, ala badge/keyword-highlight.
+   `fill` opsional: kalau tidak diisi, warna teks tetap ikut warna
+   klip (clip.color) seperti preset lain — jadi preset border tetap
+   menghormati pilihan warna pengguna kecuali kontrasnya memang
+   perlu dipaksa (mis. badge terang butuh teks gelap).
+   ------------------------------------------------------------ */
+function roundRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+// Menggambar satu unit teks (huruf/kata/baris) lengkap dengan gaya
+// border/outline/chip dari preset (kalau ada). `x`/`y` adalah titik
+// gambar teks yang SAMA seperti yang dipakai fillText biasa (baseline
+// alphabetic); `uw` lebar unit yang sudah diukur pemanggil. Tanpa
+// `style`, fungsi ini berperilaku identik dengan drawSpacedText/fillText
+// lama — jadi semua preset non-border tidak terpengaruh sama sekali.
+function paintStyledUnit(ctx, style, text, x, y, uw, spacing, fontSize, baseColor) {
+  if (!style) {
+    if (spacing) drawSpacedText(ctx, text, x, y, spacing);
+    else ctx.fillText(text, x, y);
+    return;
+  }
+  // Mode "word" juga menghasilkan unit berisi spasi murni di antara kata
+  // (dipakai untuk menjaga jarak antar kata) — kalau unit ini kebetulan
+  // kena gaya "chip", jangan gambar kotak/pil di sekeliling spasi kosong
+  // itu, supaya tidak muncul kotak melayang tanpa isi di antara badge.
+  if (style.kind === "chip" && text.trim().length > 0) {
+    const padX = style.padX ?? fontSize * 0.36;
+    const padY = style.padY ?? fontSize * 0.22;
+    const boxW = uw + padX * 2;
+    const boxH = fontSize * 1.06 + padY * 2;
+    const radius = style.radius === "pill" ? boxH / 2 : (style.radius ?? 10);
+    ctx.save();
+    roundRectPath(ctx, x - padX, y - fontSize * 0.78 - padY, boxW, boxH, radius);
+    if (style.bg && style.bg !== "transparent") { ctx.fillStyle = style.bg; ctx.fill(); }
+    if (style.border) { ctx.lineWidth = style.borderW ?? 2; ctx.strokeStyle = style.border; ctx.stroke(); }
+    ctx.restore();
+  }
+  ctx.fillStyle = style.fill || baseColor;
+  if (style.kind === "outline" && style.stroke) {
+    ctx.save();
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+    ctx.lineWidth = style.strokeW ?? fontSize * (style.strokeWRatio ?? 0.08);
+    ctx.strokeStyle = style.stroke;
+    if (style.glow) { ctx.shadowColor = style.stroke; ctx.shadowBlur = fontSize * 0.4; }
+    if (spacing && text.length > 1) {
+      let cx = x;
+      for (const ch of text) { ctx.strokeText(ch, cx, y); ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + spacing; }
+    } else {
+      ctx.strokeText(text, x, y);
+      ctx.fillText(text, x, y);
+    }
+    ctx.restore();
+    return;
+  }
+  if (spacing) drawSpacedText(ctx, text, x, y, spacing);
+  else ctx.fillText(text, x, y);
+}
+
 // FIX PERFORMA (preset kompleks tersendat): splitUnits() dulu dipanggil
 // ulang dari NOL setiap frame (bisa 60x/detik saat memutar) walau hasilnya
 // selalu sama persis selama teks & mode animasi klip itu tidak berubah —
@@ -1676,6 +1809,15 @@ function getCachedUnits(clip) {
 
 function combinePose(unitP, transP) {
   const s = (unitP.scale ?? 1) * (transP.scale ?? 1);
+  // Sebelumnya baris scaleX/scaleY di bawah selalu dihitung dari
+  // `unitP.scale` saja, sehingga scaleX/scaleY ARAH (non-seragam) yang
+  // sudah dikembalikan langsung oleh curve preset (mis. Regang Vertikal,
+  // Marquee Ping-Pong, Slide Shade, dan preset border/shutter baru)
+  // diam-diam dibuang tanpa efek. Kalau curve memang menyertakan
+  // scaleX/scaleY sendiri, pakai itu — fallback ke unitP.scale seperti
+  // semula kalau curve tidak menyebutkannya (preset lama tak berubah).
+  const sx = (unitP.scaleX ?? unitP.scale ?? 1) * (transP.scaleX ?? 1);
+  const sy = (unitP.scaleY ?? unitP.scale ?? 1) * (transP.scaleY ?? 1);
   return {
     opacity: clamp((unitP.opacity ?? 1) * (transP.opacity ?? 1), 0, 1),
     x: (unitP.x || 0) + (transP.x || 0),
@@ -1683,8 +1825,8 @@ function combinePose(unitP, transP) {
     rotation: (unitP.rotation || 0) + (transP.rotation || 0),
     blur: Math.max(unitP.blur || 0, transP.blur || 0),
     scale: s,
-    scaleX: s * (transP.scaleX ?? 1),
-    scaleY: s * (transP.scaleY ?? 1),
+    scaleX: sx,
+    scaleY: sy,
     letterSpacing: unitP.letterSpacing || 0,
   };
 }
@@ -2018,7 +2160,7 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
     offCtx.rotate(offAngle + (p.rotation || 0) * Math.PI / 180);
     offCtx.scale(offScale * (p.scaleX ?? p.scale ?? 1), offScale * (p.scaleY ?? p.scale ?? 1));
     offCtx.globalAlpha = clamp((p.opacity ?? 1) * (clip.opacity ?? 1), 0, 1);
-    if (ls) drawSpacedText(offCtx, text, -uw / 2, 0, ls); else offCtx.fillText(text, -uw / 2, 0);
+    paintStyledUnit(offCtx, preset.textStyle, text, -uw / 2, 0, uw, ls, clip.fontSize, clip.color);
     offCtx.shadowBlur = 0; offCtx.shadowColor = 'transparent';
     offCtx.restore();
   };
@@ -2052,7 +2194,7 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
       maxW = Math.max(maxW, lw);
       const ly = -blockH / 2 + li * lineHeight + clip.fontSize * 0.35 + lineHeight / 2;
       const sx = -lw / 2 + alignShift(lw);
-      if (ls) drawSpacedText(offCtx, line, sx, ly, ls); else offCtx.fillText(line, sx, ly);
+      paintStyledUnit(offCtx, preset.textStyle, line, sx, ly, lw, ls, clip.fontSize, clip.color);
     });
     offCtx.restore();
   } else if (clip.animateBy === "line") {
