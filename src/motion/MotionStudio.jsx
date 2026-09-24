@@ -887,7 +887,11 @@ function getRecoloredSvgDataUrl(svgText, color) {
   return dataUrl;
 }
 
-const BASE_OFFSET = { x: 0, y: 0, rotation: 0, scale: 1 };
+// rotateX/rotateY (derajat) memutar layer "ke dalam" ruang 3D, skewX/skewY
+// (derajat) memiringkan bidangnya, perspective (0–100) = seberapa kuat efek
+// kedalamannya. Semua 0 = datar seperti biasa. Proyek lama yang belum punya
+// field ini otomatis dianggap 0 (lihat has3D/needsMesh).
+const BASE_OFFSET = { x: 0, y: 0, rotation: 0, scale: 1, rotateX: 0, rotateY: 0, skewX: 0, skewY: 0, perspective: 60 };
 const BG_SEL = "__background__";
 
 /* ============================================================
@@ -2020,6 +2024,114 @@ function paintBackground(ctx, bg, w, h, imgEl) {
    RENDERING
    ============================================================ */
 
+/* ------------------------------------------------------------
+   TRANSFORM 3D (rotasi X/Y + skew + perspektif)
+   ------------------------------------------------------------
+   Canvas 2D hanya mengenal transformasi affine, jadi rotasi ke
+   "dalam" (rotateX/rotateY) tidak bisa dibuat dengan ctx.rotate().
+   Solusinya: layer yang sudah selesai digambar (datar) diperlakukan
+   sebagai bidang tekstur, dipecah jadi jaring kotak-kotak kecil,
+   titik-titik jaring diproyeksikan dengan perspektif, lalu tiap
+   segitiga digambar dengan transformasi affine-nya sendiri.
+   - Hanya skew (tanpa rotateX/Y)  → tetap affine murni: 1 drawImage,
+     hasilnya presisi dan sangat ringan.
+   - Ada rotateX/rotateY           → jaring segitiga (6–12 kisi).
+   Pivot = titik tengah layer (posisi X/Y klip), jadi layer berputar
+   pada dirinya sendiri, bukan pada tengah frame.
+   Konvensi sama seperti CSS: rotateY positif → sisi kanan menjauh,
+   rotateX positif → sisi atas menjauh.
+   ------------------------------------------------------------ */
+const DEG2RAD = Math.PI / 180;
+// 0–100 → jarak kamera (px). Makin besar nilainya makin dekat kamera →
+// perspektif makin dramatis.
+function perspectiveToPx(p) { return 320 + 3200 * (1 - clamp(p ?? 60, 0, 100) / 100); }
+function skewTan(deg) { return Math.tan(clamp(deg || 0, -80, 80) * DEG2RAD); }
+function has3D(off) { return !!off && !!(off.rotateX || off.rotateY || off.skewX || off.skewY); }
+function needsMesh(off) { return !!off && !!(off.rotateX || off.rotateY); }
+
+// Menggambar segitiga sumber (s*) ke segitiga tujuan (d*) dengan affine.
+// Segitiga tujuan digelembungkan ~0.7px supaya tidak ada garis halus di
+// sambungan antar segitiga (anti-aliasing tepi klip).
+function drawTexTri(ctx, src, sx0, sy0, sx1, sy1, sx2, sy2, dx0, dy0, dx1, dy1, dx2, dy2, bx, by, bex, bey) {
+  const det = (sx1 - sx0) * (sy2 - sy0) - (sx2 - sx0) * (sy1 - sy0);
+  if (Math.abs(det) < 1e-9) return;
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  if (Math.max(dx0, dx1, dx2) < -2 || Math.min(dx0, dx1, dx2) > cw + 2 ||
+      Math.max(dy0, dy1, dy2) < -2 || Math.min(dy0, dy1, dy2) > ch + 2) return;
+  const a = ((dx1 - dx0) * (sy2 - sy0) - (dx2 - dx0) * (sy1 - sy0)) / det;
+  const b = ((dy1 - dy0) * (sy2 - sy0) - (dy2 - dy0) * (sy1 - sy0)) / det;
+  const c = ((dx2 - dx0) * (sx1 - sx0) - (dx1 - dx0) * (sx2 - sx0)) / det;
+  const d = ((dy2 - dy0) * (sx1 - sx0) - (dy1 - dy0) * (sx2 - sx0)) / det;
+  const e = dx0 - a * sx0 - c * sy0;
+  const f = dy0 - b * sx0 - d * sy0;
+  const mx = (dx0 + dx1 + dx2) / 3, my = (dy0 + dy1 + dy2) / 3;
+  const g = 0.7;
+  const grow = (x, y) => { const vx = x - mx, vy = y - my, l = Math.hypot(vx, vy) || 1; return [x + (vx / l) * g, y + (vy / l) * g]; };
+  const p0 = grow(dx0, dy0), p1 = grow(dx1, dy1), p2 = grow(dx2, dy2);
+  // Kotak sumber yang membungkus segitiga (dipagari ke area sumber).
+  const x0 = Math.max(bx, Math.floor(Math.min(sx0, sx1, sx2) - 1));
+  const y0 = Math.max(by, Math.floor(Math.min(sy0, sy1, sy2) - 1));
+  const x1 = Math.min(bex, Math.ceil(Math.max(sx0, sx1, sx2) + 1));
+  const y1 = Math.min(bey, Math.ceil(Math.max(sy0, sy1, sy2) + 1));
+  if (x1 <= x0 || y1 <= y0) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
+  ctx.closePath();
+  ctx.clip();
+  ctx.transform(a, b, c, d, e, f);
+  ctx.drawImage(src, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+  ctx.restore();
+}
+
+// Menempelkan src[sx,sy,sw,sh] ke persegi tujuan (dx,dy,dw,dh) — lalu
+// seluruh bidang itu dikenai skew + rotasi 3D + perspektif terhadap pivot.
+// `flat` (opsional) = matriks 2D [a,b,c,d,e,f] yang diterapkan lebih dulu
+// pada koordinat tujuan (dipakai media: posisi/rotasi Z/skala).
+function blit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, flat) {
+  if (!(sw > 0 && sh > 0 && dw > 0 && dh > 0)) return;
+  const tkx = skewTan(off.skewX), tky = skewTan(off.skewY);
+  if (!needsMesh(off)) {
+    ctx.save();
+    ctx.translate(pivX, pivY);
+    ctx.transform(1, tky, tkx, 1, 0, 0);
+    ctx.translate(-pivX, -pivY);
+    if (flat) ctx.transform(flat[0], flat[1], flat[2], flat[3], flat[4], flat[5]);
+    ctx.drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh);
+    ctx.restore();
+    return;
+  }
+  const rx = (off.rotateX || 0) * DEG2RAD, ry = (off.rotateY || 0) * DEG2RAD;
+  const cxr = Math.cos(rx), sxr = Math.sin(rx), cyr = Math.cos(ry), syr = Math.sin(ry);
+  const dist = perspectiveToPx(off.perspective);
+  const n = clamp(Math.ceil(Math.max(Math.abs(off.rotateX || 0), Math.abs(off.rotateY || 0)) / 9) + 5, 6, 12);
+  const stride = n + 1;
+  const vx = new Float32Array(stride * stride), vy = new Float32Array(stride * stride);
+  for (let j = 0; j <= n; j++) {
+    for (let i = 0; i <= n; i++) {
+      let X = dx + (i / n) * dw, Y = dy + (j / n) * dh;
+      if (flat) { const fx = flat[0] * X + flat[2] * Y + flat[4]; const fy = flat[1] * X + flat[3] * Y + flat[5]; X = fx; Y = fy; }
+      const x = X - pivX, y = Y - pivY;
+      const x1 = x + tkx * y, y1 = y + tky * x;          // skew (bidang layer)
+      const y2 = y1 * cxr, z2 = y1 * sxr;                 // rotateX
+      const x3 = x1 * cyr + z2 * syr, z3 = -x1 * syr + z2 * cyr; // rotateY
+      const wv = Math.max(0.08, 1 - z3 / dist);           // perspektif
+      vx[j * stride + i] = pivX + x3 / wv;
+      vy[j * stride + i] = pivY + y2 / wv;
+    }
+  }
+  const bx = sx, by = sy, bex = sx + sw, bey = sy + sh;
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const i00 = j * stride + i, i10 = i00 + 1, i01 = i00 + stride, i11 = i01 + 1;
+      const u0 = sx + (i / n) * sw, u1 = sx + ((i + 1) / n) * sw;
+      const v0 = sy + (j / n) * sh, v1 = sy + ((j + 1) / n) * sh;
+      drawTexTri(ctx, src, u0, v0, u1, v0, u0, v1, vx[i00], vy[i00], vx[i10], vy[i10], vx[i01], vy[i01], bx, by, bex, bey);
+      drawTexTri(ctx, src, u1, v0, u1, v1, u0, v1, vx[i10], vy[i10], vx[i11], vy[i11], vx[i01], vy[i01], bx, by, bex, bey);
+    }
+  }
+}
+
 // TEKS MELINGKAR — huruf disusun mengelilingi sebuah lingkaran (bukan pada
 // baris lurus) lalu SELURUH cincinnya berputar terus selama klip berjalan.
 // Ini mode LAYOUT, bukan sekadar animasi masuk: dipakai preset ber-`layout:
@@ -2049,27 +2161,38 @@ function drawCircularText(mainCtx, offCtx, clip, localTime, w, h, spinDir) {
   const spin = spinDir * (localTime / 1000) * (2 * Math.PI / 7);
 
   const s = (tp.scale ?? 1) * off.scale;
-  mainCtx.save();
-  mainCtx.translate(cx, cy);
-  mainCtx.rotate(((tp.rotation || 0) + off.rotation) * Math.PI / 180);
-  mainCtx.scale(s, s);
-  mainCtx.globalAlpha = baseAlpha;
-  mainCtx.fillStyle = clip.color;
-  mainCtx.font = font;
-  mainCtx.textBaseline = "middle";
-  mainCtx.textAlign = "left";
+  // Bila layer punya rotasi 3D/skew, cincin digambar dulu ke kanvas
+  // sementara (datar), baru diproyeksikan 3D — sama seperti klip teks biasa.
+  const use3D = has3D(off);
+  const tc = use3D ? offCtx : mainCtx;
+  if (use3D) offCtx.clearRect(0, 0, w, h);
+  tc.save();
+  tc.translate(cx, cy);
+  tc.rotate(((tp.rotation || 0) + off.rotation) * Math.PI / 180);
+  tc.scale(s, s);
+  tc.globalAlpha = baseAlpha;
+  tc.fillStyle = clip.color;
+  tc.font = font;
+  tc.textBaseline = "middle";
+  tc.textAlign = "left";
   let arcPos = 0;
   for (let i = 0; i < chars.length; i++) {
     const cwid = widths[i];
     const a = spin + (arcPos + (cwid + gap) / 2) / R; // sudut pusat huruf pada lingkaran
     arcPos += cwid + gap;
-    mainCtx.save();
-    mainCtx.translate(Math.sin(a) * R, -Math.cos(a) * R);
-    mainCtx.rotate(a);
-    mainCtx.fillText(chars[i], -cwid / 2, 0);
-    mainCtx.restore();
+    tc.save();
+    tc.translate(Math.sin(a) * R, -Math.cos(a) * R);
+    tc.rotate(a);
+    tc.fillText(chars[i], -cwid / 2, 0);
+    tc.restore();
   }
-  mainCtx.restore();
+  tc.restore();
+  if (use3D) {
+    const reach = (R + clip.fontSize) * s * 1.5 + 20;
+    const rx0 = Math.max(0, Math.floor(cx - reach)), ry0 = Math.max(0, Math.floor(cy - reach));
+    const rx1 = Math.min(w, Math.ceil(cx + reach)), ry1 = Math.min(h, Math.ceil(cy + reach));
+    blit3D(mainCtx, offCtx.canvas, rx0, ry0, rx1 - rx0, ry1 - ry0, rx0, ry0, rx1 - rx0, ry1 - ry0, off, w / 2 + off.x, h / 2 + off.y);
+  }
 
   const half = (R + clip.fontSize) * s;
   return { cx, cy, halfW: half, halfH: half, rotation: 0 };
@@ -2254,6 +2377,10 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
   const cex = Math.min(w, Math.ceil(cx + rotHalfW + pad));
   const cey = Math.min(h, Math.ceil(cy + rotHalfH + pad));
   const cw = cex - csx, ch = cey - csy;
+  // Rotasi 3D / skew: seluruh layer teks (hasil gambar datar di offCanvas)
+  // diproyeksikan terhadap titik tengah klip saat di-composite ke kanvas utama.
+  const use3D = has3D(off);
+  const pivX = w / 2 + off.x, pivY = h / 2 + off.y;
 
   if (cw > 0 && ch > 0) {
     if (maxBlur > 0.4 && blurCanvas && blurCtx) {
@@ -2276,7 +2403,10 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
       blurCtx.filter = `blur(${maxBlur * dscale}px)`;
       blurCtx.drawImage(offCanvas, csx, csy, cw, ch, 0, 0, sw, sh);
       blurCtx.filter = "none";
-      mainCtx.drawImage(blurCanvas, 0, 0, sw, sh, csx, csy, cw, ch);
+      if (use3D) blit3D(mainCtx, blurCanvas, 0, 0, sw, sh, csx, csy, cw, ch, off, pivX, pivY);
+      else mainCtx.drawImage(blurCanvas, 0, 0, sw, sh, csx, csy, cw, ch);
+    } else if (use3D) {
+      blit3D(mainCtx, offCanvas, csx, csy, cw, ch, csx, csy, cw, ch, off, pivX, pivY);
     } else {
       mainCtx.save();
       mainCtx.drawImage(offCanvas, csx, csy, cw, ch, csx, csy, cw, ch);
@@ -2355,19 +2485,57 @@ function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCt
   const cx = w / 2 + (p.x || 0) + off.x, cy = h / 2 + (p.y || 0) + off.y;
   const sx = (p.scaleX ?? p.scale ?? 1) * off.scale, sy = (p.scaleY ?? p.scale ?? 1) * off.scale;
 
+  // Transform 3D (rotasi X/Y, skew, perspektif) — pivot = titik tengah klip.
+  const use3D = has3D(off);
+  const mesh3D = needsMesh(off);
+  const pivX = w / 2 + off.x, pivY = h / 2 + off.y;
+  const rotRad = ((p.rotation || 0) + off.rotation) * Math.PI / 180;
+  const mediaReady = !!(el && el.__mfsReady && !el.__mfsFailed);
+
   mainCtx.save();
-  mainCtx.translate(cx, cy);
-  mainCtx.rotate(((p.rotation || 0) + off.rotation) * Math.PI / 180);
-  mainCtx.scale(sx, sy);
+  // Skew murni (tanpa rotateX/Y) = affine biasa: cukup dipasang di depan
+  // transformasi 2D lain. Kalau ada rotasi 3D, media digambar lewat jaring
+  // segitiga di blit3D (lihat cabang mesh di bawah).
+  if (use3D && !mesh3D) {
+    mainCtx.translate(pivX, pivY);
+    mainCtx.transform(1, skewTan(off.skewY), skewTan(off.skewX), 1, 0, 0);
+    mainCtx.translate(-pivX, -pivY);
+  }
+  const useMesh = mesh3D && mediaReady;
+  if (!useMesh) {
+    mainCtx.translate(cx, cy);
+    mainCtx.rotate(rotRad);
+    mainCtx.scale(sx, sy);
+  }
   mainCtx.globalAlpha = clamp((p.opacity ?? 1) * (clip.opacity ?? 1), 0, 1);
-  if (effectDelta.shadowBlur) {
+  if (effectDelta.shadowBlur && !useMesh) {
     mainCtx.shadowBlur = effectDelta.shadowBlur;
     mainCtx.shadowColor = effectDelta.shadowColor || 'rgba(124,108,255,0.6)';
     if (effectDelta.shadowOffsetX) mainCtx.shadowOffsetX = effectDelta.shadowOffsetX;
     if (effectDelta.shadowOffsetY) mainCtx.shadowOffsetY = effectDelta.shadowOffsetY;
   }
   const blurPx = p.blur || 0;
-  if (el && el.__mfsReady && !el.__mfsFailed) {
+  if (useMesh) {
+    try {
+      // Matriks 2D datar (posisi + rotasi Z + skala) → lalu diproyeksikan 3D.
+      const cs = Math.cos(rotRad), sn = Math.sin(rotRad);
+      const flat = [cs * sx, sn * sx, -sn * sy, cs * sy, cx, cy];
+      if (blurPx > 0.4 && blurCanvas && blurCtx) {
+        const dscale = clamp(1 - blurPx / 60, 0.35, 1);
+        const bw = Math.max(1, Math.round(dw * dscale)), bh = Math.max(1, Math.round(dh * dscale));
+        if (blurCanvas.width !== bw) blurCanvas.width = bw;
+        if (blurCanvas.height !== bh) blurCanvas.height = bh;
+        blurCtx.clearRect(0, 0, bw, bh);
+        blurCtx.filter = `blur(${blurPx * dscale}px)`;
+        blurCtx.drawImage(el, 0, 0, bw, bh);
+        blurCtx.filter = "none";
+        blit3D(mainCtx, blurCanvas, 0, 0, bw, bh, -dw / 2, -dh / 2, dw, dh, off, pivX, pivY, flat);
+      } else {
+        const nw = el.naturalWidth || el.videoWidth || dw, nh = el.naturalHeight || el.videoHeight || dh;
+        blit3D(mainCtx, el, 0, 0, nw, nh, -dw / 2, -dh / 2, dw, dh, off, pivX, pivY, flat);
+      }
+    } catch (e) { /* elemen sempat belum siap saat digambar, akan dicoba lagi frame berikutnya */ }
+  } else if (el && el.__mfsReady && !el.__mfsFailed) {
     try {
       if (blurPx > 0.4 && blurCanvas && blurCtx) {
         // Sama seperti drawTextClip: blur di kanvas kecil dulu (murah),
@@ -4525,6 +4693,37 @@ function SliderField({ label, value, min, max, step, unit = "", onChange, format
   );
 }
 
+// Kontrol Transform 3D: rotasi "ke dalam" (X/Y), skew, dan kedalaman
+// perspektif. Nilai disimpan di clip.offset bersama posisi/rotasi/skala,
+// jadi ikut tersalin, ter-undo, dan tersimpan otomatis bersama proyek.
+function Transform3DFields({ offset, onChange }) {
+  const o = offset || {};
+  const active = !!(o.rotateX || o.rotateY || o.skewX || o.skewY);
+  const deg = (v) => `${Math.round(v)}°`;
+  return (
+    <>
+      <div className="mfs-section-label" style={{ marginTop: 6 }}>Transform 3D</div>
+      <SliderField label="Rotasi X (angguk)" value={o.rotateX || 0} min={-180} max={180} step={1}
+        format={deg} onChange={(v) => onChange({ rotateX: v })} />
+      <SliderField label="Rotasi Y (putar samping)" value={o.rotateY || 0} min={-180} max={180} step={1}
+        format={deg} onChange={(v) => onChange({ rotateY: v })} />
+      <SliderField label="Skew X" value={o.skewX || 0} min={-60} max={60} step={1}
+        format={deg} onChange={(v) => onChange({ skewX: v })} />
+      <SliderField label="Skew Y" value={o.skewY || 0} min={-60} max={60} step={1}
+        format={deg} onChange={(v) => onChange({ skewY: v })} />
+      <SliderField label="Kedalaman perspektif" value={o.perspective ?? 60} min={0} max={100} step={1}
+        format={(v) => `${Math.round(v)}%`} onChange={(v) => onChange({ perspective: v })} />
+      {active && (
+        <div className="mfs-field">
+          <button className="mfs-btn mfs-btn-sm" onClick={() => onChange({ rotateX: 0, rotateY: 0, skewX: 0, skewY: 0, perspective: 60 })}>
+            <RotateCcw size={13} /> Reset 3D
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
 function BackgroundInspector({ background, dispatch }) {
   const fileRef = useRef(null);
   const patch = (p) => dispatch({ type: "SET_BACKGROUND", patch: p });
@@ -4874,6 +5073,7 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch: d
         <SliderField label="Skala" value={clip.offset.scale} min={0.05} max={5} step={0.05}
           format={(v) => `${v.toFixed(2)}×`}
           onChange={(v) => updateSelectedOffset({ scale: v })} />
+        <Transform3DFields offset={clip.offset} onChange={updateSelectedOffset} />
         <SliderField label="Opacity" value={clip.opacity ?? 1} min={0} max={1} step={0.01}
           format={(v) => `${Math.round(v * 100)}%`}
           onChange={(v) => updateSelected({ opacity: v })} />
@@ -4958,6 +5158,7 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch: d
           <SliderField label="Skala" value={clip.offset.scale} min={0.05} max={5} step={0.05}
             format={(v) => `${v.toFixed(2)}×`}
             onChange={(v) => updateSelectedOffset({ scale: v })} />
+          <Transform3DFields offset={clip.offset} onChange={updateSelectedOffset} />
           <SliderField label="Opacity" value={clip.opacity ?? 1} min={0} max={1} step={0.01}
             format={(v) => `${Math.round(v * 100)}%`}
             onChange={(v) => updateSelected({ opacity: v })} />
