@@ -12,11 +12,36 @@
 /**
  * Which editor surface the canvas area is showing.
  *  - "single"  the pre-existing per-glyph node/bezier editor (GlyphCanvas)
- *  - "multi"   the new grid overview (GlyphOverviewCanvas)
+ *  - "multi"   the grid overview (GlyphOverviewCanvas / GlyphMultiEditCanvas)
+ *  - "type"    same GlyphCanvas surface as "single", but glyph navigation
+ *              (GlyphNav) walks a preset test-sentence's characters in
+ *              first-appearance order instead of A-Z, and font-metric
+ *              guides collapse to baseline-only (see TYPE_MODE_CATEGORIES
+ *              / charsForCategory in glyph/testSentences.ts)
  * Defaults to "single" everywhere so nothing about the existing editing
  * flow changes until the user explicitly switches.
  */
-export type EditorMode = "single" | "multi";
+export type EditorMode = "single" | "multi" | "type";
+
+/** Categories Type Mode can draw from — one dedicated test sentence each,
+ *  from glyph/testSentences.ts. Deliberately the same set/order the rest
+ *  of the app already groups glyphs by (GLYPH_GROUPS / GLYPH_FILTERS),
+ *  minus "Spacing", which has no natural sentence of its own. */
+export type TypeModeCategory = "upper" | "lower" | "digits" | "punct" | "symbols" | "multilingual";
+
+export interface TypeModeCategoryOption {
+  id: TypeModeCategory;
+  label: string;
+}
+
+export const TYPE_MODE_CATEGORIES: ReadonlyArray<TypeModeCategoryOption> = [
+  { id: "upper", label: "Uppercase" },
+  { id: "lower", label: "Lowercase" },
+  { id: "digits", label: "Numbers" },
+  { id: "punct", label: "Punctuation" },
+  { id: "symbols", label: "Symbols" },
+  { id: "multilingual", label: "Multilingual" },
+];
 
 /** Built-in overview filters. `custom` renders only the glyphs currently
  *  multi-selected (the same `selectedGlyphChars` list GlyphNav already

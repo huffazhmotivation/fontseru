@@ -1,8 +1,8 @@
 import { memo, useMemo } from "react";
-import { LayoutGrid, Square, Minus, Plus, X, Maximize2 } from "lucide-react";
+import { LayoutGrid, Square, Minus, Plus, X, Maximize2, PenLine } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
-import { GLYPH_FILTERS, MULTI_COLUMNS_MAX, MULTI_ZOOM_MAX, MULTI_ZOOM_MIN, OVERVIEW_SPACING_MAX, OVERVIEW_SPACING_MIN } from "@/types/glyphView";
-import type { GlyphFilterId } from "@/types/glyphView";
+import { GLYPH_FILTERS, MULTI_COLUMNS_MAX, MULTI_ZOOM_MAX, MULTI_ZOOM_MIN, OVERVIEW_SPACING_MAX, OVERVIEW_SPACING_MIN, TYPE_MODE_CATEGORIES } from "@/types/glyphView";
+import type { GlyphFilterId, TypeModeCategory } from "@/types/glyphView";
 import { countDrawnGlyphs, filterGlyphChars } from "@/editor/glyphFilter";
 
 /**
@@ -36,6 +36,8 @@ function sliderToZoom(value: number): number {
 function GlyphViewBarInner() {
   const editorMode = useAppStore((s) => s.editorMode);
   const setEditorMode = useAppStore((s) => s.setEditorMode);
+  const typeModeCategory = useAppStore((s) => s.typeModeCategory);
+  const setTypeModeCategory = useAppStore((s) => s.setTypeModeCategory);
   const filter = useAppStore((s) => s.overviewFilter);
   const setOverviewFilter = useAppStore((s) => s.setOverviewFilter);
   const query = useAppStore((s) => s.overviewQuery);
@@ -55,6 +57,7 @@ function GlyphViewBarInner() {
   const clearGlyphSelection = useAppStore((s) => s.clearGlyphSelection);
 
   const multi = editorMode === "multi";
+  const typeMode = editorMode === "type";
 
   // Counts shown in the bar. Both are derived on the fly from the live
   // glyph map — nothing is cached or mirrored into state, so the "n jadi"
@@ -99,7 +102,35 @@ function GlyphViewBarInner() {
         >
           <LayoutGrid size={13} /> Multi
         </button>
+        <button
+          type="button"
+          className={typeMode ? "on" : ""}
+          onClick={() => setEditorMode("type")}
+          title="Type Mode — gambar glyph mengikuti urutan kalimat contoh, bukan A-Z; hanya baseline yang tampil"
+          data-testid="glyph-view-type"
+        >
+          <PenLine size={13} /> Type
+        </button>
       </div>
+
+      {typeMode && (
+        <div className="fm-glyphview-bar" data-testid="glyph-view-type-bar" data-mode={editorMode}>
+          <label className="fm-glyphview-field">
+            <span>Kalimat</span>
+            <select
+              value={typeModeCategory}
+              onChange={(e) => setTypeModeCategory(e.target.value as TypeModeCategory)}
+              data-testid="glyph-view-type-category"
+            >
+              {TYPE_MODE_CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
 
       {multi && (
         <div className="fm-glyphview-bar" data-testid="glyph-view-bar" data-mode={editorMode}>

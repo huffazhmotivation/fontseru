@@ -2833,16 +2833,48 @@ function oilBrushOutlineContours(centerline: StrokeSample[], settings: BrushSett
  * textured preset (see its doc comment in types/brush.ts).
  */
 /**
- * PERFORMANCE (live drawing must stay cheap): `fast`, true only for the
- * live-preview build during an in-progress pointer gesture (see
- * `useBrushTool.buildPreview`), skips the edge spray texture entirely and
- * draws a drastically thinned overspray field — the same reasoning
- * Grunge/Rough/the old Spray Brush all use: a preview that's cheap enough
- * to rebuild every pointer-move frame, without the O(length) texture passes
- * that would make active drawing feel laggy. The committed/final render
- * (glyph canvas, export, thumbnails) always uses the full build.
+ * Accumulates the edge-grain + overspray specks for ONE in-progress Spray
+ * Brush gesture across pointer-move frames, so the live preview can match
+ * full committed detail without regenerating the whole speck field from
+ * scratch every frame (see PERFORMANCE note below and `useBrushTool`,
+ * which owns one of these per stroke in a ref and resets it on
+ * pointerDown). `specks` grows in place — the SAME array is returned as
+ * part of every frame's contour list, just with new entries appended.
  */
-function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings, fast = false): Contour[] {
+export interface SpraySpeckCache {
+  /** Arc length (font units) already covered by `specks` so far. */
+  processedDist: number;
+  specks: Contour[];
+}
+
+/**
+ * PERFORMANCE (live drawing must stay cheap) + FIDELITY (live preview
+ * should look like the real thing, not a placeholder): `fast` is true only
+ * for the live-preview build during an in-progress pointer gesture (see
+ * `useBrushTool.buildPreview`). Older versions of this function used
+ * `fast` to skip the edge spray texture and draw a drastically thinned
+ * overspray field instead, because both texture passes rebuilt themselves
+ * from scratch over the ENTIRE stroke-so-far on every single pointer-move
+ * frame — an O(length) (in practice O(length^2) over the life of one
+ * growing stroke) cost that made active drawing lag, worst on long
+ * strokes.
+ *
+ * Passing `liveCache` fixes the actual problem (repeated whole-stroke
+ * regeneration) instead of hiding it behind lower detail: both texture
+ * passes below step along the stroke by a FIXED arc-length increment
+ * (never a fraction of the current total length, which would reshuffle
+ * every dot's position as the stroke grows), start at `liveCache.processedDist`
+ * instead of 0, and append ONLY the newly-covered tail's specks to
+ * `liveCache.specks` — so each frame's cost depends on how much NEW length
+ * was just drawn, not on the stroke's total length so far. That lets live
+ * drawing use the exact same full-density parameters as the committed
+ * build (matching final detail 1:1) while staying cheap.
+ *
+ * `fast` with no `liveCache` (not used by the live-drawing caller, which
+ * always supplies one — kept only as a defensive fallback for any other
+ * caller) falls back to the old thinned, rebuilt-from-scratch preview.
+ */
+function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings, fast = false, liveCache?: SpraySpeckCache): Contour[] {
   // ---- 1. Solid body --------------------------------------------------
   const constantWidth =
     (settings.taperStart ?? 0) <= 0 &&
@@ -2912,7 +2944,15 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
     return { p, tangent, taper };
   };
 
-  const extras: Contour[] = [];
+  // When a live cache is supplied, `extras` IS `liveCache.specks` (the same
+  // array, mutated in place by pushing only the new tail's dots each
+  // frame) so previously-generated specks persist across frames instead of
+  // being thrown away and rebuilt.
+  const extras: Contour[] = liveCache ? liveCache.specks : [];
+  const incremental = !!liveCache;
+  // Where to resume from this frame: 0 for a fresh/committed build, or
+  // wherever the cache left off for a live-drawing frame.
+  const startDist = incremental ? Math.max(0, Math.min(liveCache!.processedDist, totalLength)) : 0;
 
   // ---- 2. Edge spray texture -------------------------------------------
   // A real stencil-sprayed edge isn't a clean vector curve — it's built up
@@ -2926,10 +2966,21 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   // inside (already filled) — instead of the earlier version's sparse
   // "bitten" pits, which read as occasional notches rather than an actually
   // grainy edge.
-  if (!fast) {
-    const edgeSpacing = Math.max(0.8, halfWidth * 0.15) / strength;
-    let ei = 0;
-    for (let d = 0; d < totalLength; d += edgeSpacing * (0.5 + ((pseudoNoise(ei * 5.3 + 3.1) + 1) / 2) * 0.9), ei++) {
+  //
+  // Runs at full density either on commit (`!fast`) or during live drawing
+  // when a cache is available to accumulate into (`incremental`) — only a
+  // cache-less fast call (see doc comment above) skips it.
+  if (!fast || incremental) {
+    // Denser, finer spacing than before — the reference's edge reads as a
+    // continuous fine "torn paper" grain all the way around, not occasional
+    // isolated bites — so both the step along the path and the per-dot skip
+    // chance below are tightened up.
+    const edgeSpacing = Math.max(0.6, halfWidth * 0.11) / strength;
+    // Resume the jitter sequence from roughly where the last frame left
+    // off, purely cosmetic (keeps consecutive frames' seeds from
+    // repeating the same early pattern) — it doesn't need to be exact.
+    let ei = Math.max(0, Math.round(startDist / edgeSpacing));
+    for (let d = startDist; d < totalLength; d += edgeSpacing * (0.4 + ((pseudoNoise(ei * 5.3 + 3.1) + 1) / 2) * 0.7), ei++) {
       const { p, tangent, taper } = at(d);
       if (taper <= 0.04) continue;
       const tl = Math.hypot(tangent.x, tangent.y) || 1;
@@ -2937,10 +2988,12 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
       const ty = tangent.y / tl;
       for (const side of [1, -1]) {
         const seed = ei * 277.1 + (side > 0 ? 41.3 : 97.7);
-        if ((pseudoNoise(seed) + 1) / 2 < 0.4) continue; // still leaves gaps, not a solid ring
+        if ((pseudoNoise(seed) + 1) / 2 < 0.22) continue; // still leaves a few gaps, but a near-continuous grain now
         const normal = { x: -ty * side, y: tx * side };
         const hw = halfWidth * taper;
-        const dotR = Math.max(0.35, hw * (0.05 + ((pseudoNoise(seed + 4) + 1) / 2) * 0.1));
+        // Small, fine grain — the reference's edge dots read as fine
+        // speckle, not blobby chunks.
+        const dotR = Math.max(0.3, hw * (0.035 + ((pseudoNoise(seed + 4) + 1) / 2) * 0.075));
         // Straddle the true edge: mostly centered right on it, biased
         // slightly outward for the "hairy" fuzzed silhouette, occasionally
         // sitting a bit inside (harmless — just fuses into the solid body).
@@ -2953,44 +3006,114 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   }
 
   // ---- 3. Overspray: sparse dust around the body -----------------------
-  const spread = 0.6 + 0.55 * settings.roundness;
-  const density = fast ? 0.35 : Math.min(1, (settings.jitter ?? 0.6) * 0.7);
-  const FAST_MAX_STEPS = 40;
-  const stepLen = fast
-    ? Math.max(halfWidth * 0.7, totalLength / FAST_MAX_STEPS, 3)
-    : Math.max(1.4, halfWidth * 0.6);
-  const stepCount = Math.max(1, Math.round(totalLength / stepLen));
-  const specksPerStep = fast ? 2 : Math.max(1, Math.round(1.6 * (0.5 + density)));
-  const maxReach = 2.0 * spread;
-  let seedBase = 0;
-  for (let i = 0; i <= stepCount; i++) {
-    const jitterSeed = i * 19.1 + 6.7;
-    const t = Math.max(0, Math.min(totalLength, (i / stepCount) * totalLength));
-    const { p, tangent, taper } = at(t);
-    if (taper <= 0.05) continue;
-    const tl = Math.hypot(tangent.x, tangent.y) || 1;
-    const tx = tangent.x / tl;
-    const ty = tangent.y / tl;
-    const nx = -ty;
-    const ny = tx;
-    const hw = halfWidth * taper;
-    const count = Math.max(0, Math.round(specksPerStep * (0.5 + ((pseudoNoise(jitterSeed + 71) + 1) / 2) * 0.7)));
-    for (let k = 0; k < count; k++) {
-      seedBase += 1;
-      const seed = seedBase * 97.3 + i * 4.1 + k * 23;
-      // Biased OUTWARD (0.6..1 of max reach), well past the body's own
-      // edge — this layer's whole point is to sit AROUND the letter, not
-      // fill it in the way the old dot-field version did.
-      const u = (pseudoNoise(seed * 1.9 + 0.7) + 1) / 2;
-      const radiusFrac = 0.55 + Math.pow(u, 1.6) * 0.45;
-      const angle = Math.PI * ((pseudoNoise(seed * 2.7 + 9.3) + 1) / 2) * 2;
-      const across = Math.cos(angle) * radiusFrac * maxReach * hw;
-      const along = Math.sin(angle) * radiusFrac * maxReach * hw * 0.7;
-      const center = { x: p.x + nx * across + tx * along, y: p.y + ny * across + ty * along };
-      const radius = Math.max(0.35, hw * (0.02 + ((pseudoNoise(seed * 1.3 + 9.7) + 1) / 2) * 0.045));
-      const sides = fast ? 4 : radius < 1.4 ? 6 : 8;
-      extras.push(makeSpeckle(center, radius, seed, outerSign, sides, fast || radius < 1.6));
+  // Stepped by a FIXED arc-length increment (`stepLen`, independent of
+  // `totalLength`) rather than the old `i / stepCount` fraction-of-total
+  // scheme — that older scheme repositioned literally every dot each time
+  // `totalLength` grew by even one sample, which both looked like the dust
+  // was crawling while you drew and made an incremental cache impossible.
+  // Fixed-distance stepping means a dot placed at some arc length stays at
+  // that arc length forever, so resuming from `startDist` below only ever
+  // adds NEW dust for the newly-drawn tail.
+  //
+  // Matching the reference precisely: it is NOT a uniform-density band of
+  // dots sitting off to the side of each letter — it's a true density
+  // GRADIENT, a tight, fine cluster of specks starting right at the true
+  // edge that rapidly thins into just a handful of small, isolated flecks
+  // a little further out. `radiusFrac` below is biased toward 0 with
+  // `Math.pow(u, GRADIENT_POWER)` so most candidate dots land close to the
+  // edge (dense, fine grain) and only a rare few reach `beyondMax`; dot
+  // size also shrinks with distance for the same "fine grain near the
+  // letter, isolated tiny flecks further out" read. The halo is also kept
+  // tight (`beyondMax`) — it hugs the silhouette rather than ballooning
+  // out into a wide dust cloud.
+  const GRADIENT_POWER = 2.4;
+  const spread = 0.35 + 0.35 * settings.roundness;
+  const maxReach = 1.1 * spread;
+  if (!fast || incremental) {
+    const density = Math.min(1, (settings.jitter ?? 0.6) * 0.7);
+    const stepLen = Math.max(1.1, halfWidth * 0.4);
+    // More candidates per step than before — the gradient bias below
+    // naturally culls most of them into a dense cluster right at the edge
+    // and only lets a few through to the far end, so raising the candidate
+    // count is what actually produces a visibly graded halo instead of a
+    // thin, uniformly-spaced band.
+    const specksPerStep = Math.max(2, Math.round(3.4 * (0.5 + density)));
+    let stepIndex = Math.max(0, Math.floor(startDist / stepLen));
+    for (let d = startDist; d <= totalLength; d += stepLen, stepIndex++) {
+      const jitterSeed = stepIndex * 19.1 + 6.7;
+      const { p, tangent, taper } = at(d);
+      if (taper <= 0.05) continue;
+      const tl = Math.hypot(tangent.x, tangent.y) || 1;
+      const tx = tangent.x / tl;
+      const ty = tangent.y / tl;
+      const nx = -ty;
+      const ny = tx;
+      const hw = halfWidth * taper;
+      const beyondMax = maxReach * hw;
+      const count = Math.max(0, Math.round(specksPerStep * (0.5 + ((pseudoNoise(jitterSeed + 71) + 1) / 2) * 0.7)));
+      for (let k = 0; k < count; k++) {
+        const seed = stepIndex * 1097.3 + k * 23 + 4.1;
+        const u = (pseudoNoise(seed * 1.9 + 0.7) + 1) / 2;
+        // 0 = right at the true edge, 1 = the halo's outer limit — biased
+        // toward 0 so most dots cluster close in.
+        const radiusFrac = Math.pow(u, GRADIENT_POWER);
+        const angle = Math.PI * ((pseudoNoise(seed * 2.7 + 9.3) + 1) / 2) * 2;
+        // Distance from the CENTERLINE starts at the true edge (hw) and
+        // grows outward with radiusFrac, instead of scaling all the way
+        // from the centerline — that keeps every dot outside the solid
+        // body (none wasted deep inside it) and anchors the density
+        // gradient to the actual silhouette edge, which is what the
+        // reference's halo is graded from.
+        const dist = hw + radiusFrac * beyondMax;
+        const across = Math.cos(angle) * dist;
+        const along = Math.sin(angle) * dist * 0.5;
+        const center = { x: p.x + nx * across + tx * along, y: p.y + ny * across + ty * along };
+        // Dots shrink as they get further from the edge — fine, tiny
+        // flecks out at the halo's edge; slightly coarser right where it
+        // meets the letter.
+        const sizeFalloff = 1 - radiusFrac * 0.65;
+        const radius = Math.max(0.3, hw * (0.015 + ((pseudoNoise(seed * 1.3 + 9.7) + 1) / 2) * 0.05) * sizeFalloff);
+        const sides = radius < 1.4 ? 6 : 8;
+        extras.push(makeSpeckle(center, radius, seed, outerSign, sides, radius < 1.6));
+      }
     }
+  } else {
+    // Defensive fallback only (see doc comment above): cache-less fast
+    // call, cheap thinned dust field rebuilt from scratch.
+    const FAST_MAX_STEPS = 40;
+    const stepLen = Math.max(halfWidth * 0.7, totalLength / FAST_MAX_STEPS, 3);
+    const stepCount = Math.max(1, Math.round(totalLength / stepLen));
+    const specksPerStep = 2;
+    let seedBase = 0;
+    for (let i = 0; i <= stepCount; i++) {
+      const jitterSeed = i * 19.1 + 6.7;
+      const t = Math.max(0, Math.min(totalLength, (i / stepCount) * totalLength));
+      const { p, tangent, taper } = at(t);
+      if (taper <= 0.05) continue;
+      const tl = Math.hypot(tangent.x, tangent.y) || 1;
+      const tx = tangent.x / tl;
+      const ty = tangent.y / tl;
+      const nx = -ty;
+      const ny = tx;
+      const hw = halfWidth * taper;
+      const count = Math.max(0, Math.round(specksPerStep * (0.5 + ((pseudoNoise(jitterSeed + 71) + 1) / 2) * 0.7)));
+      for (let k = 0; k < count; k++) {
+        seedBase += 1;
+        const seed = seedBase * 97.3 + i * 4.1 + k * 23;
+        const u = (pseudoNoise(seed * 1.9 + 0.7) + 1) / 2;
+        const radiusFrac = 0.55 + Math.pow(u, 1.6) * 0.45;
+        const angle = Math.PI * ((pseudoNoise(seed * 2.7 + 9.3) + 1) / 2) * 2;
+        const across = Math.cos(angle) * radiusFrac * maxReach * hw;
+        const along = Math.sin(angle) * radiusFrac * maxReach * hw * 0.7;
+        const center = { x: p.x + nx * across + tx * along, y: p.y + ny * across + ty * along };
+        const radius = Math.max(0.35, hw * (0.02 + ((pseudoNoise(seed * 1.3 + 9.7) + 1) / 2) * 0.045));
+        extras.push(makeSpeckle(center, radius, seed, outerSign, 4, true));
+      }
+    }
+  }
+
+  if (incremental) {
+    liveCache!.processedDist = totalLength;
   }
 
   return [...bodyContours, ...extras];
@@ -3130,7 +3253,7 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
  * sprayBrushOutlineContours), and every other preset uses the single
  * elliptical-nib contour directly.
  */
-export function centerlineToOutlineContours(centerline: StrokeSample[], settings: BrushSettings, opts?: { fast?: boolean }): Contour[] {
+export function centerlineToOutlineContours(centerline: StrokeSample[], settings: BrushSettings, opts?: { fast?: boolean; spraySpeckCache?: SpraySpeckCache }): Contour[] {
   if (settings.type === "pixel" && settings.gridSnap === true) {
     return settings.pixelMode === "liquid"
       ? pixelLiquidOutline(centerline, settings.cellSize ?? settings.size, settings.pixelLiquidSmoothness ?? 0.5, settings)
@@ -3152,7 +3275,7 @@ export function centerlineToOutlineContours(centerline: StrokeSample[], settings
     return outlineBrushOutlineContours(centerline, settings);
   }
   if (settings.type === "sprayBrush") {
-    return sprayBrushOutlineContours(centerline, settings, opts?.fast ?? false);
+    return sprayBrushOutlineContours(centerline, settings, opts?.fast ?? false, opts?.spraySpeckCache);
   }
   if (settings.type === "tape") {
     return tapeBrushOutlineContours(centerline, settings);

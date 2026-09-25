@@ -6,6 +6,7 @@ import type { GlyphOutline, StrokeCap, VectorObject } from "@/types/geometry";
 import type { ToolId } from "@/types/tool";
 import type { BrushSettings, BrushType } from "@/types/brush";
 import { buildDefaultGlyphs, ensureSpaceGlyph, ensureDefaultSymbols } from "./defaultGlyphs";
+import { charsForCategory } from "./testSentences";
 import { cloneGlyphMap, familyFromRegular, newCustomFamilyGlyphs } from "./family";
 import { generateBoldFromRegular, generateItalicFromRegular, generateCustomFromRegular, type FamilyGenerationResult } from "./autoGenerate";
 import { DEFAULT_METRICS, defaultFontInfo, type ExportInfoDraft, type FontInfo, type FontMetrics } from "@/types/font";
@@ -25,7 +26,7 @@ import type { FeatureBuilderConfig, LigatureRule, AlternateRule, SwashRule, Feat
 import { emptyFeatureConfig, nextFeatureRuleId } from "@/types/opentypeFeatures";
 import { nextFeatureGlyphUnicode, buildFeatureGlyph, isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { GlyphCategory } from "@/types/glyph";
-import type { EditorMode, GlyphFilterId } from "@/types/glyphView";
+import type { EditorMode, GlyphFilterId, TypeModeCategory } from "@/types/glyphView";
 import { clampMultiColumns, clampMultiZoom, clampOverviewSpacing, clampOverviewZoom } from "@/types/glyphView";
 
 export type Theme = "light" | "dark";
@@ -313,6 +314,12 @@ interface AppState {
   editorMode: EditorMode;
   setEditorMode: (mode: EditorMode) => void;
   toggleEditorMode: () => void;
+  /** Type Mode's active category (Uppercase/Lowercase/Digits/Punctuation/
+   *  Symbols/Multilingual) — decides which preset test sentence GlyphNav
+   *  walks through while `editorMode === "type"`. Session-only, same as
+   *  editorMode itself. */
+  typeModeCategory: TypeModeCategory;
+  setTypeModeCategory: (category: TypeModeCategory) => void;
   /** Which glyph subset the overview renders. */
   overviewFilter: GlyphFilterId;
   setOverviewFilter: (filter: GlyphFilterId) => void;
@@ -1116,6 +1123,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     // Multi Glyph Canvas — defaults chosen so an existing project opens
     // in exactly the surface it always has (Single Mode).
     editorMode: "single",
+    typeModeCategory: "upper",
     overviewFilter: "all",
     overviewQuery: "",
     overviewZoom: 100,
@@ -1346,8 +1354,16 @@ export const useAppStore = create<AppState>()((set, get) => {
       // overview's own drag-rectangle selection can't fight with them
       // (and so returning to Single Mode starts from a clean slate).
       finalizeLive();
+      const state = get();
+      // Entering Type Mode: jump to the active category's first character
+      // so the canvas isn't left showing whatever glyph happened to be
+      // active from Single/Multi Mode (which may not even be in this
+      // category's sentence). Leaving Type Mode leaves activeChar as-is,
+      // same as switching between Single ⇄ Multi always has.
+      const first = mode === "type" ? charsForCategory(state.typeModeCategory)[0] : undefined;
       set({
         editorMode: mode,
+        activeChar: first ?? state.activeChar,
         selectedNodes: [],
         selectedHandle: null,
         selectedObjectIds: [],
@@ -1358,6 +1374,25 @@ export const useAppStore = create<AppState>()((set, get) => {
     toggleEditorMode: () => {
       const next: EditorMode = get().editorMode === "single" ? "multi" : "single";
       get().setEditorMode(next);
+    },
+    setTypeModeCategory: (category) => {
+      // Changing category swaps out the whole char sequence GlyphNav is
+      // showing, so jump activeChar to that sequence's first character —
+      // same reasoning as setFontStyle's nextActiveChar fallback below:
+      // staying on a char the new sequence doesn't contain would leave
+      // the canvas showing a glyph absent from the list the user is
+      // looking at.
+      const state = get();
+      const first = charsForCategory(category)[0];
+      finalizeLive();
+      set({
+        typeModeCategory: category,
+        activeChar: first ?? state.activeChar,
+        selectedNodes: [],
+        selectedHandle: null,
+        selectedObjectIds: [],
+        drawingContourId: null,
+      });
     },
     setOverviewFilter: (filter) =>
       // Changing the filter changes which rows exist, so any scroll

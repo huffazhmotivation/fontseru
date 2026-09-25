@@ -3,6 +3,8 @@ import { CheckSquare, Lock, Plus, Search, X, Zap, Globe } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useAuth } from "@/auth/AuthProvider";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
+import { charsForCategory } from "@/glyph/testSentences";
+import { TYPE_MODE_CATEGORIES } from "@/types/glyphView";
 import { FONT_STYLES, MAX_CUSTOM_FAMILIES, hasOutline } from "@/types/glyph";
 import { unicodeHex } from "@/utils/unicode";
 import { GlyphThumbnail } from "./GlyphThumbnail";
@@ -20,6 +22,8 @@ export function GlyphNavInner() {
   const deferredGlyphs = useDeferredValue(glyphs);
   const activeChar = useAppStore((s) => s.activeChar);
   const setActiveChar = useAppStore((s) => s.setActiveChar);
+  const editorMode = useAppStore((s) => s.editorMode);
+  const typeModeCategory = useAppStore((s) => s.typeModeCategory);
   const fontStyle = useAppStore((s) => s.fontStyle);
   const setFontStyle = useAppStore((s) => s.setFontStyle);
   const customFamilies = useAppStore((s) => s.customFamilies);
@@ -102,7 +106,34 @@ export function GlyphNavInner() {
     return map;
   }, [deferredGlyphs]);
 
+  // Type Mode: one single "group" whose chars come from the active
+  // category's preset test sentence, in first-appearance order (deduped,
+  // punctuation/symbols/spaces included as-is) instead of the A-Z groups
+  // below — see glyph/testSentences.ts's charsForCategory. Glyphs that
+  // don't exist yet (e.g. a Multilingual category character the user
+  // hasn't added via "+ Multilingual Glyphs") are simply skipped by the
+  // existing `if (!info) return null` tile guard further down, exactly
+  // like any other not-yet-created glyph.
+  const typeModeGroups = useMemo(() => {
+    if (editorMode !== "type") return null;
+    const label = TYPE_MODE_CATEGORIES.find((c) => c.id === typeModeCategory)?.label ?? "Type";
+    const chars = charsForCategory(typeModeCategory);
+    if (!query.trim()) return [{ id: typeModeCategory, label, chars }];
+    const q = query.trim().toLowerCase();
+    return [{
+      id: typeModeCategory,
+      label,
+      chars: chars.filter((ch) => {
+        const meta = searchMeta.get(ch);
+        if (!meta) return false;
+        if (meta.lower === q) return true;
+        return meta.hex.includes(q) || meta.name.includes(q);
+      }),
+    }];
+  }, [editorMode, typeModeCategory, query, searchMeta]);
+
   const filteredGroups = useMemo(() => {
+    if (typeModeGroups) return typeModeGroups;
     const baseChars = new Set(GLYPH_GROUPS.flatMap((g) => g.chars));
     const extrasByCategory = new Map<string, string[]>();
     for (const [ch, glyph] of Object.entries(deferredGlyphs)) {
@@ -129,7 +160,7 @@ export function GlyphNavInner() {
         return meta.hex.includes(q) || meta.name.includes(q);
       }),
     })).filter((g) => g.chars.length > 0);
-  }, [query, deferredGlyphs, searchMeta]);
+  }, [typeModeGroups, query, deferredGlyphs, searchMeta]);
 
   return (
     <div className="fm-glyphnav" data-testid="glyph-nav">

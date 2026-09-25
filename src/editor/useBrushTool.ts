@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { Contour, Point, StrokeSample, VectorObject } from "@/types/geometry";
 import { useAppStore } from "@/glyph/store";
-import { samplesToCenterline, centerlineToContour, centerlineToOutlineContours } from "@/brushes/strokeToOutline";
+import { samplesToCenterline, centerlineToContour, centerlineToOutlineContours, type SpraySpeckCache } from "@/brushes/strokeToOutline";
 import { appendStabilizedSample } from "@/brushes/strokeSmoothing";
 import { shortId } from "@/utils/id";
 import { detectQuickShape, quickShapePolyline, QUICK_SHAPE_HOLD_MS, type QuickShapeResult } from "./quickShape";
@@ -95,6 +95,13 @@ export function useBrushTool(hitScale: number) {
   // Pixel Brush only, parallel to samplesRef/rawSamplesRef: whether the
   // pointer ever reached the core of that sample's cell (see isPixelCellCore).
   const pixelCoreRef = useRef<boolean[]>([]);
+  // Spray Brush only: accumulates the current gesture's edge-grain +
+  // overspray specks across pointer-move frames (see SpraySpeckCache's doc
+  // comment in strokeToOutline.ts). Reset to null at the start/end of every
+  // stroke (pointerDown/pointerUp/cancel below) so a new gesture always
+  // starts its dust field from scratch; buildPreview lazily creates it the
+  // first time a frame actually needs one.
+  const sprayCacheRef = useRef<SpraySpeckCache | null>(null);
   // Pixel Brush's live preview is many square contours (one per grid cell),
   // not one nib-shaped contour, so this is always an array — empty for "no
   // preview" rather than null, which keeps the pixel and non-pixel paths
@@ -139,14 +146,28 @@ export function useBrushTool(hitScale: number) {
     // matches exactly what gets committed.
     const settings = pixelSnap ? { ...brush, cellSize: gridSize } : brush;
     // `fast: true` only matters for Spray Brush (every other brush type
-    // ignores it) — see sprayBrushOutlineContours' doc comment. It swaps
-    // the live-drawing preview to a much cheaper, thinned-out speck field
-    // instead of the full one, which is what was causing Spray Brush to
-    // lag/stutter while actively drawing (the full field was previously
-    // rebuilt from scratch on every pointer move for the whole stroke so
-    // far). The final committed stroke is unaffected: it's rendered via
+    // ignores it) — see sprayBrushOutlineContours' doc comment. Paired with
+    // `spraySpeckCache` (this stroke's accumulating dust field, owned by
+    // sprayCacheRef below and reset on pointerDown/pointerUp/cancel), each
+    // frame only generates specks for the newly-drawn tail and appends them
+    // to the same cached array, instead of rebuilding the whole speck field
+    // from scratch on every pointer move — that whole-field rebuild was
+    // what caused Spray Brush to lag/stutter on longer strokes. Because the
+    // cost is now bounded by how much NEW length was just drawn rather than
+    // the stroke's total length so far, the live preview can afford to use
+    // the exact same full-density texture as the committed build, so what
+    // you see while actively drawing already matches the final detail — no
+    // separate lower-fidelity "preview" look. The final committed stroke is
+    // unaffected either way: it's rendered via
     // brushOutlineContours()/getGlyphPaths() elsewhere, which never passes
-    // this flag and always uses the full-fidelity field.
+    // `fast` and always uses the full build.
+    if (brush.type === "sprayBrush") {
+      if (!sprayCacheRef.current) sprayCacheRef.current = { processedDist: 0, specks: [] };
+      return {
+        centerline: null as Contour | null,
+        outline: centerlineToOutlineContours(cl, settings, { fast: true, spraySpeckCache: sprayCacheRef.current }),
+      };
+    }
     return { centerline: null as Contour | null, outline: centerlineToOutlineContours(cl, settings, { fast: true }) };
   }, [brush, gridSize, pixelSnap, hitScale]);
 
@@ -189,6 +210,9 @@ export function useBrushTool(hitScale: number) {
     rawSamplesRef.current = [sample];
     samplesRef.current = [sample];
     pixelCoreRef.current = pixelSnap ? [isPixelCellCore(p, gridSize)] : [];
+    // Fresh gesture: start this stroke's spray dust field over from empty
+    // rather than carrying over the previous stroke's accumulated specks.
+    sprayCacheRef.current = null;
     setIsDrawing(true);
     setPreviewOutline([]);
     setPreviewCenterline(null);
@@ -323,6 +347,7 @@ export function useBrushTool(hitScale: number) {
     rawSamplesRef.current = [];
     samplesRef.current = [];
     pixelCoreRef.current = [];
+    sprayCacheRef.current = null;
     setPreviewOutline([]);
     setPreviewCenterline(null);
     clearQuickShapeHold();
@@ -349,6 +374,7 @@ export function useBrushTool(hitScale: number) {
     rawSamplesRef.current = [];
     samplesRef.current = [];
     pixelCoreRef.current = [];
+    sprayCacheRef.current = null;
     setIsDrawing(false);
     setPreviewOutline([]);
     setPreviewCenterline(null);

@@ -102,3 +102,28 @@ export function sentenceForCategory(category: string | undefined): string {
     default: return UPPER_TEST;
   }
 }
+
+/**
+ * Type Mode's glyph order (see types/glyphView.ts's TypeModeCategory):
+ * every character of the category's preset sentence, in first-appearance
+ * (reading) order rather than A-Z, deduplicated, and keeping non-letter
+ * characters (spaces, punctuation, symbols) exactly as they occur — Type
+ * Mode draws whatever the sentence actually contains at that spot, not
+ * just the alphabetic glyphs.
+ *
+ * Deliberately re-splits the raw sentence string char-by-char rather than
+ * reusing GLYPH_GROUPS: those groups are already-deduplicated, alphabetic-
+ * only sets meant for the A-Z grid, which is exactly the ordering this is
+ * replacing.
+ */
+export function charsForCategory(category: string | undefined): string[] {
+  const sentence = sentenceForCategory(category);
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const ch of sentence) {
+    if (ch === "\n" || seen.has(ch)) continue;
+    seen.add(ch);
+    ordered.push(ch);
+  }
+  return ordered;
+}
