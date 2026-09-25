@@ -613,6 +613,13 @@ interface AppState {
    * optically-balanced baseline margin. Fixes inconsistent hand-drawn
    * sidebearings; runs before Auto Kern refines specific pairs on top. */
   autoSpaceAllGlyphs: (options?: { excludeManuallyKerned?: boolean; reKernAfter?: boolean }, onProgress?: (fraction: number) => void) => Promise<AutoSpaceResult>;
+  /** Type Mode's own auto-spacing pass — deliberately separate from
+   *  `autoSpaceAllGlyphs` above and from commitOutline's live per-glyph
+   *  pass (Single/Multi Mode, unchanged). commitOutline calls this once,
+   *  automatically, the moment every character in the active Type Mode
+   *  sentence (typeModeCategory) has ink — never per-stroke. Only ever
+   *  touches that sentence's own glyphs, nothing else in the font. */
+  autoSpaceTypeSentence: () => Promise<void>;
   /** Computes a word-spacing value from the font's own drawn glyphs and applies it (see `suggestWordSpacing`). Returns the value that was set. */
   autoWordSpacing: () => number;
   /** Bakes `trackingUnits` permanently into every glyph's LSB/RSB (split
@@ -1817,10 +1824,14 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
 
     commitOutline: (char, outline, opts) => {
-      const { glyphs, metrics, autoSpacingEnabled } = get();
+      const { glyphs, metrics, autoSpacingEnabled, editorMode, typeModeCategory } = get();
       const glyph = glyphs[char];
       if (!glyph) return;
       let nextGlyph: Glyph = { ...glyph, outline };
+      // Type Mode deliberately skips this live per-glyph pass entirely —
+      // see autoSpaceTypeSentence below for what replaces it there.
+      // Single/Multi Mode's behavior below is untouched.
+      const isTypeMode = editorMode === "type";
       // Live Auto Spacing (font-wide): whenever the master switch is on,
       // finishing a brand-new stroke/shape (pen, shape tool, brush, pencil,
       // paste) immediately re-derives LSB/RSB from the freshly-drawn ink
@@ -1853,12 +1864,27 @@ export const useAppStore = create<AppState>()((set, get) => {
       // been rendered, so pointer-move frames never run this optical pass.
       // Keeping the calculation synchronous preserves the existing commit
       // ordering and guarantees the saved glyph is immediately fully spaced.
-      if (autoSpacingEnabled && !opts?.skipAutoSpacing) {
+      if (autoSpacingEnabled && !opts?.skipAutoSpacing && !isTypeMode) {
         const suggestion = suggestGlyphSidebearings(nextGlyph, metrics);
         if (suggestion) nextGlyph = applyOpticalSidebearings(nextGlyph, suggestion);
       }
-      commit({ ...glyphs, [char]: nextGlyph });
+      const nextGlyphs = { ...glyphs, [char]: nextGlyph };
+      commit(nextGlyphs);
       set({ liveOutline: null });
+
+      // Type Mode: no live per-glyph auto-spacing above, so instead check
+      // whether THIS commit was the one that finished the LAST character
+      // still missing ink in the active sentence — if so, space the whole
+      // sentence in one batch pass. Re-checked on every commit while in
+      // Type Mode (cheap: at most a couple dozen chars), so redrawing part
+      // of an already-complete sentence re-runs it too, but it's a no-op
+      // once every glyph's sidebearings already match the suggestion.
+      if (isTypeMode && autoSpacingEnabled) {
+        const sentenceChars = charsForCategory(typeModeCategory);
+        const allDrawn =
+          sentenceChars.length > 0 && sentenceChars.every((ch) => nextGlyphs[ch] && hasOutline(nextGlyphs[ch]));
+        if (allDrawn) void get().autoSpaceTypeSentence();
+      }
     },
 
     setLiveOutline: (outline) => set({ liveOutline: outline }),
@@ -2571,6 +2597,41 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
 
       return result;
+    },
+
+    autoSpaceTypeSentence: async () => {
+      const { glyphs, metrics, typeModeCategory, kerningManual } = get();
+      const sentenceChars = charsForCategory(typeModeCategory);
+      // Subset map — ONLY the active sentence's own glyphs, so the pure
+      // `computeAutoSpaceAllGlyphs` helper (which walks every entry it's
+      // given) never sees, and can never touch, anything else in the font.
+      const subset: GlyphMap = {};
+      for (const ch of sentenceChars) {
+        const g = glyphs[ch];
+        if (g) subset[ch] = g;
+      }
+      if (Object.keys(subset).length === 0) return;
+
+      // Same manually-kerned exclusion autoSpaceAllGlyphs uses by default,
+      // so a Type Mode sentence containing a hand-kerned pair doesn't
+      // shove it out from under that kerning either.
+      let excludeChars: Set<string> | undefined;
+      for (const [key, isManual] of Object.entries(kerningManual)) {
+        if (!isManual) continue;
+        if (!excludeChars) excludeChars = new Set<string>();
+        const [left, right] = decodeKerningKey(key);
+        excludeChars.add(left);
+        excludeChars.add(right);
+      }
+
+      const result = await computeAutoSpaceAllGlyphs(subset, metrics, applyOpticalSidebearings, excludeChars);
+      if (result.updated > 0) {
+        // Merge just the (possibly) updated subset back into the CURRENT
+        // full glyph map — re-read via get() rather than reusing the
+        // `glyphs` destructured above, in case something else committed
+        // in between the await and here.
+        commit({ ...get().glyphs, ...result.glyphs });
+      }
     },
 
     autoSpaceAllGlyphsForContext: async (context, options, onProgress) => {

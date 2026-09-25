@@ -97,7 +97,7 @@ function GlyphViewBarInner() {
       >
         <button
           type="button"
-          className={!multi ? "on" : ""}
+          className={editorMode === "single" ? "on" : ""}
           onClick={() => setEditorMode("single")}
           title="Single Glyph Mode — edit satu glyph dengan node & bezier tools"
           data-testid="glyph-view-single"
