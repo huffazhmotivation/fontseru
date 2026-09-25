@@ -74,9 +74,12 @@ export default function App() {
   // Multi Glyph Canvas. Sketch Mode keeps its own dedicated single-glyph
   // drawing surface (pen/tablet gestures, GlyphStepper, sketch toolbar),
   // so the overview is only offered outside it — `overviewMode` is the
-  // single flag the whole layout below keys off.
+  // single flag the whole layout below keys off. Type Mode renders on
+  // this same multi-glyph surface (GlyphMultiEditCanvas), just laid out
+  // as running text via a "flow" layout instead of a grid — see
+  // editor/multiEditLayout.ts's computeSentenceLayout.
   const editorMode = useAppStore((s) => s.editorMode);
-  const overviewMode = editorMode === "multi" && !sketchMode;
+  const overviewMode = (editorMode === "multi" || editorMode === "type") && !sketchMode;
   const appMode = useAppModeStore((s) => s.appMode);
   useKeyboardShortcuts();
 
@@ -200,7 +203,7 @@ export default function App() {
       <div className="fm-body">
         <GlyphNav />
         <div className="fm-canvas-wrap">
-          <div className="fm-canvas-area" data-editor-mode={overviewMode ? "multi" : "single"}>
+          <div className="fm-canvas-area" data-editor-mode={overviewMode ? editorMode : "single"}>
             {/* Exactly one canvas surface is mounted at a time. Both read
                 the same glyph map from the store, and all view state
                 (single: zoom/pan — multi: overviewZoom/overviewScroll)

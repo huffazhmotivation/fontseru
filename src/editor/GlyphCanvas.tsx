@@ -48,14 +48,6 @@ export function GlyphCanvas() {
   const showGrid = useAppStore((s) => s.showGrid);
   const gridSize = useAppStore((s) => s.gridSize);
   const showGuides = useAppStore((s) => s.showGuides);
-  // Type Mode (see GlyphViewBar/GlyphNav) draws glyphs in a preset-sentence
-  // order instead of A-Z, and is meant to feel closer to lined paper than
-  // the full font-metrics rig — baseline only, everything else off. This
-  // is intentionally independent from the user's own `showGuides` toggle:
-  // switching into Type Mode must never flip that persisted preference,
-  // and switching back out of it must restore whatever the user had.
-  const editorMode = useAppStore((s) => s.editorMode);
-  const effectiveShowGuides = editorMode === "type" ? false : showGuides;
   const showRuler = useAppStore((s) => s.showRuler);
   const rulerGuides = useAppStore((s) => s.rulerGuides);
   const removeRulerGuide = useAppStore((s) => s.removeRulerGuide);
@@ -933,7 +925,7 @@ export function GlyphCanvas() {
         })}
 
         <>
-          {metricGuides.filter(({ key }) => key === "baseline" || effectiveShowGuides).map(({ key, label, value, className }) => {
+          {metricGuides.filter(({ key }) => key === "baseline" || showGuides).map(({ key, label, value, className }) => {
             const trueY = toY(value);
             // Same visual clamp as Advance/LSB/RSB below: if the guide is
             // dragged above/below the current viewport, pin its rendered
@@ -989,7 +981,7 @@ export function GlyphCanvas() {
             canvas/viewport itself changes; the handle just stays pinned at
             the edge, like an off-screen indicator, until you pan/zoom back
             to its real position. */}
-        {effectiveShowGuides && glyph && (() => {
+        {showGuides && glyph && (() => {
           const top = vbY + 14 / sc;
           const handleW = 86 / sc;
           const handleH = 20 / sc;

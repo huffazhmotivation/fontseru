@@ -4,6 +4,8 @@ import { useAppStore } from "@/glyph/store";
 import { GLYPH_FILTERS, MULTI_COLUMNS_MAX, MULTI_ZOOM_MAX, MULTI_ZOOM_MIN, OVERVIEW_SPACING_MAX, OVERVIEW_SPACING_MIN, TYPE_MODE_CATEGORIES } from "@/types/glyphView";
 import type { GlyphFilterId, TypeModeCategory } from "@/types/glyphView";
 import { countDrawnGlyphs, filterGlyphChars } from "@/editor/glyphFilter";
+import { charsForCategory } from "@/glyph/testSentences";
+import { hasOutline } from "@/types/glyph";
 
 /**
  * The zoom slider is logarithmic: the multi canvas spans roughly 8%–4000%
@@ -68,6 +70,15 @@ function GlyphViewBarInner() {
   );
   const drawnCount = useMemo(() => (multi ? countDrawnGlyphs(glyphs) : 0), [multi, glyphs]);
 
+  // Type Mode's own counts — scoped to the active category's sentence,
+  // not the whole font, since that's the "n tampil · n jadi" the flow
+  // canvas is actually showing.
+  const typeChars = useMemo(() => (typeMode ? charsForCategory(typeModeCategory) : []), [typeMode, typeModeCategory]);
+  const typeDrawnCount = useMemo(
+    () => typeChars.reduce((n, ch) => n + (glyphs[ch] && hasOutline(glyphs[ch]) ? 1 : 0), 0),
+    [typeChars, glyphs]
+  );
+
   return (
     <>
       {/* The Single ⇄ Multi switch is anchored to the canvas's top-right
@@ -129,6 +140,62 @@ function GlyphViewBarInner() {
               ))}
             </select>
           </label>
+
+          <div className="fm-glyphview-divider" />
+
+          <label className="fm-glyphview-field fm-glyphview-slider">
+            <span>Spacing</span>
+            <input
+              type="range"
+              min={OVERVIEW_SPACING_MIN}
+              max={OVERVIEW_SPACING_MAX}
+              step={1}
+              value={spacing}
+              onChange={(e) => setOverviewSpacing(Number(e.target.value))}
+              data-testid="glyph-view-type-spacing"
+              style={{
+                ["--fm-range-fill" as string]: `${((spacing - OVERVIEW_SPACING_MIN) / (OVERVIEW_SPACING_MAX - OVERVIEW_SPACING_MIN)) * 100}%`,
+              }}
+            />
+          </label>
+
+          <label className="fm-glyphview-field fm-glyphview-slider">
+            <span>Zoom</span>
+            <button type="button" className="fm-icon-btn" onClick={() => setMultiZoom(zoom * 0.8)} title="Perkecil">
+              <Minus size={12} />
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={zoomToSlider(zoom)}
+              onChange={(e) => setMultiZoom(sliderToZoom(Number(e.target.value)))}
+              data-testid="glyph-view-type-zoom"
+              style={{
+                ["--fm-range-fill" as string]: `${zoomToSlider(zoom)}%`,
+              }}
+            />
+            <button type="button" className="fm-icon-btn" onClick={() => setMultiZoom(zoom * 1.25)} title="Perbesar">
+              <Plus size={12} />
+            </button>
+          </label>
+
+          <button
+            type="button"
+            className="fm-icon-btn"
+            onClick={fitMultiCanvas}
+            title="Pas-kan seluruh kalimat ke layar"
+            data-testid="glyph-view-type-fit"
+          >
+            <Maximize2 size={12} />
+          </button>
+
+          <div className="fm-glyphview-divider" />
+
+          <span className="fm-glyphview-count" data-testid="glyph-view-type-count">
+            {typeDrawnCount} / {typeChars.length} jadi
+          </span>
         </div>
       )}
 

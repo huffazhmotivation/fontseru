@@ -32,11 +32,15 @@ import { MultiCanvasRuler, MULTI_RULER_SIZE } from "./MultiCanvasRuler";
 import {
   cellHitAtWorld,
   cellOrigin,
+  cellWidthAt,
   computeMultiEditLayout,
+  computeSentenceLayout,
   visibleCellIndices,
   worldToGlyphPoint,
   type MultiEditLayout,
 } from "./multiEditLayout";
+import { charsForCategory } from "@/glyph/testSentences";
+import { standardGlyphMetrics } from "@/glyph/defaultGlyphs";
 
 /**
  * MULTI GLYPH EDIT CANVAS
@@ -530,6 +534,12 @@ export function GlyphMultiEditCanvas() {
 
   const filter = useAppStore((s) => s.overviewFilter);
   const query = useAppStore((s) => s.overviewQuery);
+  const editorMode = useAppStore((s) => s.editorMode);
+  const typeModeCategory = useAppStore((s) => s.typeModeCategory);
+  // Type Mode: baseline only, same rule as Single Mode (GlyphCanvas) —
+  // deliberately independent of the user's own persisted showGuides
+  // toggle, so entering/leaving Type Mode never flips it.
+  const effectiveShowGuides = editorMode === "type" ? false : showGuides;
   const spacing = useAppStore((s) => s.overviewSpacing);
   const columns = useAppStore((s) => s.multiColumns);
   const zoom = useAppStore((s) => s.multiZoom);
@@ -554,17 +564,39 @@ export function GlyphMultiEditCanvas() {
   const processMoveRef = useRef<(sample: PointerMoveSample) => void>(() => {});
 
   const totalH = Math.max(1, ascender - descender);
+  // Type Mode's line-wrap width. Not user-configurable (not asked for) —
+  // 16 em-widths is a comfortable reading-length line for the pangram-
+  // length preset sentences in glyph/testSentences.ts.
+  const typeFlowWrapWidth = upm * 16;
+  const isTypeFlow = editorMode === "type";
 
   // ------------------------------------------------------------ layout
   const chars = useMemo(
-    () => filterGlyphChars(glyphs, filter, selectedGlyphChars, query),
-    [glyphs, filter, selectedGlyphChars, query]
+    () =>
+      isTypeFlow
+        ? charsForCategory(typeModeCategory)
+        : filterGlyphChars(glyphs, filter, selectedGlyphChars, query),
+    [isTypeFlow, typeModeCategory, glyphs, filter, selectedGlyphChars, query]
   );
 
-  const layout: MultiEditLayout = useMemo(
-    () => computeMultiEditLayout({ count: chars.length, columns, upm, totalH, spacing }),
-    [chars.length, columns, upm, totalH, spacing]
-  );
+  const layout: MultiEditLayout = useMemo(() => {
+    if (isTypeFlow) {
+      // Reads LIVE advance widths (glyph's own if drawn, else the same
+      // standard-metrics estimate defaultGlyphs.ts uses for an undrawn
+      // glyph) — `glyphs` is a dependency below, so the moment a glyph
+      // gets an outline and auto-spacing gives it a real advance width,
+      // every glyph after it reflows on the very next render.
+      return computeSentenceLayout({
+        chars,
+        advanceWidthFor: (ch) => glyphs[ch]?.advanceWidth ?? standardGlyphMetrics(ch, upm).advanceWidth,
+        upm,
+        totalH,
+        spacing,
+        wrapWidth: typeFlowWrapWidth,
+      });
+    }
+    return computeMultiEditLayout({ count: chars.length, columns, upm, totalH, spacing });
+  }, [isTypeFlow, chars, glyphs, columns, upm, totalH, spacing, typeFlowWrapWidth]);
 
   useLayoutEffect(() => {
     const el = frameRef.current;
@@ -1128,7 +1160,8 @@ export function GlyphMultiEditCanvas() {
           const origin = cellOrigin(layout, index);
           const isActive = char === activeChar;
           const isSelected = selectedSet.has(char);
-          const rx = layout.cellW * 0.014;
+          const cellW = cellWidthAt(layout, index);
+          const rx = cellW * 0.014;
           const cellFamilyGlyph =
             ghostOn && ghostMode === "family"
               ? matchingFamilyGlyph(leftGhostMap, cellGlyph, char) ??
@@ -1151,7 +1184,7 @@ export function GlyphMultiEditCanvas() {
                 y={0}
                 rx={rx}
                 ry={rx}
-                width={layout.cellW}
+                width={cellW}
                 height={layout.cellH}
               />
               {/* Focus/selection marker drawn as a ring OUTSIDE the em box.
@@ -1166,7 +1199,7 @@ export function GlyphMultiEditCanvas() {
                   y={-5 / sc}
                   rx={rx + 5 / sc}
                   ry={rx + 5 / sc}
-                  width={layout.cellW + 10 / sc}
+                  width={cellW + 10 / sc}
                   height={layout.cellH + 10 / sc}
                 />
               )}
@@ -1192,7 +1225,7 @@ export function GlyphMultiEditCanvas() {
               )}
               <CellGuides
                 detail={isActive ? "full" : passiveDetail}
-                cellW={layout.cellW}
+                cellW={cellW}
                 cellH={layout.cellH}
                 ascender={ascender}
                 descender={descender}
@@ -1201,7 +1234,7 @@ export function GlyphMultiEditCanvas() {
                 baseline={baseline}
                 advanceWidth={cellGlyph.advanceWidth}
                 lsb={cellGlyph.lsb}
-                showGuides={showGuides}
+                showGuides={effectiveShowGuides}
                 showGrid={showGrid}
                 gridSize={gridSize}
                 guides={rulerGuides}
@@ -1393,7 +1426,7 @@ export function GlyphMultiEditCanvas() {
                           <line x1={svgP.x} y1={0} x2={svgP.x} y2={layout.cellH} className="handle-snap-line" />
                         )}
                         {y !== null && (
-                          <line x1={0} y1={svgP.y} x2={layout.cellW} y2={svgP.y} className="handle-snap-line" />
+                          <line x1={0} y1={svgP.y} x2={cellW} y2={svgP.y} className="handle-snap-line" />
                         )}
                         <circle cx={svgP.x} cy={svgP.y} r={2.6 * hitScale} className="handle-snap-dot" />
                       </g>
@@ -1404,7 +1437,7 @@ export function GlyphMultiEditCanvas() {
                 <PassiveCell
                   glyph={cellGlyph}
                   ascender={ascender}
-                  cellW={layout.cellW}
+                  cellW={cellW}
                   cellH={layout.cellH}
                   drawn={hasOutline(cellGlyph)}
                   showPlaceholder={!cellGhostVisible}
@@ -1417,7 +1450,7 @@ export function GlyphMultiEditCanvas() {
               {showLabels && (
                 <text
                   className={`fm-mx-label${isSelected ? " selected" : ""}`}
-                  x={layout.cellW / 2}
+                  x={cellW / 2}
                   y={layout.cellH + layout.labelH * 0.78}
                   textAnchor="middle"
                   fontSize={layout.labelH * 0.66}
