@@ -2809,37 +2809,34 @@ function oilBrushOutlineContours(centerline: StrokeSample[], settings: BrushSett
 /**
  * Spray Brush: reads as an actual can of spray paint hitting a wall — a
  * solid, continuous letterform (not a loose dot field standing in for one),
- * with the three traits that give real spray-paint lettering its look:
+ * with the two traits that give real stencil spray-paint lettering its
+ * look (see the reference: solid, well-formed letters with a ragged,
+ * grainy edge and a light dust of paint around them — no dripping paint
+ * runs at all):
  *
  *  1. BODY — the same clean, constant-width round-pen union every other
  *     constant-width preset uses (`uniformCenterlineToOutlineExact`, see
  *     Rough Brush's doc comment for why that's used over the legacy offset
  *     builder), so the core silhouette is a single solid shape.
- *  2. EDGE GRAIN — a sparse scatter of tiny pitted notches right at the
- *     boundary (reusing Rough Brush's `makeRoughHole`, much smaller/rarer),
- *     breaking up the body's edge into the slightly ragged, not-quite-clean
- *     line a stencil cut with a spray can actually leaves, instead of a
- *     mechanically perfect vector curve.
- *  3. DRIPS — solid tapering paint runs that fall straight down (-Y — see
- *     `contourToPath`'s doc comment: font-unit space is Y-up, so "down" on
- *     screen is -Y) from points along the stroke's own edge, independent of
- *     the stroke's local direction, because real drips answer gravity, not
- *     the hand's drawing angle. See `makeSprayDrip`.
- *  4. OVERSPRAY — a light dusting of the old version's speckle field,
- *     drastically thinned and pushed outward past the body's own edge, for
- *     the faint halo of atomized paint dust a real can leaves around a
- *     letter, without it reading as the letter's actual body anymore.
+ *  2. EDGE SPRAY TEXTURE — many small dots scattered right along the
+ *     boundary, straddling it so the silhouette itself reads as grainy and
+ *     slightly fuzzed rather than a mechanically clean vector curve — the
+ *     actual texture a stencil sprayed by hand leaves, not a few bitten
+ *     notches.
+ *  3. OVERSPRAY — a light dusting of small dots scattered further out
+ *     around the body, for the faint halo of atomized paint dust a real
+ *     can leaves beyond the stencil's edge.
  *
  * `roundness` still controls how tight vs. loose the overspray dust reads,
- * `jitter` still scales density/prominence across all four layers — same
- * "overall texture strength" meaning `jitter` has on every other textured
- * preset (see its doc comment in types/brush.ts).
+ * `jitter` still scales density/prominence across both texture layers —
+ * same "overall texture strength" meaning `jitter` has on every other
+ * textured preset (see its doc comment in types/brush.ts).
  */
 /**
  * PERFORMANCE (live drawing must stay cheap): `fast`, true only for the
  * live-preview build during an in-progress pointer gesture (see
- * `useBrushTool.buildPreview`), skips edge-grain holes and drips entirely
- * and draws a drastically thinned overspray field — the same reasoning
+ * `useBrushTool.buildPreview`), skips the edge spray texture entirely and
+ * draws a drastically thinned overspray field — the same reasoning
  * Grunge/Rough/the old Spray Brush all use: a preview that's cheap enough
  * to rebuild every pointer-move frame, without the O(length) texture passes
  * that would make active drawing feel laggy. The committed/final render
@@ -2881,7 +2878,6 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
     { a: -1, c: bodyContours[0] },
   ).c;
   const outerSign = Math.sign(signedArea(largestBody.nodes.map((n) => n.point))) || 1;
-  const holeSign = outerSign >= 0 ? -1 : 1;
 
   const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.05));
   if (dense.length < 2) return bodyContours;
@@ -2918,97 +2914,45 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
 
   const extras: Contour[] = [];
 
-  // ---- 2. Edge grain: tiny pitted notches right at the border ---------
-  // Sparser and much smaller than Rough Brush's own texture — this is only
-  // meant to take the edge from "perfect vector curve" to "cut by hand with
-  // a spray can", not to visibly perforate the letter.
+  // ---- 2. Edge spray texture -------------------------------------------
+  // A real stencil-sprayed edge isn't a clean vector curve — it's built up
+  // from countless overlapping tiny paint dots landing right at the
+  // boundary, which is what actually gives it that fuzzy, grainy silhouette
+  // (see the reference: the letters' outlines are ragged with paint grain,
+  // not smooth). We approximate that by scattering many small dots
+  // straddling the true edge — mostly centered on/just past it, wound the
+  // SAME sign as the body so they simply add ink where they land outside
+  // (fuzzing the boundary out) and disappear harmlessly where they land
+  // inside (already filled) — instead of the earlier version's sparse
+  // "bitten" pits, which read as occasional notches rather than an actually
+  // grainy edge.
   if (!fast) {
-    const grainSpacing = Math.max(2.5, halfWidth * 1.1) / strength;
-    let gi = 0;
-    for (let d = halfWidth * 0.5; d < totalLength - halfWidth * 0.5; d += grainSpacing * (0.6 + ((pseudoNoise(gi * 6.7 + 2.1) + 1) / 2) * 0.9), gi++) {
-      const seed = gi * 53.1 + 17.9;
-      if ((pseudoNoise(seed) + 1) / 2 < 0.45) continue; // sparse: skip most slots
+    const edgeSpacing = Math.max(0.8, halfWidth * 0.15) / strength;
+    let ei = 0;
+    for (let d = 0; d < totalLength; d += edgeSpacing * (0.5 + ((pseudoNoise(ei * 5.3 + 3.1) + 1) / 2) * 0.9), ei++) {
       const { p, tangent, taper } = at(d);
-      if (taper <= 0.08) continue;
+      if (taper <= 0.04) continue;
       const tl = Math.hypot(tangent.x, tangent.y) || 1;
-      const normal = { x: -tangent.y / tl, y: tangent.x / tl };
-      const side = (pseudoNoise(seed + 4) + 1) / 2 < 0.5 ? 1 : -1;
-      const hw = halfWidth * taper;
-      const grainR = Math.max(0.4, hw * (0.06 + ((pseudoNoise(seed + 8) + 1) / 2) * 0.09));
-      // Keep the notch fully INSIDE the body (offset + radius never exceeds
-      // hw) with only a thin guard band left over — close enough to the
-      // true edge to read as eating into it, without poking past the
-      // boundary, which under nonzero winding would paint extra ink instead
-      // of cutting a notch (see Rough Brush's own `safeRange` guard for the
-      // same reasoning).
-      const guard = Math.max(0.15, grainR * 0.12);
-      const maxOffset = Math.max(0, hw - grainR - guard);
-      const offset = maxOffset * (0.75 + ((pseudoNoise(seed + 12) + 1) / 2) * 0.25);
-      const center = { x: p.x + normal.x * side * offset, y: p.y + normal.y * side * offset };
-      extras.push(makeRoughHole(center, grainR, seed, holeSign, grainR));
-    }
-  }
-
-  // ---- 3. Drips ---------------------------------------------------------
-  // Candidate points are walked along BOTH edges of the stroke, spaced far
-  // enough apart (plus a per-side cooldown after every spawn) that even an
-  // edge that faces downward for its ENTIRE length — the long flank of a
-  // diagonal stroke like the leg of an "A", not just a horizontal underside
-  // — reads as a handful of separate drips, never the solid "shredded rope"
-  // wall you get from spawning one at every candidate along it. Each drip's
-  // chance of spawning still scales with how much the local surface faces
-  // downward (`downFactor`), so paint still pools and runs mainly off
-  // undersides and down-facing flanks and essentially never off a
-  // top-facing surface — but its LENGTH is capped relative to the stroke's
-  // own half-width (roughly 0.5–1.9×), not to the surface's downward-ness,
-  // so a single drip stays a short accent rather than stretching along the
-  // whole edge.
-  if (!fast && totalLength > halfWidth * 1.4) {
-    const dripSpacing = Math.max(halfWidth * 1.9, 5) / strength;
-    const cooldown = halfWidth * 1.7;
-    const lastSpawn = [-Infinity, -Infinity];
-    let di = 0;
-    for (let d = halfWidth * 0.6; d < totalLength - halfWidth * 0.3; d += dripSpacing * (0.75 + ((pseudoNoise(di * 8.3 + 5.5) + 1) / 2) * 0.9), di++) {
-      const { p, tangent, taper } = at(d);
-      if (taper <= 0.15) continue;
-      const tl = Math.hypot(tangent.x, tangent.y) || 1;
-      for (let s = 0; s < 2; s++) {
-        const side = s === 0 ? 1 : -1;
-        const seed = di * 191.3 + (side > 0 ? 29.7 : 83.1);
-        const normal = { x: (-tangent.y / tl) * side, y: (tangent.x / tl) * side };
-        // 0 for a top-facing edge, up to ~1.3 for a strongly down-facing one.
-        const downFactor = Math.max(0, Math.min(1.3, 0.5 - normal.y + (normal.y < -0.25 ? 0.4 : 0)));
-        if (downFactor < 0.12) continue; // essentially flat or up-facing: real paint never drips upward
-        if (d - lastSpawn[s] < cooldown) continue;
-        const spawnChance = Math.min(0.5, 0.1 + downFactor * 0.28) * strength;
-        const roll = (pseudoNoise(seed + 1.7) + 1) / 2;
-        if (roll > spawnChance) continue;
-        lastSpawn[s] = d;
+      const tx = tangent.x / tl;
+      const ty = tangent.y / tl;
+      for (const side of [1, -1]) {
+        const seed = ei * 277.1 + (side > 0 ? 41.3 : 97.7);
+        if ((pseudoNoise(seed) + 1) / 2 < 0.4) continue; // still leaves gaps, not a solid ring
+        const normal = { x: -ty * side, y: tx * side };
         const hw = halfWidth * taper;
-        const anchor = { x: p.x + normal.x * hw, y: p.y + normal.y * hw };
-        const lenRand = (pseudoNoise(seed + 6.3) + 1) / 2;
-        const dripLen = hw * (0.5 + downFactor * 0.65) * (0.5 + lenRand * 1.1);
-        const dripW = Math.max(0.7, hw * (0.14 + ((pseudoNoise(seed + 11.4) + 1) / 2) * 0.18));
-        extras.push(...makeSprayDrip(anchor, dripLen, dripW, seed, outerSign));
+        const dotR = Math.max(0.35, hw * (0.05 + ((pseudoNoise(seed + 4) + 1) / 2) * 0.1));
+        // Straddle the true edge: mostly centered right on it, biased
+        // slightly outward for the "hairy" fuzzed silhouette, occasionally
+        // sitting a bit inside (harmless — just fuses into the solid body).
+        const straddle = dotR * (-0.5 + ((pseudoNoise(seed + 8) + 1) / 2) * 1.7);
+        const along = ((pseudoNoise(seed + 12) + 1) / 2 - 0.5) * edgeSpacing * 0.7;
+        const center = { x: p.x + normal.x * (hw + straddle) + tx * along, y: p.y + normal.y * (hw + straddle) + ty * along };
+        extras.push(makeSpeckle(center, dotR, seed, outerSign, dotR < 1.2 ? 6 : 8, dotR < 1.4));
       }
     }
-    // A real can tends to leave a heavier drip right where the hand lifted
-    // off at the very end of the stroke — nudge one in most of the time,
-    // regardless of that last segment's own local edge orientation. Still
-    // capped to the same modest length range as any other drip.
-    const tailRoll = (pseudoNoise(di * 7.1 + 401.3) + 1) / 2;
-    if (tailRoll < 0.55 * strength) {
-      const { p, taper } = at(totalLength - halfWidth * 0.1);
-      const hw = halfWidth * Math.max(0.2, taper);
-      const seed = 909.1;
-      const anchor = { x: p.x, y: p.y - hw * 0.6 };
-      const dripLen = hw * (1.0 + ((pseudoNoise(seed + 3) + 1) / 2) * 0.9);
-      const dripW = Math.max(0.8, hw * 0.2);
-      extras.push(...makeSprayDrip(anchor, dripLen, dripW, seed, outerSign));
-    }
   }
 
-  // ---- 4. Overspray: sparse dust around the body -----------------------
+  // ---- 3. Overspray: sparse dust around the body -----------------------
   const spread = 0.6 + 0.55 * settings.roundness;
   const density = fast ? 0.35 : Math.min(1, (settings.jitter ?? 0.6) * 0.7);
   const FAST_MAX_STEPS = 40;
@@ -3050,50 +2994,6 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   }
 
   return [...bodyContours, ...extras];
-}
-
-/**
- * A single paint-drip run for Spray Brush: starts at `anchor` (a point on
- * the stroke's own edge) and falls straight down — `-Y`, the real "down" in
- * this Y-up font-unit space, see `contourToPath`'s doc comment — by
- * `length`, tapering from `width` at the top (where it's still fused to the
- * body) down to a thin thread, with a gentle side-to-side wander (real
- * paint never runs in a perfectly straight line) and, roughly a third of
- * the time, a small rounded bead at the very tip where surface tension
- * would hold a drop before it falls. Wound with `desiredSign` so it fuses
- * into the main body under nonzero fill exactly like Strong Brush's
- * torn-edge teeth do (see `strongBrushOutlineContours`).
- */
-function makeSprayDrip(anchor: Point, length: number, width: number, seed: number, desiredSign: number): Contour[] {
-  const STEPS = 8;
-  const left: Point[] = new Array(STEPS + 1);
-  const right: Point[] = new Array(STEPS + 1);
-  const wanderAmp = width * 0.8;
-  for (let i = 0; i <= STEPS; i++) {
-    const t = i / STEPS;
-    const w = width * Math.pow(1 - t, 0.7) * (i === 0 ? 1.15 : 1);
-    const wobble = coherentNoise1D(t * 3.3 + seed * 0.31, seed) * wanderAmp * t;
-    const cx = anchor.x + wobble;
-    const cy = anchor.y - length * t;
-    const hw = Math.max(0.12, w / 2);
-    left[i] = { x: cx - hw, y: cy };
-    right[i] = { x: cx + hw, y: cy };
-  }
-  const pts: Point[] = [...left, ...right.slice().reverse()];
-  const sign = Math.sign(signedArea(pts)) || 1;
-  const finalPts = sign !== desiredSign ? pts.reverse() : pts;
-  const thread: Contour = {
-    id: shortId("contour"),
-    closed: true,
-    nodes: finalPts.map((point) => ({ id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const })),
-  };
-  const out: Contour[] = [thread];
-  if ((pseudoNoise(seed + 61.3) + 1) / 2 > 0.68) {
-    const tipCenter = { x: (left[STEPS].x + right[STEPS].x) / 2, y: left[STEPS].y - width * 0.2 };
-    const beadR = Math.max(0.5, width * (0.55 + ((pseudoNoise(seed + 44.1) + 1) / 2) * 0.55));
-    out.push(makeSpeckle(tipCenter, beadR, seed + 200, desiredSign, 8, true));
-  }
-  return out;
 }
 
 /**
