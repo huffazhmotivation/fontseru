@@ -2950,48 +2950,61 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   }
 
   // ---- 3. Drips ---------------------------------------------------------
-  // Candidate points are walked along BOTH edges of the stroke; each one's
-  // chance of spawning a drip — and the drip's length — scales with how much
-  // the local edge surface actually faces downward (`downFactor`), so paint
-  // "pools" and runs mainly off undersides and near-vertical flanks, almost
-  // never off an upward-facing top surface, exactly like a real can.
-  if (!fast && totalLength > halfWidth * 1.0) {
-    const dripSpacing = Math.max(1.6, halfWidth * 0.85) / strength;
+  // Candidate points are walked along BOTH edges of the stroke, spaced far
+  // enough apart (plus a per-side cooldown after every spawn) that even an
+  // edge that faces downward for its ENTIRE length — the long flank of a
+  // diagonal stroke like the leg of an "A", not just a horizontal underside
+  // — reads as a handful of separate drips, never the solid "shredded rope"
+  // wall you get from spawning one at every candidate along it. Each drip's
+  // chance of spawning still scales with how much the local surface faces
+  // downward (`downFactor`), so paint still pools and runs mainly off
+  // undersides and down-facing flanks and essentially never off a
+  // top-facing surface — but its LENGTH is capped relative to the stroke's
+  // own half-width (roughly 0.5–1.9×), not to the surface's downward-ness,
+  // so a single drip stays a short accent rather than stretching along the
+  // whole edge.
+  if (!fast && totalLength > halfWidth * 1.4) {
+    const dripSpacing = Math.max(halfWidth * 1.9, 5) / strength;
+    const cooldown = halfWidth * 1.7;
+    const lastSpawn = [-Infinity, -Infinity];
     let di = 0;
-    for (let d = halfWidth * 0.4; d < totalLength - halfWidth * 0.15; d += dripSpacing * (0.7 + ((pseudoNoise(di * 8.3 + 5.5) + 1) / 2) * 1.0), di++) {
+    for (let d = halfWidth * 0.6; d < totalLength - halfWidth * 0.3; d += dripSpacing * (0.75 + ((pseudoNoise(di * 8.3 + 5.5) + 1) / 2) * 0.9), di++) {
       const { p, tangent, taper } = at(d);
-      if (taper <= 0.1) continue;
+      if (taper <= 0.15) continue;
       const tl = Math.hypot(tangent.x, tangent.y) || 1;
-      for (const side of [1, -1]) {
+      for (let s = 0; s < 2; s++) {
+        const side = s === 0 ? 1 : -1;
         const seed = di * 191.3 + (side > 0 ? 29.7 : 83.1);
         const normal = { x: (-tangent.y / tl) * side, y: (tangent.x / tl) * side };
-        // 0 for a top-facing edge, up to ~1.5 for a strongly down-facing one.
-        const downFactor = Math.max(0, Math.min(1.5, 0.5 - normal.y + (normal.y < -0.25 ? 0.55 : 0)));
-        const spawnChance = (0.05 + downFactor * 0.34) * strength;
+        // 0 for a top-facing edge, up to ~1.3 for a strongly down-facing one.
+        const downFactor = Math.max(0, Math.min(1.3, 0.5 - normal.y + (normal.y < -0.25 ? 0.4 : 0)));
+        if (downFactor < 0.12) continue; // essentially flat or up-facing: real paint never drips upward
+        if (d - lastSpawn[s] < cooldown) continue;
+        const spawnChance = Math.min(0.5, 0.1 + downFactor * 0.28) * strength;
         const roll = (pseudoNoise(seed + 1.7) + 1) / 2;
         if (roll > spawnChance) continue;
+        lastSpawn[s] = d;
         const hw = halfWidth * taper;
         const anchor = { x: p.x + normal.x * hw, y: p.y + normal.y * hw };
         const lenRand = (pseudoNoise(seed + 6.3) + 1) / 2;
-        const dripLen = hw * (0.7 + downFactor * 2.1) * (0.55 + Math.pow(lenRand, 1.5) * 1.6);
-        const dripW = Math.max(0.7, hw * (0.14 + ((pseudoNoise(seed + 11.4) + 1) / 2) * 0.2));
+        const dripLen = hw * (0.5 + downFactor * 0.65) * (0.5 + lenRand * 1.1);
+        const dripW = Math.max(0.7, hw * (0.14 + ((pseudoNoise(seed + 11.4) + 1) / 2) * 0.18));
         extras.push(...makeSprayDrip(anchor, dripLen, dripW, seed, outerSign));
       }
     }
     // A real can tends to leave a heavier drip right where the hand lifted
     // off at the very end of the stroke — nudge one in most of the time,
-    // regardless of that last segment's own local edge orientation.
+    // regardless of that last segment's own local edge orientation. Still
+    // capped to the same modest length range as any other drip.
     const tailRoll = (pseudoNoise(di * 7.1 + 401.3) + 1) / 2;
-    if (tailRoll < 0.7 * strength) {
-      const { p, tangent, taper } = at(totalLength - halfWidth * 0.1);
-      const tl = Math.hypot(tangent.x, tangent.y) || 1;
+    if (tailRoll < 0.55 * strength) {
+      const { p, taper } = at(totalLength - halfWidth * 0.1);
       const hw = halfWidth * Math.max(0.2, taper);
       const seed = 909.1;
       const anchor = { x: p.x, y: p.y - hw * 0.6 };
-      const dripLen = hw * (1.4 + ((pseudoNoise(seed + 3) + 1) / 2) * 1.8);
-      const dripW = Math.max(0.8, hw * 0.22);
+      const dripLen = hw * (1.0 + ((pseudoNoise(seed + 3) + 1) / 2) * 0.9);
+      const dripW = Math.max(0.8, hw * 0.2);
       extras.push(...makeSprayDrip(anchor, dripLen, dripW, seed, outerSign));
-      void tl;
     }
   }
 
