@@ -1178,21 +1178,33 @@ export function GlyphMultiEditCanvas() {
               data-char={char}
               transform={`translate(${origin.x} ${origin.y})`}
             >
-              <rect
-                className="fm-mx-cell-box"
-                x={0}
-                y={0}
-                rx={rx}
-                ry={rx}
-                width={cellW}
-                height={layout.cellH}
-              />
+              {/* Type Mode is meant to read as one continuous sentence, not
+                  a strip of boxes — so unlike Multi Mode's grid, it has no
+                  visible cell box or focus ring at all. Nothing about the
+                  underlying math changes: `origin`/`cellW` still position
+                  and size the cell exactly as before, hit-testing and the
+                  active-glyph gesture lock (cellHitAtWorld / focusCellAt,
+                  see onPointerDown above) still resolve a stroke to the
+                  right glyph purely from where it lands — that was always
+                  position-based and never depended on this rect being
+                  drawn. Only the visible boundary goes away. */}
+              {!isTypeFlow && (
+                <rect
+                  className="fm-mx-cell-box"
+                  x={0}
+                  y={0}
+                  rx={rx}
+                  ry={rx}
+                  width={cellW}
+                  height={layout.cellH}
+                />
+              )}
               {/* Focus/selection marker drawn as a ring OUTSIDE the em box.
                   Putting it on the box itself meant the accent stroke and
                   the glyph's own advance line landed on the same pixels —
                   two different meanings, one line. Offsetting it keeps the
                   box edge honest as a metric. */}
-              {(isActive || isSelected) && (
+              {!isTypeFlow && (isActive || isSelected) && (
                 <rect
                   className={`fm-mx-cell-ring${isActive ? "" : " soft"}`}
                   x={-5 / sc}
