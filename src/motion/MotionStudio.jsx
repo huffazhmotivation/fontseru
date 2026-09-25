@@ -2100,6 +2100,14 @@ function drawTexTri(ctx, src, sx0, sy0, sx1, sy1, sx2, sy2, dx0, dy0, dx1, dy1, 
    Kalau WebGL2 tidak tersedia / gagal, blit3D otomatis jatuh
    kembali ke jaring segitiga 2D.
    ------------------------------------------------------------ */
+/* ---- Kualitas render adaptif (HANYA untuk pratinjau saat play) ----
+   1 = penuh, <1 = jumlah sampel blur kedalaman dikurangi. Diatur oleh
+   "governor" di loop play (lihat useEffect playback) bila frame mulai
+   telat; export selalu memaksa 1 supaya hasil akhir tetap penuh. */
+let gfxQuality = 1;
+function setGfxQuality(q) { gfxQuality = q; }
+function getGfxQuality() { return gfxQuality; }
+
 const GL_VERT = `#version 300 es
 in vec4 aPos;
 in vec2 aUv;
@@ -2112,7 +2120,7 @@ precision highp float;
 uniform sampler2D uTex;
 uniform vec2 uTexSize;
 uniform vec4 uRect;   // u0,v0,u1,v1: area tekstur yang valid
-uniform vec3 uBlur;   // maks blur (px layar), titik fokus (0..1), normalisasi
+uniform vec4 uBlur;   // maks blur (px layar), titik fokus (0..1), normalisasi, jumlah sampel
 in vec2 vUv;
 in float vD;
 out vec4 outColor;
@@ -2121,23 +2129,33 @@ vec4 tap(vec2 uv, float lod) {
   return textureLod(uTex, uv, lod) * (ins.x * ins.y);
 }
 void main() {
-  if (gl_FragCoord.w > 12.5) discard;
+  // Turunan HARUS dihitung sebelum discard/percabangan apa pun.
   vec2 dx = dFdx(vUv), dy = dFdy(vUv);
+  // Anti-alias tepi bidang secara analitik (kanvas GL tidak lagi memakai
+  // MSAA yang mahal): cakupan = jarak piksel ke tepi area tekstur.
+  vec2 fw = max(abs(dx) + abs(dy), vec2(1e-7));
+  vec2 lo = (vUv - uRect.xy) / fw;
+  vec2 hi = (uRect.zw - vUv) / fw;
+  float cov = clamp(min(min(lo.x, lo.y), min(hi.x, hi.y)) + 0.5, 0.0, 1.0);
+  if (cov <= 0.0 || gl_FragCoord.w > 12.5) discard;
   float tpp = max(length(dx * uTexSize), length(dy * uTexSize)); // texel per piksel layar
   float baseLod = max(0.0, log2(max(tpp, 1e-4)));
   float r = uBlur.x * clamp(abs(vD - uBlur.y) / uBlur.z, 0.0, 1.0);
-  if (r < 0.35) { outColor = tap(vUv, baseLod); return; }
+  if (r < 0.35) { outColor = tap(vUv, baseLod) * cov; return; }
   float lod = max(baseLod, log2(max(1.0, r * tpp * 0.5)));
+  // Jumlah sampel mengikuti radius: blur tipis cukup sedikit sampel
+  // (lod yang sudah di-mip melakukan sisanya), blur besar baru banyak.
+  int n = int(clamp(uBlur.w + r * 0.6, 6.0, uBlur.w * 2.2));
+  float fn = float(n);
   vec4 acc = vec4(0.0);
-  const int N = 24;
-  for (int i = 0; i < N; i++) {
+  for (int i = 0; i < n; i++) {
     float fi = float(i) + 0.5;
-    float rr = sqrt(fi / float(N));
+    float rr = sqrt(fi / fn);
     float a = fi * 2.39996323;
     vec2 p = vec2(cos(a), sin(a)) * rr * r;
     acc += tap(vUv + dx * p.x + dy * p.y, lod);
   }
-  outColor = acc / float(N);
+  outColor = (acc / fn) * cov;
 }`;
 
 let glState = null; // null = belum dibuat, false = tidak tersedia
@@ -2149,7 +2167,10 @@ function getGL(w, h) {
       if (typeof document === "undefined") { glState = false; return null; }
       const canvas = document.createElement("canvas");
       canvas.width = w; canvas.height = h;
-      const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: true, depth: false, stencil: false, preserveDrawingBuffer: false });
+      // antialias:false → tidak ada buffer MSAA seukuran frame penuh yang
+      // harus di-resolve tiap kali hasil GL ditempel ke kanvas 2D. Tepi
+      // bidang di-antialias di shader (lihat GL_FRAG).
+      const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false, powerPreference: "high-performance" });
       if (!gl) { glState = false; return null; }
       const compile = (type, src) => {
         const sh = gl.createShader(type);
@@ -2162,13 +2183,25 @@ function getGL(w, h) {
       gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, GL_FRAG));
       gl.linkProgram(prog);
       if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) || "link");
-      const buf = gl.createBuffer();
       const S = {
-        canvas, gl, prog, buf, texCache: new WeakMap(), data: new Float32Array(28),
+        canvas, gl, prog, texCache: new WeakMap(), data: new Float32Array(28),
         aPos: gl.getAttribLocation(prog, "aPos"), aUv: gl.getAttribLocation(prog, "aUv"), aD: gl.getAttribLocation(prog, "aD"),
         uTex: gl.getUniformLocation(prog, "uTex"), uTexSize: gl.getUniformLocation(prog, "uTexSize"),
         uRect: gl.getUniformLocation(prog, "uRect"), uBlur: gl.getUniformLocation(prog, "uBlur"),
       };
+      // Buffer + VAO dibuat SEKALI (4 verteks × 7 float). Per pemanggilan
+      // cukup bufferSubData — tanpa alokasi ulang & tanpa set atribut ulang.
+      S.buf = gl.createBuffer();
+      S.vao = gl.createVertexArray();
+      gl.bindVertexArray(S.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, S.buf);
+      gl.bufferData(gl.ARRAY_BUFFER, S.data.byteLength, gl.DYNAMIC_DRAW);
+      const stride = 28;
+      gl.enableVertexAttribArray(S.aPos); gl.vertexAttribPointer(S.aPos, 4, gl.FLOAT, false, stride, 0);
+      gl.enableVertexAttribArray(S.aUv); gl.vertexAttribPointer(S.aUv, 2, gl.FLOAT, false, stride, 16);
+      gl.enableVertexAttribArray(S.aD); gl.vertexAttribPointer(S.aD, 1, gl.FLOAT, false, stride, 24);
+      gl.useProgram(prog);
+      gl.uniform1i(S.uTex, 0);
       canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); glState = null; });
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -2211,6 +2244,26 @@ function getSrcTexture(S, src) {
   return t;
 }
 
+// Kanvas "stage": potongan kecil dari layer yang benar-benar dipakai.
+// SEBELUMNYA seluruh kanvas layer (mis. 1080×1920 = ±8 MB) diunggah ke GPU
+// dan di-mipmap-ulang PENUH tiap frame walau teksnya cuma menutupi
+// sebagian kecil — itu sumber utama lag saat Axis 3D / Blur 3D aktif.
+// Sekarang hanya area yang dipakai yang disalin (murah, GPU→GPU) lalu
+// diunggah; ukuran dibulatkan ke kelipatan 64 supaya tekstur tidak
+// dialokasi ulang tiap frame saat area berubah sedikit.
+let glStage = null;
+function getStage(lw, lh) {
+  if (!glStage) { const c = document.createElement("canvas"); glStage = { c, ctx: c.getContext("2d") }; }
+  const W = Math.max(64, Math.ceil(lw / 64) * 64), H = Math.max(64, Math.ceil(lh / 64) * 64);
+  if (glStage.c.width !== W) glStage.c.width = W;
+  if (glStage.c.height !== H) glStage.c.height = H;
+  return glStage;
+}
+
+// Buffer sementara (dipakai ulang — tanpa alokasi array tiap frame).
+const _scrX = new Float64Array(4), _scrY = new Float64Array(4), _zs = new Float64Array(4);
+const _U = new Float64Array(4), _V = new Float64Array(4);
+
 // Mengembalikan true bila berhasil digambar lewat GPU.
 function glBlit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, flat) {
   const cw = ctx.canvas.width, ch = ctx.canvas.height;
@@ -2218,19 +2271,21 @@ function glBlit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, fla
   if (!S) return false;
   const gl = S.gl;
   if (gl.isContextLost()) return false;
-  const t = getSrcTexture(S, src);
-  if (!t) return false;
 
   const tkx = skewTan(off.skewX), tky = skewTan(off.skewY);
   const rx = (off.rotateX || 0) * DEG2RAD, ry = (off.rotateY || 0) * DEG2RAD;
   const cxr = Math.cos(rx), sxr = Math.sin(rx), cyr = Math.cos(ry), syr = Math.sin(ry);
   const dist = perspectiveToPx(off.perspective);
-  const D = S.data;
-  const scrX = [0, 0, 0, 0], scrY = [0, 0, 0, 0], zs = [0, 0, 0, 0];
+  const scrX = _scrX, scrY = _scrY, zs = _zs, U = _U, V = _V;
+  // Bidang digelembungkan sedikit (2.5 px) supaya umpan anti-alias tepi di
+  // shader punya piksel untuk dilukis di luar tepi sebenarnya.
+  const MG = 2.5;
+  const mux = MG * sw / dw, muy = MG * sh / dh;
   let zmin = Infinity, zmax = -Infinity;
   for (let k = 0; k < 4; k++) {
     const cu = k & 1, cv = k >> 1;
-    let X = dx + cu * dw, Y = dy + cv * dh;
+    let X = dx + (cu ? dw + MG : -MG), Y = dy + (cv ? dh + MG : -MG);
+    U[k] = sx + (cu ? sw + mux : -mux); V[k] = sy + (cv ? sh + muy : -muy);
     if (flat) { const fx = flat[0] * X + flat[2] * Y + flat[4]; const fy = flat[1] * X + flat[3] * Y + flat[5]; X = fx; Y = fy; }
     const x = X - pivX, y = Y - pivY;
     const x1 = x + tkx * y, y1 = y + tky * x;
@@ -2245,12 +2300,12 @@ function glBlit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, fla
     if (z3 > zmax) zmax = z3;
     const o = k * 7;
     // Koordinat clip homogen → GPU menginterpolasi tekstur perspective-correct.
-    D[o] = ((pivX + x3 / wv) / cw * 2 - 1) * wv;
-    D[o + 1] = (1 - (pivY + y2 / wv) / ch * 2) * wv;
-    D[o + 2] = 0; D[o + 3] = wv;
-    D[o + 4] = (sx + cu * sw) / t.w; D[o + 5] = (sy + cv * sh) / t.h;
+    S.data[o] = ((pivX + x3 / wv) / cw * 2 - 1) * wv;
+    S.data[o + 1] = (1 - (pivY + y2 / wv) / ch * 2) * wv;
+    S.data[o + 2] = 0; S.data[o + 3] = wv;
   }
   // Blur kedalaman: d01 = 0 (paling dekat) … 1 (paling jauh)
+  const D = S.data;
   const depthAmt = Math.max(0, off.blur3D || 0);
   let maxB = 0, pf = 1, norm = 1;
   const zr = zmax - zmin;
@@ -2264,14 +2319,33 @@ function glBlit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, fla
   for (let k = 0; k < 4; k++) D[k * 7 + 6] = zr > 1e-3 ? (zmax - zs[k]) / zr : 0;
 
   // Kotak pembatas hasil proyeksi (dipagari ke kanvas).
-  let minX = Math.min(scrX[0], scrX[1], scrX[2], scrX[3]), maxX = Math.max(scrX[0], scrX[1], scrX[2], scrX[3]);
-  let minY = Math.min(scrY[0], scrY[1], scrY[2], scrY[3]), maxY = Math.max(scrY[0], scrY[1], scrY[2], scrY[3]);
+  const minX = Math.min(scrX[0], scrX[1], scrX[2], scrX[3]), maxX = Math.max(scrX[0], scrX[1], scrX[2], scrX[3]);
+  const minY = Math.min(scrY[0], scrY[1], scrY[2], scrY[3]), maxY = Math.max(scrY[0], scrY[1], scrY[2], scrY[3]);
   const bx0 = Math.max(0, Math.floor(minX) - 2), by0 = Math.max(0, Math.floor(minY) - 2);
   const bx1 = Math.min(cw, Math.ceil(maxX) + 2), by1 = Math.min(ch, Math.ceil(maxY) + 2);
   if (bx1 <= bx0 || by1 <= by0) return true; // seluruhnya di luar frame
+
+  // ---- Sumber tekstur: potong dulu bila hanya sebagian kanvas yang dipakai ----
+  let tsrc = src, ox = 0, oy = 0, kx = 1, ky = 1, rsw = sw, rsh = sh, rsx = sx, rsy = sy;
+  const tag = (src.tagName || "").toUpperCase();
+  if (tag === "CANVAS" && sw * sh < src.width * src.height * 0.72) {
+    const lw = Math.max(1, Math.ceil(sw)), lh = Math.max(1, Math.ceil(sh));
+    const st = getStage(lw, lh);
+    st.ctx.clearRect(0, 0, st.c.width, st.c.height);
+    st.ctx.drawImage(src, sx, sy, sw, sh, 0, 0, lw, lh);
+    tsrc = st.c; ox = sx; oy = sy; kx = lw / sw; ky = lh / sh;
+    rsx = 0; rsy = 0; rsw = lw; rsh = lh;
+  }
+  const t = getSrcTexture(S, tsrc);
+  if (!t) return false;
+  for (let k = 0; k < 4; k++) {
+    D[k * 7 + 4] = ((U[k] - ox) * kx) / t.w;
+    D[k * 7 + 5] = ((V[k] - oy) * ky) / t.h;
+  }
+
   // Luas bidang di layar vs luas sumber → perlu mipmap kalau mengecil banyak.
   const area = Math.abs((scrX[0] * scrY[1] - scrX[1] * scrY[0]) + (scrX[1] * scrY[3] - scrX[3] * scrY[1]) + (scrX[3] * scrY[2] - scrX[2] * scrY[3]) + (scrX[2] * scrY[0] - scrX[0] * scrY[2])) / 2;
-  const needMips = maxB >= 0.35 || (sw * sh) / Math.max(area, 1) > 1.5;
+  const needMips = maxB >= 0.35 || (rsw * rsh) / Math.max(area, 1) > 1.5;
 
   gl.bindTexture(gl.TEXTURE_2D, t.tex);
   if (needMips) {
@@ -2286,17 +2360,14 @@ function glBlit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, fla
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.useProgram(S.prog);
+  gl.bindVertexArray(S.vao);
   gl.bindBuffer(gl.ARRAY_BUFFER, S.buf);
-  gl.bufferData(gl.ARRAY_BUFFER, D, gl.DYNAMIC_DRAW);
-  const stride = 28;
-  gl.enableVertexAttribArray(S.aPos); gl.vertexAttribPointer(S.aPos, 4, gl.FLOAT, false, stride, 0);
-  gl.enableVertexAttribArray(S.aUv); gl.vertexAttribPointer(S.aUv, 2, gl.FLOAT, false, stride, 16);
-  gl.enableVertexAttribArray(S.aD); gl.vertexAttribPointer(S.aD, 1, gl.FLOAT, false, stride, 24);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, D);
   gl.activeTexture(gl.TEXTURE0);
-  gl.uniform1i(S.uTex, 0);
   gl.uniform2f(S.uTexSize, t.w, t.h);
-  gl.uniform4f(S.uRect, sx / t.w, sy / t.h, (sx + sw) / t.w, (sy + sh) / t.h);
-  gl.uniform3f(S.uBlur, maxB, pf, norm);
+  gl.uniform4f(S.uRect, rsx / t.w, rsy / t.h, (rsx + rsw) / t.w, (rsy + rsh) / t.h);
+  // w = sampel dasar blur; makin rendah kualitas (governor), makin sedikit.
+  gl.uniform4f(S.uBlur, maxB, pf, norm, gfxQuality < 0.99 ? 6 : 10);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   ctx.drawImage(S.canvas, bx0, by0, bx1 - bx0, by1 - by0, bx0, by0, bx1 - bx0, by1 - by0);
   return true;
@@ -2355,7 +2426,7 @@ function blit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, flat)
   // Sumber di-blur sekali ke beberapa tingkat (kanvas kecil = murah), lalu
   // tiap segitiga memilih tingkat blur sesuai kedalamannya dan dicampur
   // (cross-fade) dengan tingkat di sebelahnya supaya gradasinya mulus.
-  const LV = 3;
+  const LV = gfxQuality < 0.99 ? 2 : 3;
   let levels = null, vbl = null, maxB = 0;
   if (wantDepth && zmax - zmin > 1e-3) {
     const fsx = flat ? Math.hypot(flat[0], flat[1]) : 1, fsy = flat ? Math.hypot(flat[2], flat[3]) : 1;
@@ -4308,7 +4379,17 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
 
   useEffect(() => {
     if (!playback.playing) return;
+    // "Governor" kualitas: kalau rata-rata durasi frame belakangan ini
+    // mulai melebihi ambang batas (berarti mendekati/di bawah 30fps),
+    // turunkan sementara jumlah sampel blur GPU (lihat gfxQuality di
+    // blit3D) — hanya berlaku untuk PRATINJAU saat diputar; export selalu
+    // memakai kualitas penuh (lihat setGfxQuality(1) di jalur export).
+    // Sebaliknya kalau sudah lancar lagi, kualitas dikembalikan bertahap.
+    // Efeknya: preset Axis 3D + Blur 3D yang berat tetap mulus diputar,
+    // sedikit lebih lembut sampelnya saat playhead lewat momen terberat,
+    // lalu kembali tajam begitu adegan itu selesai.
     let raf, lastTs = null, lastSync = 0;
+    let frameBudget = [];
     const loop = (ts) => {
       if (lastTs == null) lastTs = ts;
       const dt = ts - lastTs; lastTs = ts;
@@ -4319,7 +4400,17 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
         if (playback.loop) next = 0; else { next = duration; stop = true; }
       }
       playheadRef.current = next;
+      const t0 = performance.now();
       drawFrame(next);
+      const frameMs = performance.now() - t0;
+      frameBudget.push(frameMs);
+      if (frameBudget.length >= 8) {
+        const avg = frameBudget.reduce((a, b) => a + b, 0) / frameBudget.length;
+        frameBudget = [];
+        // >26ms rata-rata (~<38fps) → turunkan kualitas; <14ms → kembalikan.
+        if (avg > 26) setGfxQuality(Math.max(0.5, getGfxQuality() - 0.15));
+        else if (avg < 14) setGfxQuality(Math.min(1, getGfxQuality() + 0.1));
+      }
       if (ts - lastSync > 180) { lastSync = ts; syncMediaPlayback(clipsRef.current, mediaMapRef, next, true, transitionsRef.current); }
       // Perbarui indikator playhead & teks waktu LANGSUNG lewat DOM (tanpa
       // dispatch → tanpa re-render React), supaya animasi kanvas mulus dan
@@ -4336,7 +4427,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return () => { cancelAnimationFrame(raf); setGfxQuality(1); };
   }, [playback.playing, playback.loop, dispatchPlayback, drawFrame, mediaMapRef, playClock]);
 
   const onMouseDown = (e) => {
@@ -4464,6 +4555,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     });
 
     setExporting(true);
+    setGfxQuality(1); // ekspor selalu kualitas penuh, terlepas dari penurunan sementara saat pratinjau
     setExportProgress(0);
     dispatchPlayback({ type: "SET_LOOP", value: false });
     dispatchPlayback({ type: "SET_PLAYHEAD", value: 0 });

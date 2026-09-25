@@ -2807,61 +2807,95 @@ function oilBrushOutlineContours(centerline: StrokeSample[], settings: BrushSett
 }
 
 /**
- * Spray Brush: a real solid stroke body — the same elliptical-nib sweep
- * every other preset uses (via centerlineToOutline) — with a grainy, torn
- * edge of scattered ink flecks layered on top, instead of a scattered dot
- * field standing in for the WHOLE body.
+ * Spray Brush: reads as an actual can of spray paint hitting a wall — a
+ * solid, continuous letterform (not a loose dot field standing in for one),
+ * with the three traits that give real spray-paint lettering its look:
  *
- * Pure dot field, no solid body underneath: density itself carries the
- * shape. Every speck's distance from the centerline is drawn from a
- * distribution biased toward 0 (see `radiusFrac` below), so most land near
- * the core — tight enough to overlap into what reads as solid ink — and
- * progressively fewer land further out, thinning into individual visible
- * specks and then a light mist at the edge. `roundness` controls how tight
- * vs. loose the graininess reads, `jitter` how heavy/dense it is — reusing
- * the same two sliders every other "reused slider" preset in this file does
- * (see their doc comments in types/brush.ts) rather than adding dedicated
- * fields.
+ *  1. BODY — the same clean, constant-width round-pen union every other
+ *     constant-width preset uses (`uniformCenterlineToOutlineExact`, see
+ *     Rough Brush's doc comment for why that's used over the legacy offset
+ *     builder), so the core silhouette is a single solid shape.
+ *  2. EDGE GRAIN — a sparse scatter of tiny pitted notches right at the
+ *     boundary (reusing Rough Brush's `makeRoughHole`, much smaller/rarer),
+ *     breaking up the body's edge into the slightly ragged, not-quite-clean
+ *     line a stencil cut with a spray can actually leaves, instead of a
+ *     mechanically perfect vector curve.
+ *  3. DRIPS — solid tapering paint runs that fall straight down (-Y — see
+ *     `contourToPath`'s doc comment: font-unit space is Y-up, so "down" on
+ *     screen is -Y) from points along the stroke's own edge, independent of
+ *     the stroke's local direction, because real drips answer gravity, not
+ *     the hand's drawing angle. See `makeSprayDrip`.
+ *  4. OVERSPRAY — a light dusting of the old version's speckle field,
+ *     drastically thinned and pushed outward past the body's own edge, for
+ *     the faint halo of atomized paint dust a real can leaves around a
+ *     letter, without it reading as the letter's actual body anymore.
+ *
+ * `roundness` still controls how tight vs. loose the overspray dust reads,
+ * `jitter` still scales density/prominence across all four layers — same
+ * "overall texture strength" meaning `jitter` has on every other textured
+ * preset (see its doc comment in types/brush.ts).
  */
 /**
- * PERFORMANCE FIX (Spray Brush stutters/lags while drawing): this function
- * scatters `specksPerStep` little 12-sided speckle contours at every
- * `stepLen` along the WHOLE stroke, from scratch, every single call — and
- * `useBrushTool`'s pointerMove previously called it (via
- * `centerlineToOutlineContours`) unthrottled on every raw pointer-move
- * event, rebuilding the ENTIRE speck field for the whole stroke-so-far each
- * time. For a stroke of length L that's O(L) work per move and O(L^2) total
- * across a single gesture — thousands of speckle contours (each with 12
- * Bezier nodes + a fresh id) regenerated dozens of times a second as the
- * stroke grows, which is exactly what reads as laggy/patah-patah (choppy)
- * while actively spraying, getting worse the longer the stroke gets.
- *
- * `fast`, when true, is used ONLY for the live drawing preview (see
- * `useBrushTool.buildPreview`) and drastically thins the field: far fewer
- * steps along the stroke, far fewer specks per step, and simpler (6-sided
- * instead of 12) speckle polygons — cheap enough to rebuild every frame
- * without stalling the pointer. The committed/final render (glyph canvas,
- * export, thumbnails — anywhere `fast` isn't explicitly passed) still uses
- * the full, dense field exactly as before, so finished artwork is
- * unaffected; only the live in-progress preview gets coarser.
+ * PERFORMANCE (live drawing must stay cheap): `fast`, true only for the
+ * live-preview build during an in-progress pointer gesture (see
+ * `useBrushTool.buildPreview`), skips edge-grain holes and drips entirely
+ * and draws a drastically thinned overspray field — the same reasoning
+ * Grunge/Rough/the old Spray Brush all use: a preview that's cheap enough
+ * to rebuild every pointer-move frame, without the O(length) texture passes
+ * that would make active drawing feel laggy. The committed/final render
+ * (glyph canvas, export, thumbnails) always uses the full build.
  */
 function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings, fast = false): Contour[] {
-  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.05));
-  if (dense.length < 2) return [];
+  // ---- 1. Solid body --------------------------------------------------
+  const constantWidth =
+    (settings.taperStart ?? 0) <= 0 &&
+    (settings.taperEnd ?? 0) <= 0 &&
+    (!settings.pressureEnabled || (settings.pressureSensitivity ?? 0) === 0);
 
+  let bodyContours: Contour[] = [];
+  if (constantWidth) {
+    const centerContour: Contour = {
+      id: "spray-center",
+      closed: false,
+      nodes: centerline.map((s, i) => ({
+        id: `spc${i}`,
+        point: { x: s.x, y: s.y },
+        handleIn: null,
+        handleOut: null,
+        type: "corner",
+      })),
+    };
+    bodyContours = uniformCenterlineToOutlineExact(centerContour, settings.size, "round");
+  }
+  const legacyMain = bodyContours.length === 0 ? centerlineToOutline(centerline, settings) : null;
+  if (bodyContours.length === 0) {
+    if (!legacyMain) return [];
+    bodyContours = [legacyMain];
+  }
+
+  const largestBody = bodyContours.reduce(
+    (best, c) => {
+      const a = Math.abs(signedArea(c.nodes.map((n) => n.point)));
+      return a > best.a ? { a, c } : best;
+    },
+    { a: -1, c: bodyContours[0] },
+  ).c;
+  const outerSign = Math.sign(signedArea(largestBody.nodes.map((n) => n.point))) || 1;
+  const holeSign = outerSign >= 0 ? -1 : 1;
+
+  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.05));
+  if (dense.length < 2) return bodyContours;
   const cumulative: number[] = [0];
   for (let i = 1; i < dense.length; i++) {
     cumulative.push(cumulative[i - 1] + Math.hypot(dense[i].x - dense[i - 1].x, dense[i].y - dense[i - 1].y));
   }
   const totalLength = cumulative[cumulative.length - 1] || 0;
-  if (totalLength <= 0) return [];
+  if (totalLength <= 0) return bodyContours;
+  const halfWidth = Math.max(1, settings.size / 2);
+  const strength = Math.max(0.2, Math.min(1.6, (settings.jitter ?? 0.6) / 0.6));
 
-  const halfWidthBase = Math.max(1, settings.size / 2);
   const at = (t: number): { p: Point; tangent: Point; taper: number } => {
     const clamped = Math.max(0, Math.min(totalLength, t));
-    // Binary search (was a linear scan from the start for every step, i.e.
-    // O(points) per step and O(points x steps) per call — the second-biggest
-    // cost after the speck count itself on a long stroke).
     let lo = 1;
     let hi = cumulative.length - 1;
     while (lo < hi) {
@@ -2876,132 +2910,177 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
     const frac = (clamped - cumulative[idx - 1]) / segLen;
     const p = { x: p0.x + (p1.x - p0.x) * frac, y: p0.y + (p1.y - p0.y) * frac };
     const tangent = { x: p1.x - p0.x, y: p1.y - p0.y };
-    // Live preview: taper by ABSOLUTE distance from the start only (a short
-    // ease-in), never by the fraction of the total length. A fraction-based
-    // taper re-scales every speck already drawn each time the stroke grows,
-    // which both costs nothing extra to compute and looks like the whole
-    // spray shimmering as you draw. The committed field (fast=false) keeps
-    // the real start/end taper untouched.
     const taper = fast
-      ? taperFactor(Math.min(1, clamped / (halfWidthBase * 5)), 1, 0)
+      ? taperFactor(Math.min(1, clamped / (halfWidth * 5)), 1, 0)
       : taperFactor(totalLength > 0 ? clamped / totalLength : 0, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd });
     return { p, tangent, taper };
   };
 
-  // 1 (default-ish) keeps flecks close and tight; lower roundness loosens
-  // them into a wider, coarser scatter.
-  const spread = 0.6 + 0.55 * settings.roundness;
-  const density = settings.jitter ?? 0.6;
+  const extras: Contour[] = [];
 
-  // `fast` (live preview only, see doc comment above) spaces steps out
-  // ~4x further apart and draws ~4x fewer specks at each one — roughly a
-  // 16x cut in total speck count, which is what actually removes the lag
-  // (specks-per-move, not step count alone, was the dominant cost). The
-  // committed/final field (fast=false) is untouched.
-  // Live preview is now FIXED-SPACING and hard-capped: steps sit at absolute
-  // multiples of `stepLen` along the path (never re-spread across the
-  // growing total length, which made every speck slide each frame), a few
-  // big soft dots per step stand in for the dense field, and the step count
-  // is capped so the preview's node count stays roughly constant no matter
-  // how long the stroke gets. The preview only needs to show WHERE you are
-  // spraying; the full-density field replaces it on pointer-up.
-  const FAST_MAX_STEPS = 80;
-  const stepLen = fast
-    ? Math.max(halfWidthBase * 0.5, totalLength / FAST_MAX_STEPS, 2.5)
-    : Math.max(0.7, halfWidthBase * 0.2);
-  const stepCount = Math.max(1, fast ? Math.floor(totalLength / stepLen) : Math.round(totalLength / stepLen));
-  // BUG FIX (core dots too sparse to actually touch): raised again — this
-  // needs to be dense enough that neighboring core dots' radii overlap and
-  // fuse into one continuous solid patch, not just "densely scattered but
-  // still individually visible".
-  const specksPerStep = fast ? 11 : Math.max(5, Math.round(halfWidthBase * 1.15 * (0.6 + density)));
-  const outerSign = 1;
-  // Reach pushed out a bit further than before so the sparse mist genuinely
-  // has room to fade out and scatter, instead of stopping right where the
-  // old, tighter cluster already thinned to nothing.
-  const maxReach = 2.3 * spread;
-  // Radial layout is two explicit zones instead of one power curve across
-  // the whole reach:
-  //  - CORE (out to `coreReachFrac` of maxReach): most specks land here
-  //    (`coreShare`), with a near-uniform bias (`coreGamma` ~1) so the
-  //    whole core area fills in evenly, and large enough dots (see the
-  //    radius calc below) that adjacent ones physically touch and read as
-  //    one solid patch rather than a dense-but-separate dot cluster.
-  //  - EDGE (from the core boundary out to maxReach): the remaining, far
-  //    fewer specks, biased toward the inner edge of this band with
-  //    `edgeGamma` so they thin out fast — the loose, individually visible
-  //    flecks and light mist a real spray can leaves past its solid center.
-  // BUG FIX: widened further (0.55 -> 0.7) and pushed more of the specks
-  // into it (0.72 -> 0.82) per request — the solid-reading area needed to
-  // cover noticeably more of the stroke's width, not just its dead center.
-  const coreReachFrac = 0.7;
-  const coreShare = 0.82;
-  const coreGamma = 1.05;
-  const edgeGamma = 2.5;
-
-  const flecks: Contour[] = [];
-  let seedBase = 0;
-  for (let i = 0; i <= stepCount; i++) {
-    const jitterSeed = i * 17.3 + 4.2;
-    const tJitter = pseudoNoise(jitterSeed) * 0.5 * stepLen;
-    const t = Math.max(0, Math.min(totalLength, fast ? i * stepLen : (i / stepCount) * totalLength + tJitter));
-    const { p, tangent, taper } = at(t);
-    if (taper <= 0.02) continue;
-    const tLen = Math.hypot(tangent.x, tangent.y) || 1;
-    const tx = tangent.x / tLen;
-    const ty = tangent.y / tLen;
-    const nx = -ty;
-    const ny = tx;
-    const halfWidth = halfWidthBase * taper;
-
-    const count = Math.max(1, Math.round(specksPerStep * (0.6 + pseudoNoise(jitterSeed + 71) * 0.4 + 0.4)));
-    for (let k = 0; k < count; k++) {
-      seedBase += 1;
-      const seed = seedBase * 91.7 + i * 3.3 + k * 17;
-      const zoneRoll = (pseudoNoise(seed * 1.1 + 55.5) + 1) / 2;
-      const inCore = zoneRoll < coreShare;
-      const u = (pseudoNoise(seed * 1.7 + 0.31) + 1) / 2;
-      const radiusFrac = inCore
-        ? Math.pow(u, coreGamma) * coreReachFrac
-        : coreReachFrac + Math.pow(u, edgeGamma) * (1 - coreReachFrac);
-      const angle = Math.PI * ((pseudoNoise(seed * 2.3 + 8.9) + 1) / 2) * 2;
-      const across = Math.cos(angle) * radiusFrac * maxReach * halfWidth;
-      const along = Math.sin(angle) * radiusFrac * maxReach * halfWidth * 0.7;
-      const center = { x: p.x + nx * across + tx * along, y: p.y + ny * across + ty * along };
-      // Core dots stay large and close to full size across the WHOLE core
-      // disc (only a mild taper, `1 - radiusFrac * 0.15`) so they overlap
-      // into solid coverage rather than fading out toward its own rim;
-      // edge dots drop sharply in size the further past the core boundary
-      // they land, so the mist genuinely reads as fine and sparse.
-      const sizeFrac = inCore
-        ? 1 - Math.min(1, radiusFrac / coreReachFrac) * 0.15
-        : 0.85 - Math.min(1, (radiusFrac - coreReachFrac) / (1 - coreReachFrac)) * 0.6;
-      // BUG FIX: core and edge now draw from separate, much wider-apart
-      // radius ranges instead of one shared `0.02–0.08x` band. That shared
-      // range was sized for individually-visible edge flecks — fine for
-      // the mist, but far too small for core dots to overlap at any
-      // reasonable spacing. Core dots now draw from a noticeably bigger
-      // range so adjacent ones physically overlap and fuse into a solid
-      // patch; edge flecks keep the old small range so they still read as
-      // fine, separate specks.
-      const radiusRange = inCore ? { base: 0.05, spanRand: 0.11 } : { base: 0.02, spanRand: 0.05 };
-      const radius = Math.max(0.35, halfWidthBase * (radiusRange.base + ((pseudoNoise(seed * 1.3 + 9.3) + 1) / 2) * radiusRange.spanRand) * sizeFrac);
-      // Same winding on every speck so overlapping dots add solid ink under
-      // the nonzero fill rule instead of risking a stray hole. `fast` uses a
-      // cheaper 6-sided speckle instead of the full 12-sided one — half the
-      // nodes per speck, invisible at live-preview scale/speed.
-      // Preview: bigger dots (fewer of them must still read as a cloud) and
-      // 5 sides. Committed: side count follows the dot's own size — a dot a
-      // couple of font units wide is indistinguishable at 6-8 smooth sides
-      // from 12, and this alone roughly halves the committed field's node
-      // count (the cost of building/serialising/rendering it on pointer-up).
-      const drawRadius = fast ? radius * 1.25 : radius;
-      const sides = fast ? 4 : radius < 1.4 ? 6 : radius < 3 ? 8 : 12;
-      flecks.push(makeSpeckle(center, drawRadius, seed, outerSign, sides, fast || radius < 1.6));
+  // ---- 2. Edge grain: tiny pitted notches right at the border ---------
+  // Sparser and much smaller than Rough Brush's own texture — this is only
+  // meant to take the edge from "perfect vector curve" to "cut by hand with
+  // a spray can", not to visibly perforate the letter.
+  if (!fast) {
+    const grainSpacing = Math.max(2.5, halfWidth * 1.1) / strength;
+    let gi = 0;
+    for (let d = halfWidth * 0.5; d < totalLength - halfWidth * 0.5; d += grainSpacing * (0.6 + ((pseudoNoise(gi * 6.7 + 2.1) + 1) / 2) * 0.9), gi++) {
+      const seed = gi * 53.1 + 17.9;
+      if ((pseudoNoise(seed) + 1) / 2 < 0.45) continue; // sparse: skip most slots
+      const { p, tangent, taper } = at(d);
+      if (taper <= 0.08) continue;
+      const tl = Math.hypot(tangent.x, tangent.y) || 1;
+      const normal = { x: -tangent.y / tl, y: tangent.x / tl };
+      const side = (pseudoNoise(seed + 4) + 1) / 2 < 0.5 ? 1 : -1;
+      const hw = halfWidth * taper;
+      const grainR = Math.max(0.4, hw * (0.06 + ((pseudoNoise(seed + 8) + 1) / 2) * 0.09));
+      // Keep the notch fully INSIDE the body (offset + radius never exceeds
+      // hw) with only a thin guard band left over — close enough to the
+      // true edge to read as eating into it, without poking past the
+      // boundary, which under nonzero winding would paint extra ink instead
+      // of cutting a notch (see Rough Brush's own `safeRange` guard for the
+      // same reasoning).
+      const guard = Math.max(0.15, grainR * 0.12);
+      const maxOffset = Math.max(0, hw - grainR - guard);
+      const offset = maxOffset * (0.75 + ((pseudoNoise(seed + 12) + 1) / 2) * 0.25);
+      const center = { x: p.x + normal.x * side * offset, y: p.y + normal.y * side * offset };
+      extras.push(makeRoughHole(center, grainR, seed, holeSign, grainR));
     }
   }
 
-  return flecks;
+  // ---- 3. Drips ---------------------------------------------------------
+  // Candidate points are walked along BOTH edges of the stroke; each one's
+  // chance of spawning a drip — and the drip's length — scales with how much
+  // the local edge surface actually faces downward (`downFactor`), so paint
+  // "pools" and runs mainly off undersides and near-vertical flanks, almost
+  // never off an upward-facing top surface, exactly like a real can.
+  if (!fast && totalLength > halfWidth * 1.0) {
+    const dripSpacing = Math.max(1.6, halfWidth * 0.85) / strength;
+    let di = 0;
+    for (let d = halfWidth * 0.4; d < totalLength - halfWidth * 0.15; d += dripSpacing * (0.7 + ((pseudoNoise(di * 8.3 + 5.5) + 1) / 2) * 1.0), di++) {
+      const { p, tangent, taper } = at(d);
+      if (taper <= 0.1) continue;
+      const tl = Math.hypot(tangent.x, tangent.y) || 1;
+      for (const side of [1, -1]) {
+        const seed = di * 191.3 + (side > 0 ? 29.7 : 83.1);
+        const normal = { x: (-tangent.y / tl) * side, y: (tangent.x / tl) * side };
+        // 0 for a top-facing edge, up to ~1.5 for a strongly down-facing one.
+        const downFactor = Math.max(0, Math.min(1.5, 0.5 - normal.y + (normal.y < -0.25 ? 0.55 : 0)));
+        const spawnChance = (0.05 + downFactor * 0.34) * strength;
+        const roll = (pseudoNoise(seed + 1.7) + 1) / 2;
+        if (roll > spawnChance) continue;
+        const hw = halfWidth * taper;
+        const anchor = { x: p.x + normal.x * hw, y: p.y + normal.y * hw };
+        const lenRand = (pseudoNoise(seed + 6.3) + 1) / 2;
+        const dripLen = hw * (0.7 + downFactor * 2.1) * (0.55 + Math.pow(lenRand, 1.5) * 1.6);
+        const dripW = Math.max(0.7, hw * (0.14 + ((pseudoNoise(seed + 11.4) + 1) / 2) * 0.2));
+        extras.push(...makeSprayDrip(anchor, dripLen, dripW, seed, outerSign));
+      }
+    }
+    // A real can tends to leave a heavier drip right where the hand lifted
+    // off at the very end of the stroke — nudge one in most of the time,
+    // regardless of that last segment's own local edge orientation.
+    const tailRoll = (pseudoNoise(di * 7.1 + 401.3) + 1) / 2;
+    if (tailRoll < 0.7 * strength) {
+      const { p, tangent, taper } = at(totalLength - halfWidth * 0.1);
+      const tl = Math.hypot(tangent.x, tangent.y) || 1;
+      const hw = halfWidth * Math.max(0.2, taper);
+      const seed = 909.1;
+      const anchor = { x: p.x, y: p.y - hw * 0.6 };
+      const dripLen = hw * (1.4 + ((pseudoNoise(seed + 3) + 1) / 2) * 1.8);
+      const dripW = Math.max(0.8, hw * 0.22);
+      extras.push(...makeSprayDrip(anchor, dripLen, dripW, seed, outerSign));
+      void tl;
+    }
+  }
+
+  // ---- 4. Overspray: sparse dust around the body -----------------------
+  const spread = 0.6 + 0.55 * settings.roundness;
+  const density = fast ? 0.35 : Math.min(1, (settings.jitter ?? 0.6) * 0.7);
+  const FAST_MAX_STEPS = 40;
+  const stepLen = fast
+    ? Math.max(halfWidth * 0.7, totalLength / FAST_MAX_STEPS, 3)
+    : Math.max(1.4, halfWidth * 0.6);
+  const stepCount = Math.max(1, Math.round(totalLength / stepLen));
+  const specksPerStep = fast ? 2 : Math.max(1, Math.round(1.6 * (0.5 + density)));
+  const maxReach = 2.0 * spread;
+  let seedBase = 0;
+  for (let i = 0; i <= stepCount; i++) {
+    const jitterSeed = i * 19.1 + 6.7;
+    const t = Math.max(0, Math.min(totalLength, (i / stepCount) * totalLength));
+    const { p, tangent, taper } = at(t);
+    if (taper <= 0.05) continue;
+    const tl = Math.hypot(tangent.x, tangent.y) || 1;
+    const tx = tangent.x / tl;
+    const ty = tangent.y / tl;
+    const nx = -ty;
+    const ny = tx;
+    const hw = halfWidth * taper;
+    const count = Math.max(0, Math.round(specksPerStep * (0.5 + ((pseudoNoise(jitterSeed + 71) + 1) / 2) * 0.7)));
+    for (let k = 0; k < count; k++) {
+      seedBase += 1;
+      const seed = seedBase * 97.3 + i * 4.1 + k * 23;
+      // Biased OUTWARD (0.6..1 of max reach), well past the body's own
+      // edge — this layer's whole point is to sit AROUND the letter, not
+      // fill it in the way the old dot-field version did.
+      const u = (pseudoNoise(seed * 1.9 + 0.7) + 1) / 2;
+      const radiusFrac = 0.55 + Math.pow(u, 1.6) * 0.45;
+      const angle = Math.PI * ((pseudoNoise(seed * 2.7 + 9.3) + 1) / 2) * 2;
+      const across = Math.cos(angle) * radiusFrac * maxReach * hw;
+      const along = Math.sin(angle) * radiusFrac * maxReach * hw * 0.7;
+      const center = { x: p.x + nx * across + tx * along, y: p.y + ny * across + ty * along };
+      const radius = Math.max(0.35, hw * (0.02 + ((pseudoNoise(seed * 1.3 + 9.7) + 1) / 2) * 0.045));
+      const sides = fast ? 4 : radius < 1.4 ? 6 : 8;
+      extras.push(makeSpeckle(center, radius, seed, outerSign, sides, fast || radius < 1.6));
+    }
+  }
+
+  return [...bodyContours, ...extras];
+}
+
+/**
+ * A single paint-drip run for Spray Brush: starts at `anchor` (a point on
+ * the stroke's own edge) and falls straight down — `-Y`, the real "down" in
+ * this Y-up font-unit space, see `contourToPath`'s doc comment — by
+ * `length`, tapering from `width` at the top (where it's still fused to the
+ * body) down to a thin thread, with a gentle side-to-side wander (real
+ * paint never runs in a perfectly straight line) and, roughly a third of
+ * the time, a small rounded bead at the very tip where surface tension
+ * would hold a drop before it falls. Wound with `desiredSign` so it fuses
+ * into the main body under nonzero fill exactly like Strong Brush's
+ * torn-edge teeth do (see `strongBrushOutlineContours`).
+ */
+function makeSprayDrip(anchor: Point, length: number, width: number, seed: number, desiredSign: number): Contour[] {
+  const STEPS = 8;
+  const left: Point[] = new Array(STEPS + 1);
+  const right: Point[] = new Array(STEPS + 1);
+  const wanderAmp = width * 0.8;
+  for (let i = 0; i <= STEPS; i++) {
+    const t = i / STEPS;
+    const w = width * Math.pow(1 - t, 0.7) * (i === 0 ? 1.15 : 1);
+    const wobble = coherentNoise1D(t * 3.3 + seed * 0.31, seed) * wanderAmp * t;
+    const cx = anchor.x + wobble;
+    const cy = anchor.y - length * t;
+    const hw = Math.max(0.12, w / 2);
+    left[i] = { x: cx - hw, y: cy };
+    right[i] = { x: cx + hw, y: cy };
+  }
+  const pts: Point[] = [...left, ...right.slice().reverse()];
+  const sign = Math.sign(signedArea(pts)) || 1;
+  const finalPts = sign !== desiredSign ? pts.reverse() : pts;
+  const thread: Contour = {
+    id: shortId("contour"),
+    closed: true,
+    nodes: finalPts.map((point) => ({ id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const })),
+  };
+  const out: Contour[] = [thread];
+  if ((pseudoNoise(seed + 61.3) + 1) / 2 > 0.68) {
+    const tipCenter = { x: (left[STEPS].x + right[STEPS].x) / 2, y: left[STEPS].y - width * 0.2 };
+    const beadR = Math.max(0.5, width * (0.55 + ((pseudoNoise(seed + 44.1) + 1) / 2) * 0.55));
+    out.push(makeSpeckle(tipCenter, beadR, seed + 200, desiredSign, 8, true));
+  }
+  return out;
 }
 
 /**

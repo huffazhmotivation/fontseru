@@ -368,30 +368,38 @@ export const BRUSH_PRESETS: Record<BrushType, BrushPreset> = {
   sprayBrush: {
     id: "sprayBrush",
     label: "Spray Brush",
-    description: "A can of spray paint, not a nib — a dense cloud of tiny ink specks along the stroke, thick at the core and misting out toward the edge, with no continuous body underneath.",
+    description: "A can of spray paint, not a nib — a solid inked letterform with a grainy stencil-rough edge, paint drips running off the underside, and a light dust of overspray around it.",
     settings: {
       size: 46,
       opacity: 0.9,
       // Dense resampling, same reasoning as Grunge: more samples along the
-      // path means more even coverage from the puffs seeded in
-      // sprayBrushOutlineContours, not a smoother line (there's no line).
+      // path means more even placement for the edge-grain/drip/overspray
+      // texture seeded in sprayBrushOutlineContours.
       spacing: 2,
       smoothing: 0.25,
       stabilizer: 0.25,
-      // Reused as the spray cone's spread rather than a nib shape — 1 keeps
-      // a tight, round cone; dial it down for a wider, looser mist. See
+      // Reused as the overspray dust's spread rather than a nib shape — 1
+      // keeps the dust close and tight, lower spreads it wider/looser. See
       // sprayBrushOutlineContours() in strokeToOutline.ts.
       roundness: 0.75,
       angle: 0,
-      // A real can naturally runs thin as the hand lifts off at each end.
-      taperStart: 0.2,
-      taperEnd: 0.28,
+      // No taper: the body is now a real solid, constant-width stroke (see
+      // sprayBrushOutlineContours) built via the same clean round-pen union
+      // every other constant-width preset uses — tapering it here would
+      // pinch the body to a literal point at each end instead of the
+      // fairly even-width bold letterform a spray can actually leaves.
+      // "The hand lifting off at the end" now reads instead as the
+      // guaranteed heavier drip right at the stroke's tail — see
+      // sprayBrushOutlineContours' DRIPS section.
+      taperStart: 0,
+      taperEnd: 0,
       pressureEnabled: false,
       pressureSensitivity: 0,
-      // Reused as the speck field's density/falloff (see jitter's doc
-      // comment in types/brush.ts) instead of an edge amplitude — higher
-      // pulls more specks toward the cone's core, lower spreads them out
-      // more evenly for a softer mist.
+      // Reused as overall texture strength across all three texture layers
+      // — edge grain, drips, and overspray (see jitter's doc comment in
+      // types/brush.ts) — higher means more/bigger grain notches, more
+      // frequent/longer drips, and denser overspray; lower keeps the body
+      // closer to a clean solid shape.
       jitter: 0.6,
     },
   },
