@@ -41,6 +41,7 @@ import {
 } from "./multiEditLayout";
 import { charsForCategory } from "@/glyph/testSentences";
 import { standardGlyphMetrics } from "@/glyph/defaultGlyphs";
+import { useSketchGestures } from "./useSketchGestures";
 
 /**
  * MULTI GLYPH EDIT CANVAS
@@ -754,10 +755,47 @@ export function GlyphMultiEditCanvas() {
     [layout, ascender]
   );
 
+  // Multi-touch extras layered on top of the existing pointer pipeline:
+  // pinch-to-zoom, 2/3-finger tap for undo/redo, and simple palm rejection —
+  // the same behaviour GlyphCanvas already gives Single Mode. Multi and
+  // Type Mode both render this one component, so wiring the hook in here
+  // covers both at once.
+  const getZoomNow = useCallback(() => useAppStore.getState().multiZoom, []);
+  const cancelActiveInteraction = useCallback(() => {
+    const t = toolsRef.current;
+    t.brushTool.cancel();
+    t.brushNodeTool.cancel();
+    t.pencilTool.cancel();
+    if (tool === "select") t.selectTool.pointerUp();
+    else if (tool !== "brush" && tool !== "pencil") t.editor.pointerUp();
+    panDragRef.current = null;
+    gestureCellRef.current = null;
+  }, [tool]);
+  // 2-finger drag pan: reuses the exact same hand-pan math as the "hand"
+  // tool's single-pointer drag (panDragRef above), just driven by the
+  // touch midpoint's frame-to-frame delta instead of a single pointer.
+  const sketchPanBy = useCallback(
+    (dxClient: number, dyClient: number) => {
+      const store = useAppStore.getState();
+      store.setMultiPan({ x: store.multiPan.x - dxClient / sc, y: store.multiPan.y - dyClient / sc });
+    },
+    [sc]
+  );
+  const sketchGestures = useSketchGestures({
+    enabled: true,
+    applyZoomAt,
+    getZoom: getZoomNow,
+    onUndo: () => useAppStore.getState().undo(),
+    onRedo: () => useAppStore.getState().redo(),
+    onCancelActive: cancelActiveInteraction,
+    onPanBy: sketchPanBy,
+  });
+
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<SVGSVGElement>) => {
       e.preventDefault();
       flushPointerMoveRef.current();
+      if (sketchGestures.handlePointerDown(e)) return;
       (e.target as Element).setPointerCapture?.(e.pointerId);
 
       // Middle-mouse (scroll-wheel click) drag, Hand tool and Space-drag
@@ -815,11 +853,13 @@ export function GlyphMultiEditCanvas() {
       setGlyphSelection,
       focusCellAt,
       glyphPointFor,
+      sketchGestures,
     ]
   );
 
   const processPointerMove = useCallback(
     (e: PointerMoveSample) => {
+      if (sketchGestures.handlePointerMove(e as unknown as PointerEvent)) return;
       if (panDragRef.current) {
         const d = panDragRef.current;
         setMultiPan({
@@ -849,7 +889,7 @@ export function GlyphMultiEditCanvas() {
         return t.selectTool.pointerMove(p, e.shiftKey, e.pointerType, e.metaKey);
       t.editor.pointerMove(p, e.shiftKey, e.altKey);
     },
-    [sc, toWorld, setMultiPan, tool, isNodeBrush, layout, chars, activeChar, glyphPointFor]
+    [sc, toWorld, setMultiPan, tool, isNodeBrush, layout, chars, activeChar, glyphPointFor, sketchGestures]
   );
   processMoveRef.current = processPointerMove;
 
@@ -898,10 +938,11 @@ export function GlyphMultiEditCanvas() {
     []
   );
 
-  const endGesture = useCallback(() => {
+  const endGesture = useCallback((e?: ReactPointerEvent<SVGSVGElement> | PointerEvent) => {
     // Commit the newest sample before releasing, so the last few pixels of
     // a stroke are never dropped by the frame queue.
     flushPointerMove();
+    if (e) sketchGestures.handlePointerUp(e);
     panDragRef.current = null;
     gestureCellRef.current = null;
     const t = toolsRef.current;
@@ -909,10 +950,10 @@ export function GlyphMultiEditCanvas() {
     if (tool === "pencil") return t.pencilTool.pointerUp();
     if (tool === "select") return t.selectTool.pointerUp();
     t.editor.pointerUp();
-  }, [tool, isNodeBrush]);
+  }, [tool, isNodeBrush, sketchGestures]);
 
   useEffect(() => {
-    const onUp = () => endGesture();
+    const onUp = (e: PointerEvent) => endGesture(e);
     window.addEventListener("pointerup", onUp);
     return () => window.removeEventListener("pointerup", onUp);
   }, [endGesture]);

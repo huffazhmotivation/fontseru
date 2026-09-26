@@ -3611,6 +3611,34 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .fm-toast-close:hover { background: var(--panel-2); color: var(--text); }
 
+/* New-deploy notice: same visual language as .fm-toast, but it never
+   auto-dismisses on a timer — the point is for a user to notice it whenever
+   they next look up, since applying it reloads the page. */
+.fm-update-toast {
+  position: fixed; top: 68px; right: 18px; z-index: 190;
+  width: min(360px, calc(100vw - 36px));
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 10px 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--line)); border-radius: 11px;
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  color: var(--text); font-size: 12px; line-height: 1.4;
+  box-shadow: 0 16px 44px rgba(0,0,0,.36);
+  backdrop-filter: blur(16px);
+  animation: fm-toast-in .16s ease-out;
+}
+.fm-update-toast > svg { color: var(--accent); flex-shrink: 0; }
+.fm-update-toast > span { flex: 1; min-width: 0; }
+.fm-update-toast-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.fm-update-toast-actions .fm-action-btn { width: auto; margin-top: 0; padding: 7px 12px; font-size: 12px; }
+.fm-update-toast-close {
+  width: 26px; height: 26px; display: grid; place-items: center; flex-shrink: 0;
+  border: 0; border-radius: 7px; background: transparent; color: var(--text-dim); cursor: pointer;
+}
+.fm-update-toast-close:hover { background: var(--panel-2); color: var(--text); }
+@media (max-width: 720px) {
+  .fm-update-toast { left: 8px; right: 8px; width: auto; flex-wrap: wrap; }
+}
+
 .fm-export-backdrop {
   position: fixed; inset: 0; z-index: 150; display: grid; place-items: center;
   padding: 32px; background: rgba(3,5,8,.72); backdrop-filter: blur(8px);
