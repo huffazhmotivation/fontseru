@@ -17,6 +17,7 @@ import { pointHitsObject } from "./objectOps";
 import { hitTestSegments } from "./segmentHitTest";
 import { editorCanvasCss } from "./editorCanvasCss";
 import { GhostGlyph } from "./GhostGlyph";
+import { ghostSampleAvailable, useGhostFont } from "./ghostFont";
 import { familyGhostOrder, ghostCenterX, matchingFamilyGlyph } from "./ghostRef";
 import { isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { GlyphMap } from "@/types/glyph";
@@ -341,7 +342,7 @@ function ghostRendersFor(
   imageSrc: string | null | undefined,
   familyGlyph: Glyph | undefined
 ): boolean {
-  if (mode === "sample") return !isFeatureGlyphUnicode(glyph.unicode);
+  if (mode === "sample") return !isFeatureGlyphUnicode(glyph.unicode) && ghostSampleAvailable(glyph.char);
   if (mode === "image") return !!imageSrc;
   return !!familyGlyph;
 }
@@ -496,6 +497,9 @@ const CellGuides = memo(function CellGuides({
 });
 
 export function GlyphMultiEditCanvas() {
+  // Subscribed so cells re-evaluate ghostRendersFor() once the reference
+  // font finishes loading (see ghostFont.ts).
+  useGhostFont();
   const frameRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 

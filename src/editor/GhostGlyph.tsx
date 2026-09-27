@@ -2,7 +2,7 @@ import { memo } from "react";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { objectFillPath, objectStrokePath, contourToPath } from "./pathBuilder";
-import { GHOST_FONT_SIZE_SCALE, outlineForChar, useGhostFont } from "./ghostFont";
+import { ghostOutlineFor, useGhostFont } from "./ghostFont";
 
 interface GhostGlyphProps {
   mode: "sample" | "family" | "image";
@@ -40,7 +40,9 @@ interface GhostGlyphProps {
 /**
  * Non-interactive reference glyph used by FontSeru's ghost modes.
  *
- * sample: restores the original built-in sans reference character.
+ * sample: the character's real vector outline from the embedded reference
+ * font (Noto Sans, OFL) — drawn as <path>, never as browser <text>, so it
+ * is identical on every device (see ghostFont.ts).
  * family: renders only saved vector geometry from another family style.
  * image: renders a user-uploaded reference image, purely as a backdrop —
  * it is never part of the glyph/vector data.
@@ -65,11 +67,9 @@ export const GhostGlyph = memo(function GhostGlyph({
   imageSrc,
   imageAspect,
 }: GhostGlyphProps) {
-  // Called unconditionally (rules-of-hooks) even though only "sample" mode
-  // uses the result — see ghostFont.ts for why sample glyphs are drawn
-  // from this embedded font's own vector outlines instead of SVG <text>.
-  const ghostFont = useGhostFont("regular");
-
+  // Always called (hooks can't sit behind the early returns below). Only
+  // the "sample" mode actually uses it; the font loads lazily on first use.
+  const refFont = useGhostFont();
   if (opacity <= 0) return null;
 
   const boxCenterX = centerX ?? upm * 0.5;
@@ -96,40 +96,45 @@ export const GhostGlyph = memo(function GhostGlyph({
   }
 
   if (mode === "sample") {
-    // Sample mode renders a single reference character. Feature-Builder
-    // glyphs (ligatures, alternates, swashes) use their multi-character
-    // rule key (e.g. "C.swash", "f_i") as `char`, which has no natural
-    // single-glyph sample to reference — rendering it as a glyph outline
-    // would draw the whole string at glyph-sized type and blow far past
-    // the canvas. Bail out rather than let that happen.
-    if (Array.from(char).length !== 1) return null;
-
-    // Still loading (first paint of the session) or this reference font
-    // genuinely has no glyph for this character: show nothing rather than
-    // a wrong or placeholder shape. This used to be an SVG <text> tied to
-    // the browser's own font stack ('Inter', falling back to whatever
-    // system-ui resolves to per device) — which is exactly what made the
-    // ghost inconsistent, and occasionally missing Vietnamese diacritics,
-    // across different PCs/tablets. It's now a vector outline extracted
-    // directly from one embedded font file via opentype.js, so it's the
-    // same shape everywhere, independent of the viewer's device or
-    // network. See ghostFont.ts.
-    if (!ghostFont) return null;
-    const outline = outlineForChar(ghostFont, char, capHeight * GHOST_FONT_SIZE_SCALE * scale);
-    if (!outline) return null;
-
+    const ref = ghostOutlineFor(refFont, char);
+    if (!ref) return null;
+    // Size the reference so ITS cap height lands on the project's cap
+    // height — the professional convention for a background/reference
+    // layer (the same thing Glyphs/FontLab do when you drop a reference
+    // font behind a glyph), so x-height, ascenders and accents all sit in
+    // proportion instead of just "roughly the right size". The user's
+    // Ghost Scale then zooms around the baseline centre, exactly like the
+    // old text ghost did, so existing Scale/Offset settings keep meaning.
+    const fit = (capHeight > 0 ? capHeight : upm * 0.7) / ref.capHeight;
+    const k = fit * scale;
     const anchorX = laneOffsetX + boxCenterX + offsetX;
-    const anchorY = ascender - offsetY;
-
+    const anchorY = ascender - offsetY; // baseline in canvas space
     return (
-      <path
-        d={outline.pathData}
-        fill="var(--text)"
+      <g
+        transform={`translate(${anchorX} ${anchorY}) scale(${k}) translate(${-ref.centerX} 0)`}
         opacity={opacity}
-        transform={`translate(${anchorX - outline.advance / 2} ${anchorY})`}
+        color="var(--text)"
         style={{ pointerEvents: "none", userSelect: "none" }}
         aria-hidden="true"
-      />
+        data-ghost-source="noto-sans"
+      >
+        {/* Soft fill so the letter reads as a mass, plus a 1-device-pixel
+            hairline contour (non-scaling, so it stays crisp at every zoom
+            and on every pixel density) so the actual edge you trace to is
+            unambiguous — the standard reference-layer look. */}
+        <path
+          d={ref.d}
+          fill="currentColor"
+          fillOpacity={0.6}
+          fillRule="nonzero"
+          stroke="currentColor"
+          strokeOpacity={0.9}
+          strokeWidth={1}
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+          shapeRendering="geometricPrecision"
+        />
+      </g>
     );
   }
 

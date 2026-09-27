@@ -25,11 +25,7 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
         clientsClaim: true,
-        // ttf added so the embedded ghost-reference font (public/fonts,
-        // see src/editor/ghostFont.ts) is precached for offline PWA use —
-        // it's what the sample ghost draws its vector outlines from, so it
-        // needs to be available even without a network connection.
-        globPatterns: ["**/*.{js,css,html,svg,png,ttf,woff,woff2,ico}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,woff,woff2,ico}"],
       },
       devOptions: {
         // Keep local `npm run dev` behaving exactly like before — the

@@ -6335,3 +6335,38 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-mx-frame { position: relative; overflow: hidden; }
 .fm-mx-frame svg { display: block; width: 100%; height: 100%; touch-action: none; }
 .fm-mx-frame .cursor-hand:active { cursor: grabbing; }
+
+/* ------------------------------------------------------ TOP BAR: COPY / PASTE / DELETE
+   The clipboard + delete trio is never folded into "More" (see TopBar.tsx):
+   on a tablet there is no keyboard, so these must stay one tap away at
+   every width. Declared last so it wins over the width-band rules above. */
+.fm-topbar-edit { display: flex; align-items: center; gap: 2px; }
+.fm-topbar-edit .fm-align-btn:active:not(:disabled) { background: var(--panel-2); color: var(--text); }
+.fm-topbar-edit .fm-align-btn.danger:active:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+/* Touch input: Apple/Material recommend ≥ 36–44px targets. The undo/redo
+   group and the edit trio are the most-tapped buttons on the bar, so on a
+   coarse pointer they get a real touch size regardless of the compact
+   24px align-button size the tablet band uses for the rarer groups. */
+@media (pointer: coarse) {
+  .fm-topbar .fm-topbtn-group .fm-align-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+  }
+  .fm-topbar .fm-topbar-edit { gap: 2px; }
+}
+@media (max-width: 599px) {
+  .fm-topbar .fm-topbtn-group .fm-align-btn { width: 34px; height: 34px; }
+}
+/* Phones: Copy / Paste / Delete now live in row two, which already holds
+   nine buttons — enough that the row no longer reads as sparse (the reason
+   Family / Feature Builder / Test Lab were pulled out of "More" on
+   phones). Those three go back into the "More" menu so row two still fits
+   one line on a 360–430px screen. Touch-only, because a narrow mouse
+   window shows every button directly and has no "More" trigger. */
+@media (max-width: 599px) and (pointer: coarse) {
+  .fm-topbar .fm-topbar-more-hide.fm-topbar-phone-show { display: none !important; }
+}

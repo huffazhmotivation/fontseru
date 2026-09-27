@@ -1,184 +1,170 @@
-import { useEffect, useState } from "react";
-import * as opentype from "opentype.js";
+import { useSyncExternalStore } from "react";
+import type { Font, Glyph as OtGlyph } from "opentype.js";
 
 /**
- * GHOST REFERENCE FONT — embedded, vector, device-independent
- * =============================================================
- * Fix for: sample-mode ghost glyphs rendering as the *wrong* character
- * shape (or missing Vietnamese diacritics entirely) on some PCs/tablets.
+ * GHOST REFERENCE FONT
+ * ====================
+ * The "Sample" ghost used to be an SVG `<text>` element, which meant the
+ * browser picked whatever font the device happened to have for that
+ * character. On one PC it was Inter, on an iPad it was SF, on an Android
+ * tablet it was Roboto — and for Vietnamese hook-above / dot-below vowels
+ * the fallback font often stacked the marks wrongly or not at all. The
+ * reference you trace over was therefore a different drawing on every
+ * device, which defeats the point of a reference.
  *
- * ROOT CAUSE (what this file replaces)
- * -------------------------------------
- * The old ghost drew an SVG `<text fontFamily="'Inter', system-ui, sans-serif">`.
- * That's a request to the *browser's* text shaper, which:
- *   1. depends on index.html's Google-Fonts <link> having already loaded
- *      Inter by the time the SVG paints (racy on slow/offline connections),
- *   2. falls back to `system-ui` — a different font on every OS/device —
- *      the instant Inter isn't available, and
- *   3. inherits whatever that fallback font does or doesn't support, which
- *      is exactly how Vietnamese hook-above/dot-below stacks (ẩ ậ ặ ệ ổ ...)
- *      go missing or get substituted on some tablets.
+ * Now the ghost is real vector geometry:
  *
- * FIX
- * ---
- * Never ask the browser to shape text for the ghost. Fetch one embedded,
- * open-license font file ourselves, parse it with opentype.js (already a
- * project dependency, used elsewhere for font export), and pull the real
- * vector outline for the requested character directly out of its glyf
- * table. `GhostGlyph.tsx` then draws that outline as a plain SVG <path> —
- * identical bytes in, identical pixels out, on every device, online or
- * offline, regardless of what's installed on the viewer's machine.
+ *  - One embedded open-license font (Noto Sans SemiBold, SIL OFL 1.1 —
+ *    see public/fonts/ghost/OFL.txt), subset to Latin / Latin Extended /
+ *    Vietnamese / Greek / Cyrillic / punctuation / currency / math.
+ *  - Parsed with opentype.js (already a dependency for font export), and
+ *    each glyph's actual outline is emitted as an SVG path `d` string.
  *
- * See public/fonts/README.md for what font ships here and how to swap it.
+ * No browser text shaping, no system fonts, no font-fallback chain: every
+ * device draws the exact same Bézier curves. The WOFF sits in /public so
+ * the service worker precaches it (see globPatterns in vite.config.ts) and
+ * the ghost also works offline.
  */
 
-const GHOST_FONT_URL = "/fonts/ghost-sans.ttf";
-const GHOST_FONT_BOLD_URL = "/fonts/ghost-sans-bold.ttf";
+const GHOST_FONT_URL = `${import.meta.env.BASE_URL}fonts/ghost/NotoSans-SemiBold.woff`;
 
-/** Visual size multiplier from FontSeru's own `capHeight` metric to the
- * font-unit `fontSize` opentype.js expects. Tuned for the shipped
- * Bricolage Grotesque; if you swap in a different reference font (see
- * public/fonts/README.md) and its cap-height reads visibly bigger or
- * smaller than before, adjust this one number rather than any call site. */
-export const GHOST_FONT_SIZE_SCALE = 1.36;
-
-export type GhostFontWeight = "regular" | "bold";
-
-interface GhostFontEntry {
-  promise: Promise<opentype.Font> | null;
-  font: opentype.Font | null;
+/** Reference-font geometry for one ghost character, in the reference
+ *  font's own units, y-down, baseline at y = 0. */
+export interface GhostOutline {
+  /** SVG path data. */
+  d: string;
+  /** Horizontal point that gets aligned to the working glyph's box centre. */
+  centerX: number;
+  /** Reference font's cap height, used to size the ghost to the project. */
+  capHeight: number;
+  unitsPerEm: number;
 }
 
-const entries: Record<GhostFontWeight, GhostFontEntry> = {
-  regular: { promise: null, font: null },
-  bold: { promise: null, font: null },
-};
+type Status = "idle" | "loading" | "ready" | "error";
 
-const urlFor: Record<GhostFontWeight, string> = {
-  regular: GHOST_FONT_URL,
-  bold: GHOST_FONT_BOLD_URL,
-};
-
+let font: Font | null = null;
+let status: Status = "idle";
+let loadPromise: Promise<Font | null> | null = null;
 const listeners = new Set<() => void>();
-function notifyListeners() {
-  for (const fn of listeners) fn();
+const outlineCache = new Map<string, GhostOutline | null>();
+
+function emit() {
+  for (const l of listeners) l();
 }
 
-/** Fetches + parses the embedded ghost-reference font for one weight.
- * Safe to call many times — the underlying fetch/parse happens once per
- * weight and every caller shares the same promise. */
-function loadGhostFont(weight: GhostFontWeight): Promise<opentype.Font> {
-  const entry = entries[weight];
-  if (entry.promise) return entry.promise;
-
-  entry.promise = fetch(urlFor[weight])
-    .then((res) => {
-      if (!res.ok) throw new Error(`ghost font fetch failed (${res.status}): ${urlFor[weight]}`);
-      return res.arrayBuffer();
-    })
-    .then((buffer) => {
-      const font = opentype.parse(buffer);
-      entry.font = font;
-      notifyListeners();
-      return font;
-    })
-    .catch((err) => {
-      // Leave entry.promise cleared so a later remount (or a flaky first
-      // request, e.g. offline-then-online on a tablet) can retry instead
-      // of permanently failing for the rest of the session.
-      entry.promise = null;
-      console.error(`[ghostFont] failed to load embedded reference font (${weight})`, err);
-      throw err;
-    });
-
-  return entry.promise;
+/** Loads (once) and parses the embedded reference font. Never throws. */
+export function loadGhostFont(): Promise<Font | null> {
+  if (loadPromise) return loadPromise;
+  status = "loading";
+  loadPromise = (async () => {
+    try {
+      const [{ parse }, res] = await Promise.all([
+        import("opentype.js"),
+        fetch(GHOST_FONT_URL, { cache: "force-cache" }),
+      ]);
+      if (!res.ok) throw new Error(`Ghost font HTTP ${res.status}`);
+      const buffer = await res.arrayBuffer();
+      font = parse(buffer);
+      status = "ready";
+    } catch (err) {
+      console.warn("[FontSeru] Ghost reference font failed to load", err);
+      status = "error";
+      // Allow a retry next time something asks (e.g. after coming back
+      // online) instead of staying broken for the whole session.
+      loadPromise = null;
+    }
+    emit();
+    return font;
+  })();
+  return loadPromise;
 }
 
-// Kick off loading both weights as soon as this module is imported, so
-// the font is typically already warm by the time a ghost first paints
-// instead of waiting for the first render to trigger the fetch.
-loadGhostFont("regular").catch(() => {});
-loadGhostFont("bold").catch(() => {});
-
-function getLoadedGhostFont(weight: GhostFontWeight): opentype.Font | null {
-  return entries[weight].font;
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  if (status === "idle" || (status === "error" && !loadPromise)) void loadGhostFont();
+  return () => listeners.delete(listener);
 }
 
-/** React hook: returns the parsed ghost-reference font once it's loaded
- * (null until then, and again briefly if a load ever needs to retry).
- * Components using this should render nothing while it's null rather
- * than fall back to any text-based placeholder — a half-second of no
- * ghost on first paint is a better failure mode than a flash of the
- * wrong glyph shape. */
-export function useGhostFont(weight: GhostFontWeight = "regular"): opentype.Font | null {
-  const [font, setFont] = useState<opentype.Font | null>(() => getLoadedGhostFont(weight));
-
-  useEffect(() => {
-    if (font) return;
-    loadGhostFont(weight).catch(() => {});
-    const onLoaded = () => setFont(getLoadedGhostFont(weight));
-    listeners.add(onLoaded);
-    return () => {
-      listeners.delete(onLoaded);
-    };
-  }, [font, weight]);
-
+function getSnapshot() {
   return font;
 }
 
-export interface GhostGlyphOutline {
-  /** SVG path data, baseline at y=0, left edge of the advance box at x=0. */
-  pathData: string;
-  /** Advance width in the same units as pathData, for horizontal centering. */
-  advance: number;
+/** Reference font, or null while it is still loading. Re-renders the
+ *  caller once it is ready. */
+export function useGhostFont(): Font | null {
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-// One outline cache per font object (regular vs. bold get their own
-// entry automatically, and it stays correct even if more weights are
-// added later) — keyed by WeakMap so it never outlives the font itself.
-const outlineCaches = new WeakMap<opentype.Font, Map<string, GhostGlyphOutline | null>>();
+function isMissing(g: OtGlyph | undefined | null): boolean {
+  return !g || g.index === 0;
+}
 
-/**
- * Extracts a single character's vector outline from an already-loaded
- * ghost-reference font, as SVG path data plus its advance width (so
- * callers can center it themselves). Returns null when the character
- * isn't a single code point, or when this reference font genuinely has
- * no glyph for it (the .notdef box is deliberately hidden rather than
- * shown — an absent ghost is a better signal than a wrong one).
+/** Turns a glyph key into the text the reference font should draw.
+ *  - "A", "ả"             → itself
+ *  - "a.alt1", "C.swash"  → the base letter before the suffix
+ *  - "f_i", "r_e"         → the component sequence ("fi", "re")
  */
-export function outlineForChar(
-  font: opentype.Font,
-  char: string,
-  fontSize: number
-): GhostGlyphOutline | null {
-  if (!char || Array.from(char).length !== 1 || !(fontSize > 0)) return null;
+function resolveKeyText(key: string): string | null {
+  const chars = Array.from(key);
+  if (chars.length === 1) return key;
+  const base = key.includes(".") && !key.startsWith(".") ? key.slice(0, key.indexOf(".")) : key;
+  const joined = base.includes("_") ? base.split("_").join("") : base;
+  return joined.length > 0 ? joined : null;
+}
 
-  let cache = outlineCaches.get(font);
-  if (!cache) {
-    cache = new Map();
-    outlineCaches.set(font, cache);
-  }
-  // Round fontSize so tiny sub-pixel zoom deltas during a drag share a
-  // cache entry instead of each computing/storing their own outline.
-  const cacheKey = `${char}:${Math.round(fontSize * 20)}`;
-  if (cache.has(cacheKey)) return cache.get(cacheKey) ?? null;
+/** Vector outline of `key` from the reference font, or null if the font
+ *  has no design for it (or has not loaded yet). Cached per key. */
+export function ghostOutlineFor(f: Font | null, key: string): GhostOutline | null {
+  if (!f) return null;
+  const cached = outlineCache.get(key);
+  if (cached !== undefined) return cached;
 
-  let result: GhostGlyphOutline | null = null;
-  try {
-    const glyphIndex = font.charToGlyphIndex(char);
-    if (glyphIndex !== 0) {
-      const path = font.getPath(char, 0, 0, fontSize, { kerning: false });
-      const pathData = path.toPathData({ decimalPlaces: 2 });
-      if (pathData) {
-        const advance = font.getAdvanceWidth(char, fontSize, { kerning: false });
-        result = { pathData, advance };
-      }
-    }
-  } catch (err) {
-    console.error(`[ghostFont] failed to extract outline for "${char}"`, err);
-    result = null;
-  }
-
-  cache.set(cacheKey, result);
+  const result = buildOutline(f, key);
+  outlineCache.set(key, result);
   return result;
+}
+
+function buildOutline(f: Font, key: string): GhostOutline | null {
+  const text = resolveKeyText(key);
+  if (!text) return null;
+  const upm = f.unitsPerEm || 1000;
+  const capHeight = f.tables.os2?.sCapHeight || upm * 0.714;
+
+  const chars = Array.from(text);
+  if (chars.length === 1) {
+    const g = f.charToGlyph(text);
+    if (isMissing(g)) return null;
+    const path = g.getPath(0, 0, upm);
+    const d = path.toPathData(2);
+    if (!d) return null;
+    const advance = g.advanceWidth ?? 0;
+    // Spacing glyphs centre on their own advance box (keeps the reference
+    // font's native sidebearings). Zero-width combining marks (U+0309,
+    // U+0323, …) are designed to hang over the PREVIOUS glyph at negative
+    // x, so for those the ink itself is centred instead.
+    let centerX = advance / 2;
+    if (!(advance > 0)) {
+      const bb = path.getBoundingBox();
+      centerX = (bb.x1 + bb.x2) / 2;
+    }
+    return { d, centerX, capHeight, unitsPerEm: upm };
+  }
+
+  // Multi-character key (ligature/alternate recipe): lay the run out with
+  // the reference font's own ligatures + kerning.
+  const glyphs = f.stringToGlyphs(text);
+  if (glyphs.some(isMissing)) return null;
+  const path = f.getPath(text, 0, 0, upm, { kerning: true });
+  const d = path.toPathData(2);
+  if (!d) return null;
+  const advance = f.getAdvanceWidth(text, upm, { kerning: true });
+  return { d, centerX: advance / 2, capHeight, unitsPerEm: upm };
+}
+
+/** Synchronous "will the Sample ghost paint something for this key?".
+ *  Optimistic while the font is still loading so an empty-cell placeholder
+ *  does not flash in and out. */
+export function ghostSampleAvailable(key: string): boolean {
+  if (status !== "ready" || !font) return status !== "error";
+  return ghostOutlineFor(font, key) !== null;
 }

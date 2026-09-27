@@ -3,8 +3,10 @@ import {
   Download, FlaskConical, Layers, Maximize, Minimize, Redo2, Undo2, Wand2,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
-  Copy, Trash2, Film, MoreHorizontal,
+  CopyPlus, Trash2, Film, MoreHorizontal,
 } from "lucide-react";
+import { CopyIcon, PasteIcon } from "@/components/icons/ClipboardIcons";
+import { pasteSvgFromSystemClipboard } from "@/trace/svgImport";
 import { useAppStore } from "@/glyph/store";
 import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
 import type { AlignMode } from "@/editor/objectOps";
@@ -60,13 +62,50 @@ export function TopBar() {
   const flipSelectedObjects = useAppStore((s) => s.flipSelectedObjects);
   const copySelection = useAppStore((s) => s.copySelection);
   const pasteClipboard = useAppStore((s) => s.pasteClipboard);
-  const deleteSelectedObjects = useAppStore((s) => s.deleteSelectedObjects);
+  const selectedNodeCount = useAppStore((s) => s.selectedNodes.length);
+  const hasInternalClipboard = useAppStore((s) => (s.clipboard?.length ?? 0) > 0);
   const activeGlyphObjects = useAppStore((s) => s.glyphs[s.activeChar]?.outline.objects);
   const openTimelapse = useTimelapseUiStore((s) => s.openPanel);
 
   const booleanEligibleCount = (activeGlyphObjects ?? [])
     .filter((o) => selectedObjectIds.includes(o.id))
     .filter(isBooleanEligible).length;
+
+  // --- Copy / Paste / Delete (always visible, every width) --------------
+  // These three are the edit actions you reach for constantly, and on a
+  // tablet there is no keyboard to fall back on — so unlike the align/
+  // boolean groups they are never folded into the "More" menu.
+  const canCopy = selectedObjectIds.length > 0;
+  // Paste is available whenever FontSeru's own clipboard has something,
+  // or the browser can at least try the OS clipboard (vector art copied
+  // from Illustrator/Affinity arrives there as SVG text).
+  const canReadSystemClipboard =
+    typeof navigator !== "undefined" && typeof navigator.clipboard?.readText === "function";
+  const canPaste = hasInternalClipboard || canReadSystemClipboard;
+  const handlePaste = React.useCallback(async () => {
+    // Button order is internal-first (unlike Cmd/Ctrl+V): on iPad/Android
+    // every OS-clipboard read pops a system "Paste" permission bubble, so
+    // when FontSeru already holds a copy it pastes that instantly and only
+    // reaches for the OS clipboard when there is nothing of its own.
+    if (useAppStore.getState().clipboard?.length) {
+      useAppStore.getState().pasteClipboard();
+      return;
+    }
+    await pasteSvgFromSystemClipboard();
+  }, []);
+  // One Delete for both selection kinds: Node tool → selected anchor
+  // points, Select tool → whole objects. The store keeps the two mutually
+  // exclusive (see setTool), so nodes-first always follows whichever
+  // selection is actually live — same rule as SketchToolbar's Delete.
+  const canDelete = selectedNodeCount > 0 || selectedObjectIds.length > 0;
+  const deleteLabel = selectedNodeCount > 0
+    ? `Delete ${selectedNodeCount === 1 ? "node" : `${selectedNodeCount} nodes`}`
+    : "Delete";
+  const handleDelete = React.useCallback(() => {
+    const s = useAppStore.getState();
+    if (s.selectedNodes.length > 0) { s.deleteSelectedNodes(); return; }
+    if (s.selectedObjectIds.length > 0) s.deleteSelectedObjects();
+  }, []);
 
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   React.useEffect(() => {
@@ -165,6 +204,44 @@ export function TopBar() {
         </button>
       </div>
 
+      <div className="fm-align-divider fm-topbar-edit-divider" />
+
+      <div className="fm-topbtn-group fm-topbar-edit" role="group" aria-label="Clipboard and delete">
+        <button
+          type="button"
+          className="fm-align-btn"
+          disabled={!canCopy}
+          onClick={copySelection}
+          title="Copy (Cmd/Ctrl+C)"
+          aria-label="Copy"
+          data-testid="copy-btn"
+        >
+          <CopyIcon size={16} />
+        </button>
+        <button
+          type="button"
+          className="fm-align-btn"
+          disabled={!canPaste}
+          onClick={() => { void handlePaste(); }}
+          title="Paste (Cmd/Ctrl+V)"
+          aria-label="Paste"
+          data-testid="paste-btn"
+        >
+          <PasteIcon size={16} />
+        </button>
+        <button
+          type="button"
+          className="fm-align-btn danger"
+          disabled={!canDelete}
+          onClick={handleDelete}
+          title={`${deleteLabel} (Delete)`}
+          aria-label={deleteLabel}
+          data-testid="delete-object-btn"
+        >
+          <Trash2 size={16} strokeWidth={1.7} />
+        </button>
+      </div>
+
       {/* Align / boolean / object-action groups below are hidden below
           1180px (see .fm-topbar-more-hide in app.css) and re-rendered
           inside the "More" dropdown near the end of this bar instead —
@@ -222,7 +299,7 @@ export function TopBar() {
           aria-label="Duplicate"
           data-testid="duplicate-btn"
         >
-          <Copy size={15} strokeWidth={1.7} />
+          <CopyPlus size={15} strokeWidth={1.7} />
         </button>
         <button
           type="button"
@@ -245,18 +322,6 @@ export function TopBar() {
           data-testid="flip-vertical-btn"
         >
           <FlipIcon direction="vertical" size={15} />
-        </button>
-        <div className="fm-align-divider" />
-        <button
-          type="button"
-          className="fm-align-btn danger"
-          disabled={selectedObjectIds.length === 0}
-          onClick={deleteSelectedObjects}
-          title="Delete"
-          aria-label="Delete"
-          data-testid="delete-object-btn"
-        >
-          <Trash2 size={15} strokeWidth={1.7} />
         </button>
       </div>
 
@@ -363,7 +428,7 @@ export function TopBar() {
                 disabled={selectedObjectIds.length === 0}
                 onClick={() => { copySelection(); pasteClipboard(); setMoreOpen(false); }}
               >
-                <Copy size={14} strokeWidth={1.7} /> Duplicate
+                <CopyPlus size={14} strokeWidth={1.7} /> Duplicate
               </button>
               <button
                 disabled={selectedObjectIds.length === 0}
@@ -376,13 +441,6 @@ export function TopBar() {
                 onClick={() => { flipSelectedObjects("vertical"); setMoreOpen(false); }}
               >
                 <FlipIcon direction="vertical" size={14} /> Flip Vertical
-              </button>
-              <button
-                className="fm-filemenu-danger"
-                disabled={selectedObjectIds.length === 0}
-                onClick={() => { deleteSelectedObjects(); setMoreOpen(false); }}
-              >
-                <Trash2 size={14} strokeWidth={1.7} /> Delete
               </button>
 
               <div className="fm-filemenu-sep" />
