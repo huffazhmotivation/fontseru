@@ -47,8 +47,39 @@ export function UpdatePrompt() {
     },
   });
 
+  // `checkForUpdate` (below) is defined inside an effect that only runs once
+  // ([] deps), so it closes over whatever `needRefresh`/`isUpdating` were at
+  // mount time — always `false`. Mirroring the latest values into refs on
+  // every render lets that stable closure see the current state without
+  // having to tear down and re-add the interval/focus/visibility listeners
+  // on every toggle.
+  const needRefreshRef = useRef(needRefresh);
+  const isUpdatingRef = useRef(isUpdating);
   useEffect(() => {
-    const checkForUpdate = () => registrationRef.current?.update().catch(() => {});
+    needRefreshRef.current = needRefresh;
+  }, [needRefresh]);
+  useEffect(() => {
+    isUpdatingRef.current = isUpdating;
+  }, [isUpdating]);
+
+  useEffect(() => {
+    // Never re-poll the service worker while an update is already pending
+    // (needRefresh) or actively being applied (isUpdating). A stray
+    // registration.update() call at exactly the wrong moment — the browser
+    // re-verifying the very worker that's already sitting there waiting —
+    // can transiently clear registration.waiting. If that happens between
+    // the popup appearing and the user clicking "Perbarui Sekarang", the
+    // skip-waiting message updateServiceWorker(true) sends has nothing to
+    // reach, 'controllerchange' never fires, and the button spins on
+    // "Memperbarui..." forever. It's also what could make this popup's
+    // mount/entrance animation re-fire while the previous one was still
+    // showing, which is what produced the ghostly duplicate box behind the
+    // dialog — one more reason to go completely quiet once there's already
+    // something for the user to act on.
+    const checkForUpdate = () => {
+      if (needRefreshRef.current || isUpdatingRef.current) return;
+      registrationRef.current?.update().catch(() => {});
+    };
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") checkForUpdate();
     };
@@ -85,6 +116,15 @@ export function UpdatePrompt() {
     if (isUpdating) return;
     setIsUpdating(true);
     updateServiceWorker(true);
+    // Safety net: the reload above should fire on its own once the new
+    // worker takes over. If registration.waiting was ever cleared out from
+    // under us (see the guard in checkForUpdate), the skip-waiting message
+    // has nowhere to go, 'controllerchange' never fires, and without this
+    // the button would spin on "Memperbarui..." forever with no way out for
+    // the user. Force a hard reload a few seconds later as a fallback — if
+    // the natural reload already happened by then, the page is gone and
+    // this never runs; if it didn't, this is what gets the user unstuck.
+    window.setTimeout(() => window.location.reload(), 8000);
   };
 
   return (
