@@ -1,4 +1,6 @@
 import { memo, useMemo } from "react";
+import { ghostOutlineFor, useGhostFont } from "./ghostFont";
+import { ghostCenterX } from "./ghostRef";
 import { useAppStore } from "@/glyph/store";
 import { hasOutline, type GlyphMap } from "@/types/glyph";
 import type { KerningPairs } from "@/types/kerning";
@@ -61,7 +63,11 @@ function GlyphRunView({
   const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
   const glyphs = glyphsOverride ?? storeGlyphs;
   const kerningPairs = kerningPairsOverride ?? storeKerningPairs;
-  const { ascender, descender, unitsPerEm } = metrics;
+  const { ascender, descender, unitsPerEm, capHeight } = metrics;
+  // Reference font for the undrawn-glyph placeholder (ghostEmpty). The
+  // hook is cheap and shared app-wide; it only triggers a re-render once,
+  // when the font finishes loading.
+  const refFont = useGhostFont();
   const wordSpacing = effectiveWordSpacing(metrics.wordSpacing, wordSpacingOverridesByStyle, fontStyle);
   const totalH = ascender - descender;
 
@@ -135,20 +141,47 @@ function GlyphRunView({
           // glyph.outline directly) still produces an empty glyph exactly
           // as before.
           if (!ghostEmpty || char === " ") return null;
+          // Same reference as the editor's Sample ghost: the real vector
+          // outline from the embedded Noto Sans (see ghostFont.ts), sized
+          // to the project cap height and centred on the glyph's standard
+          // box — so the placeholder in Live Preview / Test Lab is the very
+          // same drawing you trace over on the canvas, on every device.
+          // (The user's Ghost Scale/Offset are tracing aids and are not
+          // applied here: a text preview must stay typographically true.)
+          const ref = ghostOutlineFor(refFont, char);
+          const boxCenter = g ? ghostCenterX(g, unitsPerEm) : advance / 2;
+          if (!ref) {
+            // Still loading → draw nothing for a moment rather than flash.
+            // Not in the reference font → a standard .notdef-style box
+            // ("tofu"), so the slot still reads as "undrawn glyph here".
+            if (!refFont) return null;
+            const boxW = Math.max(advance * 0.5, capHeight * 0.45);
+            const boxH = capHeight > 0 ? capHeight : ascender * 0.7;
+            return (
+              <g key={i} transform={`translate(${x} 0)`} opacity={0.32} style={{ pointerEvents: "none" }} aria-hidden="true">
+                <rect
+                  x={boxCenter - boxW / 2}
+                  y={ascender - boxH}
+                  width={boxW}
+                  height={boxH}
+                  rx={boxW * 0.06}
+                  fill="none"
+                  stroke={glyphColor}
+                  strokeWidth={Math.max(8, boxW * 0.07)}
+                />
+              </g>
+            );
+          }
+          const k = (capHeight > 0 ? capHeight : unitsPerEm * 0.7) / ref.capHeight;
           return (
-            <g key={i} transform={`translate(${x} 0)`} opacity={0.32} style={{ pointerEvents: "none" }}>
-              <text
-                x={advance / 2}
-                y={ascender}
-                textAnchor="middle"
-                fontFamily="'Inter', system-ui, sans-serif"
-                fontWeight={600}
-                fontSize={ascender * 0.72}
+            <g key={i} transform={`translate(${x} 0)`} opacity={0.32} style={{ pointerEvents: "none" }} aria-hidden="true">
+              <path
+                d={ref.d}
+                transform={`translate(${boxCenter} ${ascender}) scale(${k}) translate(${-ref.centerX} 0)`}
                 fill={glyphColor}
+                fillRule="nonzero"
                 stroke="none"
-              >
-                {char}
-              </text>
+              />
             </g>
           );
         })}

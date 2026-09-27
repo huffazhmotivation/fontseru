@@ -16,6 +16,7 @@ import {
   AlignLeft, AlignCenter, AlignRight,
   Download, FolderOpen, FilePlus2,
   Aperture, Camera, Orbit, Frame, Contrast, Shuffle, Maximize2, Clock, Scaling, Anchor, Crop,
+  PenTool, Pencil, Scan, Circle, Underline, Highlighter, Copy,
 } from "lucide-react";
 
 /* ============================================================
@@ -214,6 +215,68 @@ const PRESET_LIB = [
   { id: "chip_pill_accent", name: "Accent Pill Badge", group: "Border & Outline", animateBy: "word", stagger: 75, entranceMs: 460, exitMs: 340, icon: Scaling,
     textStyle: { kind: "chip", bg: "#7c6cff", border: "rgba(255,255,255,0.35)", borderW: 1.5, radius: "pill", fill: "#ffffff" },
     curve: (t) => { const e = elasticOut(t, 0.5); const eo = ease("easeOut", Math.min(t * 2.4, 1)); return pose({ opacity: eo, scale: 0.55 + 0.45 * e }); } },
+
+  // ============================================================
+  // TRIM PATH — HURUF: garis tepi huruf tergambar sendiri (write-on)
+  // ala Trim Paths After Effects, lalu isinya muncul. Warna garis ikut
+  // warna klip kecuali preset menyebut `stroke` sendiri. Lihat
+  // paintTrimText() untuk rendernya.
+  // ============================================================
+  { id: "trim_writeon", name: "Trim Write-On", group: "Trim Path — Huruf", animateBy: "char", stagger: 45, entranceMs: 900, exitMs: 500, icon: PenTool,
+    textStyle: { kind: "trim", strokeWRatio: 0.035 },
+    curve: (t) => pose({ trim: ease("easeInOut", seg(t, 0, 0.72)), fill: ease("easeOut", seg(t, 0.55, 1)) }) },
+  { id: "trim_hollow", name: "Trim Outline (Berongga)", group: "Trim Path — Huruf", animateBy: "char", stagger: 40, entranceMs: 850, exitMs: 480, icon: Pencil,
+    textStyle: { kind: "trim", strokeWRatio: 0.04, fillMode: "none" },
+    curve: (t) => pose({ trim: ease("easeInOut", t) }) },
+  { id: "trim_neon", name: "Neon Trim Trace", group: "Trim Path — Huruf", animateBy: "char", stagger: 35, entranceMs: 1000, exitMs: 520, icon: Zap,
+    textStyle: { kind: "trim", strokeWRatio: 0.04, stroke: "#35e6ff", glow: true },
+    curve: (t, seed = 0) => { const fl = t > 0.7 && t < 0.9 && Math.sin(seed * 71 + t * 80) < -0.3 ? 0.35 : 1; return pose({ trim: ease("easeOut", seg(t, 0, 0.8)), fill: ease("easeOut", seg(t, 0.7, 1)) * fl }); } },
+  { id: "trim_duotone", name: "Duo Tone Trim", group: "Trim Path — Huruf", animateBy: "word", stagger: 110, entranceMs: 1000, exitMs: 520, icon: Contrast,
+    textStyle: { kind: "trim", strokeWRatio: 0.05, stroke: "#ff4d6d" },
+    curve: (t) => pose({ trim: ease("easeInOut", seg(t, 0, 0.8)), fill: ease("easeOut", seg(t, 0.45, 1)), y: 10 * (1 - ease("easeOut", t)) }) },
+  { id: "trim_echo", name: "Echo Outline Trim", group: "Trim Path — Huruf", animateBy: "char", stagger: 32, entranceMs: 900, exitMs: 480, icon: Copy,
+    textStyle: { kind: "trim", strokeWRatio: 0.03, echo: { dx: 0.06, dy: 0.06 } },
+    curve: (t) => { const f = ease("easeOut", seg(t, 0, 0.4)); return pose({ fill: f, y: 12 * (1 - f), trim: ease("easeInOut", seg(t, 0.25, 1)) }); } },
+  { id: "trim_wordsweep", name: "Trim Word Sweep", group: "Trim Path — Huruf", animateBy: "word", stagger: 120, entranceMs: 820, exitMs: 460, icon: TrendingUp,
+    textStyle: { kind: "trim", strokeWRatio: 0.04 },
+    curve: (t) => { const e = cubicBezier(0.22, 1, 0.36, 1, t); return pose({ trim: ease("easeInOut", seg(t, 0, 0.7)), fill: ease("easeOut", seg(t, 0.5, 1)), y: 22 * (1 - e) }); } },
+  { id: "trim_kinetic", name: "Trim Pop Kinetik", group: "Trim Path — Huruf", animateBy: "char", stagger: 22, entranceMs: 560, exitMs: 340, icon: Flame,
+    textStyle: { kind: "trim", strokeWRatio: 0.05 },
+    curve: (t) => { const e = elasticOut(t, 0.9); return pose({ trim: ease("easeOut", seg(t, 0, 0.6)), fill: seg(t, 0.5, 0.8), scale: 0.6 + 0.4 * e }); } },
+
+  // ============================================================
+  // TRIM PATH — BOX OUTLINE: bingkai/garis di sekitar teks tergambar
+  // sendiri (kotak, pil, siku pojok, garis bawah, lingkaran coretan,
+  // stabilo) lalu teksnya muncul/naik dari dalam bingkai — gaya lower
+  // third & title template yang populer. Lihat paintBoxTrimText().
+  // ============================================================
+  { id: "box_trace", name: "Box Trace", group: "Trim Path — Box Outline", animateBy: "line", stagger: 160, entranceMs: 1000, exitMs: 520, icon: Square,
+    textStyle: { kind: "box", shape: "rect", lineWRatio: 0.045 },
+    curve: (t) => pose({ box: ease("easeInOut", seg(t, 0, 0.6)), fill: ease("easeOut", seg(t, 0.45, 0.9)) }) },
+  { id: "box_split", name: "Box Split Trace + Naik", group: "Trim Path — Box Outline", animateBy: "line", stagger: 160, entranceMs: 1050, exitMs: 540, icon: Frame,
+    textStyle: { kind: "box", shape: "rect", trace: "split", lineWRatio: 0.045 },
+    curve: (t) => pose({ box: ease("easeInOut", seg(t, 0, 0.6)), rise: cubicBezier(0.22, 1, 0.36, 1, seg(t, 0.4, 1)) }) },
+  { id: "box_fill", name: "Box Trace & Fill", group: "Trim Path — Box Outline", animateBy: "line", stagger: 160, entranceMs: 1100, exitMs: 560, icon: RectangleHorizontal,
+    textStyle: { kind: "box", shape: "rect", trace: "split", lineWRatio: 0.045, textOnFill: "#0d0d10" },
+    curve: (t) => pose({ box: ease("easeInOut", seg(t, 0, 0.5)), boxFill: ease("easeOut", seg(t, 0.5, 0.75)), fill: ease("easeOut", seg(t, 0.35, 0.8)) }) },
+  { id: "box_pill", name: "Pill Trace", group: "Trim Path — Box Outline", animateBy: "line", stagger: 160, entranceMs: 950, exitMs: 500, icon: Scaling,
+    textStyle: { kind: "box", shape: "pill", trace: "split", lineWRatio: 0.04 },
+    curve: (t) => pose({ box: ease("easeInOut", seg(t, 0, 0.65)), fill: ease("easeOut", seg(t, 0.4, 0.9)), scale: 0.94 + 0.06 * ease("easeOut", t) }) },
+  { id: "box_brackets", name: "Corner Brackets", group: "Trim Path — Box Outline", animateBy: "line", stagger: 150, entranceMs: 900, exitMs: 480, icon: Scan,
+    textStyle: { kind: "box", shape: "brackets", lineWRatio: 0.05 },
+    curve: (t) => pose({ box: cubicBezier(0.22, 1, 0.36, 1, seg(t, 0, 0.65)), fill: ease("easeOut", seg(t, 0.3, 0.8)) }) },
+  { id: "box_underline", name: "Underline Reveal", group: "Trim Path — Box Outline", animateBy: "line", stagger: 150, entranceMs: 950, exitMs: 500, icon: Underline,
+    textStyle: { kind: "box", shape: "underline", lineWRatio: 0.05 },
+    curve: (t) => pose({ box: ease("easeInOut", seg(t, 0, 0.5)), rise: cubicBezier(0.22, 1, 0.36, 1, seg(t, 0.35, 1)) }) },
+  { id: "box_double", name: "Double Box Echo", group: "Trim Path — Box Outline", animateBy: "line", stagger: 160, entranceMs: 1150, exitMs: 560, icon: Layers,
+    textStyle: { kind: "box", shape: "rect", lineWRatio: 0.04, accent: "#7c6cff" },
+    curve: (t) => pose({ box: ease("easeInOut", seg(t, 0, 0.55)), box2: ease("easeInOut", seg(t, 0.2, 0.75)), fill: ease("easeOut", seg(t, 0.5, 0.95)) }) },
+  { id: "box_circle", name: "Circle Highlight (Coretan)", group: "Trim Path — Box Outline", animateBy: "line", stagger: 160, entranceMs: 1100, exitMs: 520, icon: Circle,
+    textStyle: { kind: "box", shape: "circle", lineWRatio: 0.045, border: "#ff4d6d" },
+    curve: (t) => pose({ fill: ease("easeOut", seg(t, 0, 0.35)), box: ease("easeInOut", seg(t, 0.25, 1)) }) },
+  { id: "box_marker", name: "Stabilo Sweep", group: "Trim Path — Box Outline", animateBy: "word", stagger: 120, entranceMs: 800, exitMs: 440, icon: Highlighter,
+    textStyle: { kind: "box", shape: "marker", markerColor: "rgba(255,214,10,0.85)" },
+    curve: (t) => pose({ fill: ease("easeOut", seg(t, 0, 0.4)), box: ease("easeInOut", seg(t, 0.2, 0.85)) }) },
 
   // ============================================================
   // EFEK MODERN BARU — gerakan yang sengaja dibuat beda arah & rasa
@@ -1748,12 +1811,216 @@ function roundRectPath(ctx, x, y, w, h, r) {
 // alphabetic); `uw` lebar unit yang sudah diukur pemanggil. Tanpa
 // `style`, fungsi ini berperilaku identik dengan drawSpacedText/fillText
 // lama — jadi semua preset non-border tidak terpengaruh sama sekali.
-function paintStyledUnit(ctx, style, text, x, y, uw, spacing, fontSize, baseColor) {
+/* ------------------------------------------------------------
+   TRIM PATH — gaya "garis yang tergambar sendiri" ala Trim Paths
+   After Effects. Dua jenis textStyle:
+     { kind: "trim", stroke?, strokeWRatio, fillMode?, glow?, echo? }
+       → garis tepi HURUF tergambar dari 0→100% (pose.trim), lalu isi
+         huruf muncul (pose.fill). fillMode "none" = tetap berongga.
+         echo {dx,dy} = garis digambar bergeser di belakang isi huruf.
+     { kind: "box", shape, trace?, radius?, lineWRatio?, border?,
+       accent?, fillBox?, textOnFill?, markerColor?, from? }
+       → bingkai di sekeliling teks tergambar (pose.box): shape "rect" /
+         "pill" / "brackets" / "underline" / "circle" / "marker".
+         trace "split" = dua garis dari tengah atas bertemu di bawah.
+         accent = kotak kedua bergeser (pose.box2). fillBox → kotak
+         diisi solid setelah selesai (pose.boxFill), teks berganti ke
+         textOnFill. pose.rise < 1 → teks naik dari balik bingkai/garis.
+   Trik trim: setLineDash([panjang, sangat-panjang]) — pola dash di
+   canvas dimulai ulang tiap subpath, jadi tiap kontur huruf tergambar
+   serentak dari titik awalnya masing-masing, persis "trim individually".
+   ------------------------------------------------------------ */
+const seg = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
+
+function strokeTrimmedText(ctx, text, x, y, spacing, trim, fontSize) {
+  if (trim <= 0.001) return;
+  ctx.save();
+  // Perkiraan panjang kontur terpanjang satu huruf ≈ 3.2× ukuran font;
+  // di trim penuh dash dimatikan supaya tak ada sisa celah sekecil apa pun.
+  if (trim < 0.999) ctx.setLineDash([Math.max(0.01, trim * fontSize * 3.2), 1e6]);
+  if (spacing && text.length > 1) {
+    let cx = x;
+    for (const ch of text) { ctx.strokeText(ch, cx, y); cx += ctx.measureText(ch).width + spacing; }
+  } else ctx.strokeText(text, x, y);
+  ctx.restore();
+}
+
+// Kotak bersudut bulat yang DIMULAI dari tengah sisi atas (bukan pojok),
+// supaya trace tunggal maupun trace "split" dua arah terlihat simetris.
+function roundRectFromTop(ctx, x, y, w, h, r, dir) {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  const mx = x + w / 2;
+  ctx.beginPath();
+  ctx.moveTo(mx, y);
+  if (dir > 0) {
+    ctx.arcTo(x + w, y, x + w, y + h, rr); ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr); ctx.arcTo(x, y, x + w, y, rr);
+  } else {
+    ctx.arcTo(x, y, x, y + h, rr); ctx.arcTo(x, y + h, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x + w, y, rr); ctx.arcTo(x + w, y, x, y, rr);
+  }
+  ctx.lineTo(mx, y);
+  return 2 * (w + h) - 8 * rr + 2 * Math.PI * rr;
+}
+
+function traceRoundRect(ctx, x, y, w, h, r, prog, split) {
+  if (prog <= 0.001) return;
+  if (split) {
+    for (const dir of [1, -1]) {
+      const len = roundRectFromTop(ctx, x, y, w, h, r, dir);
+      ctx.setLineDash(prog < 0.999 ? [Math.max(0.01, (len / 2) * prog), 1e6] : []);
+      ctx.stroke();
+    }
+  } else {
+    const len = roundRectFromTop(ctx, x, y, w, h, r, 1);
+    ctx.setLineDash(prog < 0.999 ? [Math.max(0.01, len * prog), 1e6] : []);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+}
+
+// Lingkaran "coretan tangan": sedikit lebih dari satu putaran dengan
+// radius yang melebar pelan, jadi ujung garisnya tidak bertemu rapi.
+function traceScribbleCircle(ctx, cx, cy, rx, ry, prog) {
+  if (prog <= 0.001) return;
+  const N = 72, turns = 1.12, a0 = -Math.PI * 0.62;
+  const pts = [];
+  for (let i = 0; i <= N; i++) {
+    const k = i / N, a = a0 + k * Math.PI * 2 * turns, g = 1 + 0.07 * k;
+    pts.push([cx + Math.cos(a) * rx * g, cy + Math.sin(a) * ry * g - k * ry * 0.08]);
+  }
+  let len = 0;
+  for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  ctx.beginPath();
+  pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+  ctx.setLineDash(prog < 0.999 ? [Math.max(0.01, len * prog), 1e6] : []);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function paintTrimText(ctx, style, text, x, y, spacing, fontSize, baseColor, pose) {
+  const trim = pose?.trim ?? 1;
+  const fill = style.fillMode === "none" ? 0 : (pose?.fill ?? 1);
+  const baseAlpha = ctx.globalAlpha;
+  const stroke = () => {
+    ctx.save();
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.lineWidth = Math.max(1, fontSize * (style.strokeWRatio ?? 0.035));
+    ctx.strokeStyle = style.stroke || baseColor;
+    if (style.glow) { ctx.shadowColor = style.stroke || baseColor; ctx.shadowBlur = fontSize * 0.28; }
+    const ex = style.echo ? fontSize * style.echo.dx : 0, ey = style.echo ? fontSize * style.echo.dy : 0;
+    strokeTrimmedText(ctx, text, x + ex, y + ey, spacing, trim, fontSize);
+    ctx.restore();
+  };
+  if (style.echo) stroke(); // garis gema di BELAKANG isi huruf
+  if (fill > 0.001) {
+    ctx.save();
+    ctx.globalAlpha = baseAlpha * fill;
+    ctx.fillStyle = baseColor;
+    if (spacing) drawSpacedText(ctx, text, x, y, spacing); else ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+  if (!style.echo) stroke(); // garis di ATAS isi supaya outline-nya utuh
+}
+
+function paintBoxTrimText(ctx, style, text, x, y, uw, spacing, fontSize, baseColor, pose) {
+  const hasText = text.trim().length > 0;
+  const box = pose?.box ?? 1, box2 = pose?.box2 ?? 1, boxFill = pose?.boxFill ?? 0;
+  const fill = pose?.fill ?? 1, rise = pose?.rise ?? 1;
+  const padX = style.padX ?? fontSize * 0.4;
+  const padY = style.padY ?? fontSize * 0.22;
+  const bx = x - padX, by = y - fontSize * 0.78 - padY;
+  const bw = uw + padX * 2, bh = fontSize * 1.06 + padY * 2;
+  const lw = Math.max(1.5, fontSize * (style.lineWRatio ?? 0.05));
+  const radius = style.shape === "pill" ? bh / 2 : (style.radius ?? fontSize * 0.08);
+  const color = style.border || baseColor;
+  const baseAlpha = ctx.globalAlpha;
+  const underlineY = y + fontSize * 0.24;
+
+  if (hasText) {
+    ctx.save();
+    ctx.lineJoin = "round"; ctx.lineCap = "round"; ctx.lineWidth = lw; ctx.strokeStyle = color;
+    const shape = style.shape || "rect";
+    if (shape === "marker") {
+      // Stabilo: blok warna menyapu dari kiri ke kanan di belakang teks.
+      ctx.fillStyle = style.markerColor || "rgba(255,214,10,0.9)";
+      const mh = fontSize * 0.62;
+      if (box > 0.001) { roundRectPath(ctx, bx + padX * 0.4, y - mh * 0.72, (bw - padX * 0.8) * box, mh, fontSize * 0.06); ctx.fill(); }
+    } else if (shape === "underline") {
+      const half = (uw / 2 + padX * 0.3) * box, mid = x + uw / 2;
+      if (box > 0.001) {
+        ctx.beginPath();
+        if (style.from === "left") { ctx.moveTo(x - padX * 0.3, underlineY); ctx.lineTo(x - padX * 0.3 + half * 2, underlineY); }
+        else { ctx.moveTo(mid - half, underlineY); ctx.lineTo(mid + half, underlineY); }
+        ctx.stroke();
+      }
+    } else if (shape === "brackets") {
+      // Empat siku pojok yang tumbuh dari sudut & merapat dari luar.
+      const grow = (1 - box) * fontSize * 0.35;
+      const arm = Math.min(bw, bh) * 0.34 * box;
+      if (arm > 0.5) {
+        const X0 = bx - grow, Y0 = by - grow, X1 = bx + bw + grow, Y1 = by + bh + grow;
+        ctx.beginPath();
+        ctx.moveTo(X0 + arm, Y0); ctx.lineTo(X0, Y0); ctx.lineTo(X0, Y0 + arm);
+        ctx.moveTo(X1 - arm, Y0); ctx.lineTo(X1, Y0); ctx.lineTo(X1, Y0 + arm);
+        ctx.moveTo(X0 + arm, Y1); ctx.lineTo(X0, Y1); ctx.lineTo(X0, Y1 - arm);
+        ctx.moveTo(X1 - arm, Y1); ctx.lineTo(X1, Y1); ctx.lineTo(X1, Y1 - arm);
+        ctx.stroke();
+      }
+    } else if (shape === "circle") {
+      traceScribbleCircle(ctx, x + uw / 2, y - fontSize * 0.28, bw / 2 + padX * 0.3, bh / 2 + padY * 0.6, box);
+    } else {
+      if (style.accent) {
+        const o = fontSize * 0.12;
+        ctx.strokeStyle = style.accent;
+        traceRoundRect(ctx, bx + o, by + o, bw, bh, radius, box2, style.trace === "split");
+        ctx.strokeStyle = color;
+      }
+      if (boxFill > 0.001) {
+        ctx.save();
+        ctx.globalAlpha = baseAlpha * boxFill;
+        ctx.fillStyle = style.fillBox || color;
+        roundRectPath(ctx, bx, by, bw, bh, radius);
+        ctx.fill();
+        ctx.restore();
+      }
+      traceRoundRect(ctx, bx, by, bw, bh, radius, box, style.trace === "split");
+    }
+    ctx.restore();
+  }
+
+  if (fill <= 0.001) return;
+  ctx.save();
+  if (rise < 0.999) {
+    // Masker: teks hanya terlihat DI DALAM bingkai (atau di atas garis
+    // bawah), lalu naik dari balik tepinya.
+    ctx.beginPath();
+    if (style.shape === "underline") ctx.rect(bx - fontSize, y - fontSize * 1.6, bw + fontSize * 2, fontSize * 1.6 + fontSize * 0.24 - lw / 2);
+    else ctx.rect(bx + lw / 2, by + lw / 2, bw - lw, bh - lw);
+    ctx.clip();
+  }
+  // Geser sejauh tinggi bingkai penuh supaya di rise=0 teks benar-benar
+  // tersembunyi di bawah tepi bingkai/garis, tidak mengintip.
+  const ty = y + (1 - rise) * bh;
+  const drawText = (col, a) => {
+    if (a <= 0.001) return;
+    ctx.globalAlpha = baseAlpha * fill * a;
+    ctx.fillStyle = col;
+    if (spacing) drawSpacedText(ctx, text, x, ty, spacing); else ctx.fillText(text, x, ty);
+  };
+  if (boxFill > 0.001) { drawText(baseColor, 1 - boxFill); drawText(style.textOnFill || "#0d0d10", boxFill); }
+  else drawText(style.textColor || baseColor, 1);
+  ctx.restore();
+}
+
+function paintStyledUnit(ctx, style, text, x, y, uw, spacing, fontSize, baseColor, pose) {
   if (!style) {
     if (spacing) drawSpacedText(ctx, text, x, y, spacing);
     else ctx.fillText(text, x, y);
     return;
   }
+  if (style.kind === "trim") return paintTrimText(ctx, style, text, x, y, spacing, fontSize, baseColor, pose);
+  if (style.kind === "box") return paintBoxTrimText(ctx, style, text, x, y, uw, spacing, fontSize, baseColor, pose);
   // Mode "word" juga menghasilkan unit berisi spasi murni di antara kata
   // (dipakai untuk menjaga jarak antar kata) — kalau unit ini kebetulan
   // kena gaya "chip", jangan gambar kotak/pil di sekeliling spasi kosong
@@ -1834,6 +2101,10 @@ function combinePose(unitP, transP) {
     scaleX: sx,
     scaleY: sy,
     letterSpacing: unitP.letterSpacing || 0,
+    // Progres gaya TRIM PATH (lihat paintStyledUnit) — dioper apa adanya
+    // dari curve preset; undefined = "sudah selesai" (1), jadi preset
+    // lain yang tak menyebutnya tidak terpengaruh.
+    trim: unitP.trim, fill: unitP.fill, box: unitP.box, box2: unitP.box2, boxFill: unitP.boxFill, rise: unitP.rise,
   };
 }
 
@@ -2651,7 +2922,7 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
     offCtx.rotate(offAngle + (p.rotation || 0) * Math.PI / 180);
     offCtx.scale(offScale * (p.scaleX ?? p.scale ?? 1), offScale * (p.scaleY ?? p.scale ?? 1));
     offCtx.globalAlpha = clamp((p.opacity ?? 1) * (clip.opacity ?? 1), 0, 1);
-    paintStyledUnit(offCtx, preset.textStyle, text, -uw / 2, 0, uw, ls, clip.fontSize, clip.color);
+    paintStyledUnit(offCtx, preset.textStyle, text, -uw / 2, 0, uw, ls, clip.fontSize, clip.color, p);
     offCtx.shadowBlur = 0; offCtx.shadowColor = 'transparent';
     offCtx.restore();
   };
@@ -2685,7 +2956,7 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
       maxW = Math.max(maxW, lw);
       const ly = -blockH / 2 + li * lineHeight + clip.fontSize * 0.35 + lineHeight / 2;
       const sx = -lw / 2 + alignShift(lw);
-      paintStyledUnit(offCtx, preset.textStyle, line, sx, ly, lw, ls, clip.fontSize, clip.color);
+      paintStyledUnit(offCtx, preset.textStyle, line, sx, ly, lw, ls, clip.fontSize, clip.color, p);
     });
     offCtx.restore();
   } else if (clip.animateBy === "line") {
