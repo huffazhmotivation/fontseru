@@ -52,13 +52,25 @@ export function UpdatePrompt() {
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") checkForUpdate();
     };
+    // `pageshow` with `event.persisted === true` fires specifically when the
+    // page is being restored from the browser's freeze/back-forward-cache
+    // state rather than freshly loaded — the exact case of an "Add to Home
+    // Screen" PWA that was closed (but only frozen, not truly terminated,
+    // on many mobile browsers) and is now being reopened. Re-checking here
+    // means a pending update surfaces this popup right away on reopen,
+    // instead of waiting for the 30-minute interval.
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) checkForUpdate();
+    };
     const interval = window.setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS);
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("focus", checkForUpdate);
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("focus", checkForUpdate);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, []);
 

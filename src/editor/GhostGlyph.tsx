@@ -3,6 +3,111 @@ import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { objectFillPath, objectStrokePath, contourToPath } from "./pathBuilder";
 
+/**
+ * Where a combining mark conventionally attaches relative to a base letter.
+ * Only used to decide which side of the dotted-circle placeholder (below)
+ * gets the little position hint — this is a coarse, hand-picked lookup over
+ * the Combining Diacritical Marks block (U+0300–U+036F) plus a couple of
+ * commonly-typed marks outside it (Vietnamese U+0323 dot-below lives inside
+ * the block; U+0309 hook-above too). It does not need to be exhaustive or
+ * Unicode-perfect: it only feeds a decorative preview, never real text
+ * shaping or glyph data.
+ */
+const BELOW_MARKS = new Set(
+  [
+    0x0316, 0x0317, 0x0318, 0x0319, 0x031c, 0x031d, 0x031e, 0x031f, 0x0320,
+    0x0323, 0x0324, 0x0325, 0x0326, 0x0327, 0x0328, 0x0329, 0x032a, 0x032b,
+    0x032c, 0x032d, 0x032e, 0x032f, 0x0330, 0x0331, 0x0332, 0x0333, 0x0339,
+    0x033a, 0x033b, 0x033c, 0x0347, 0x0348, 0x0349, 0x0353, 0x0354, 0x0355,
+    0x0356,
+  ].map((cp) => String.fromCodePoint(cp))
+);
+const OVERLAY_MARKS = new Set(
+  [0x033d, 0x0334, 0x0335, 0x0336, 0x0337, 0x0338, 0x0489].map((cp) =>
+    String.fromCodePoint(cp)
+  )
+);
+function markPosition(char: string): "above" | "below" | "overlay" {
+  if (OVERLAY_MARKS.has(char)) return "overlay";
+  if (BELOW_MARKS.has(char)) return "below";
+  return "above";
+}
+
+/**
+ * Self-contained, font-independent placeholder for an isolated combining
+ * mark (Vietnamese U+0309 hook-above, U+0323 dot-below, and the rest of the
+ * Mn category). Drawn entirely from SVG primitives — a dotted circle (the
+ * standard type-design convention for "a mark with no base to sit on") plus
+ * a small generic tick showing which side the mark attaches to.
+ *
+ * This deliberately does NOT ask any installed font to render the mark
+ * character itself. Isolated combining marks are notoriously inconsistent
+ * across text-shaping stacks: a browser/OS that has no glyph for the bare
+ * codepoint in the active font falls back to whatever font it thinks covers
+ * that codepoint next — and that substitute varies by device (which is why
+ * the same ghost used to render as a completely different shape on a laptop
+ * vs. a tablet). Worse, some fallback fonts bake a literal debug label like
+ * "NO GLYPH" into their .notdef slot as a foundry placeholder, and that
+ * label was exactly what was showing up here, stretched sideways to fit the
+ * mark's narrow advance box. Drawing our own vector shape sidesteps both
+ * problems: it needs no font at all, so it looks identical everywhere.
+ */
+function CombiningMarkGhost({
+  anchorX,
+  ascender,
+  capHeight,
+  offsetY,
+  opacity,
+  scale,
+  position,
+}: {
+  anchorX: number;
+  ascender: number;
+  capHeight: number;
+  offsetY: number;
+  opacity: number;
+  scale: number;
+  position: "above" | "below" | "overlay";
+}) {
+  const r = capHeight * 0.34 * scale;
+  const cy = ascender - capHeight * 0.5 * scale - offsetY;
+  const tick = r * 0.5;
+  return (
+    <g opacity={opacity} style={{ pointerEvents: "none", userSelect: "none" }} aria-hidden="true">
+      <circle
+        cx={anchorX}
+        cy={cy}
+        r={r}
+        fill="none"
+        stroke="var(--text)"
+        strokeWidth={Math.max(1, r * 0.09)}
+        strokeDasharray={`${r * 0.32} ${r * 0.28}`}
+      />
+      {position === "above" && (
+        <path
+          d={`M ${anchorX - tick} ${cy - r - tick * 0.6} Q ${anchorX} ${cy - r - tick * 1.8}, ${anchorX + tick} ${cy - r - tick * 0.6}`}
+          fill="none"
+          stroke="var(--text)"
+          strokeWidth={Math.max(1, r * 0.14)}
+          strokeLinecap="round"
+        />
+      )}
+      {position === "below" && (
+        <circle cx={anchorX} cy={cy + r + tick * 0.9} r={tick * 0.42} fill="var(--text)" />
+      )}
+      {position === "overlay" && (
+        <path
+          d={`M ${anchorX - tick} ${cy} L ${anchorX + tick} ${cy}`}
+          fill="none"
+          stroke="var(--text)"
+          strokeWidth={Math.max(1, r * 0.14)}
+          strokeLinecap="round"
+        />
+      )}
+    </g>
+  );
+}
+
 interface GhostGlyphProps {
   mode: "sample" | "family" | "image";
   char: string;
@@ -99,14 +204,31 @@ export const GhostGlyph = memo(function GhostGlyph({
     if (Array.from(char).length !== 1) return null;
     // Combining marks (Vietnamese U+0309 hook-above, U+0323 dot-below, and
     // any other Mn-category mark slot) have nothing to combine with when
-    // drawn on their own — a bare <text> node renders them at zero visual
-    // width, so the "sample" ghost silently disappears for exactly these
-    // characters even though this branch runs and returns real markup.
-    // Prefixing the standard dotted-circle placeholder (U+25CC) gives the
-    // mark a base to sit on, same as how type design tools conventionally
-    // preview an isolated diacritic.
+    // drawn on their own. They used to be prefixed with a dotted-circle
+    // placeholder (U+25CC) and rendered as ordinary <text>, but that still
+    // asked the browser to shape and draw the bare mark character itself —
+    // which text-rendering stacks handle very inconsistently across
+    // browsers/devices, and which some fallback fonts render as a literal
+    // "NO GLYPH" debug label baked into their .notdef slot when they have no
+    // glyph for the codepoint. See CombiningMarkGhost above: it draws the
+    // dotted-circle placeholder and a generic above/below/overlay position
+    // hint entirely as SVG vector shapes, with no font involved at all, so
+    // it can never fall back to another font's placeholder text and always
+    // looks identical regardless of platform.
     const isCombiningMark = /\p{Mn}/u.test(char);
-    const sampleText = isCombiningMark ? "\u25CC" + char : char;
+    if (isCombiningMark) {
+      return (
+        <CombiningMarkGhost
+          anchorX={laneOffsetX + boxCenterX + offsetX}
+          ascender={ascender}
+          capHeight={capHeight}
+          offsetY={offsetY}
+          opacity={opacity}
+          scale={scale}
+          position={markPosition(char)}
+        />
+      );
+    }
     return (
       <text
         x={laneOffsetX + boxCenterX + offsetX}
@@ -120,7 +242,7 @@ export const GhostGlyph = memo(function GhostGlyph({
         style={{ pointerEvents: "none", userSelect: "none" }}
         aria-hidden="true"
       >
-        {sampleText}
+        {char}
       </text>
     );
   }
