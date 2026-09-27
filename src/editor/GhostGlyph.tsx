@@ -2,35 +2,7 @@ import { memo } from "react";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { objectFillPath, objectStrokePath, contourToPath } from "./pathBuilder";
-
-// U+0309 (combining hook above) and U+0323 (combining dot below) are the
-// only two *true* zero-width Unicode combining marks FontSeru ever samples
-// in isolation — every other mark slot (´ ` ¨ ¸ ˇ …) is a normal spacing
-// character that any font/browser draws the same everywhere. A lone
-// combining mark has no such guarantee: rendering it depends entirely on
-// the *system font* the browser falls back to, which differs by platform
-// (that's why the PC and iPad ghosts looked different in the first place),
-// and some platforms don't draw it at all without a base character to
-// attach to, or worse, draw a "missing glyph" placeholder for an
-// unsupported combining sequence (the dotted box seen on iPad after a
-// dotted-circle base was tried).
-//
-// The only way to get one identical, guaranteed result on every device is
-// to stop asking the system font to shape these two marks at all, and draw
-// them ourselves as plain SVG vector shapes — same path data, same pixels,
-// on a Mac or an iPad or anywhere else.
-const HOOK_ABOVE_MARK = "\u0309";
-const DOT_BELOW_MARK = "\u0323";
-
-/** Small stroked hook, drawn in a local -0.6…0.6 unit box (unit = size). */
-function hookAbovePath(size: number): string {
-  const s = size;
-  return [
-    `M ${0.05 * s} ${-0.55 * s}`,
-    `C ${0.65 * s} ${-0.55 * s} ${0.65 * s} ${-0.05 * s} ${0.15 * s} ${0.05 * s}`,
-    `C ${-0.3 * s} ${0.13 * s} ${-0.3 * s} ${0.48 * s} ${0.15 * s} ${0.5 * s}`,
-  ].join(" ");
-}
+import { GHOST_FONT_SIZE_SCALE, outlineForChar, useGhostFont } from "./ghostFont";
 
 interface GhostGlyphProps {
   mode: "sample" | "family" | "image";
@@ -93,6 +65,11 @@ export const GhostGlyph = memo(function GhostGlyph({
   imageSrc,
   imageAspect,
 }: GhostGlyphProps) {
+  // Called unconditionally (rules-of-hooks) even though only "sample" mode
+  // uses the result — see ghostFont.ts for why sample glyphs are drawn
+  // from this embedded font's own vector outlines instead of SVG <text>.
+  const ghostFont = useGhostFont("regular");
+
   if (opacity <= 0) return null;
 
   const boxCenterX = centerX ?? upm * 0.5;
@@ -122,64 +99,37 @@ export const GhostGlyph = memo(function GhostGlyph({
     // Sample mode renders a single reference character. Feature-Builder
     // glyphs (ligatures, alternates, swashes) use their multi-character
     // rule key (e.g. "C.swash", "f_i") as `char`, which has no natural
-    // single-glyph sample to reference — rendering it as text would draw
-    // the whole string at glyph-sized type and blow far past the canvas.
-    // Bail out rather than let that happen.
+    // single-glyph sample to reference — rendering it as a glyph outline
+    // would draw the whole string at glyph-sized type and blow far past
+    // the canvas. Bail out rather than let that happen.
     if (Array.from(char).length !== 1) return null;
 
-    // The two true combining marks bypass text rendering entirely — see
-    // the note above HOOK_ABOVE_MARK — so the hand-drawn shape is the one
-    // and only rendering, identical on every device, PC included.
-    if (char === HOOK_ABOVE_MARK || char === DOT_BELOW_MARK) {
-      const cx = laneOffsetX + boxCenterX + offsetX;
-      const baselineY = ascender - offsetY;
-      const sz = capHeight * 0.5 * scale;
-      if (char === HOOK_ABOVE_MARK) {
-        const centerY = baselineY - capHeight * 0.78 * scale;
-        return (
-          <path
-            d={hookAbovePath(sz)}
-            transform={`translate(${cx} ${centerY})`}
-            fill="none"
-            stroke="var(--text)"
-            strokeWidth={sz * 0.22}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity={opacity}
-            style={{ pointerEvents: "none", userSelect: "none" }}
-            aria-hidden="true"
-          />
-        );
-      }
-      const centerY = baselineY + capHeight * 0.12 * scale;
-      return (
-        <circle
-          cx={cx}
-          cy={centerY}
-          r={capHeight * 0.09 * scale}
-          fill="var(--text)"
-          opacity={opacity}
-          style={{ pointerEvents: "none", userSelect: "none" }}
-          aria-hidden="true"
-        />
-      );
-    }
+    // Still loading (first paint of the session) or this reference font
+    // genuinely has no glyph for this character: show nothing rather than
+    // a wrong or placeholder shape. This used to be an SVG <text> tied to
+    // the browser's own font stack ('Inter', falling back to whatever
+    // system-ui resolves to per device) — which is exactly what made the
+    // ghost inconsistent, and occasionally missing Vietnamese diacritics,
+    // across different PCs/tablets. It's now a vector outline extracted
+    // directly from one embedded font file via opentype.js, so it's the
+    // same shape everywhere, independent of the viewer's device or
+    // network. See ghostFont.ts.
+    if (!ghostFont) return null;
+    const outline = outlineForChar(ghostFont, char, capHeight * GHOST_FONT_SIZE_SCALE * scale);
+    if (!outline) return null;
+
+    const anchorX = laneOffsetX + boxCenterX + offsetX;
+    const anchorY = ascender - offsetY;
 
     return (
-      <text
-        x={laneOffsetX + boxCenterX + offsetX}
-        y={ascender - offsetY}
-        textAnchor="middle"
-        fontFamily="'Inter', system-ui, sans-serif"
-        fontWeight={600}
-        fontSize={capHeight * 1.36 * scale}
+      <path
+        d={outline.pathData}
         fill="var(--text)"
         opacity={opacity}
+        transform={`translate(${anchorX - outline.advance / 2} ${anchorY})`}
         style={{ pointerEvents: "none", userSelect: "none" }}
         aria-hidden="true"
-      >
-        {char}
-      </text>
+      />
     );
   }
 
