@@ -96,10 +96,12 @@ export function UpdatePrompt() {
           </span>
         </div>
         <p id="update-modal-title" className="fm-update-title">Versi baru FontSeru sudah siap!</p>
-        <p className="fm-update-sub">
-          Ada pembaruan fitur &amp; perbaikan terbaru. Perbarui sekarang — halaman akan otomatis
-          dimuat ulang setelah selesai.
-        </p>
+        <div className="fm-update-content-box">
+          <p className="fm-update-sub">
+            Ada pembaruan fitur &amp; perbaikan terbaru. Perbarui sekarang — halaman akan otomatis
+            dimuat ulang setelah selesai.
+          </p>
+        </div>
         <button
           type="button"
           className="fm-auth-submit-btn fm-auth-btn-pro"

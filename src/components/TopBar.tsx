@@ -3,7 +3,7 @@ import {
   Download, FlaskConical, Layers, Maximize, Minimize, Redo2, Undo2, Wand2,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
-  Copy, Trash2, Film, MoreHorizontal, ClipboardCopy, ClipboardPaste,
+  Trash2, Film, MoreHorizontal, Copy, ClipboardPaste, CopyPlus,
 } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
@@ -32,6 +32,33 @@ const BOOLEAN_BUTTONS: { op: BooleanOp; label: string }[] = [
   { op: "intersect", label: "Intersect" },
 ];
 
+// `liveOutline` is written on every single pointer-move while dragging a
+// node/handle/object on the canvas (see useGlyphEditor/useSelectTool) — so
+// dozens of times per second during any drag gesture. It used to be read
+// directly inside the main TopBar function just to disable the Undo button
+// mid-drag, which meant the ENTIRE TopBar (every button group, the More
+// dropdown, AuthWidget, etc.) re-rendered on every drag frame — the actual
+// source of the topbar feeling laggy while editing. Isolating it in its own
+// tiny component means only these two buttons re-render during a drag; the
+// rest of the bar stays untouched.
+const UndoRedoButtons = React.memo(function UndoRedoButtons() {
+  const canUndo = useAppStore((s) => s.past.length > 0);
+  const canRedo = useAppStore((s) => s.future.length > 0);
+  const liveOutline = useAppStore((s) => s.liveOutline);
+  const undo = useAppStore((s) => s.undo);
+  const redo = useAppStore((s) => s.redo);
+  return (
+    <div className="fm-topbtn-group">
+      <button className="fm-align-btn" disabled={!canUndo && !liveOutline} onClick={undo} title="Undo (Cmd/Ctrl+Z)" aria-label="Undo" data-testid="undo-btn">
+        <Undo2 size={16} />
+      </button>
+      <button className="fm-align-btn" disabled={!canRedo} onClick={redo} title="Redo (Cmd/Ctrl+Shift+Z)" aria-label="Redo" data-testid="redo-btn">
+        <Redo2 size={16} />
+      </button>
+    </div>
+  );
+});
+
 export function TopBar() {
   const exportRef = React.useRef<(() => void) | null>(null);
   const handleExportReady = React.useCallback((open: () => void) => {
@@ -43,14 +70,8 @@ export function TopBar() {
   const fontName = useAppStore((s) => s.fontName);
   const setFontName = useAppStore((s) => s.setFontName);
   const commitFontNameEdit = useAppStore((s) => s.commitFontNameEdit);
-  // Subscribe to history lengths rather than the full snapshot arrays. The
-  // undo/redo buttons only need availability; retaining the arrays here made
-  // TopBar reconcile on every glyph commit.
-  const canUndo = useAppStore((s) => s.past.length > 0);
-  const canRedo = useAppStore((s) => s.future.length > 0);
-  const liveOutline = useAppStore((s) => s.liveOutline);
-  const undo = useAppStore((s) => s.undo);
-  const redo = useAppStore((s) => s.redo);
+  // canUndo/canRedo/liveOutline/undo/redo moved into <UndoRedoButtons/>
+  // below — see the note above that component for why.
   const openTestLab = useAppStore((s) => s.openTestLab);
   const openFamily = useAppStore((s) => s.openFamily);
   const openFeatureBuilder = useAppStore((s) => s.openFeatureBuilder);
@@ -173,14 +194,7 @@ export function TopBar() {
           left/right-pinned spacing. Above the phone breakpoint this wrapper
           is invisible (`display: contents`) and changes nothing. */}
       <div className="fm-topbar-row2">
-      <div className="fm-topbtn-group">
-        <button className="fm-align-btn" disabled={!canUndo && !liveOutline} onClick={undo} title="Undo (Cmd/Ctrl+Z)" aria-label="Undo" data-testid="undo-btn">
-          <Undo2 size={16} />
-        </button>
-        <button className="fm-align-btn" disabled={!canRedo} onClick={redo} title="Redo (Cmd/Ctrl+Shift+Z)" aria-label="Redo" data-testid="redo-btn">
-          <Redo2 size={16} />
-        </button>
-      </div>
+      <UndoRedoButtons />
 
       {/* Align / boolean / object-action groups below are hidden below
           1180px (see .fm-topbar-more-hide in app.css) and re-rendered
@@ -239,7 +253,7 @@ export function TopBar() {
           aria-label="Copy"
           data-testid="copy-btn"
         >
-          <ClipboardCopy size={15} strokeWidth={1.7} />
+          <Copy size={15} strokeWidth={1.7} />
         </button>
         <button
           type="button"
@@ -261,7 +275,7 @@ export function TopBar() {
           aria-label="Duplicate"
           data-testid="duplicate-btn"
         >
-          <Copy size={15} strokeWidth={1.7} />
+          <CopyPlus size={15} strokeWidth={1.7} />
         </button>
         <button
           type="button"
@@ -402,7 +416,7 @@ export function TopBar() {
                 disabled={selectedObjectIds.length === 0}
                 onClick={() => { copySelection(); setMoreOpen(false); }}
               >
-                <ClipboardCopy size={14} strokeWidth={1.7} /> Copy
+                <Copy size={14} strokeWidth={1.7} /> Copy
               </button>
               <button
                 disabled={!hasClipboard}
@@ -414,7 +428,7 @@ export function TopBar() {
                 disabled={selectedObjectIds.length === 0}
                 onClick={() => { copySelection(); pasteClipboard(); setMoreOpen(false); }}
               >
-                <Copy size={14} strokeWidth={1.7} /> Duplicate
+                <CopyPlus size={14} strokeWidth={1.7} /> Duplicate
               </button>
               <button
                 disabled={selectedObjectIds.length === 0}
