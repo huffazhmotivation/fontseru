@@ -97,6 +97,16 @@ export const GhostGlyph = memo(function GhostGlyph({
     // the whole string at glyph-sized type and blow far past the canvas.
     // Bail out rather than let that happen.
     if (Array.from(char).length !== 1) return null;
+    // Combining marks (Vietnamese U+0309 hook-above, U+0323 dot-below, and
+    // any other Mn-category mark slot) have nothing to combine with when
+    // drawn on their own — a bare <text> node renders them at zero visual
+    // width, so the "sample" ghost silently disappears for exactly these
+    // characters even though this branch runs and returns real markup.
+    // Prefixing the standard dotted-circle placeholder (U+25CC) gives the
+    // mark a base to sit on, same as how type design tools conventionally
+    // preview an isolated diacritic.
+    const isCombiningMark = /\p{Mn}/u.test(char);
+    const sampleText = isCombiningMark ? "\u25CC" + char : char;
     return (
       <text
         x={laneOffsetX + boxCenterX + offsetX}
@@ -110,7 +120,7 @@ export const GhostGlyph = memo(function GhostGlyph({
         style={{ pointerEvents: "none", userSelect: "none" }}
         aria-hidden="true"
       >
-        {char}
+        {sampleText}
       </text>
     );
   }

@@ -55,12 +55,28 @@ export function TopBar() {
   const openFamily = useAppStore((s) => s.openFamily);
   const openFeatureBuilder = useAppStore((s) => s.openFeatureBuilder);
   const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
+  const selectedNodes = useAppStore((s) => s.selectedNodes);
   const alignSelectedObjects = useAppStore((s) => s.alignSelectedObjects);
   const booleanSelectedObjects = useAppStore((s) => s.booleanSelectedObjects);
   const flipSelectedObjects = useAppStore((s) => s.flipSelectedObjects);
   const copySelection = useAppStore((s) => s.copySelection);
   const pasteClipboard = useAppStore((s) => s.pasteClipboard);
   const deleteSelectedObjects = useAppStore((s) => s.deleteSelectedObjects);
+  const deleteSelectedNodes = useAppStore((s) => s.deleteSelectedNodes);
+  // The top-bar trash button has to cover both the Select tool
+  // (selectedObjectIds) and the Node tool (selectedNodes) the same way
+  // SketchToolbar's delete button already does. Before this, it only ever
+  // called deleteSelectedObjects(), which is a no-op while Node tool has
+  // nodes selected instead of objects — on desktop that was masked by the
+  // canvas's own Delete/Backspace key handler, but on iPad (no physical
+  // keyboard) tapping this icon while editing nodes did nothing.
+  const hasNodeSelection = selectedNodes.length > 0;
+  const hasObjectSelection = selectedObjectIds.length > 0;
+  const canDeleteSelection = hasNodeSelection || hasObjectSelection;
+  const deleteSelection = React.useCallback(() => {
+    if (hasNodeSelection) { deleteSelectedNodes(); return; }
+    if (hasObjectSelection) deleteSelectedObjects();
+  }, [hasNodeSelection, hasObjectSelection, deleteSelectedNodes, deleteSelectedObjects]);
   const activeGlyphObjects = useAppStore((s) => s.glyphs[s.activeChar]?.outline.objects);
   const openTimelapse = useTimelapseUiStore((s) => s.openPanel);
 
@@ -250,8 +266,8 @@ export function TopBar() {
         <button
           type="button"
           className="fm-align-btn danger"
-          disabled={selectedObjectIds.length === 0}
-          onClick={deleteSelectedObjects}
+          disabled={!canDeleteSelection}
+          onClick={deleteSelection}
           title="Delete"
           aria-label="Delete"
           data-testid="delete-object-btn"
@@ -379,8 +395,8 @@ export function TopBar() {
               </button>
               <button
                 className="fm-filemenu-danger"
-                disabled={selectedObjectIds.length === 0}
-                onClick={() => { deleteSelectedObjects(); setMoreOpen(false); }}
+                disabled={!canDeleteSelection}
+                onClick={() => { deleteSelection(); setMoreOpen(false); }}
               >
                 <Trash2 size={14} strokeWidth={1.7} /> Delete
               </button>

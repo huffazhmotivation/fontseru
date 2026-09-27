@@ -1990,6 +1990,16 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-topbtn-group { gap: 4px; }
   .fm-theme-toggle { width: 40px; height: 40px; flex: 0 0 auto; }
 
+  /* Test Lab's kerning Undo/Redo buttons had no tablet/narrow-width rule
+     at all — every other icon-only control in the app (topbar buttons,
+     .fm-theme-toggle right above) gets enlarged below 1180px, but these
+     two were left at their fixed 26px desktop size always. Next to
+     everything else around them now sized for touch, that made them look
+     (and feel) like a rendering bug rather than a deliberately small
+     control — this brings them in line with the same tablet sizing. */
+  .fm-kern-history-btns button { width: 34px; height: 34px; }
+  .fm-kern-history-btns button svg { width: 16px; height: 16px; }
+
   /* Thin standalone separators add little once every button is already an
      icon-only square with its own padding/border-radius acting as visual
      separation — hidden here to save width in the now-fixed-fit row. */
@@ -2383,6 +2393,8 @@ input[type="number"]::-webkit-outer-spin-button {
      Test Lab added back in) still comfortably fits one line. */
   .fm-topbar .fm-topbtn { min-width: 34px; min-height: 34px; padding: 6px; }
   .fm-theme-toggle { width: 30px; height: 30px; }
+  .fm-kern-history-btns button { width: 30px; height: 30px; }
+  .fm-kern-history-btns button svg { width: 15px; height: 15px; }
   .fm-topbar .fm-fontname { padding: 5px 8px; }
 }
 
