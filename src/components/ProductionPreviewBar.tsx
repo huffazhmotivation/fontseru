@@ -183,12 +183,12 @@ function ProductionPreviewContent() {
           <input
             type="range"
             min={10}
-            max={400}
+            max={120}
             step={1}
             value={scale}
             onChange={(e) => setScale(Number(e.target.value))}
             data-testid="preview-scale-slider"
-            style={{ ["--fm-range-fill" as string]: `${((scale - 10) / (400 - 10)) * 100}%` }}
+            style={{ ["--fm-range-fill" as string]: `${((scale - 10) / (120 - 10)) * 100}%` }}
           />
           <span className="fm-preview-value">{scale}px</span>
         </div>

@@ -97,80 +97,10 @@ export const GhostGlyph = memo(function GhostGlyph({
     // the whole string at glyph-sized type and blow far past the canvas.
     // Bail out rather than let that happen.
     if (Array.from(char).length !== 1) return null;
-    // Combining marks (Vietnamese U+0309 hook-above, U+0323 dot-below, and
-    // any other Mn-category mark slot) have nothing to combine with when
-    // drawn on their own — a bare <text> node renders them at zero visual
-    // width, so the "sample" ghost silently disappears for exactly these
-    // characters even though this branch runs and returns real markup.
-    // A character in front of the mark keeps that from happening, but it
-    // must never be visible itself. Earlier attempts used a literal,
-    // painted-then-hidden base — first the dotted-circle U+25CC (font-
-    // fallback dependent, inconsistent across devices), then a plain
-    // period painted transparent via its own <tspan fill="transparent">.
-    // That period trick worked on desktop Chrome but went back to
-    // painting nothing at all on iPadOS Safari: splitting base and mark
-    // across two <tspan>s with two different `fill` values gives Chrome's
-    // text stack enough to still shape them as one cluster, but WebKit
-    // treats a differently-styled tspan as its own run and loses the
-    // cluster the mark needs to be recognized as attached to anything —
-    // so the mark silently fails to paint, which is exactly the "shows on
-    // laptop, blank on tablet" gap.
-    //
-    // U+034F COMBINING GRAPHEME JOINER fixes this at the root: it is the
-    // Unicode-standard invisible placeholder for exactly this situation.
-    // Unlike a period, it never paints ANY ink in any font, in any
-    // engine, so it doesn't need its own transparent tspan/fill to hide
-    // it — base and mark can live in one <tspan>, one fill, one run,
-    // which removes the very thing that broke on Safari.
-    //
-    // Position is handled separately from shaping, too, rather than
-    // trusted to whatever the browser's own mark-to-base stacking decides
-    // (that stacking is the other thing that drifts between engines).
-    // Instead the mark is anchored to the same standard-metric lines
-    // FontSeru's own multilingual composer (src/glyph/multilingual.ts)
-    // uses when it builds a real accented letter from this same mark: an
-    // "above" mark sits just above cap height (its own box's bottom edge
-    // on the cap-height + 2%-em gap line, via `text-after-edge`); a
-    // "below" mark sits right at the baseline (its own box's top edge on
-    // the baseline, via `text-before-edge`, matching the composer's
-    // `metrics.baseline - markBounds.maxY` with no extra gap). That keeps
-    // the ghost sitting where the mark will actually land once it's part
-    // of a real composite — on every device, not just the ones whose
-    // font-shaping stack happens to agree with FontSeru's own metrics.
-    const isCombiningMark = /\p{Mn}/u.test(char);
-    const cx = laneOffsetX + boxCenterX + offsetX;
-    const baselineY = ascender - offsetY;
-
-    if (isCombiningMark) {
-      // Extend this set as more below-type marks (cedilla, ogonek, …) get
-      // their own standalone glyph slot in MULTILINGUAL_MARK_SLOTS.
-      const isBelowMark = char === "\u0323";
-      const gap = upm * 0.02; // same 2%-em breathing room multilingual.ts adds above the glyph
-      const anchorFontUnits = isBelowMark ? 0 : capHeight + gap;
-      const anchorY = ascender - anchorFontUnits - offsetY;
-      return (
-        <text
-          x={cx}
-          y={anchorY}
-          textAnchor="middle"
-          dominantBaseline={isBelowMark ? "text-before-edge" : "text-after-edge"}
-          fontFamily="'Inter', system-ui, sans-serif"
-          fontWeight={600}
-          fontSize={capHeight * 1.36 * scale}
-          fill="var(--text)"
-          opacity={opacity}
-          style={{ pointerEvents: "none", userSelect: "none" }}
-          aria-hidden="true"
-        >
-          {"\u034F" + char}
-        </text>
-      );
-    }
-
     return (
       <text
-        x={cx}
-        y={baselineY}
+        x={laneOffsetX + boxCenterX + offsetX}
+        y={ascender - offsetY}
         textAnchor="middle"
         fontFamily="'Inter', system-ui, sans-serif"
         fontWeight={600}
