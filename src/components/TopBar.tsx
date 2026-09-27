@@ -3,7 +3,7 @@ import {
   Download, FlaskConical, Layers, Maximize, Minimize, Redo2, Undo2, Wand2,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
-  Copy, Trash2, Film, MoreHorizontal,
+  Copy, Trash2, Film, MoreHorizontal, ClipboardCopy, ClipboardPaste,
 } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
@@ -55,12 +55,29 @@ export function TopBar() {
   const openFamily = useAppStore((s) => s.openFamily);
   const openFeatureBuilder = useAppStore((s) => s.openFeatureBuilder);
   const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
+  const selectedNodes = useAppStore((s) => s.selectedNodes);
   const alignSelectedObjects = useAppStore((s) => s.alignSelectedObjects);
   const booleanSelectedObjects = useAppStore((s) => s.booleanSelectedObjects);
   const flipSelectedObjects = useAppStore((s) => s.flipSelectedObjects);
   const copySelection = useAppStore((s) => s.copySelection);
   const pasteClipboard = useAppStore((s) => s.pasteClipboard);
+  const hasClipboard = useAppStore((s) => Boolean(s.clipboard && s.clipboard.length > 0));
   const deleteSelectedObjects = useAppStore((s) => s.deleteSelectedObjects);
+  const deleteSelectedNodes = useAppStore((s) => s.deleteSelectedNodes);
+  // The top-bar trash button has to cover both the Select tool
+  // (selectedObjectIds) and the Node tool (selectedNodes) the same way
+  // SketchToolbar's delete button already does. Before this, it only ever
+  // called deleteSelectedObjects(), which is a no-op while Node tool has
+  // nodes selected instead of objects — on desktop that was masked by the
+  // canvas's own Delete/Backspace key handler, but on iPad (no physical
+  // keyboard) tapping this icon while editing nodes did nothing.
+  const hasNodeSelection = selectedNodes.length > 0;
+  const hasObjectSelection = selectedObjectIds.length > 0;
+  const canDeleteSelection = hasNodeSelection || hasObjectSelection;
+  const deleteSelection = React.useCallback(() => {
+    if (hasNodeSelection) { deleteSelectedNodes(); return; }
+    if (hasObjectSelection) deleteSelectedObjects();
+  }, [hasNodeSelection, hasObjectSelection, deleteSelectedNodes, deleteSelectedObjects]);
   const activeGlyphObjects = useAppStore((s) => s.glyphs[s.activeChar]?.outline.objects);
   const openTimelapse = useTimelapseUiStore((s) => s.openPanel);
 
@@ -217,6 +234,28 @@ export function TopBar() {
           type="button"
           className="fm-align-btn"
           disabled={selectedObjectIds.length === 0}
+          onClick={copySelection}
+          title="Copy (Cmd/Ctrl+C)"
+          aria-label="Copy"
+          data-testid="copy-btn"
+        >
+          <ClipboardCopy size={15} strokeWidth={1.7} />
+        </button>
+        <button
+          type="button"
+          className="fm-align-btn"
+          disabled={!hasClipboard}
+          onClick={pasteClipboard}
+          title="Paste (Cmd/Ctrl+V)"
+          aria-label="Paste"
+          data-testid="paste-btn"
+        >
+          <ClipboardPaste size={15} strokeWidth={1.7} />
+        </button>
+        <button
+          type="button"
+          className="fm-align-btn"
+          disabled={selectedObjectIds.length === 0}
           onClick={() => { copySelection(); pasteClipboard(); }}
           title="Duplicate"
           aria-label="Duplicate"
@@ -250,8 +289,8 @@ export function TopBar() {
         <button
           type="button"
           className="fm-align-btn danger"
-          disabled={selectedObjectIds.length === 0}
-          onClick={deleteSelectedObjects}
+          disabled={!canDeleteSelection}
+          onClick={deleteSelection}
           title="Delete"
           aria-label="Delete"
           data-testid="delete-object-btn"
@@ -361,6 +400,18 @@ export function TopBar() {
               <div className="fm-filemenu-sep" />
               <button
                 disabled={selectedObjectIds.length === 0}
+                onClick={() => { copySelection(); setMoreOpen(false); }}
+              >
+                <ClipboardCopy size={14} strokeWidth={1.7} /> Copy
+              </button>
+              <button
+                disabled={!hasClipboard}
+                onClick={() => { pasteClipboard(); setMoreOpen(false); }}
+              >
+                <ClipboardPaste size={14} strokeWidth={1.7} /> Paste
+              </button>
+              <button
+                disabled={selectedObjectIds.length === 0}
                 onClick={() => { copySelection(); pasteClipboard(); setMoreOpen(false); }}
               >
                 <Copy size={14} strokeWidth={1.7} /> Duplicate
@@ -379,8 +430,8 @@ export function TopBar() {
               </button>
               <button
                 className="fm-filemenu-danger"
-                disabled={selectedObjectIds.length === 0}
-                onClick={() => { deleteSelectedObjects(); setMoreOpen(false); }}
+                disabled={!canDeleteSelection}
+                onClick={() => { deleteSelection(); setMoreOpen(false); }}
               >
                 <Trash2 size={14} strokeWidth={1.7} /> Delete
               </button>

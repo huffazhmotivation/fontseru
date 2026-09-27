@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { RefreshCw, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { RefreshCw, Sparkles } from "lucide-react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 
 // A tab left open for a long time (or the app opened from an "Add to Home
@@ -13,12 +13,21 @@ const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 /**
  * Mounted once at the app root (see main.tsx). Renders nothing until a new
  * deploy's service worker has finished downloading and is sitting ready to
- * take over — at that point it shows a small, non-auto-dismissing notice so
- * the user can apply it on their own terms rather than the page silently
- * reloading out from under an in-progress edit.
+ * take over — at that point it shows a big, hard-to-miss centered popup
+ * (same visual language as EmailConfirmedWelcome's `.fm-auth-dialog`) so
+ * that ANY session running a stale build — a browser tab left open for
+ * days, or an "Add to Home Screen" PWA icon that behaves like a tab that
+ * never really closes — is unmistakably told a new version is ready,
+ * instead of a small corner toast that's easy to miss or ignore.
+ *
+ * Detection itself (registration, interval, focus, visibility — see the
+ * effect below) is what makes an old/idle session actually notice a new
+ * deploy in the first place; this component only renders the notice once
+ * `needRefresh` flips true.
  */
 export function UpdatePrompt() {
   const registrationRef = useRef<ServiceWorkerRegistration | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const {
     needRefresh: [needRefresh, setNeedRefresh],
@@ -55,26 +64,60 @@ export function UpdatePrompt() {
 
   if (!needRefresh) return null;
 
+  // updateServiceWorker(true) tells the waiting SW to skip-waiting + take
+  // over, then reloads the page for us automatically once it has — so a
+  // click here is genuinely "one click, done": no separate manual refresh
+  // step for the user. isUpdating just covers the brief gap before that
+  // reload actually happens, so the button can't be double-clicked.
+  const handleUpdate = () => {
+    if (isUpdating) return;
+    setIsUpdating(true);
+    updateServiceWorker(true);
+  };
+
   return (
-    <div className="fm-update-toast" role="status" aria-live="polite">
-      <RefreshCw size={16} strokeWidth={2.25} aria-hidden="true" />
-      <span>Versi baru FontSeru sudah tersedia.</span>
-      <div className="fm-update-toast-actions">
+    <div
+      className="fm-auth-backdrop fm-update-backdrop"
+      role="alertdialog"
+      aria-live="assertive"
+      aria-labelledby="update-modal-title"
+      data-testid="update-sw-modal"
+    >
+      <div className="fm-auth-dialog fm-welcome-dialog fm-update-dialog">
+        <span className="fm-update-badge">
+          <Sparkles size={11} strokeWidth={2.5} aria-hidden="true" />
+          Pembaruan tersedia
+        </span>
+        <div className="fm-update-icon-wrap" aria-hidden="true">
+          <span className="fm-update-icon-ring" />
+          <span className="fm-update-icon-ring fm-update-icon-ring-delay" />
+          <span className="fm-update-icon-core">
+            <RefreshCw size={20} strokeWidth={2.25} className={isUpdating ? "fm-update-icon-spin" : undefined} />
+          </span>
+        </div>
+        <p id="update-modal-title" className="fm-update-title">Versi baru FontSeru sudah siap!</p>
+        <p className="fm-update-sub">
+          Ada pembaruan fitur &amp; perbaikan terbaru. Perbarui sekarang — halaman akan otomatis
+          dimuat ulang setelah selesai.
+        </p>
         <button
           type="button"
-          className="fm-action-btn accent"
-          onClick={() => updateServiceWorker(true)}
+          className="fm-auth-submit-btn fm-auth-btn-pro"
+          onClick={handleUpdate}
+          disabled={isUpdating}
           data-testid="update-sw-btn"
         >
-          Perbarui sekarang
+          <RefreshCw size={15} strokeWidth={2.25} className={isUpdating ? "fm-update-icon-spin" : undefined} aria-hidden="true" />
+          {isUpdating ? "Memperbarui..." : "Perbarui Sekarang"}
         </button>
         <button
           type="button"
-          className="fm-update-toast-close"
+          className="fm-update-dismiss"
           onClick={() => setNeedRefresh(false)}
-          aria-label="Tutup notifikasi pembaruan"
+          disabled={isUpdating}
+          data-testid="update-sw-dismiss"
         >
-          <X size={14} />
+          Nanti saja
         </button>
       </div>
     </div>

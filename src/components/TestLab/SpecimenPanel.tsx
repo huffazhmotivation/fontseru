@@ -2064,11 +2064,11 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
             <input
               type="range"
               min={16}
-              max={280}
+              max={600}
               value={fontSize}
               onChange={(e) => setFontSize(Number(e.target.value))}
               data-testid="lab-fontsize"
-              style={{ ["--fm-range-fill" as string]: `${((fontSize - 16) / (280 - 16)) * 100}%` }}
+              style={{ ["--fm-range-fill" as string]: `${((fontSize - 16) / (600 - 16)) * 100}%` }}
             />
           </div>
 

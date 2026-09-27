@@ -1990,6 +1990,16 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-topbtn-group { gap: 4px; }
   .fm-theme-toggle { width: 40px; height: 40px; flex: 0 0 auto; }
 
+  /* Test Lab's kerning Undo/Redo buttons had no tablet/narrow-width rule
+     at all — every other icon-only control in the app (topbar buttons,
+     .fm-theme-toggle right above) gets enlarged below 1180px, but these
+     two were left at their fixed 26px desktop size always. Next to
+     everything else around them now sized for touch, that made them look
+     (and feel) like a rendering bug rather than a deliberately small
+     control — this brings them in line with the same tablet sizing. */
+  .fm-kern-history-btns button { width: 34px; height: 34px; }
+  .fm-kern-history-btns button svg { width: 16px; height: 16px; }
+
   /* Thin standalone separators add little once every button is already an
      icon-only square with its own padding/border-radius acting as visual
      separation — hidden here to save width in the now-fixed-fit row. */
@@ -2383,6 +2393,8 @@ input[type="number"]::-webkit-outer-spin-button {
      Test Lab added back in) still comfortably fits one line. */
   .fm-topbar .fm-topbtn { min-width: 34px; min-height: 34px; padding: 6px; }
   .fm-theme-toggle { width: 30px; height: 30px; }
+  .fm-kern-history-btns button { width: 30px; height: 30px; }
+  .fm-kern-history-btns button svg { width: 15px; height: 15px; }
   .fm-topbar .fm-fontname { padding: 5px 8px; }
 }
 
@@ -3611,32 +3623,55 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .fm-toast-close:hover { background: var(--panel-2); color: var(--text); }
 
-/* New-deploy notice: same visual language as .fm-toast, but it never
-   auto-dismisses on a timer — the point is for a user to notice it whenever
-   they next look up, since applying it reloads the page. */
-.fm-update-toast {
-  position: fixed; top: 68px; right: 18px; z-index: 190;
-  width: min(360px, calc(100vw - 36px));
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 10px 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--line)); border-radius: 11px;
-  background: color-mix(in srgb, var(--panel) 96%, transparent);
-  color: var(--text); font-size: 12px; line-height: 1.4;
-  box-shadow: 0 16px 44px rgba(0,0,0,.36);
-  backdrop-filter: blur(16px);
-  animation: fm-toast-in .16s ease-out;
+/* New-deploy notice: a centered, hard-to-miss modal (same visual language
+   as .fm-auth-dialog / .fm-welcome-dialog, see EmailConfirmedWelcome) —
+   deliberately NOT a small corner toast, so an old tab left open for days
+   or an "Add to Home Screen" PWA icon can't quietly keep running a stale
+   build unnoticed. The backdrop sits above every other overlay in the app
+   (z-index) and, like EmailConfirmedWelcome, is not click-to-dismiss —
+   only the explicit "Nanti saja" button hides it. */
+.fm-update-backdrop { z-index: 260; animation: fm-welcome-fade-in 0.2s ease; }
+.fm-update-dialog {
+  width: min(392px, calc(100vw - 40px));
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--line));
+  box-shadow: 0 30px 100px rgba(0,0,0,.5), 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
-.fm-update-toast > svg { color: var(--accent); flex-shrink: 0; }
-.fm-update-toast > span { flex: 1; min-width: 0; }
-.fm-update-toast-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.fm-update-toast-actions .fm-action-btn { width: auto; margin-top: 0; padding: 7px 12px; font-size: 12px; }
-.fm-update-toast-close {
-  width: 26px; height: 26px; display: grid; place-items: center; flex-shrink: 0;
-  border: 0; border-radius: 7px; background: transparent; color: var(--text-dim); cursor: pointer;
+.fm-update-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent);
+  padding: 4px 10px; border-radius: 999px;
 }
-.fm-update-toast-close:hover { background: var(--panel-2); color: var(--text); }
-@media (max-width: 720px) {
-  .fm-update-toast { left: 8px; right: 8px; width: auto; flex-wrap: wrap; }
+.fm-update-icon-wrap {
+  position: relative; display: grid; place-items: center;
+  width: 56px; height: 56px; margin: 6px 0 2px;
+}
+.fm-update-icon-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  animation: fm-update-ring-pulse 2s ease-out infinite;
+}
+.fm-update-icon-ring-delay { animation-delay: 1s; }
+.fm-update-icon-core {
+  position: relative; width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--accent); color: var(--accent-ink);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.fm-update-title { margin: 2px 0 0; font-size: 17.5px; font-weight: 750; letter-spacing: -0.01em; }
+.fm-update-sub { margin: 0 0 4px; font-size: 13px; color: var(--text-dim); line-height: 1.55; }
+.fm-update-dialog .fm-auth-submit-btn { width: 100%; gap: 8px; }
+.fm-update-dismiss {
+  border: none; background: transparent; color: var(--text-dim);
+  font-size: 12.5px; cursor: pointer; padding: 2px 4px;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.fm-update-dismiss:hover:not(:disabled) { color: var(--text); }
+.fm-update-dismiss:disabled { opacity: .5; cursor: not-allowed; }
+.fm-update-icon-spin { animation: fm-spin-rotate 0.9s linear infinite; }
+@keyframes fm-update-ring-pulse {
+  0% { transform: scale(0.8); opacity: 0.7; }
+  75%, 100% { transform: scale(1.7); opacity: 0; }
 }
 
 .fm-export-backdrop {
