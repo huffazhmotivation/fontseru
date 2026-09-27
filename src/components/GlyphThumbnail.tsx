@@ -5,8 +5,6 @@ import { objectFillPath, objectStrokePath, contourToPath } from "@/editor/pathBu
 import { outlineBounds } from "@/editor/objectOps";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { hasOutline } from "@/types/glyph";
-import { isCombiningMark } from "@/utils/unicode";
-import { CombiningMarkIcon } from "@/components/CombiningMarkGhost";
 
 const boundsCache = new WeakMap<object, ReturnType<typeof outlineBounds>>();
 
@@ -38,7 +36,6 @@ function GlyphThumbnailImpl({ glyph, className = "" }: { glyph: Glyph; className
     // "not drawn yet". Space never needs an outline (see hasSpace check in
     // utils/unicodeValidator.ts), so show the open-box space mark instead.
     if (glyph.char === " ") return <span className={charClassName} aria-hidden="true">␣</span>;
-    if (isCombiningMark(glyph.char)) return <span className={charClassName}><CombiningMarkIcon /></span>;
     return <span className={charClassName}>{glyph.char}</span>;
   }
 

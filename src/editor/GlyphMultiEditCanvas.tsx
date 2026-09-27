@@ -4,8 +4,6 @@ import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent }
 import { useAppStore } from "@/glyph/store";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { clampMultiZoom, MULTI_BASE_CELL_PX } from "@/types/glyphView";
-import { isCombiningMark } from "@/utils/unicode";
-import { CombiningMarkGhostMark } from "@/components/CombiningMarkGhost";
 import type { Point, VectorObject } from "@/types/geometry";
 import { getGlyphPaths } from "./glyphPaths";
 import { filterGlyphChars } from "./glyphFilter";
@@ -171,17 +169,6 @@ const PassiveCell = memo(function PassiveCell({
 }: PassiveCellProps) {
   if (!drawn) {
     if (!showPlaceholder) return null;
-    if (glyph.char !== " " && isCombiningMark(glyph.char)) {
-      return (
-        <CombiningMarkGhostMark
-          x={cellW / 2}
-          y={cellH * 0.62}
-          size={cellH * 0.38}
-          stroke="var(--text-faint)"
-          opacity={0.2}
-        />
-      );
-    }
     return (
       <text
         className="fm-mx-placeholder"

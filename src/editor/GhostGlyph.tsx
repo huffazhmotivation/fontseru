@@ -2,8 +2,29 @@ import { memo } from "react";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { objectFillPath, objectStrokePath, contourToPath } from "./pathBuilder";
-import { isCombiningMark } from "@/utils/unicode";
-import { CombiningMarkGhostMark } from "@/components/CombiningMarkGhost";
+
+// Touch/tablet text-rendering engines (iPadOS & mobile Safari included)
+// refuse to paint a lone Unicode combining mark (general category Mn) in an
+// SVG <text> node when it has no base character to attach to — the mark is
+// zero-width and the renderer has nothing to anchor ink to, so it comes out
+// blank. Desktop engines are generally more forgiving and already paint it.
+// This affects exactly the handful of *true* combining marks FontSeru ever
+// samples (e.g. U+0309 combining hook above, U+0323 combining dot below —
+// every other mark slot like ´ ` ¨ ˇ is a normal spacing character and is
+// unaffected). Mirrors the existing `isChromiumBrowser` pattern in App.tsx:
+// detect the affected environment once, then branch ONLY there, so desktop
+// rendering — already correct — is untouched.
+const isCoarsePointerDevice =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(pointer: coarse)").matches;
+
+const isNonSpacingMark = (ch: string) => /\p{Mn}/u.test(ch);
+
+// A dotted circle is the standard, Unicode-chart way to display an isolated
+// combining mark — it gives the mark a base to render against without
+// changing what the mark itself looks like.
+const DOTTED_CIRCLE = "\u25CC";
 
 interface GhostGlyphProps {
   mode: "sample" | "family" | "image";
@@ -99,26 +120,24 @@ export const GhostGlyph = memo(function GhostGlyph({
     // the whole string at glyph-sized type and blow far past the canvas.
     // Bail out rather than let that happen.
     if (Array.from(char).length !== 1) return null;
-    const sampleX = laneOffsetX + boxCenterX + offsetX;
-    const sampleY = ascender - offsetY;
-    const sampleSize = capHeight * 1.36 * scale;
-    if (isCombiningMark(char)) {
-      return <CombiningMarkGhostMark x={sampleX} y={sampleY} size={sampleSize} stroke="var(--text)" opacity={opacity} />;
-    }
+    // Only touch/tablet + only true combining marks — desktop's existing,
+    // already-correct bare-mark rendering is left exactly as it was.
+    const displayChar =
+      isCoarsePointerDevice && isNonSpacingMark(char) ? DOTTED_CIRCLE + char : char;
     return (
       <text
-        x={sampleX}
-        y={sampleY}
+        x={laneOffsetX + boxCenterX + offsetX}
+        y={ascender - offsetY}
         textAnchor="middle"
         fontFamily="'Inter', system-ui, sans-serif"
         fontWeight={600}
-        fontSize={sampleSize}
+        fontSize={capHeight * 1.36 * scale}
         fill="var(--text)"
         opacity={opacity}
         style={{ pointerEvents: "none", userSelect: "none" }}
         aria-hidden="true"
       >
-        {char}
+        {displayChar}
       </text>
     );
   }
