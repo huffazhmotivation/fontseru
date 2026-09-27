@@ -3,7 +3,8 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { useAppStore } from "@/glyph/store";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { clampOverviewZoom } from "@/types/glyphView";
-import { displayChar } from "@/utils/unicode";
+import { isCombiningMark } from "@/utils/unicode";
+import { CombiningMarkGhostMark } from "@/components/CombiningMarkGhost";
 import { getGlyphPaths } from "./glyphPaths";
 import { filterGlyphChars } from "./glyphFilter";
 import {
@@ -130,6 +131,14 @@ function GlyphTileView({
             )
           )}
         </g>
+      ) : glyph.char !== " " && isCombiningMark(glyph.char) ? (
+        <CombiningMarkGhostMark
+          x={rect.x + rect.w / 2}
+          y={rect.y + rect.h * 0.66}
+          size={rect.h * 0.44}
+          stroke="var(--text-faint)"
+          opacity={0.45}
+        />
       ) : (
         <text
           className="fm-ov-placeholder"
@@ -138,7 +147,7 @@ function GlyphTileView({
           textAnchor="middle"
           fontSize={rect.h * 0.44}
         >
-          {glyph.char === " " ? "␣" : displayChar(glyph.char)}
+          {glyph.char === " " ? "␣" : glyph.char}
         </text>
       )}
       <text

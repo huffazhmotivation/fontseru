@@ -2,7 +2,8 @@ import { memo } from "react";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { objectFillPath, objectStrokePath, contourToPath } from "./pathBuilder";
-import { displayChar } from "@/utils/unicode";
+import { isCombiningMark } from "@/utils/unicode";
+import { CombiningMarkGhostMark } from "@/components/CombiningMarkGhost";
 
 interface GhostGlyphProps {
   mode: "sample" | "family" | "image";
@@ -98,20 +99,26 @@ export const GhostGlyph = memo(function GhostGlyph({
     // the whole string at glyph-sized type and blow far past the canvas.
     // Bail out rather than let that happen.
     if (Array.from(char).length !== 1) return null;
+    const sampleX = laneOffsetX + boxCenterX + offsetX;
+    const sampleY = ascender - offsetY;
+    const sampleSize = capHeight * 1.36 * scale;
+    if (isCombiningMark(char)) {
+      return <CombiningMarkGhostMark x={sampleX} y={sampleY} size={sampleSize} stroke="var(--text)" opacity={opacity} />;
+    }
     return (
       <text
-        x={laneOffsetX + boxCenterX + offsetX}
-        y={ascender - offsetY}
+        x={sampleX}
+        y={sampleY}
         textAnchor="middle"
         fontFamily="'Inter', system-ui, sans-serif"
         fontWeight={600}
-        fontSize={capHeight * 1.36 * scale}
+        fontSize={sampleSize}
         fill="var(--text)"
         opacity={opacity}
         style={{ pointerEvents: "none", userSelect: "none" }}
         aria-hidden="true"
       >
-        {displayChar(char)}
+        {char}
       </text>
     );
   }

@@ -6,7 +6,8 @@ import { GlyphThumbnail } from "@/components/GlyphThumbnail";
 import { Slider } from "@/components/RightPanel";
 import { InfoTip } from "@/components/InfoTip";
 import { autoBoldOutline, autoItalicOutline, type FamilyGenerationResult } from "@/glyph/autoGenerate";
-import { displayChar } from "@/utils/unicode";
+import { isCombiningMark } from "@/utils/unicode";
+import { CombiningMarkIcon } from "@/components/CombiningMarkGhost";
 
 
 const FAMILY_CATEGORIES: ReadonlyArray<{ id: GlyphCategory; label: string }> = [
@@ -147,7 +148,7 @@ function LivePreviewStrip({ label, glyphs, hasSource }: { label: string; glyphs:
         <div className="fm-family-auto-live-strip" role="list">
           {glyphs.map((g) => (
             <div key={`${label}-${g.char}`} className="fm-family-auto-live-glyph" role="listitem" title={g.char}>
-              {hasOutline(g) ? <GlyphThumbnail glyph={g} /> : <span className="fm-family-auto-live-char">{displayChar(g.char)}</span>}
+              {hasOutline(g) ? <GlyphThumbnail glyph={g} /> : <span className="fm-family-auto-live-char">{isCombiningMark(g.char) ? <CombiningMarkIcon /> : g.char}</span>}
             </div>
           ))}
         </div>
