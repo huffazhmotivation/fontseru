@@ -306,6 +306,68 @@ const PRESET_LIB = [
 // klip teks lama tidak berubah.
 const DEFAULT_PRESET = PRESET_LIB.find((p) => p.id === "apple") || PRESET_LIB[0];
 
+/* ------------------------------------------------------------
+   WARNA KEDUA PRESET — preset yang punya warna selain warna teks
+   (stabilo, garis neon/duo tone, kotak kedua, badge, lingkaran
+   coretan, dst.) otomatis terdeteksi di sini, dan panel kanan
+   menampilkan picker warna tambahan HANYA untuk preset tersebut.
+   Pilihan pengguna disimpan di clip.accentColor (hex) dan
+   menggantikan kunci warna itu di textStyle saat dirender;
+   transparansi bawaan preset (mis. stabilo 85%) tetap dipertahankan.
+   Preset boleh menyebut `accentKey`/`accentLabel` sendiri di
+   textStyle bila deteksi otomatis kurang tepat.
+   ------------------------------------------------------------ */
+const ACCENT_KEYS = [
+  ["markerColor", "Warna Stabilo"],
+  ["accent", "Warna Kotak Kedua"],
+  ["textOnFill", "Warna Teks di Kotak"],
+  ["stroke", "Warna Garis"],
+  ["bg", "Warna Latar Badge"],
+  ["border", "Warna Bingkai"],
+];
+function getPresetAccent(preset) {
+  const st = preset && preset.textStyle;
+  if (!st) return null;
+  if (st.accentKey) return { key: st.accentKey, label: st.accentLabel || "Warna Kedua", def: st[st.accentKey] };
+  for (const [key, label] of ACCENT_KEYS) {
+    const v = st[key];
+    if (typeof v === "string" && v !== "transparent") return { key, label, def: v };
+  }
+  return null;
+}
+function parseCssColor(c) {
+  if (typeof c !== "string") return null;
+  let m = /^#([a-f\d])([a-f\d])([a-f\d])$/i.exec(c);
+  if (m) return { r: parseInt(m[1] + m[1], 16), g: parseInt(m[2] + m[2], 16), b: parseInt(m[3] + m[3], 16), a: 1 };
+  m = /^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(c);
+  if (m) return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16), a: 1 };
+  m = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i.exec(c);
+  if (m) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] == null ? 1 : +m[4] };
+  return null;
+}
+// Hex (untuk picker) dari warna CSS apa pun yang dipakai preset.
+function accentDefaultHex(def) {
+  const c = parseCssColor(def);
+  if (!c) return "#FFFFFF";
+  const h = (n) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, "0");
+  return `#${h(c.r)}${h(c.g)}${h(c.b)}`.toUpperCase();
+}
+// Warna pilihan pengguna + alpha bawaan preset.
+function accentWithDefaultAlpha(hex, def) {
+  const c = parseCssColor(hex), d = parseCssColor(def);
+  if (!c) return def;
+  const a = d ? d.a : 1;
+  return a >= 1 ? hex : `rgba(${c.r},${c.g},${c.b},${a})`;
+}
+// textStyle efektif sebuah klip (dengan warna kedua pilihan pengguna).
+function resolveTextStyle(preset, clip) {
+  const st = preset.textStyle;
+  if (!st || !clip.accentColor) return st;
+  const acc = getPresetAccent(preset);
+  if (!acc) return st;
+  return { ...st, [acc.key]: accentWithDefaultAlpha(clip.accentColor, acc.def) };
+}
+
 /* ============================================================
    PRESET KHUSUS GAMBAR/VIDEO — gambar & video tidak punya "huruf/kata",
    jadi semua preset di sini bergerak sebagai SATU objek utuh (animateBy
@@ -1489,7 +1551,7 @@ function projectReducer(state, action) {
     case "APPLY_PRESET": {
       const preset = getPreset(action.presetId);
       const ids = new Set(action.ids || [action.id]);
-      const clips = state.clips.map((c) => (ids.has(c.id) ? { ...c, presetId: preset.id, animateBy: preset.animateBy, stagger: preset.stagger, animateIn: true, animateOut: true } : c));
+      const clips = state.clips.map((c) => (ids.has(c.id) ? { ...c, presetId: preset.id, animateBy: preset.animateBy, stagger: preset.stagger, animateIn: true, animateOut: true, accentColor: undefined } : c));
       return { ...state, clips };
     }
     case "APPLY_TRANSITION_BOTH": {
@@ -2480,7 +2542,6 @@ function getGL(w, h) {
       glState = S;
     } catch (e) { glState = false; return null; }
   }
-  if (glState.canvas.width !== w || glState.canvas.height !== h) { glState.canvas.width = w; glState.canvas.height = h; }
   return glState;
 }
 
@@ -2626,8 +2687,18 @@ function glBlit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, fla
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   }
 
-  gl.viewport(0, 0, cw, ch);
-  gl.scissor(bx0, ch - by1, bx1 - bx0, by1 - by0);
+  // Resolusi render GPU adaptif: bidang yang sedang di-blur kedalaman
+  // (detail halusnya toh hilang) boleh dirender lebih kecil saat governor
+  // pratinjau menurunkan kualitas — biaya shader blur turun ±2-4×. Tanpa
+  // blur, atau saat export (gfxQuality = 1), selalu resolusi penuh.
+  const rs = maxB >= 0.35 && gfxQuality < 0.99 ? (gfxQuality < 0.75 ? 0.5 : 0.7) : 1;
+  const gw = Math.max(1, Math.round(cw * rs)), gh = Math.max(1, Math.round(ch * rs));
+  if (S.canvas.width !== gw) S.canvas.width = gw;
+  if (S.canvas.height !== gh) S.canvas.height = gh;
+  const gx0 = Math.floor(bx0 * rs), gy0 = Math.floor(by0 * rs);
+  const gx1 = Math.min(gw, Math.ceil(bx1 * rs)), gy1 = Math.min(gh, Math.ceil(by1 * rs));
+  gl.viewport(0, 0, gw, gh);
+  gl.scissor(gx0, gh - gy1, gx1 - gx0, gy1 - gy0);
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.useProgram(S.prog);
@@ -2638,9 +2709,10 @@ function glBlit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, fla
   gl.uniform2f(S.uTexSize, t.w, t.h);
   gl.uniform4f(S.uRect, rsx / t.w, rsy / t.h, (rsx + rsw) / t.w, (rsy + rsh) / t.h);
   // w = sampel dasar blur; makin rendah kualitas (governor), makin sedikit.
-  gl.uniform4f(S.uBlur, maxB, pf, norm, gfxQuality < 0.99 ? 6 : 10);
+  gl.uniform4f(S.uBlur, maxB * rs, pf, norm, gfxQuality < 0.99 ? 6 : 10);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  ctx.drawImage(S.canvas, bx0, by0, bx1 - bx0, by1 - by0, bx0, by0, bx1 - bx0, by1 - by0);
+  if (gx1 <= gx0 || gy1 <= gy0) return true;
+  ctx.drawImage(S.canvas, gx0, gy0, gx1 - gx0, gy1 - gy0, gx0 / rs, gy0 / rs, (gx1 - gx0) / rs, (gy1 - gy0) / rs);
   return true;
 }
 
@@ -2764,6 +2836,95 @@ function blit3D(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh, off, pivX, pivY, flat)
   }
 }
 
+/* ------------------------------------------------------------
+   CACHE LAYER STATIS untuk klip berat (Transform 3D / blur)
+   ------------------------------------------------------------
+   Klip 3D (apalagi dengan Blur 3D) mahal: tiap frame layernya digambar,
+   diunggah ke GPU, di-shader, lalu hasilnya ditarik balik ke kanvas 2D
+   (sinkronisasi GPU yang bikin play tersendat). Padahal sebagian besar
+   waktu klip itu DIAM — animasi masuk sudah selesai, animasi keluar belum
+   mulai, tanpa effect/transisi aktif — jadi hasilnya identik tiap frame.
+   Selama jendela "diam" itu hasil render klip disimpan di kanvas layer
+   miliknya sendiri dan tiap frame cukup ditempel (satu drawImage murah).
+   Cache otomatis basi begitu objek klip berubah (reducer selalu membuat
+   objek baru saat diedit), ukuran frame berubah, atau font selesai dimuat.
+   Pengisian cache selalu memakai kualitas penuh, jadi hasilnya sama persis
+   dengan render langsung (aman juga untuk export).
+   ------------------------------------------------------------ */
+let fontEpoch = 0;
+if (typeof document !== "undefined" && document.fonts && document.fonts.addEventListener) {
+  document.fonts.addEventListener("loadingdone", () => { fontEpoch++; });
+}
+const layerCache = new Map(); // clip.id → { canvas, clip, el, w, h, epoch, tin, tout, bbox }
+const LAYER_CACHE_MAX = 6;
+function clearLayerCache() {
+  for (const e of layerCache.values()) { e.canvas.width = 0; e.canvas.height = 0; }
+  layerCache.clear();
+}
+
+function isHeavyClip(clip) {
+  return !!clip && (has3D(clip.offset) || (clip.blur || 0) > 0.4);
+}
+
+// true bila pada waktu lokal `t` klip ini pasti berada di pose diam (hasil
+// render tidak berubah dari frame ke frame). Cerminan dari samplePose /
+// sampleTransitionPose / sampleEffect — sengaja konservatif: ragu = false.
+function isClipAtRest(clip, t, slotTransitions, el) {
+  if (clip.type === "video") return false;
+  if (clip.type === "image" && !(el && el.__mfsReady && !el.__mfsFailed)) return false;
+  if (clip.effectId && clip.effectId !== "none" && clip.effectIntensity) return false;
+  const ov = slotTransitions?.[clip.id];
+  const inT = getTransition(ov?.in || clip.transitionInId);
+  const outT = getTransition(ov?.out || clip.transitionOutId);
+  if (t < inT.entranceMs) return false;
+  if (outT.exitMs > 0 && t >= clip.duration - outT.exitMs) return false;
+  let preset;
+  if (clip.type === "text") {
+    preset = getPreset(clip.presetId);
+    if (preset.layout === "circle") return false;
+  } else {
+    if (!clip.presetId || clip.presetId === "none") return true;
+    preset = getPreset(clip.presetId);
+  }
+  if (preset.sustain) return false;
+  const speed = clip.speed ?? 1;
+  const maxRank = clip.type === "text" && clip.animateBy !== "all" ? Math.max(0, getCachedUnits(clip).totalUnits - 1) : 0;
+  const delay = maxRank * (clip.type === "text" ? (clip.stagger || 0) : 0);
+  if (clip.animateIn !== false && t < delay + Math.max(1, preset.entranceMs / speed)) return false;
+  if (clip.animateOut !== false && t >= clip.duration - Math.max(1, preset.exitMs / speed) - delay) return false;
+  return true;
+}
+
+function drawCachedLayer(ctx, clip, el, w, h, slotTransitions, render) {
+  const ov = slotTransitions?.[clip.id];
+  const tin = ov?.in || null, tout = ov?.out || null;
+  let e = layerCache.get(clip.id);
+  if (e && e.clip === clip && e.el === el && e.w === w && e.h === h && e.epoch === fontEpoch && e.tin === tin && e.tout === tout) {
+    layerCache.delete(clip.id); layerCache.set(clip.id, e); // LRU: tandai baru dipakai
+    ctx.drawImage(e.canvas, 0, 0);
+    return e.bbox;
+  }
+  if (!e) e = { canvas: document.createElement("canvas") };
+  if (e.canvas.width !== w) e.canvas.width = w;
+  if (e.canvas.height !== h) e.canvas.height = h;
+  const lctx = e.canvas.getContext("2d");
+  lctx.setTransform(1, 0, 0, 1, 0, 0);
+  lctx.clearRect(0, 0, w, h);
+  const q = getGfxQuality();
+  setGfxQuality(1);
+  let bbox;
+  try { bbox = render(lctx); } finally { setGfxQuality(q); }
+  Object.assign(e, { clip, el, w, h, epoch: fontEpoch, tin, tout, bbox });
+  layerCache.delete(clip.id); layerCache.set(clip.id, e);
+  while (layerCache.size > LAYER_CACHE_MAX) {
+    const [oldId, old] = layerCache.entries().next().value;
+    old.canvas.width = 0; old.canvas.height = 0;
+    layerCache.delete(oldId);
+  }
+  ctx.drawImage(e.canvas, 0, 0);
+  return bbox;
+}
+
 // Kanvas sementara untuk tingkat blur kedalaman (dipakai ulang tiap frame).
 const depthBlurCanvases = [];
 function getDepthBlurCanvas(i) {
@@ -2862,6 +3023,7 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
   const off = clip.offset;
   let maxBlur = 0;
   const animOpts = { animateIn: clip.animateIn, animateOut: clip.animateOut, easing: clip.easing, speed: clip.speed ?? 1 };
+  const textStyle = resolveTextStyle(preset, clip);
 
   const pose0raw = samplePose(preset, 0, clip.stagger, localTime, clip.duration, 0, animOpts);
   const pose0 = combinePose(pose0raw, transPose);
@@ -2922,7 +3084,7 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
     offCtx.rotate(offAngle + (p.rotation || 0) * Math.PI / 180);
     offCtx.scale(offScale * (p.scaleX ?? p.scale ?? 1), offScale * (p.scaleY ?? p.scale ?? 1));
     offCtx.globalAlpha = clamp((p.opacity ?? 1) * (clip.opacity ?? 1), 0, 1);
-    paintStyledUnit(offCtx, preset.textStyle, text, -uw / 2, 0, uw, ls, clip.fontSize, clip.color, p);
+    paintStyledUnit(offCtx, textStyle, text, -uw / 2, 0, uw, ls, clip.fontSize, clip.color, p);
     offCtx.shadowBlur = 0; offCtx.shadowColor = 'transparent';
     offCtx.restore();
   };
@@ -2956,7 +3118,7 @@ function drawTextClip(mainCtx, offCtx, offCanvas, clip, playheadMs, w, h, blurCa
       maxW = Math.max(maxW, lw);
       const ly = -blockH / 2 + li * lineHeight + clip.fontSize * 0.35 + lineHeight / 2;
       const sx = -lw / 2 + alignShift(lw);
-      paintStyledUnit(offCtx, preset.textStyle, line, sx, ly, lw, ls, clip.fontSize, clip.color, p);
+      paintStyledUnit(offCtx, textStyle, line, sx, ly, lw, ls, clip.fontSize, clip.color, p);
     });
     offCtx.restore();
   } else if (clip.animateBy === "line") {
@@ -4498,11 +4660,19 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       const clip = clipsRef.current[i];
       let bbox = null;
       try {
-        if (clip.type === "text") {
-          bbox = drawTextClip(ctx, offCtx, offCanvas, clip, timeMs, w, h, blurCanvas, blurCtx, transitionsRef.current);
-        } else if (clip.type === "image" || clip.type === "video") {
-          const entry = mediaMapRef.current[clip.type][clip.id];
-          bbox = drawMediaVisual(ctx, entry?.el, clip, timeMs, w, h, blurCanvas, blurCtx, transitionsRef.current);
+        const slots = transitionsRef.current;
+        const el = clip.type === "image" || clip.type === "video" ? mediaMapRef.current[clip.type][clip.id]?.el : null;
+        const draw = (target) => (clip.type === "text"
+          ? drawTextClip(target, offCtx, offCanvas, clip, timeMs, w, h, blurCanvas, blurCtx, slots)
+          : drawMediaVisual(target, el, clip, timeMs, w, h, blurCanvas, blurCtx, slots));
+        if (clip.type === "text" || clip.type === "image" || clip.type === "video") {
+          const lt = timeMs - clip.start;
+          // Klip 3D/blur yang sedang diam → pakai cache layer (lihat drawCachedLayer).
+          if (lt >= 0 && lt <= clip.duration && isHeavyClip(clip) && isClipAtRest(clip, lt, slots, el)) {
+            bbox = drawCachedLayer(ctx, clip, el, w, h, slots, draw);
+          } else {
+            bbox = draw(ctx);
+          }
         }
       } catch (e) { /* aset belum siap */ }
       if (clip.id === selId) selBBox = bbox;
@@ -4661,6 +4831,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     // lalu kembali tajam begitu adegan itu selesai.
     let raf, lastTs = null, lastSync = 0;
     let frameBudget = [];
+    clearLayerCache(); // mulai bersih (mis. glyph font baru saja diedit di mode lain)
     const loop = (ts) => {
       if (lastTs == null) lastTs = ts;
       const dt = ts - lastTs; lastTs = ts;
@@ -4826,6 +4997,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     });
 
     setExporting(true);
+    clearLayerCache();
     setGfxQuality(1); // ekspor selalu kualitas penuh, terlepas dari penurunan sementara saat pratinjau
     setExportProgress(0);
     dispatchPlayback({ type: "SET_LOOP", value: false });
@@ -5714,6 +5886,22 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch: d
             onChange={(v) => updateSelected({ fontSize: v })} />
         </div>
         <ColorPickerField label="Warna" value={clip.color} onChange={(v) => updateSelected({ color: v })} />
+        {(() => {
+          // Hanya muncul untuk preset yang punya warna kedua (lihat getPresetAccent).
+          const acc = getPresetAccent(getPreset(clip.presetId));
+          if (!acc) return null;
+          const defHex = accentDefaultHex(acc.def);
+          return (
+            <>
+              <ColorPickerField label={acc.label} value={clip.accentColor || defHex} onChange={(v) => updateSelected({ accentColor: v })} />
+              {clip.accentColor && clip.accentColor.toUpperCase() !== defHex && (
+                <div className="mfs-field">
+                  <button className="mfs-btn mfs-btn-sm" onClick={() => updateSelected({ accentColor: undefined })}>Kembalikan warna bawaan preset</button>
+                </div>
+              )}
+            </>
+          );
+        })()}
         <div className="mfs-field">
           <SliderField label="Jarak huruf" value={clip.letterSpacing ?? 0} min={-10} max={60} step={0.5} unit="px"
             onChange={(v) => updateSelected({ letterSpacing: v })} />
