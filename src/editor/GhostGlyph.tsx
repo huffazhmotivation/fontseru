@@ -3,28 +3,34 @@ import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { objectFillPath, objectStrokePath, contourToPath } from "./pathBuilder";
 
-// Touch/tablet text-rendering engines (iPadOS & mobile Safari included)
-// refuse to paint a lone Unicode combining mark (general category Mn) in an
-// SVG <text> node when it has no base character to attach to — the mark is
-// zero-width and the renderer has nothing to anchor ink to, so it comes out
-// blank. Desktop engines are generally more forgiving and already paint it.
-// This affects exactly the handful of *true* combining marks FontSeru ever
-// samples (e.g. U+0309 combining hook above, U+0323 combining dot below —
-// every other mark slot like ´ ` ¨ ˇ is a normal spacing character and is
-// unaffected). Mirrors the existing `isChromiumBrowser` pattern in App.tsx:
-// detect the affected environment once, then branch ONLY there, so desktop
-// rendering — already correct — is untouched.
-const isCoarsePointerDevice =
-  typeof window !== "undefined" &&
-  typeof window.matchMedia === "function" &&
-  window.matchMedia("(pointer: coarse)").matches;
+// U+0309 (combining hook above) and U+0323 (combining dot below) are the
+// only two *true* zero-width Unicode combining marks FontSeru ever samples
+// in isolation — every other mark slot (´ ` ¨ ¸ ˇ …) is a normal spacing
+// character that any font/browser draws the same everywhere. A lone
+// combining mark has no such guarantee: rendering it depends entirely on
+// the *system font* the browser falls back to, which differs by platform
+// (that's why the PC and iPad ghosts looked different in the first place),
+// and some platforms don't draw it at all without a base character to
+// attach to, or worse, draw a "missing glyph" placeholder for an
+// unsupported combining sequence (the dotted box seen on iPad after a
+// dotted-circle base was tried).
+//
+// The only way to get one identical, guaranteed result on every device is
+// to stop asking the system font to shape these two marks at all, and draw
+// them ourselves as plain SVG vector shapes — same path data, same pixels,
+// on a Mac or an iPad or anywhere else.
+const HOOK_ABOVE_MARK = "\u0309";
+const DOT_BELOW_MARK = "\u0323";
 
-const isNonSpacingMark = (ch: string) => /\p{Mn}/u.test(ch);
-
-// A dotted circle is the standard, Unicode-chart way to display an isolated
-// combining mark — it gives the mark a base to render against without
-// changing what the mark itself looks like.
-const DOTTED_CIRCLE = "\u25CC";
+/** Small stroked hook, drawn in a local -0.6…0.6 unit box (unit = size). */
+function hookAbovePath(size: number): string {
+  const s = size;
+  return [
+    `M ${0.05 * s} ${-0.55 * s}`,
+    `C ${0.65 * s} ${-0.55 * s} ${0.65 * s} ${-0.05 * s} ${0.15 * s} ${0.05 * s}`,
+    `C ${-0.3 * s} ${0.13 * s} ${-0.3 * s} ${0.48 * s} ${0.15 * s} ${0.5 * s}`,
+  ].join(" ");
+}
 
 interface GhostGlyphProps {
   mode: "sample" | "family" | "image";
@@ -120,10 +126,45 @@ export const GhostGlyph = memo(function GhostGlyph({
     // the whole string at glyph-sized type and blow far past the canvas.
     // Bail out rather than let that happen.
     if (Array.from(char).length !== 1) return null;
-    // Only touch/tablet + only true combining marks — desktop's existing,
-    // already-correct bare-mark rendering is left exactly as it was.
-    const displayChar =
-      isCoarsePointerDevice && isNonSpacingMark(char) ? DOTTED_CIRCLE + char : char;
+
+    // The two true combining marks bypass text rendering entirely — see
+    // the note above HOOK_ABOVE_MARK — so the hand-drawn shape is the one
+    // and only rendering, identical on every device, PC included.
+    if (char === HOOK_ABOVE_MARK || char === DOT_BELOW_MARK) {
+      const cx = laneOffsetX + boxCenterX + offsetX;
+      const baselineY = ascender - offsetY;
+      const sz = capHeight * 0.5 * scale;
+      if (char === HOOK_ABOVE_MARK) {
+        const centerY = baselineY - capHeight * 0.78 * scale;
+        return (
+          <path
+            d={hookAbovePath(sz)}
+            transform={`translate(${cx} ${centerY})`}
+            fill="none"
+            stroke="var(--text)"
+            strokeWidth={sz * 0.22}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={opacity}
+            style={{ pointerEvents: "none", userSelect: "none" }}
+            aria-hidden="true"
+          />
+        );
+      }
+      const centerY = baselineY + capHeight * 0.12 * scale;
+      return (
+        <circle
+          cx={cx}
+          cy={centerY}
+          r={capHeight * 0.09 * scale}
+          fill="var(--text)"
+          opacity={opacity}
+          style={{ pointerEvents: "none", userSelect: "none" }}
+          aria-hidden="true"
+        />
+      );
+    }
+
     return (
       <text
         x={laneOffsetX + boxCenterX + offsetX}
@@ -137,7 +178,7 @@ export const GhostGlyph = memo(function GhostGlyph({
         style={{ pointerEvents: "none", userSelect: "none" }}
         aria-hidden="true"
       >
-        {displayChar}
+        {char}
       </text>
     );
   }
