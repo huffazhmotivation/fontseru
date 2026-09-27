@@ -99,29 +99,14 @@ export const GhostGlyph = memo(function GhostGlyph({
     if (Array.from(char).length !== 1) return null;
     // Combining marks (Vietnamese U+0309 hook-above, U+0323 dot-below, and
     // any other Mn-category mark slot) have nothing to combine with when
-    // drawn on their own. The very first fix here appended the mark itself
-    // after a dotted-circle placeholder (U+25CC + char) — but that still
-    // handed the browser the raw, isolated combining-mark codepoint to
-    // shape and draw. That turned out to be exactly the unreliable part:
-    // an isolated combining mark's glyph coverage/shaping is notoriously
-    // inconsistent across platforms, so depending on which font a given
-    // browser/OS fell back to for that specific codepoint, the ghost either
-    // rendered fine, went invisible, or — as happened here — showed a
-    // literal "NO GLYPH" debug label some fallback fonts bake into their
-    // .notdef slot, differently on a laptop vs. a tablet since each has a
-    // different set of installed fallback fonts.
-    //
-    // The fix is to never ask any font to render the mark codepoint at all.
-    // U+25CC DOTTED CIRCLE on its own — with nothing appended — is a plain,
-    // ordinary symbol that has been present in essentially every font for
-    // decades (it exists specifically so type tools can show "a mark with
-    // no base" like this), so it always resolves inside the very first font
-    // in the stack instead of triggering any fallback search. It also keeps
-    // this on the exact same <text> rendering path as every other glyph
-    // below, at the same size/weight/color, so it looks like part of the
-    // same family of ghosts instead of a one-off shape.
+    // drawn on their own — a bare <text> node renders them at zero visual
+    // width, so the "sample" ghost silently disappears for exactly these
+    // characters even though this branch runs and returns real markup.
+    // Prefixing the standard dotted-circle placeholder (U+25CC) gives the
+    // mark a base to sit on, same as how type design tools conventionally
+    // preview an isolated diacritic.
     const isCombiningMark = /\p{Mn}/u.test(char);
-    const sampleText = isCombiningMark ? "\u25CC" : char;
+    const sampleText = isCombiningMark ? "\u25CC" + char : char;
     return (
       <text
         x={laneOffsetX + boxCenterX + offsetX}
