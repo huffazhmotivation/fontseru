@@ -118,7 +118,9 @@ export function useGhostFont(weight: GhostFontWeight = "regular"): opentype.Font
     loadGhostFont(weight).catch(() => {});
     const onLoaded = () => setFont(getLoadedGhostFont(weight));
     listeners.add(onLoaded);
-    return () => listeners.delete(onLoaded);
+    return () => {
+      listeners.delete(onLoaded);
+    };
   }, [font, weight]);
 
   return font;
@@ -166,7 +168,7 @@ export function outlineForChar(
     const glyphIndex = font.charToGlyphIndex(char);
     if (glyphIndex !== 0) {
       const path = font.getPath(char, 0, 0, fontSize, { kerning: false });
-      const pathData = path.toPathData(2);
+      const pathData = path.toPathData({ decimalPlaces: 2 });
       if (pathData) {
         const advance = font.getAdvanceWidth(char, fontSize, { kerning: false });
         result = { pathData, advance };
