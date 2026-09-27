@@ -5,7 +5,6 @@ import type { KerningPairs } from "@/types/kerning";
 import { effectiveWordSpacing } from "@/types/kerning";
 import { layoutLine } from "./textLayout";
 import { getGlyphPaths } from "./glyphPaths";
-import { outlineForChar, useGhostFont } from "./ghostFont";
 
 // Kerning edits (dragging a glyph in the Test Lab) only change glyph X
 // positions, not outlines, but every kerning update used to force every
@@ -62,12 +61,6 @@ function GlyphRunView({
   const wordSpacingOverridesByStyle = useAppStore((s) => s.wordSpacingOverridesByStyle);
   const glyphs = glyphsOverride ?? storeGlyphs;
   const kerningPairs = kerningPairsOverride ?? storeKerningPairs;
-  // Same embedded, device-independent font as the editor's sample ghost
-  // (see ghostFont.ts) — this Test Lab placeholder used to be an SVG
-  // <text fontFamily="'Inter', system-ui, ...">, which is the exact
-  // pattern that rendered inconsistently (and sometimes dropped
-  // Vietnamese diacritics) across different PCs/tablets.
-  const ghostFont = useGhostFont("regular");
   const { ascender, descender, unitsPerEm } = metrics;
   const wordSpacing = effectiveWordSpacing(metrics.wordSpacing, wordSpacingOverridesByStyle, fontStyle);
   const totalH = ascender - descender;
@@ -142,20 +135,20 @@ function GlyphRunView({
           // glyph.outline directly) still produces an empty glyph exactly
           // as before.
           if (!ghostEmpty || char === " ") return null;
-          if (!ghostFont || Array.from(char).length !== 1) return null;
-          // ascender * 0.72 matches the visual size the old <text> version
-          // was tuned to (independent of GHOST_FONT_SIZE_SCALE, which is
-          // for GhostGlyph.tsx's capHeight-based sizing instead).
-          const outline = outlineForChar(ghostFont, char, ascender * 0.72);
-          if (!outline) return null;
           return (
             <g key={i} transform={`translate(${x} 0)`} opacity={0.32} style={{ pointerEvents: "none" }}>
-              <path
-                d={outline.pathData}
+              <text
+                x={advance / 2}
+                y={ascender}
+                textAnchor="middle"
+                fontFamily="'Inter', system-ui, sans-serif"
+                fontWeight={600}
+                fontSize={ascender * 0.72}
                 fill={glyphColor}
                 stroke="none"
-                transform={`translate(${advance / 2 - outline.advance / 2} ${ascender})`}
-              />
+              >
+                {char}
+              </text>
             </g>
           );
         })}

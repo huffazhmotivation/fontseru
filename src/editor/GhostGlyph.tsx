@@ -16,13 +16,27 @@ interface GhostGlyphProps {
   offsetX: number;
   offsetY: number;
   laneOffsetX?: number;
+  /** Horizontal center of the *active* glyph's own standard advance box
+   * (i.e. the box the working glyph is actually drawn in — lsb to
+   * advance-rsb — not the full upm square). "sample" and "image" modes
+   * don't have real outline geometry to anchor to, so they center on this
+   * instead of the em square, keeping the ghost lined up with where the
+   * glyph's ink is meant to sit per FontSeru's standard sidebearing
+   * metrics (the same ones LSB/RSB/Advance already default to). Falls back
+   * to the em-square center (upm * 0.5) when not provided. "family" mode
+   * doesn't need this: it overlays real outline coordinates that are
+   * already positioned correctly in the same canvas space. */
   centerX?: number;
+  /** "image" mode only: total em height (ascender-descender), used to size
+   * the uploaded reference image relative to the glyph box. */
   totalH?: number;
+  /** "image" mode only: data URL of the uploaded custom ghost image. */
   imageSrc?: string | null;
+  /** "image" mode only: natural width/height ratio of the uploaded image,
+   * used to keep it from stretching. Falls back to a square box. */
   imageAspect?: number;
 }
 
-<<<<<<< HEAD
 /**
  * Non-interactive reference glyph used by FontSeru's ghost modes.
  *
@@ -36,8 +50,6 @@ interface GhostGlyphProps {
  * Family ghosts deliberately have no fallback. If the matching style glyph
  * has no outline yet, that side stays empty.
  */
-=======
->>>>>>> 36d078b61b138f8ca6523681a7e18338402097da
 export const GhostGlyph = memo(function GhostGlyph({
   mode,
   char,
@@ -55,14 +67,9 @@ export const GhostGlyph = memo(function GhostGlyph({
   imageSrc,
   imageAspect,
 }: GhostGlyphProps) {
-<<<<<<< HEAD
   // Always called (hooks can't sit behind the early returns below). Only
   // the "sample" mode actually uses it; the font loads lazily on first use.
   const refFont = useGhostFont();
-=======
-  const ghostFont = useGhostFont("regular");
-
->>>>>>> 36d078b61b138f8ca6523681a7e18338402097da
   if (opacity <= 0) return null;
 
   const boxCenterX = centerX ?? upm * 0.5;
@@ -89,7 +96,6 @@ export const GhostGlyph = memo(function GhostGlyph({
   }
 
   if (mode === "sample") {
-<<<<<<< HEAD
     const ref = ghostOutlineFor(refFont, char);
     if (!ref) return null;
     // Size the reference so ITS cap height lands on the project's cap
@@ -101,13 +107,6 @@ export const GhostGlyph = memo(function GhostGlyph({
     // old text ghost did, so existing Scale/Offset settings keep meaning.
     const fit = (capHeight > 0 ? capHeight : upm * 0.7) / ref.capHeight;
     const k = fit * scale;
-=======
-    if (Array.from(char).length !== 1) return null;
-    if (!ghostFont) return null;
-    const outline = outlineForChar(ghostFont, char, capHeight * GHOST_FONT_SIZE_SCALE * scale);
-    if (!outline) return null;
-
->>>>>>> 36d078b61b138f8ca6523681a7e18338402097da
     const anchorX = laneOffsetX + boxCenterX + offsetX;
     const anchorY = ascender - offsetY; // baseline in canvas space
     return (
@@ -155,7 +154,12 @@ export const GhostGlyph = memo(function GhostGlyph({
     >
       {glyph.outline.objects.map((obj) =>
         obj.kind === "shape" || obj.kind === "expanded" ? (
-          <path key={obj.id} d={objectFillPath(obj, ascender)} fill="currentColor" fillRule="nonzero" />
+          <path
+            key={obj.id}
+            d={objectFillPath(obj, ascender)}
+            fill="currentColor"
+            fillRule="nonzero"
+          />
         ) : obj.kind === "brush" && obj.brushType !== "monoline" ? (
           <path
             key={obj.id}
