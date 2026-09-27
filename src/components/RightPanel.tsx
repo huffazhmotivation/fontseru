@@ -5,7 +5,7 @@ import { useAppStore, type NodeRef, type GlyphMetricKey } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
 import { hasOutline } from "@/types/glyph";
 import type { Glyph } from "@/types/glyph";
-import { unicodeHex } from "@/utils/unicode";
+import { unicodeHex, displayChar } from "@/utils/unicode";
 import { findNode, retypeNode, retypeNodes, deleteNodes, moveNodesBy, setHandlePoint } from "@/editor/nodeOps";
 import { objectsBounds, skewObject } from "@/editor/objectOps";
 import type { NodeType, PathNode, StrokeCap, VectorObject } from "@/types/geometry";
@@ -64,7 +64,7 @@ export function RightPanel() {
       <div className="fm-panel-header">
         <div className="fm-panel-glyph"><GlyphThumbnail glyph={glyph} /></div>
         <div className="fm-panel-meta">
-          <div className="fm-panel-char">{glyph.char}</div>
+          <div className="fm-panel-char">{displayChar(glyph.char)}</div>
           <div className="fm-panel-code">{unicodeHex(glyph.unicode)}</div>
           <div className="fm-panel-cat">{category}</div>
         </div>

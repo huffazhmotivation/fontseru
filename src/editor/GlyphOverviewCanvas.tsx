@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { useAppStore } from "@/glyph/store";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { clampOverviewZoom } from "@/types/glyphView";
+import { displayChar } from "@/utils/unicode";
 import { getGlyphPaths } from "./glyphPaths";
 import { filterGlyphChars } from "./glyphFilter";
 import {
@@ -137,7 +138,7 @@ function GlyphTileView({
           textAnchor="middle"
           fontSize={rect.h * 0.44}
         >
-          {glyph.char === " " ? "␣" : glyph.char}
+          {glyph.char === " " ? "␣" : displayChar(glyph.char)}
         </text>
       )}
       <text

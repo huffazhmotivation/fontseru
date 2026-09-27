@@ -4,6 +4,7 @@ import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent }
 import { useAppStore } from "@/glyph/store";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { clampMultiZoom, MULTI_BASE_CELL_PX } from "@/types/glyphView";
+import { displayChar } from "@/utils/unicode";
 import type { Point, VectorObject } from "@/types/geometry";
 import { getGlyphPaths } from "./glyphPaths";
 import { filterGlyphChars } from "./glyphFilter";
@@ -177,7 +178,7 @@ const PassiveCell = memo(function PassiveCell({
         textAnchor="middle"
         fontSize={cellH * 0.38}
       >
-        {glyph.char === " " ? "␣" : glyph.char}
+        {glyph.char === " " ? "␣" : displayChar(glyph.char)}
       </text>
     );
   }

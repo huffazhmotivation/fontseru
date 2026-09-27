@@ -115,16 +115,10 @@ export interface WrappedLine {
  * Soft-wraps `text` against real glyph advances/kerning (not browser text
  * metrics) so it breaks exactly where it will actually render — used by
  * previews that grow taller instead of scrolling sideways as glyph scale
- * increases. Explicit "\n" is preserved as a hard break.
- *
- * Wraps at word (space) boundaries, like ordinary text — not mid-word —
- * so zooming in past the box's width drops whole words to the next line
- * instead of splitting a word letter-by-letter. A single word that is by
- * itself wider than `maxWidthUnits` (no space anywhere in it to break at)
- * is the one case that still falls back to a mid-word break, since there
- * is no other way to keep it from overflowing forever. Test Lab's own
- * preview shares this function, so both wrap the same way at the same
- * scale.
+ * increases. Explicit "\n" is preserved as a hard break; any line whose
+ * next glyph would cross `maxWidthUnits` wraps to a new line instead
+ * (character-level, matching Test Lab's own wrapping so both stay
+ * predictable at the same scale).
  */
 export function wrapLines(
   text: string,
@@ -138,20 +132,12 @@ export function wrapLines(
   const out: WrappedLine[] = [];
   let lineChars: string[] = [];
   let advance = 0;
-  // Index within lineChars right after the most recent space — i.e. the
-  // start of the word currently being accumulated. -1 means the line so
-  // far is a single unbroken token with no word-break opportunity yet.
-  let wordStart = -1;
-
-  const advanceFor = (chars: string[]) =>
-    chars.length ? layoutLine(chars.join(""), glyphs, unitsPerEm, kerningPairs, trackingUnits, wordSpacing).totalAdvance : 0;
 
   const flush = () => {
     const lineText = lineChars.join("");
     out.push({ text: lineText, layout: layoutLine(lineText, glyphs, unitsPerEm, kerningPairs, trackingUnits, wordSpacing) });
     lineChars = [];
     advance = 0;
-    wordStart = -1;
   };
 
   for (const ch of Array.from(text)) {
@@ -165,41 +151,15 @@ export function wrapLines(
     const previous = lineChars[lineChars.length - 1] ?? null;
     const between = previous ? trackingUnits + (kerningPairs[kerningKey(previous, ch)] ?? 0) : 0;
     const nextAdvance = advance + between + glyphAdvance;
-    const overflows = lineChars.length > 0 && nextAdvance > maxWidthUnits;
 
-    if (overflows && ch === " ") {
-      // A trailing space that would overflow just ends the line — it
-      // doesn't need to reappear (invisibly) at the start of the next one.
-      flush();
-      continue;
-    }
-
-    if (overflows && wordStart > 0) {
-      // Break at the last word boundary: everything up to (not including)
-      // the space becomes this line, and the word already being typed
-      // carries over to start the next one.
-      const thisLine = lineChars.slice(0, wordStart - 1);
-      const carry = lineChars.slice(wordStart);
-      out.push({ text: thisLine.join(""), layout: layoutLine(thisLine.join(""), glyphs, unitsPerEm, kerningPairs, trackingUnits, wordSpacing) });
-      lineChars = [...carry, ch];
-      advance = advanceFor(lineChars);
-      wordStart = -1;
-      continue;
-    }
-
-    if (overflows) {
-      // No word-break opportunity on this line at all (one token wider
-      // than the box by itself) — fall back to a mid-word break rather
-      // than let it overflow indefinitely.
+    if (lineChars.length > 0 && nextAdvance > maxWidthUnits) {
       flush();
       lineChars.push(ch);
       advance = glyphAdvance;
-      continue;
+    } else {
+      lineChars.push(ch);
+      advance = nextAdvance;
     }
-
-    lineChars.push(ch);
-    advance = nextAdvance;
-    if (ch === " ") wordStart = lineChars.length;
   }
 
   flush();

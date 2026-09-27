@@ -1435,7 +1435,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     })),
     toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
     toggleProductionPreview: () => set((s) => ({ productionPreviewOpen: !s.productionPreviewOpen })),
-    setProductionPreviewScale: (n) => set({ productionPreviewScale: Math.min(400, Math.max(10, Math.round(n))) }),
+    setProductionPreviewScale: (n) => set({ productionPreviewScale: Math.min(120, Math.max(10, Math.round(n))) }),
     setProductionPreviewLineHeight: (n) => set({ productionPreviewLineHeight: Math.min(3, Math.max(0.8, Math.round(n * 100) / 100)) }),
     setProductionPreviewAlign: (align) => set({ productionPreviewAlign: align }),
     setProductionPreviewCategory: (category) => set({ productionPreviewCategory: category }),
