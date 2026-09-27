@@ -102,65 +102,36 @@ export const GhostGlyph = memo(function GhostGlyph({
     // drawn on their own — a bare <text> node renders them at zero visual
     // width, so the "sample" ghost silently disappears for exactly these
     // characters even though this branch runs and returns real markup.
-    // A base character in front of the mark keeps that from happening.
-    //
-    // The base used to be the literal dotted-circle character (U+25CC)
-    // painted as visible text. That depends on whichever font the browser
-    // substitutes actually mapping U+25CC — most do, but when one in the
-    // fallback chain doesn't, the platform's own "missing glyph" stand-in
-    // is what renders instead, and it is NOT a blank box: it's a distinct,
-    // OS/browser-specific placeholder that on some systems has visible
-    // debug lettering baked into it. That's a font-substitution problem,
-    // not a "which glyph did we ask for" problem, so it can't be fixed by
-    // picking a different placeholder character — it can only be avoided
-    // by not asking a system font to paint the dotted circle at all, which
-    // also happened to make the ghost look different across devices
-    // (whatever fallback font each browser lands on differs).
-    //
-    // So the visible dotted circle below is drawn ourselves, as plain SVG
-    // dots — identical on every platform, zero font dependency. A real
-    // base character (a plain period) still sits in the text flow, but
-    // fully transparent: it exists only so the browser's text shaping has
-    // something to hang the following mark glyph on, per the same "isolated
-    // combining marks don't paint" behavior noted above. Its own glyph
-    // shape is never seen.
+    // A base character in front of the mark keeps that from happening —
+    // but the base itself must never be visible. Earlier attempts painted
+    // it (first as the literal dotted-circle character U+25CC, which
+    // depends on font fallback and rendered inconsistently across devices;
+    // then as SVG dots standing in for the same circle) — either way that
+    // put a shape on screen the person never asked to see. All they want
+    // is the accent itself, so the base is a plain period, fully
+    // transparent (fill="transparent"): present only so the browser's text
+    // shaping has something to hang the mark glyph on (per the "isolated
+    // combining marks don't paint" behavior above), never painted.
     const isCombiningMark = /\p{Mn}/u.test(char);
     const cx = laneOffsetX + boxCenterX + offsetX;
     const baselineY = ascender - offsetY;
 
     if (isCombiningMark) {
-      const fontSize = capHeight * 1.36 * scale;
-      // Rough stand-in for a round lowercase letter (e.g. "o") at this
-      // font size — good enough for a placement guide, not exact metrics.
-      const ringDiameter = capHeight * 0.66 * scale;
-      const ringRadius = ringDiameter / 2;
-      const ringCenterY = baselineY - ringRadius;
-      const dotCount = 12;
-      const dotR = Math.max(0.6, ringRadius * 0.09);
-      const dots = Array.from({ length: dotCount }, (_, i) => {
-        const a = (i / dotCount) * Math.PI * 2 - Math.PI / 2;
-        return {
-          x: cx + Math.cos(a) * ringRadius,
-          y: ringCenterY + Math.sin(a) * ringRadius,
-        };
-      });
       return (
-        <g opacity={opacity} style={{ pointerEvents: "none", userSelect: "none" }} aria-hidden="true">
-          {dots.map((d, i) => (
-            <circle key={i} cx={d.x} cy={d.y} r={dotR} fill="var(--text)" />
-          ))}
-          <text
-            x={cx}
-            y={baselineY}
-            textAnchor="middle"
-            fontFamily="'Inter', system-ui, sans-serif"
-            fontWeight={600}
-            fontSize={fontSize}
-          >
-            <tspan fill="transparent">.</tspan>
-            <tspan fill="var(--text)">{char}</tspan>
-          </text>
-        </g>
+        <text
+          x={cx}
+          y={baselineY}
+          textAnchor="middle"
+          fontFamily="'Inter', system-ui, sans-serif"
+          fontWeight={600}
+          fontSize={capHeight * 1.36 * scale}
+          opacity={opacity}
+          style={{ pointerEvents: "none", userSelect: "none" }}
+          aria-hidden="true"
+        >
+          <tspan fill="transparent">.</tspan>
+          <tspan fill="var(--text)">{char}</tspan>
+        </text>
       );
     }
 
