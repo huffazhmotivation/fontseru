@@ -1,6 +1,9 @@
 /// <reference types="vite/client" />
 /// <reference types="vite-plugin-pwa/react" />
 
+/** ID build yang sedang berjalan (lihat vite.config.ts); "dev" saat `npm run dev`. */
+declare const __APP_BUILD_ID__: string;
+
 interface ImportMetaEnv {
   /** Base Supabase project URL, e.g. "https://xxxxx.supabase.co". */
   readonly VITE_SUPABASE_URL?: string;

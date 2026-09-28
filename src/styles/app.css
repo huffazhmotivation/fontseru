@@ -3614,29 +3614,62 @@ input[type="number"]::-webkit-outer-spin-button {
 /* New-deploy notice: same visual language as .fm-toast, but it never
    auto-dismisses on a timer — the point is for a user to notice it whenever
    they next look up, since applying it reloads the page. */
-.fm-update-toast {
-  position: fixed; top: 68px; right: 18px; z-index: 190;
-  width: min(360px, calc(100vw - 36px));
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 10px 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--line)); border-radius: 11px;
-  background: color-mix(in srgb, var(--panel) 96%, transparent);
-  color: var(--text); font-size: 12px; line-height: 1.4;
-  box-shadow: 0 16px 44px rgba(0,0,0,.36);
-  backdrop-filter: blur(16px);
-  animation: fm-toast-in .16s ease-out;
+/* Popup pembaruan dipasang DI LUAR .fm-root (lihat main.tsx) supaya muncul
+   di mode apa pun, jadi token tema-nya didefinisikan sendiri di sini dari
+   atribut data-theme pada <html> (dipasang App.tsx). Default = gelap. */
+.fm-update-backdrop {
+  --panel: #121212; --panel-2: #191919; --line: #282828;
+  --text: #f0f0f0; --text-dim: #8e8e8e; --accent: #c6f24e; --accent-ink: #0c0f08;
 }
-.fm-update-toast > svg { color: var(--accent); flex-shrink: 0; }
-.fm-update-toast > span { flex: 1; min-width: 0; }
-.fm-update-toast-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.fm-update-toast-actions .fm-action-btn { width: auto; margin-top: 0; padding: 7px 12px; font-size: 12px; }
-.fm-update-toast-close {
-  width: 26px; height: 26px; display: grid; place-items: center; flex-shrink: 0;
-  border: 0; border-radius: 7px; background: transparent; color: var(--text-dim); cursor: pointer;
+html[data-theme="light"] .fm-update-backdrop {
+  --panel: #ffffff; --panel-2: #f4f4f4; --line: #e6e6e6;
+  --text: #181818; --text-dim: #686868; --accent: #4a5a68; --accent-ink: #ffffff;
 }
-.fm-update-toast-close:hover { background: var(--panel-2); color: var(--text); }
-@media (max-width: 720px) {
-  .fm-update-toast { left: 8px; right: 8px; width: auto; flex-wrap: wrap; }
+.fm-update-backdrop {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  position: fixed; inset: 0; z-index: 400;
+  display: grid; place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: rgba(3,5,8,.62);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  animation: fm-update-fade .18s ease-out;
+}
+.fm-update-dialog {
+  width: min(380px, 100%);
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 26px 24px 20px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent), 0 24px 64px rgba(0,0,0,.45);
+  animation: fm-update-pop .22s cubic-bezier(.2,.9,.3,1.2);
+}
+.fm-update-icon {
+  width: 48px; height: 48px; display: grid; place-items: center; margin-bottom: 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.fm-update-dialog h2 { margin: 0 0 6px; font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
+.fm-update-dialog p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-dim); }
+.fm-update-actions { width: 100%; display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.fm-update-actions .fm-action-btn {
+  width: 100%; margin-top: 0; padding: 10px 14px; font-size: 13px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+}
+.fm-update-later {
+  width: 100%; padding: 9px 14px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--text-dim); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.fm-update-later:hover { background: var(--panel-2); color: var(--text); }
+.fm-update-spin { animation: fm-update-rot .9s linear infinite; }
+@keyframes fm-update-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fm-update-pop { from { opacity: 0; transform: scale(.94) translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes fm-update-rot { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .fm-update-backdrop, .fm-update-dialog { animation: none; }
 }
 
 .fm-export-backdrop {

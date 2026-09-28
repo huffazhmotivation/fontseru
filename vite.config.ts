@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "node:path";
@@ -6,10 +6,34 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// ID unik per build. Dibakar ke dalam bundle (__APP_BUILD_ID__) DAN ditulis
+// ke dist/version.json. UpdatePrompt membandingkan keduanya: kalau server
+// sudah punya build lain, berarti ada versi baru — deteksi ini tetap jalan
+// walaupun service worker di perangkat lama macet/tidak ter-update (mis.
+// PWA "Add to Home Screen" di iOS), jadi semua pengguna pasti tahu.
+const BUILD_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+function versionFilePlugin(): Plugin {
+  return {
+    name: "fontseru-version-file",
+    apply: "build",
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "version.json",
+        source: JSON.stringify({ build: BUILD_ID, builtAt: new Date().toISOString() }),
+      });
+    },
+  };
+}
+
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  define: {
+    __APP_BUILD_ID__: JSON.stringify(command === "build" ? BUILD_ID : "dev"),
+  },
   plugins: [
     react(),
+    versionFilePlugin(),
     // Service-worker update lifecycle only — FontSeru already ships its own
     // <link rel="manifest"> + public/site.webmanifest with the real icons/
     // branding, so `manifest: false` leaves that untouched and this plugin
@@ -74,4 +98,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
