@@ -48,6 +48,9 @@ export default defineConfig(({ command }) => ({
       injectRegister: false,
       workbox: {
         cleanupOutdatedCaches: true,
+        // Memuat ulang tab yang masih memakai kode LAMA begitu SW baru aktif
+        // (toast lama tidak bisa reload sendiri) — lihat public/sw-migrate.js.
+        importScripts: ["sw-migrate.js"],
         clientsClaim: true,
         globPatterns: ["**/*.{js,css,html,svg,png,woff,woff2,ico}"],
       },

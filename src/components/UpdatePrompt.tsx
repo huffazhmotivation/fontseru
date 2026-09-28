@@ -37,6 +37,18 @@ const GUARD_WINDOW_MS = 3 * 60 * 1000;
 const BUST_PARAM = "_fsu";
 const IS_DEV = __APP_BUILD_ID__ === "dev";
 
+// Menjawab "ping" dari service worker (public/sw-migrate.js). Tab yang
+// menjawab = kode baru ini, jadi SW tidak memuat ulang tab ini secara paksa;
+// popup di bawah yang mengurus pembaruannya. Dipasang di tingkat modul
+// (bukan di dalam komponen) supaya sudah siap sejak halaman mulai jalan.
+if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data?.type === "FS_BUILD_PING") event.ports?.[0]?.postMessage({ build: __APP_BUILD_ID__ });
+  });
+  // addEventListener (beda dengan onmessage) tidak otomatis membuka antrean pesan.
+  navigator.serviceWorker.startMessages?.();
+}
+
 type Phase = "idle" | "available" | "updating" | "failed";
 type Guard = { at: number; tries: number };
 
