@@ -17,7 +17,7 @@ import { simplifyPolyline } from "@/utils/simplify";
  * alongside x/y) automatically for any sample shape that has it.
  */
 
-/** Weighted moving average, generic over any point-like sample. Extra
+/** Moving average, generic over any point-like sample. Endpoints are kept fixed. Extra
  * numeric fields other than x/y are passed through unchanged from the
  * center sample EXCEPT `pressure`, which — when present — is smoothed
  * alongside x/y so brush width and stabilization move together. */
@@ -34,8 +34,13 @@ export function movingAverageSamples<T extends Point>(points: T[], windowRadius:
     if (sumsP) sumsP[i + 1] = sumsP[i] + (points[i] as unknown as { pressure: number }).pressure;
   }
   return points.map((p, i) => {
-    const from = Math.max(0, i - windowRadius);
-    const to = Math.min(n - 1, i + windowRadius) + 1;
+    // Symmetric window that narrows toward the two ends, so the first and
+    // last samples stay exactly where the stroke started and ended. A
+    // one-sided window there pulled both ends back into the stroke,
+    // visibly shortening it (tens of screen px on a quick gesture).
+    const r = Math.min(windowRadius, i, n - 1 - i);
+    const from = i - r;
+    const to = i + r + 1;
     const count = to - from;
     const out: T = { ...p, x: (sumsX[to] - sumsX[from]) / count, y: (sumsY[to] - sumsY[from]) / count };
     if (sumsP) (out as unknown as { pressure: number }).pressure = (sumsP[to] - sumsP[from]) / count;

@@ -913,7 +913,26 @@ export function GlyphMultiEditCanvas() {
   }, []);
   flushPointerMoveRef.current = flushPointerMove;
 
+  // A brush stroke gets EVERY coalesced sample instead of one per frame
+  // (see the same logic in GlyphCanvas.tsx) — dropping samples is what
+  // made fast brush curves come out faceted.
+  const brushDirectMoveRef = useRef<(e: PointerEvent) => boolean>(() => false);
+  brushDirectMoveRef.current = (native: PointerEvent) => {
+    const t = toolsRef.current;
+    if (tool !== "brush" || isNodeBrush || !t.brushTool.isDrawing || panDragRef.current || gestureCellRef.current === null) return false;
+    if (sketchGestures.handlePointerMove(native)) return true;
+    const index = gestureCellRef.current;
+    const coalesced = typeof native.getCoalescedEvents === "function" ? native.getCoalescedEvents() : [];
+    for (const ev of coalesced.length > 0 ? coalesced : [native]) {
+      const world = toWorld(ev.clientX, ev.clientY);
+      if (!world) continue;
+      t.brushTool.pointerMove(glyphPointFor(index, world), { pressure: ev.pressure, pointerType: ev.pointerType, timeStamp: ev.timeStamp });
+    }
+    return true;
+  };
+
   const onPointerMove = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
+    if (brushDirectMoveRef.current(e.nativeEvent)) return;
     pendingMoveRef.current = {
       clientX: e.clientX,
       clientY: e.clientY,

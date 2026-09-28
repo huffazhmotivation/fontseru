@@ -6,7 +6,7 @@ import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor 
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
 import { cubicPoint } from "@/editor/bezier";
-import { normalizeSelfIntersectingContours, unionPolygonsToContours, resolveTexturedBrushFill, TIGHT_CURVE_FIDELITY_SCALE, EXPAND_FIDELITY_SCALE } from "@/editor/booleanOps";
+import { normalizeSelfIntersectingContours, unionPolygonsToContours, resolveTexturedBrushFill, unionSameWindingContours, TIGHT_CURVE_FIDELITY_SCALE, EXPAND_FIDELITY_SCALE } from "@/editor/booleanOps";
 
 /**
  * Correct offset vector for sweeping a fixed-orientation elliptical nib
@@ -2807,101 +2807,167 @@ function oilBrushOutlineContours(centerline: StrokeSample[], settings: BrushSett
 }
 
 /**
- * Spray Brush: reads as an actual can of spray paint hitting a wall — a
- * solid, continuous letterform (not a loose dot field standing in for one),
- * with the two traits that give real stencil spray-paint lettering its
- * look (see the reference: solid, well-formed letters with a ragged,
- * grainy edge and a light dust of paint around them — no dripping paint
- * runs at all):
+ * Spray Brush — modelled on real spray-paint lettering (a solid, bold letter
+ * whose edge dissolves into a soft halo of atomized paint, no drips):
  *
- *  1. BODY — the same clean, constant-width round-pen union every other
- *     constant-width preset uses (`uniformCenterlineToOutlineExact`, see
- *     Rough Brush's doc comment for why that's used over the legacy offset
- *     builder), so the core silhouette is a single solid shape.
- *  2. EDGE SPRAY TEXTURE — many small dots scattered right along the
- *     boundary, straddling it so the silhouette itself reads as grainy and
- *     slightly fuzzed rather than a mechanically clean vector curve — the
- *     actual texture a stencil sprayed by hand leaves, not a few bitten
- *     notches.
- *  3. OVERSPRAY — a light dusting of small dots scattered further out
- *     around the body, for the faint halo of atomized paint dust a real
- *     can leaves beyond the stencil's edge.
+ *  1. CORE — the same clean constant-width round-pen union every other
+ *     constant-width preset uses (`uniformCenterlineToOutlineExact`), plus a
+ *     slightly swollen "dwell" blob at both ends, where a can lingers for a
+ *     moment before and after moving.
+ *  2. HALO — a stipple of fine round dots whose DENSITY is purely a function
+ *     of distance from the core's edge: near-solid right at the edge,
+ *     thinning smoothly to nothing about 1.5 half-widths out, a little
+ *     stronger around the two ends. Dots are placed by visiting a fixed
+ *     world-space grid of cells and accepting candidates against that
+ *     density at their EXACT distance from the stroke, so the gradient
+ *     wraps round caps, corners and curves evenly, a dot never moves once
+ *     placed, and overlapping strokes add their paint together.
+ *  3. FLECKS — rare, slightly larger, irregular droplets in the outer halo.
  *
- * `roundness` still controls how tight vs. loose the overspray dust reads,
- * `jitter` still scales density/prominence across both texture layers —
- * same "overall texture strength" meaning `jitter` has on every other
- * textured preset (see its doc comment in types/brush.ts).
+ * `roundness` sets how far the halo spreads (1 = tight, lower = wider) and
+ * `jitter` how dense it is — the same "texture strength" role `jitter` has
+ * on every other textured preset (see its doc comment in types/brush.ts).
  */
 /**
- * Accumulates the edge-grain + overspray specks for ONE in-progress Spray
- * Brush gesture across pointer-move frames, so the live preview can match
- * full committed detail without regenerating the whole speck field from
- * scratch every frame (see PERFORMANCE note below and `useBrushTool`,
- * which owns one of these per stroke in a ref and resets it on
- * pointerDown). `specks` grows in place — the SAME array is returned as
- * part of every frame's contour list, just with new entries appended.
+ * Accumulates the halo dots for ONE in-progress Spray Brush gesture across
+ * pointer-move frames (owned by `useBrushTool`, one per stroke, reset on
+ * pointerDown), so each live frame only generates dots near the newly drawn
+ * part instead of rebuilding the whole halo. `specks` grows in place.
  */
 export interface SpraySpeckCache {
-  /** Arc length (font units) already covered by `specks` so far. */
+  /** Arc length (font units) of the stroke as of the previous frame. */
   processedDist: number;
   specks: Contour[];
+  /** Halo cells already finalized into `specks` (see sprayBrushOutlineContours). */
+  doneCells?: Set<number>;
 }
 
-/**
- * PERFORMANCE (live drawing must stay cheap) + FIDELITY (live preview
- * should look like the real thing, not a placeholder): `fast` is true only
- * for the live-preview build during an in-progress pointer gesture (see
- * `useBrushTool.buildPreview`). Older versions of this function used
- * `fast` to skip the edge spray texture and draw a drastically thinned
- * overspray field instead, because both texture passes rebuilt themselves
- * from scratch over the ENTIRE stroke-so-far on every single pointer-move
- * frame — an O(length) (in practice O(length^2) over the life of one
- * growing stroke) cost that made active drawing lag, worst on long
- * strokes.
- *
- * Passing `liveCache` fixes the actual problem (repeated whole-stroke
- * regeneration) instead of hiding it behind lower detail: both texture
- * passes below step along the stroke by a FIXED arc-length increment
- * (never a fraction of the current total length, which would reshuffle
- * every dot's position as the stroke grows), start at `liveCache.processedDist`
- * instead of 0, and append ONLY the newly-covered tail's specks to
- * `liveCache.specks` — so each frame's cost depends on how much NEW length
- * was just drawn, not on the stroke's total length so far. That lets live
- * drawing use the exact same full-density parameters as the committed
- * build (matching final detail 1:1) while staying cheap.
- *
- * `fast` with no `liveCache` (not used by the live-drawing caller, which
- * always supplies one — kept only as a defensive fallback for any other
- * caller) falls back to the old thinned, rebuilt-from-scratch preview.
- */
+// Halo density model. `x` is the distance beyond the stroke's NOMINAL edge
+// (Size / 2 from the centerline), in half-widths before the `roundness`
+// spread factor. Paint coverage there is
+//   EDGE · e^(−(x / SPREAD)^SHAPE) + TAIL · e^(−x / TAIL_FALLOFF)
+// — a wide grey band that fades out smoothly, plus a faint long tail.
+const SPRAY_EDGE_COVERAGE = 0.92;
+const SPRAY_SPREAD = 0.3;
+const SPRAY_SHAPE = 1.4;
+const SPRAY_TAIL_COVERAGE = 0.02;
+const SPRAY_TAIL_FALLOFF = 0.5;
+const SPRAY_REACH = 1.5;
+/** The solid core is this fraction of the nominal width; the last bit out
+ * to the nominal edge is near-solid stipple, so the visible edge is made of
+ * paint dots rather than a clean vector curve. */
+const SPRAY_CORE = 0.9;
+/** Ends swell to this × the half-width (± a little per stroke). */
+const SPRAY_BULB = 1.18;
+
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashCell(ix: number, iy: number, seed: number): number {
+  let h = Math.imul(ix | 0, 0x27d4eb2d) ^ Math.imul(iy | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b9);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+function cellKey(ix: number, iy: number): number {
+  return (ix + 1e6) * 2e6 + (iy + 1e6);
+}
+
+/** 4-node Bézier circle wound to `sign`. */
+function sprayCircle(c: Point, r: number, sign: number): Contour {
+  const k = r * 0.5522847498;
+  const dirs = sign >= 0 ? [[1, 0], [0, 1], [-1, 0], [0, -1]] : [[1, 0], [0, -1], [-1, 0], [0, 1]];
+  return {
+    id: shortId("contour"),
+    closed: true,
+    nodes: dirs.map(([dx, dy]) => {
+      const p = { x: c.x + dx * r, y: c.y + dy * r };
+      const tx = -dy * sign;
+      const ty = dx * sign;
+      return {
+        id: shortId("node"),
+        point: p,
+        handleIn: { x: p.x - tx * k, y: p.y - ty * k },
+        handleOut: { x: p.x + tx * k, y: p.y + ty * k },
+        type: "smooth" as const,
+      };
+    }),
+  };
+}
+
+/** One paint dot: a near-round polygon (a softly irregular droplet for a
+ * fleck), wound to `sign` so it adds ink under nonzero fill. Tiny dots are
+ * plain corner polygons — identical on screen, far cheaper to draw. */
+function makeSprayDot(cx: number, cy: number, r: number, rand: () => number, sign: number, fleck: boolean): Contour {
+  const sides = fleck ? 9 : r < 1.1 ? 5 : r < 2 ? 6 : 8;
+  const wobble = fleck ? 0.34 : 0.14;
+  const stretch = fleck ? 0.65 + rand() * 0.7 : 0.85 + rand() * 0.3;
+  const rot = rand() * Math.PI;
+  const cosR = Math.cos(rot);
+  const sinR = Math.sin(rot);
+  const a0 = rand() * Math.PI * 2;
+  const pts: Point[] = new Array(sides);
+  for (let i = 0; i < sides; i++) {
+    const a = a0 + sign * (i / sides) * Math.PI * 2;
+    const rr = r * (1 + (rand() * 2 - 1) * wobble);
+    const lx = Math.cos(a) * rr * stretch;
+    const ly = Math.sin(a) * rr;
+    pts[i] = { x: cx + lx * cosR - ly * sinR, y: cy + lx * sinR + ly * cosR };
+  }
+  const smooth = r >= 2.2;
+  const nodes: PathNode[] = new Array(sides);
+  for (let i = 0; i < sides; i++) {
+    const p = pts[i];
+    if (!smooth) {
+      nodes[i] = { id: shortId("node"), point: p, handleIn: null, handleOut: null, type: "corner" };
+      continue;
+    }
+    const prev = pts[(i - 1 + sides) % sides];
+    const next = pts[(i + 1) % sides];
+    const hx = (next.x - prev.x) / 6;
+    const hy = (next.y - prev.y) / 6;
+    nodes[i] = { id: shortId("node"), point: p, handleIn: { x: p.x - hx, y: p.y - hy }, handleOut: { x: p.x + hx, y: p.y + hy }, type: "smooth" };
+  }
+  return { id: shortId("contour"), closed: true, nodes };
+}
+
 function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings, fast = false, liveCache?: SpraySpeckCache): Contour[] {
-  // ---- 1. Solid body --------------------------------------------------
+  if (centerline.length === 0) return [];
+  const h = Math.max(1, settings.size / 2);
+
+  // ---- 1. Core --------------------------------------------------------
   const constantWidth =
     (settings.taperStart ?? 0) <= 0 &&
     (settings.taperEnd ?? 0) <= 0 &&
     (!settings.pressureEnabled || (settings.pressureSensitivity ?? 0) === 0);
 
   let bodyContours: Contour[] = [];
-  if (constantWidth) {
+  // The exact round-pen union costs far more than a whole frame on a long
+  // stroke, so the live preview (`fast`) uses the single-contour offset
+  // builder — identical on screen at this width — and the committed build
+  // the exact union.
+  if (constantWidth && !fast) {
     const centerContour: Contour = {
       id: "spray-center",
       closed: false,
-      nodes: centerline.map((s, i) => ({
-        id: `spc${i}`,
-        point: { x: s.x, y: s.y },
-        handleIn: null,
-        handleOut: null,
-        type: "corner",
-      })),
+      nodes: centerline.map((s, i) => ({ id: `spc${i}`, point: { x: s.x, y: s.y }, handleIn: null, handleOut: null, type: "corner" })),
     };
-    bodyContours = uniformCenterlineToOutlineExact(centerContour, settings.size, "round");
+    bodyContours = uniformCenterlineToOutlineExact(centerContour, settings.size * SPRAY_CORE, "round");
   }
-  const legacyMain = bodyContours.length === 0 ? centerlineToOutline(centerline, settings) : null;
   if (bodyContours.length === 0) {
+    const legacyMain = centerlineToOutline(centerline, { ...settings, size: settings.size * SPRAY_CORE });
     if (!legacyMain) return [];
     bodyContours = [legacyMain];
   }
-
   const largestBody = bodyContours.reduce(
     (best, c) => {
       const a = Math.abs(signedArea(c.nodes.map((n) => n.point)));
@@ -2909,214 +2975,219 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
     },
     { a: -1, c: bodyContours[0] },
   ).c;
-  const outerSign = Math.sign(signedArea(largestBody.nodes.map((n) => n.point))) || 1;
+  const sign = Math.sign(signedArea(largestBody.nodes.map((n) => n.point))) || 1;
 
-  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.05));
-  if (dense.length < 2) return bodyContours;
-  const cumulative: number[] = [0];
-  for (let i = 1; i < dense.length; i++) {
-    cumulative.push(cumulative[i - 1] + Math.hypot(dense[i].x - dense[i - 1].x, dense[i].y - dense[i - 1].y));
+  // Centerline as the body actually sweeps it: the same polyline, with
+  // arc length for the taper/pressure radius lookup.
+  const pts: Point[] = [];
+  const press: number[] = [];
+  for (const s of centerline) {
+    const last = pts[pts.length - 1];
+    if (last && Math.hypot(s.x - last.x, s.y - last.y) < 1e-6) continue;
+    pts.push({ x: s.x, y: s.y });
+    press.push(s.pressure);
   }
-  const totalLength = cumulative[cumulative.length - 1] || 0;
-  if (totalLength <= 0) return bodyContours;
-  const halfWidth = Math.max(1, settings.size / 2);
-  const strength = Math.max(0.2, Math.min(1.6, (settings.jitter ?? 0.6) / 0.6));
+  const cum: number[] = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+  const total = cum[cum.length - 1] ?? 0;
 
-  const at = (t: number): { p: Point; tangent: Point; taper: number } => {
-    const clamped = Math.max(0, Math.min(totalLength, t));
-    let lo = 1;
-    let hi = cumulative.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (cumulative[mid] < clamped) lo = mid + 1;
-      else hi = mid;
-    }
-    const idx = lo;
-    const p0 = dense[idx - 1];
-    const p1 = dense[idx];
-    const segLen = cumulative[idx] - cumulative[idx - 1] || 1;
-    const frac = (clamped - cumulative[idx - 1]) / segLen;
-    const p = { x: p0.x + (p1.x - p0.x) * frac, y: p0.y + (p1.y - p0.y) * frac };
-    const tangent = { x: p1.x - p0.x, y: p1.y - p0.y };
-    const taper = fast
-      ? taperFactor(Math.min(1, clamped / (halfWidth * 5)), 1, 0)
-      : taperFactor(totalLength > 0 ? clamped / totalLength : 0, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd });
-    return { p, tangent, taper };
+  const coreRadiusAt = (s: number, i: number): number => {
+    if (constantWidth) return h;
+    const taper = taperFactor(total > 0 ? s / total : 0, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd });
+    const p = settings.pressureEnabled ? 1 - (settings.pressureSensitivity ?? 0) * (1 - (press[i] ?? 1)) : 1;
+    return h * taper * Math.max(0.05, p);
   };
 
-  // When a live cache is supplied, `extras` IS `liveCache.specks` (the same
-  // array, mutated in place by pushing only the new tail's dots each
-  // frame) so previously-generated specks persist across frames instead of
-  // being thrown away and rebuilt.
-  const extras: Contour[] = liveCache ? liveCache.specks : [];
-  const incremental = !!liveCache;
-  // Where to resume from this frame: 0 for a fresh/committed build, or
-  // wherever the cache left off for a live-drawing frame.
-  const startDist = incremental ? Math.max(0, Math.min(liveCache!.processedDist, totalLength)) : 0;
+  // Dwell blobs at the two ends (only on a real, untapered stroke).
+  const strokeSeed = hashCell(Math.round(pts[0].x * 7), Math.round(pts[0].y * 13), pts.length > 1 ? 1 : 0);
+  const seedRand = mulberry32(strokeSeed);
+  const bulbs: { c: Point; r: number }[] = [];
+  if (constantWidth && pts.length > 1 && total > h * 1.5) {
+    const ends: [Point, Point][] = [
+      [pts[0], pts[Math.min(1, pts.length - 1)]],
+      [pts[pts.length - 1], pts[Math.max(0, pts.length - 2)]],
+    ];
+    for (const [end, inward] of ends) {
+      const rb = h * (SPRAY_BULB + (seedRand() - 0.5) * 0.08);
+      const tl = Math.hypot(inward.x - end.x, inward.y - end.y) || 1;
+      const tx = (inward.x - end.x) / tl;
+      const ty = (inward.y - end.y) / tl;
+      const neckAt = Math.min(0.55 * h, total / 3);
+      const core = h * (1 - SPRAY_CORE);
+      bodyContours.push(sprayCircle(end, rb - core, sign));
+      bodyContours.push(sprayCircle({ x: end.x + tx * neckAt, y: end.y + ty * neckAt }, (h + rb) / 2 - core, sign));
+      bulbs.push({ c: end, r: rb });
+    }
+  }
 
-  // ---- 2. Edge spray texture -------------------------------------------
-  // A real stencil-sprayed edge isn't a clean vector curve — it's built up
-  // from countless overlapping tiny paint dots landing right at the
-  // boundary, which is what actually gives it that fuzzy, grainy silhouette
-  // (see the reference: the letters' outlines are ragged with paint grain,
-  // not smooth). We approximate that by scattering many small dots
-  // straddling the true edge — mostly centered on/just past it, wound the
-  // SAME sign as the body so they simply add ink where they land outside
-  // (fuzzing the boundary out) and disappear harmlessly where they land
-  // inside (already filled) — instead of the earlier version's sparse
-  // "bitten" pits, which read as occasional notches rather than an actually
-  // grainy edge.
-  //
-  // Runs at full density either on commit (`!fast`) or during live drawing
-  // when a cache is available to accumulate into (`incremental`) — only a
-  // cache-less fast call (see doc comment above) skips it.
-  if (!fast || incremental) {
-    // Denser, finer spacing than before — the reference's edge reads as a
-    // continuous fine "torn paper" grain all the way around, not occasional
-    // isolated bites — so both the step along the path and the per-dot skip
-    // chance below are tightened up.
-    const edgeSpacing = Math.max(0.6, halfWidth * 0.11) / strength;
-    // Resume the jitter sequence from roughly where the last frame left
-    // off, purely cosmetic (keeps consecutive frames' seeds from
-    // repeating the same early pattern) — it doesn't need to be exact.
-    let ei = Math.max(0, Math.round(startDist / edgeSpacing));
-    for (let d = startDist; d < totalLength; d += edgeSpacing * (0.4 + ((pseudoNoise(ei * 5.3 + 3.1) + 1) / 2) * 0.7), ei++) {
-      const { p, tangent, taper } = at(d);
-      if (taper <= 0.04) continue;
-      const tl = Math.hypot(tangent.x, tangent.y) || 1;
-      const tx = tangent.x / tl;
-      const ty = tangent.y / tl;
-      for (const side of [1, -1]) {
-        const seed = ei * 277.1 + (side > 0 ? 41.3 : 97.7);
-        if ((pseudoNoise(seed) + 1) / 2 < 0.22) continue; // still leaves a few gaps, but a near-continuous grain now
-        const normal = { x: -ty * side, y: tx * side };
-        const hw = halfWidth * taper;
-        // Small, fine grain — the reference's edge dots read as fine
-        // speckle, not blobby chunks.
-        const dotR = Math.max(0.3, hw * (0.035 + ((pseudoNoise(seed + 4) + 1) / 2) * 0.075));
-        // Straddle the true edge: mostly centered right on it, biased
-        // slightly outward for the "hairy" fuzzed silhouette, occasionally
-        // sitting a bit inside (harmless — just fuses into the solid body).
-        const straddle = dotR * (-0.5 + ((pseudoNoise(seed + 8) + 1) / 2) * 1.7);
-        const along = ((pseudoNoise(seed + 12) + 1) / 2 - 0.5) * edgeSpacing * 0.7;
-        const center = { x: p.x + normal.x * (hw + straddle) + tx * along, y: p.y + normal.y * (hw + straddle) + ty * along };
-        extras.push(makeSpeckle(center, dotR, seed, outerSign, dotR < 1.2 ? 6 : 8, dotR < 1.4));
+  // ---- 2 + 3. Halo ----------------------------------------------------
+  const spreadK = Math.max(0.5, Math.min(2.2, (1.5 - settings.roundness) / 0.75));
+  const densK = Math.max(0.15, Math.min(2, (settings.jitter ?? 0.6) / 0.6)) * (fast && !liveCache ? 0.35 : 1);
+  const unit = h * spreadK; // one halo "x" unit, font units
+  const rBase = Math.max(0.8, h * 0.03);
+  const g = Math.max(1.5, h * 0.13); // halo cell size
+  // Candidates deeper than this are inside the solid core already.
+  const dMin = -(1 - SPRAY_CORE + 0.02) * h;
+  const reachAbs = SPRAY_REACH * unit * 1.25;
+  const rMax = h * (SPRAY_BULB + 0.05);
+  // Coarse grid for nearest-centerline queries; one cell spans the whole
+  // halo so a query only ever needs the 3×3 block around it.
+  const C = rMax + reachAbs + g;
+  const segGrid = new Map<number, number[]>();
+  const nSeg = Math.max(0, pts.length - 1);
+  const coarseOf = (v: number) => Math.floor(v / C);
+  const addSeg = (key: number, i: number) => {
+    const list = segGrid.get(key);
+    if (list) list.push(i);
+    else segGrid.set(key, [i]);
+  };
+  for (let i = 0; i < nSeg; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    for (let cx = coarseOf(Math.min(a.x, b.x)); cx <= coarseOf(Math.max(a.x, b.x)); cx++) {
+      for (let cy = coarseOf(Math.min(a.y, b.y)); cy <= coarseOf(Math.max(a.y, b.y)); cy++) addSeg(cellKey(cx, cy), i);
+    }
+  }
+
+  // Distance from p to the stroke's nominal edge (negative inside).
+  const coreDistance = (px: number, py: number): number => {
+    let best = nSeg === 0 ? Math.hypot(px - pts[0].x, py - pts[0].y) - coreRadiusAt(0, 0) : Infinity;
+    const cx0 = coarseOf(px);
+    const cy0 = coarseOf(py);
+    for (let cx = cx0 - 1; cx <= cx0 + 1; cx++) {
+      for (let cy = cy0 - 1; cy <= cy0 + 1; cy++) {
+        const list = segGrid.get(cellKey(cx, cy));
+        if (!list) continue;
+        // A long segment can sit in several coarse cells; testing it twice
+        // is harmless for a minimum and cheaper than de-duplicating.
+        for (const i of list) {
+          const a = pts[i];
+          const b = pts[i + 1];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const lenSq = dx * dx + dy * dy;
+          const f = lenSq > 0 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / lenSq)) : 0;
+          const dist = Math.hypot(px - (a.x + dx * f), py - (a.y + dy * f));
+          const d = dist - coreRadiusAt(cum[i] + (cum[i + 1] - cum[i]) * f, f < 0.5 ? i : i + 1);
+          if (d < best) best = d;
+        }
+      }
+    }
+    for (const bulb of bulbs) best = Math.min(best, Math.hypot(px - bulb.c.x, py - bulb.c.y) - bulb.r);
+    return best;
+  };
+  const endBoost = (px: number, py: number): number => {
+    let e = 0;
+    for (const end of [pts[0], pts[pts.length - 1]]) {
+      const q = Math.hypot(px - end.x, py - end.y) / (2.2 * h);
+      e = Math.max(e, Math.exp(-q * q));
+    }
+    return e;
+  };
+  // Dots near the edge are bigger (they merge into a ragged, crusty edge);
+  // out in the mist they're fine. `density` = dots per unit area.
+  const dotRadiusScale = (x: number) => 1 + 2 * Math.exp(-Math.max(0, x) / 0.16);
+  const meanDotArea = Math.PI * rBase * rBase * 0.808;
+  const coreEdge = -(1 - SPRAY_CORE) * h;
+  const density = (d: number, boost: number): number => {
+    const x = d / (unit * (1 + 0.3 * boost));
+    if (x > SPRAY_REACH) return 0;
+    let cover: number;
+    if (x <= 0) {
+      // Between the solid core and the nominal edge: near-solid stipple.
+      const f = Math.min(1, d / coreEdge);
+      cover = SPRAY_EDGE_COVERAGE + (0.95 - SPRAY_EDGE_COVERAGE) * f;
+    } else {
+      cover = SPRAY_EDGE_COVERAGE * Math.exp(-Math.pow(x / SPRAY_SPREAD, SPRAY_SHAPE)) + SPRAY_TAIL_COVERAGE * Math.exp(-x / SPRAY_TAIL_FALLOFF);
+    }
+    const c = Math.min(0.985, cover * (1 + 0.4 * boost));
+    const rs = dotRadiusScale(x);
+    return (-Math.log(1 - c) * densK) / (meanDotArea * rs * rs);
+  };
+
+  // Which halo cells to visit: every fine cell inside a coarse cell that
+  // sits next to a centerline segment — or, while drawing live, only next
+  // to the part of the stroke added since the previous frame.
+  const live = !!liveCache;
+  const doneCells = live ? (liveCache!.doneCells ??= new Set<number>()) : null;
+  const fromS = live ? Math.max(0, liveCache!.processedDist - 2 * C) : 0;
+  const coarse = new Set<number>();
+  const coarseList: [number, number][] = [];
+  const addCoarse = (cx: number, cy: number) => {
+    for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+      const key = cellKey(cx + ox, cy + oy);
+      if (coarse.has(key)) continue;
+      coarse.add(key);
+      coarseList.push([cx + ox, cy + oy]);
+    }
+  };
+  if (nSeg === 0) addCoarse(coarseOf(pts[0].x), coarseOf(pts[0].y));
+  for (let i = 0; i < nSeg; i++) {
+    if (cum[i + 1] < fromS) continue;
+    const a = pts[i];
+    const b = pts[i + 1];
+    for (let cx = coarseOf(Math.min(a.x, b.x)); cx <= coarseOf(Math.max(a.x, b.x)); cx++) {
+      for (let cy = coarseOf(Math.min(a.y, b.y)); cy <= coarseOf(Math.max(a.y, b.y)); cy++) addCoarse(cx, cy);
+    }
+  }
+
+  const tip = pts[pts.length - 1];
+  // The next stroke segment starts at the tip, so it can still add paint to
+  // any cell within one full halo reach of it.
+  const finalReach = C + g;
+  const dots: Contour[] = live ? liveCache!.specks : [];
+  const provisional: Contour[] = [];
+  const half = g * Math.SQRT1_2;
+  for (const [cx, cy] of coarseList) {
+    // Fine cells are owned by the coarse cell holding their lower-left
+    // corner, so every fine cell is visited exactly once.
+    const ix0 = Math.ceil((cx * C) / g);
+    const ix1 = Math.ceil(((cx + 1) * C) / g) - 1;
+    const iy0 = Math.ceil((cy * C) / g);
+    const iy1 = Math.ceil(((cy + 1) * C) / g) - 1;
+    for (let ix = ix0; ix <= ix1; ix++) {
+      for (let iy = iy0; iy <= iy1; iy++) {
+        const key = cellKey(ix, iy);
+        if (doneCells?.has(key)) continue;
+        const mx = (ix + 0.5) * g;
+        const my = (iy + 0.5) * g;
+        const dc = coreDistance(mx, my);
+        if (dc - half > reachAbs || dc + half < dMin) continue;
+        const boost = endBoost(mx, my);
+        const lamMax = density(Math.max(dMin, dc - half), boost + 0.05);
+        if (lamMax <= 0) continue;
+        // Live: a cell still within reach of the moving tip may yet gain
+        // paint from the next frame's stroke, so it's rebuilt every frame
+        // until the tip has moved on, then finalized into the cache.
+        const finalize = live && Math.hypot(mx - tip.x, my - tip.y) > finalReach;
+        const target = !live || finalize ? dots : provisional;
+        const rand = mulberry32(hashCell(ix, iy, strokeSeed));
+        const expected = lamMax * g * g;
+        let count = Math.floor(expected);
+        if (rand() < expected - count) count++;
+        for (let k = 0; k < count; k++) {
+          const px = (ix + rand()) * g;
+          const py = (iy + rand()) * g;
+          const accept = rand();
+          const sizeU = rand();
+          const fleckU = rand();
+          const d = coreDistance(px, py);
+          if (d < dMin) continue;
+          const lam = density(d, endBoost(px, py));
+          if (accept * lamMax >= lam) continue;
+          const x = d / unit;
+          const fleck = !fast && x > 0.25 && fleckU < 0.012;
+          let r = rBase * dotRadiusScale(x) * (0.6 + 0.8 * sizeU * sizeU);
+          if (fleck) r *= 1.8 + (fleckU / 0.012) * 1.1;
+          target.push(makeSprayDot(px, py, r, rand, sign, fleck));
+        }
+        if (finalize) doneCells!.add(key);
       }
     }
   }
 
-  // ---- 3. Overspray: sparse dust around the body -----------------------
-  // Stepped by a FIXED arc-length increment (`stepLen`, independent of
-  // `totalLength`) rather than the old `i / stepCount` fraction-of-total
-  // scheme — that older scheme repositioned literally every dot each time
-  // `totalLength` grew by even one sample, which both looked like the dust
-  // was crawling while you drew and made an incremental cache impossible.
-  // Fixed-distance stepping means a dot placed at some arc length stays at
-  // that arc length forever, so resuming from `startDist` below only ever
-  // adds NEW dust for the newly-drawn tail.
-  //
-  // Matching the reference precisely: it is NOT a uniform-density band of
-  // dots sitting off to the side of each letter — it's a true density
-  // GRADIENT, a tight, fine cluster of specks starting right at the true
-  // edge that rapidly thins into just a handful of small, isolated flecks
-  // a little further out. `radiusFrac` below is biased toward 0 with
-  // `Math.pow(u, GRADIENT_POWER)` so most candidate dots land close to the
-  // edge (dense, fine grain) and only a rare few reach `beyondMax`; dot
-  // size also shrinks with distance for the same "fine grain near the
-  // letter, isolated tiny flecks further out" read. The halo is also kept
-  // tight (`beyondMax`) — it hugs the silhouette rather than ballooning
-  // out into a wide dust cloud.
-  const GRADIENT_POWER = 2.4;
-  const spread = 0.35 + 0.35 * settings.roundness;
-  const maxReach = 1.1 * spread;
-  if (!fast || incremental) {
-    const density = Math.min(1, (settings.jitter ?? 0.6) * 0.7);
-    const stepLen = Math.max(1.1, halfWidth * 0.4);
-    // More candidates per step than before — the gradient bias below
-    // naturally culls most of them into a dense cluster right at the edge
-    // and only lets a few through to the far end, so raising the candidate
-    // count is what actually produces a visibly graded halo instead of a
-    // thin, uniformly-spaced band.
-    const specksPerStep = Math.max(2, Math.round(3.4 * (0.5 + density)));
-    let stepIndex = Math.max(0, Math.floor(startDist / stepLen));
-    for (let d = startDist; d <= totalLength; d += stepLen, stepIndex++) {
-      const jitterSeed = stepIndex * 19.1 + 6.7;
-      const { p, tangent, taper } = at(d);
-      if (taper <= 0.05) continue;
-      const tl = Math.hypot(tangent.x, tangent.y) || 1;
-      const tx = tangent.x / tl;
-      const ty = tangent.y / tl;
-      const nx = -ty;
-      const ny = tx;
-      const hw = halfWidth * taper;
-      const beyondMax = maxReach * hw;
-      const count = Math.max(0, Math.round(specksPerStep * (0.5 + ((pseudoNoise(jitterSeed + 71) + 1) / 2) * 0.7)));
-      for (let k = 0; k < count; k++) {
-        const seed = stepIndex * 1097.3 + k * 23 + 4.1;
-        const u = (pseudoNoise(seed * 1.9 + 0.7) + 1) / 2;
-        // 0 = right at the true edge, 1 = the halo's outer limit — biased
-        // toward 0 so most dots cluster close in.
-        const radiusFrac = Math.pow(u, GRADIENT_POWER);
-        const angle = Math.PI * ((pseudoNoise(seed * 2.7 + 9.3) + 1) / 2) * 2;
-        // Distance from the CENTERLINE starts at the true edge (hw) and
-        // grows outward with radiusFrac, instead of scaling all the way
-        // from the centerline — that keeps every dot outside the solid
-        // body (none wasted deep inside it) and anchors the density
-        // gradient to the actual silhouette edge, which is what the
-        // reference's halo is graded from.
-        const dist = hw + radiusFrac * beyondMax;
-        const across = Math.cos(angle) * dist;
-        const along = Math.sin(angle) * dist * 0.5;
-        const center = { x: p.x + nx * across + tx * along, y: p.y + ny * across + ty * along };
-        // Dots shrink as they get further from the edge — fine, tiny
-        // flecks out at the halo's edge; slightly coarser right where it
-        // meets the letter.
-        const sizeFalloff = 1 - radiusFrac * 0.65;
-        const radius = Math.max(0.3, hw * (0.015 + ((pseudoNoise(seed * 1.3 + 9.7) + 1) / 2) * 0.05) * sizeFalloff);
-        const sides = radius < 1.4 ? 6 : 8;
-        extras.push(makeSpeckle(center, radius, seed, outerSign, sides, radius < 1.6));
-      }
-    }
-  } else {
-    // Defensive fallback only (see doc comment above): cache-less fast
-    // call, cheap thinned dust field rebuilt from scratch.
-    const FAST_MAX_STEPS = 40;
-    const stepLen = Math.max(halfWidth * 0.7, totalLength / FAST_MAX_STEPS, 3);
-    const stepCount = Math.max(1, Math.round(totalLength / stepLen));
-    const specksPerStep = 2;
-    let seedBase = 0;
-    for (let i = 0; i <= stepCount; i++) {
-      const jitterSeed = i * 19.1 + 6.7;
-      const t = Math.max(0, Math.min(totalLength, (i / stepCount) * totalLength));
-      const { p, tangent, taper } = at(t);
-      if (taper <= 0.05) continue;
-      const tl = Math.hypot(tangent.x, tangent.y) || 1;
-      const tx = tangent.x / tl;
-      const ty = tangent.y / tl;
-      const nx = -ty;
-      const ny = tx;
-      const hw = halfWidth * taper;
-      const count = Math.max(0, Math.round(specksPerStep * (0.5 + ((pseudoNoise(jitterSeed + 71) + 1) / 2) * 0.7)));
-      for (let k = 0; k < count; k++) {
-        seedBase += 1;
-        const seed = seedBase * 97.3 + i * 4.1 + k * 23;
-        const u = (pseudoNoise(seed * 1.9 + 0.7) + 1) / 2;
-        const radiusFrac = 0.55 + Math.pow(u, 1.6) * 0.45;
-        const angle = Math.PI * ((pseudoNoise(seed * 2.7 + 9.3) + 1) / 2) * 2;
-        const across = Math.cos(angle) * radiusFrac * maxReach * hw;
-        const along = Math.sin(angle) * radiusFrac * maxReach * hw * 0.7;
-        const center = { x: p.x + nx * across + tx * along, y: p.y + ny * across + ty * along };
-        const radius = Math.max(0.35, hw * (0.02 + ((pseudoNoise(seed * 1.3 + 9.7) + 1) / 2) * 0.045));
-        extras.push(makeSpeckle(center, radius, seed, outerSign, 4, true));
-      }
-    }
-  }
-
-  if (incremental) {
-    liveCache!.processedDist = totalLength;
-  }
-
-  return [...bodyContours, ...extras];
+  if (live) liveCache!.processedDist = total;
+  return [...bodyContours, ...dots, ...provisional];
 }
 
 /**
@@ -4381,6 +4452,12 @@ export function expandStrokeObject(obj: VectorObject): VectorObject | null {
     // edited path, avoiding the old "snap back to raw samples" behavior.
     const raw = brushOutlineContours(obj);
     if (raw.length === 0) return null;
+    // Spray: every piece (core, end blobs, thousands of paint dots) is ink
+    // of the same winding — union them, never XOR them into holes.
+    if (obj.brushType === "sprayBrush") {
+      const sprayed = unionSameWindingContours(raw, TIGHT_CURVE_FIDELITY_SCALE);
+      return sprayed.length ? { id: shortId("obj"), kind: "expanded", contours: sprayed } : null;
+    }
     // resolveTexturedBrushFill (not the plain self-intersection normalizer)
     // so a self-crossing textured gesture — "&", "8", a looped "e" drawn in
     // one stroke — comes out SOLID with its texture holes carved, instead of

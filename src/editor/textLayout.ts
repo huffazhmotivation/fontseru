@@ -115,10 +115,11 @@ export interface WrappedLine {
  * Soft-wraps `text` against real glyph advances/kerning (not browser text
  * metrics) so it breaks exactly where it will actually render — used by
  * previews that grow taller instead of scrolling sideways as glyph scale
- * increases. Explicit "\n" is preserved as a hard break; any line whose
- * next glyph would cross `maxWidthUnits` wraps to a new line instead
- * (character-level, matching Test Lab's own wrapping so both stay
- * predictable at the same scale).
+ * increases. Explicit "\n" is preserved as a hard break. Lines break
+ * between WORDS: a word that would cross `maxWidthUnits` moves to the next
+ * line whole, and the space at the break is dropped so wrapped lines stay
+ * correctly centered/right-aligned. Only a single word that is wider than
+ * the whole line on its own falls back to breaking between characters.
  */
 export function wrapLines(
   text: string,
@@ -132,6 +133,16 @@ export function wrapLines(
   const out: WrappedLine[] = [];
   let lineChars: string[] = [];
   let advance = 0;
+  // True right after a soft wrap, so the whitespace that caused it isn't
+  // carried over to the start of the next line.
+  let afterSoftWrap = false;
+
+  const glyphAdvanceOf = (ch: string) => {
+    const g = glyphs[ch];
+    return ch === " " && wordSpacing != null ? wordSpacing : g ? g.advanceWidth : fallbackAdvance(ch, unitsPerEm, wordSpacing);
+  };
+  const gapBefore = (previous: string | null, ch: string) =>
+    previous ? trackingUnits + (kerningPairs[kerningKey(previous, ch)] ?? 0) : 0;
 
   const flush = () => {
     const lineText = lineChars.join("");
@@ -139,28 +150,57 @@ export function wrapLines(
     lineChars = [];
     advance = 0;
   };
+  const softWrap = () => {
+    while (lineChars.length > 0 && /\s/u.test(lineChars[lineChars.length - 1])) lineChars.pop();
+    flush();
+    afterSoftWrap = true;
+  };
+  const append = (ch: string) => {
+    advance += gapBefore(lineChars[lineChars.length - 1] ?? null, ch) + glyphAdvanceOf(ch);
+    lineChars.push(ch);
+  };
+  const hasInk = () => lineChars.some((ch) => !/\s/u.test(ch));
 
-  for (const ch of Array.from(text)) {
-    if (ch === "\n") {
+  text.split("\n").forEach((segment, segmentIndex) => {
+    if (segmentIndex > 0) {
       flush();
-      continue;
+      afterSoftWrap = false;
     }
+    for (const token of segment.match(/\s+|\S+/gu) ?? []) {
+      const chars = Array.from(token);
+      if (/^\s/u.test(token)) {
+        if (!afterSoftWrap) for (const ch of chars) append(ch);
+        continue;
+      }
 
-    const g = glyphs[ch];
-    const glyphAdvance = ch === " " && wordSpacing != null ? wordSpacing : g ? g.advanceWidth : fallbackAdvance(ch, unitsPerEm, wordSpacing);
-    const previous = lineChars[lineChars.length - 1] ?? null;
-    const between = previous ? trackingUnits + (kerningPairs[kerningKey(previous, ch)] ?? 0) : 0;
-    const nextAdvance = advance + between + glyphAdvance;
+      let tokenAdvance = 0;
+      let previous: string | null = lineChars[lineChars.length - 1] ?? null;
+      for (const ch of chars) {
+        tokenAdvance += gapBefore(previous, ch) + glyphAdvanceOf(ch);
+        previous = ch;
+      }
+      if (hasInk() && advance + tokenAdvance > maxWidthUnits) softWrap();
+      afterSoftWrap = false;
 
-    if (lineChars.length > 0 && nextAdvance > maxWidthUnits) {
-      flush();
-      lineChars.push(ch);
-      advance = glyphAdvance;
-    } else {
-      lineChars.push(ch);
-      advance = nextAdvance;
+      // Measured again from the (possibly new) line start: kerning against
+      // the previous line's last glyph no longer applies.
+      let standalone = 0;
+      previous = null;
+      for (const ch of chars) {
+        standalone += gapBefore(previous, ch) + glyphAdvanceOf(ch);
+        previous = ch;
+      }
+      if (!hasInk() && advance + standalone > maxWidthUnits) {
+        for (const ch of chars) {
+          const nextAdvance = advance + gapBefore(lineChars[lineChars.length - 1] ?? null, ch) + glyphAdvanceOf(ch);
+          if (lineChars.length > 0 && nextAdvance > maxWidthUnits) flush();
+          append(ch);
+        }
+      } else {
+        for (const ch of chars) append(ch);
+      }
     }
-  }
+  });
 
   flush();
   return out.length

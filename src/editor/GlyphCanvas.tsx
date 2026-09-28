@@ -349,7 +349,26 @@ export function GlyphCanvas() {
     if (pending) pointerMoveProcessorRef.current(pending);
   }, []);
 
+  // Brush strokes need EVERY input sample, not one per frame: a pen or
+  // fast mouse reports far more positions than the screen repaints
+  // (Apple Pencil: 240 Hz), and keeping only the newest per frame turned
+  // quick curves into visible straight facets. While a brush stroke is in
+  // progress, all coalesced samples go straight to the brush tool (which
+  // throttles its own preview to one rebuild per frame).
+  const brushDirectMoveRef = useRef<(e: PointerEvent) => boolean>(() => false);
+  brushDirectMoveRef.current = (native: PointerEvent) => {
+    if (tool !== "brush" || isNodeBrush || !brushTool.isDrawing || panDragRef.current) return false;
+    if (sketchGestures.handlePointerMove(native)) return true;
+    const coalesced = typeof native.getCoalescedEvents === "function" ? native.getCoalescedEvents() : [];
+    for (const ev of coalesced.length > 0 ? coalesced : [native]) {
+      const p = getFontPoint(ev);
+      if (p) brushTool.pointerMove(p, { pressure: ev.pressure, pointerType: ev.pointerType, timeStamp: ev.timeStamp });
+    }
+    return true;
+  };
+
   const queuePointerMove = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
+    if (brushDirectMoveRef.current(e.nativeEvent)) return;
     pendingPointerMoveRef.current = {
       pointerId: e.pointerId,
       pointerType: e.pointerType,

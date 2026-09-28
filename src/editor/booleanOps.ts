@@ -1,6 +1,7 @@
-import type { Point, PathNode, Contour, VectorObject } from "@/types/geometry";
+import type { Point, PathNode, NodeType, Contour, VectorObject } from "@/types/geometry";
 import { isFilledObject } from "@/types/geometry";
 import { flattenContour } from "./objectOps";
+import { cubicPoint, cubicTangent, splitCubic } from "./bezier";
 import { simplifyPolyline } from "@/utils/simplify";
 import { shortId } from "@/utils/id";
 import {
@@ -113,32 +114,107 @@ function dedupePoints(pts: Point[]): Point[] {
 // redundant polygon points.
 const PRECLIP_SIMPLIFY_EPSILON = 0.75; // font units
 
-function simplifyClosedRing(pts: Point[], epsilon: number): Point[] {
-  if (pts.length < 6) return pts;
-  // simplifyPolyline treats its first/last points as fixed anchors, so
-  // temporarily reopen the ring at its own start/end to run it, then drop
-  // the duplicated closing point it leaves behind.
-  const reopened = [...pts, pts[0]];
-  const simplified = simplifyPolyline(reopened, epsilon);
-  if (simplified.length > 3) simplified.pop();
-  return simplified.length >= 3 ? simplified : pts;
+/**
+ * One source contour flattened for the clipper, remembering where every
+ * polygon vertex sits on the ORIGINAL Bézier path. `u` is a curve position:
+ * the integer part is the segment index (segment i runs from node i to node
+ * i+1, wrapping), the fraction is that segment's own t. This is what lets a
+ * clipped ring be mapped back onto the exact original curves (see
+ * `reconstructRingFromSources`) instead of being refit from its polygon.
+ */
+interface SourceRing {
+  contour: Contour;
+  pts: Point[];
+  /** u[k] is the curve position of pts[k]; u[pts.length] === nSeg closes the loop. */
+  u: number[];
+  nSeg: number;
 }
 
-function objectPolys(obj: VectorObject): Point[][] {
-  return obj.contours
-    .map((c) => {
-      // Flatten at a resolution that scales DOWN as the contour already has
-      // more nodes. An expanded stroke contour can carry hundreds of Bézier
-      // nodes; re-flattening every segment at the full CLIP_SAMPLE_STEPS
-      // (48) then produced tens of thousands of points, which overwhelmed
-      // the exact clipper and made it emit degenerate/empty rings — the
-      // slashed-"0" counter vanished because its polygon came back broken.
-      // Fewer steps on an already-dense contour keeps the point budget sane
-      // while staying well within the pre-clip simplify tolerance below.
-      const steps = c.nodes.length > 40 ? 4 : c.nodes.length > 16 ? 8 : CLIP_SAMPLE_STEPS;
-      return simplifyClosedRing(dedupePoints(flattenContour(c, steps)), PRECLIP_SIMPLIFY_EPSILON);
-    })
-    .filter((poly) => poly.length >= 3);
+interface TrackedPoint extends Point {
+  u: number;
+}
+
+interface SegmentCubic {
+  p0: Point;
+  /** null = no handle on that side (the original node had none). */
+  c1: Point | null;
+  c2: Point | null;
+  p3: Point;
+}
+
+/** Segment i of a filled contour. An open contour is still filled as if
+ * closed, so its implicit closing edge (last node → first) is a straight line. */
+function segmentCubic(c: Contour, i: number): SegmentCubic {
+  const n = c.nodes.length;
+  const from = c.nodes[i];
+  const to = c.nodes[(i + 1) % n];
+  if (!c.closed && i === n - 1) return { p0: from.point, c1: null, c2: null, p3: to.point };
+  return { p0: from.point, c1: from.handleOut, c2: to.handleIn, p3: to.point };
+}
+
+function trackContour(c: Contour): SourceRing | null {
+  const n = c.nodes.length;
+  if (n < 2) return null;
+  // Flatten at a resolution that scales DOWN as the contour already has
+  // more nodes. An expanded stroke contour can carry hundreds of Bézier
+  // nodes; re-flattening every segment at the full CLIP_SAMPLE_STEPS
+  // (48) then produced tens of thousands of points, which overwhelmed
+  // the exact clipper and made it emit degenerate/empty rings — the
+  // slashed-"0" counter vanished because its polygon came back broken.
+  // Fewer steps on an already-dense contour keeps the point budget sane
+  // while staying well within the pre-clip simplify tolerance below.
+  const steps = n > 40 ? 4 : n > 16 ? 8 : CLIP_SAMPLE_STEPS;
+  const pts: Point[] = [];
+  const u: number[] = [];
+  const push = (p: TrackedPoint) => {
+    const prev = pts[pts.length - 1];
+    if (prev && Math.abs(prev.x - p.x) < 1e-9 && Math.abs(prev.y - p.y) < 1e-9) return;
+    pts.push({ x: p.x, y: p.y });
+    u.push(p.u);
+  };
+  for (let i = 0; i < n; i++) {
+    const seg = segmentCubic(c, i);
+    const start: TrackedPoint = { x: snap(seg.p0.x), y: snap(seg.p0.y), u: i };
+    if (!seg.c1 && !seg.c2) {
+      push(start);
+      continue;
+    }
+    const c1 = seg.c1 ?? seg.p0;
+    const c2 = seg.c2 ?? seg.p3;
+    const samples: TrackedPoint[] = [start];
+    for (let k = 1; k < steps; k++) {
+      const p = cubicPoint(seg.p0, c1, c2, seg.p3, k / steps);
+      samples.push({ x: snap(p.x), y: snap(p.y), u: i + k / steps });
+    }
+    samples.push({ x: snap(seg.p3.x), y: snap(seg.p3.y), u: i + 1 });
+    // Simplified PER SEGMENT (both ends pinned) rather than over the whole
+    // ring, so every polygon edge stays inside one Bézier segment and every
+    // original node stays a polygon vertex — see PRECLIP_SIMPLIFY_EPSILON
+    // for why the near-collinear samples are thinned at all.
+    const kept = simplifyPolyline(samples, PRECLIP_SIMPLIFY_EPSILON);
+    // The last kept sample is the next segment's start — pushed by it.
+    for (let k = 0; k < kept.length - 1; k++) push(kept[k]);
+  }
+  if (pts.length > 1) {
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    if (Math.abs(first.x - last.x) < 1e-9 && Math.abs(first.y - last.y) < 1e-9) {
+      pts.pop();
+      u.pop();
+    }
+  }
+  if (pts.length < 3) return null;
+  u.push(n);
+  return { contour: c, pts, u, nSeg: n };
+}
+
+function contourSourceRings(contours: Contour[]): SourceRing[] {
+  const out: SourceRing[] = [];
+  for (const c of contours) {
+    const r = trackContour(c);
+    if (r) out.push(r);
+  }
+  return out;
 }
 
 function toRing(pts: Point[]): [number, number][] {
@@ -178,10 +254,9 @@ function ringToPoints(ring: [number, number][]): Point[] {
  * objects already got, so Subtract/Union/Intersect always start from
  * clean, simple polygons regardless of how the shape was drawn.
  */
-function objectToMultiPolygon(obj: VectorObject): ClipMultiPolygon {
-  const polys = objectPolys(obj);
-  if (polys.length === 0) return [];
-  const rings: ClipPolygon[] = polys.map((p) => [toRing(p)]);
+function sourceRingsToMultiPolygon(sources: SourceRing[]): ClipMultiPolygon {
+  if (sources.length === 0) return [];
+  const rings: ClipPolygon[] = sources.map((s) => [toRing(s.pts)]);
   try {
     return rings.length === 1 ? clipUnion(rings[0]) : clipXor(rings[0], ...rings.slice(1));
   } catch {
@@ -352,6 +427,494 @@ function ringSimplifyTolerance(ring: Point[], scale = 1): number {
   return Math.min(10, Math.max(1.25, diag * 0.012)) * scale;
 }
 
+/* ------------------------------------------------------------------ *
+ * CURVE-PRESERVING RECONSTRUCTION
+ *
+ * Bug this fixes ("shape berubah bentuk / titik node berantakan setelah
+ * boolean"): every boolean op used to throw the original Béziers away and
+ * refit the WHOLE result from the clipper's polygon — new node positions,
+ * new handles, a different node count — even along edges the other shape
+ * never touched. A clipped ring is, by construction, made of pieces of the
+ * input polygons' own edges joined at intersection points. Since every
+ * input vertex remembers its curve position (`SourceRing.u`), each run of
+ * the ring that follows one source contour maps straight back onto that
+ * contour's ORIGINAL segments: untouched nodes come back bit-identical
+ * (same point, same handles, same type), segments that were cut are split
+ * exactly with De Casteljau, and the only new nodes are the real
+ * intersection points, solved on the true curves (not the polygon chords).
+ * Any ring that can't be mapped cleanly falls back to the old refit.
+ * ------------------------------------------------------------------ */
+
+// Max distance (font units) a clipped vertex may sit from an input polygon
+// edge and still count as lying on it. Clipper output is exact to ~1e-10.
+const LOCATE_TOL = 1e-3;
+
+function modU(u: number, n: number): number {
+  const m = u % n;
+  return m < 0 ? m + n : m;
+}
+
+/** Shortest signed difference a − b on a loop of length n. */
+function signedUDelta(a: number, b: number, n: number): number {
+  let d = (a - b) % n;
+  if (d > n / 2) d -= n;
+  if (d < -n / 2) d += n;
+  return d;
+}
+
+function segParam(r: SourceRing, u: number): { seg: number; t: number } {
+  const w = modU(u, r.nSeg);
+  const seg = Math.min(r.nSeg - 1, Math.floor(w));
+  return { seg, t: Math.min(1, Math.max(0, w - seg)) };
+}
+
+function pointAtU(r: SourceRing, u: number): Point {
+  const { seg, t } = segParam(r, u);
+  const s = segmentCubic(r.contour, seg);
+  if (!s.c1 && !s.c2) return { x: s.p0.x + (s.p3.x - s.p0.x) * t, y: s.p0.y + (s.p3.y - s.p0.y) * t };
+  return cubicPoint(s.p0, s.c1 ?? s.p0, s.c2 ?? s.p3, s.p3, t);
+}
+
+function derivAtU(r: SourceRing, u: number): Point {
+  const { seg, t } = segParam(r, u);
+  const s = segmentCubic(r.contour, seg);
+  if (!s.c1 && !s.c2) return { x: s.p3.x - s.p0.x, y: s.p3.y - s.p0.y };
+  return cubicTangent(s.p0, s.c1 ?? s.p0, s.c2 ?? s.p3, s.p3, t);
+}
+
+/** Snaps a curve position onto an existing node when it is (visually) on
+ * it, so a cut that lands on a node doesn't leave a near-duplicate node. */
+function snapUToNode(r: SourceRing, u: number): number {
+  const k = Math.round(u);
+  if (Math.abs(u - k) > 0.02) return u;
+  const node = r.contour.nodes[modU(k, r.nSeg)];
+  const p = pointAtU(r, u);
+  return Math.hypot(p.x - node.point.x, p.y - node.point.y) < 0.05 ? k : u;
+}
+
+/** Newton solve for the true curve–curve intersection nearest the
+ * clipper's polygon intersection `x`. Null when the curves are tangent
+ * there or the solve wanders off, in which case the caller keeps `x`. */
+function intersectCurvesNear(a: SourceRing, ua0: number, b: SourceRing, ub0: number, x: Point): { ua: number; ub: number; p: Point } | null {
+  let ua = ua0;
+  let ub = ub0;
+  for (let it = 0; it < 16; it++) {
+    const pa = pointAtU(a, ua);
+    const pb = pointAtU(b, ub);
+    const fx = pa.x - pb.x;
+    const fy = pa.y - pb.y;
+    if (fx * fx + fy * fy < 1e-16) break;
+    const da = derivAtU(a, ua);
+    const db = derivAtU(b, ub);
+    // J = [da, -db]; solve J·[dua, dub] = -F by Cramer's rule.
+    const det = da.x * -db.y - -db.x * da.y;
+    const scale = Math.hypot(da.x, da.y) * Math.hypot(db.x, db.y);
+    if (!(scale > 0) || Math.abs(det) < 1e-6 * scale) return null;
+    let dua = (-fx * -db.y - -db.x * -fy) / det;
+    let dub = (da.x * -fy - -fx * da.y) / det;
+    dua = Math.max(-0.25, Math.min(0.25, dua));
+    dub = Math.max(-0.25, Math.min(0.25, dub));
+    ua += dua;
+    ub += dub;
+  }
+  if (Math.abs(signedUDelta(ua, ua0, a.nSeg)) > 0.5 || Math.abs(signedUDelta(ub, ub0, b.nSeg)) > 0.5) return null;
+  ua = snapUToNode(a, modU(ua, a.nSeg));
+  ub = snapUToNode(b, modU(ub, b.nSeg));
+  const pa = pointAtU(a, ua);
+  const pb = pointAtU(b, ub);
+  if (Math.hypot(pa.x - pb.x, pa.y - pb.y) > 0.05) return null;
+  const p = { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+  if (Math.hypot(p.x - x.x, p.y - x.y) > 4) return null;
+  return { ua, ub, p };
+}
+
+/** Uniform grid over every source polygon edge, for locating which input
+ * edge each clipped edge came from. */
+class SourceEdgeGrid {
+  readonly cell: number;
+  private readonly cells = new Map<number, number[]>();
+  readonly edgeRing: number[] = [];
+  readonly edgeK: number[] = [];
+
+  constructor(readonly rings: SourceRing[]) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const r of rings) for (const p of r.pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    this.cell = Math.max(1, Math.hypot(maxX - minX, maxY - minY) / 128);
+    rings.forEach((r, ri) => {
+      const n = r.pts.length;
+      for (let k = 0; k < n; k++) {
+        const p = r.pts[k];
+        const q = r.pts[(k + 1) % n];
+        const id = this.edgeRing.length;
+        this.edgeRing.push(ri);
+        this.edgeK.push(k);
+        const x0 = Math.floor((Math.min(p.x, q.x) - LOCATE_TOL) / this.cell);
+        const x1 = Math.floor((Math.max(p.x, q.x) + LOCATE_TOL) / this.cell);
+        const y0 = Math.floor((Math.min(p.y, q.y) - LOCATE_TOL) / this.cell);
+        const y1 = Math.floor((Math.max(p.y, q.y) + LOCATE_TOL) / this.cell);
+        for (let ix = x0; ix <= x1; ix++) for (let iy = y0; iy <= y1; iy++) {
+          const key = this.key(ix, iy);
+          const list = this.cells.get(key);
+          if (list) list.push(id);
+          else this.cells.set(key, [id]);
+        }
+      }
+    });
+  }
+
+  private key(ix: number, iy: number): number {
+    return (ix + 50000) * 100003 + (iy + 50000);
+  }
+
+  /** Every edge whose (padded) bounds touch the box — a superset. */
+  queryBox(minX: number, minY: number, maxX: number, maxY: number): Set<number> {
+    const out = new Set<number>();
+    for (let ix = Math.floor(minX / this.cell); ix <= Math.floor(maxX / this.cell); ix++) {
+      for (let iy = Math.floor(minY / this.cell); iy <= Math.floor(maxY / this.cell); iy++) {
+        const list = this.cells.get(this.key(ix, iy));
+        if (list) for (const id of list) out.add(id);
+      }
+    }
+    return out;
+  }
+
+  query(p: Point): number[] {
+    return this.cells.get(this.key(Math.floor(p.x / this.cell), Math.floor(p.y / this.cell))) ?? [];
+  }
+}
+
+/** Where on the source polygons a clipped edge a→b lies. */
+interface LocatedEdge {
+  ring: number;
+  dir: 1 | -1;
+  ua: number;
+  ub: number;
+  /** Curve-position length covered (always > 0). */
+  lenU: number;
+  score: number;
+}
+
+function projectOnSegment(p: Point, a: Point, b: Point): { f: number; dist: number } {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  const f = lenSq > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq)) : 0;
+  return { f, dist: Math.hypot(p.x - (a.x + dx * f), p.y - (a.y + dy * f)) };
+}
+
+function locateEdge(a: Point, b: Point, grid: SourceEdgeGrid, prev: LocatedEdge | null): LocatedEdge | null {
+  let best: LocatedEdge | null = null;
+  const consider = (hit: LocatedEdge) => {
+    if (prev && hit.ring === prev.ring && hit.dir === prev.dir) {
+      const r = grid.rings[hit.ring];
+      if (Math.abs(signedUDelta(hit.ua, prev.ub, r.nSeg)) < 1e-6) hit.score -= 1;
+    }
+    if (!best || hit.score < best.score) best = hit;
+  };
+  for (const id of grid.query(a)) {
+    const ri = grid.edgeRing[id];
+    const r = grid.rings[ri];
+    const n = r.pts.length;
+    const k = grid.edgeK[id];
+    const p = r.pts[k];
+    const q = r.pts[(k + 1) % n];
+    const pa = projectOnSegment(a, p, q);
+    if (pa.dist > LOCATE_TOL) continue;
+    const ua = r.u[k] + pa.f * (r.u[k + 1] - r.u[k]);
+    const pb = projectOnSegment(b, p, q);
+    if (pb.dist <= LOCATE_TOL) {
+      if (Math.abs(pb.f - pa.f) < 1e-12) continue;
+      const ub = r.u[k] + pb.f * (r.u[k + 1] - r.u[k]);
+      consider({ ring: ri, dir: pb.f > pa.f ? 1 : -1, ua, ub, lenU: Math.abs(ub - ua), score: pa.dist + pb.dist });
+      continue;
+    }
+    // The clipper drops exactly-collinear vertices, so one clipped edge can
+    // span several consecutive input edges (a straight line split by a
+    // node). Walk along the ring while its vertices stay on a→b.
+    const dir: 1 | -1 = (q.x - p.x) * (b.x - a.x) + (q.y - p.y) * (b.y - a.y) >= 0 ? 1 : -1;
+    let lenU = dir > 0 ? r.u[k + 1] - ua : ua - r.u[k];
+    let j = k;
+    for (let step = 0; step < 64; step++) {
+      const v = r.pts[dir > 0 ? (j + 1) % n : j];
+      if (projectOnSegment(v, a, b).dist > LOCATE_TOL) break;
+      j = dir > 0 ? (j + 1) % n : (j - 1 + n) % n;
+      const hitB = projectOnSegment(b, r.pts[j], r.pts[(j + 1) % n]);
+      if (hitB.dist <= LOCATE_TOL) {
+        const ub = r.u[j] + hitB.f * (r.u[j + 1] - r.u[j]);
+        lenU += dir > 0 ? ub - r.u[j] : r.u[j + 1] - ub;
+        if (lenU > 0) consider({ ring: ri, dir, ua, ub, lenU, score: pa.dist + hitB.dist + 1e-4 });
+        break;
+      }
+      lenU += r.u[j + 1] - r.u[j];
+    }
+  }
+  return best;
+}
+
+interface CurvePiece {
+  p0: Point;
+  c1: Point | null;
+  c2: Point | null;
+  p3: Point;
+  /** The original node this piece starts on, when it starts exactly on one. */
+  startNode: PathNode | null;
+}
+
+function subPiece(r: SourceRing, seg: number, t0: number, t1: number): CurvePiece {
+  const s = segmentCubic(r.contour, seg);
+  if (!s.c1 && !s.c2) {
+    const at = (t: number) => (t === 0 ? s.p0 : t === 1 ? s.p3 : { x: s.p0.x + (s.p3.x - s.p0.x) * t, y: s.p0.y + (s.p3.y - s.p0.y) * t });
+    return { p0: at(t0), c1: null, c2: null, p3: at(t1), startNode: null };
+  }
+  let q: [Point, Point, Point, Point] = [s.p0, s.c1 ?? s.p0, s.c2 ?? s.p3, s.p3];
+  if (t1 < 1) q = splitCubic(q[0], q[1], q[2], q[3], t1).left;
+  if (t0 > 0) q = splitCubic(q[0], q[1], q[2], q[3], t0 / t1).right;
+  return {
+    p0: t0 === 0 ? s.p0 : q[0],
+    c1: t0 === 0 && !s.c1 ? null : q[1],
+    c2: t1 === 1 && !s.c2 ? null : q[2],
+    p3: t1 === 1 ? s.p3 : q[3],
+    startNode: null,
+  };
+}
+
+/** The original contour's path from curve position `uStart`, `len` long,
+ * walking forward (dir 1) or backward (dir −1), as exact Bézier pieces. */
+function extractPieces(r: SourceRing, uStart: number, len: number, dir: 1 | -1): CurvePiece[] {
+  const n = r.nSeg;
+  const out: CurvePiece[] = [];
+  const partial = new Set<CurvePiece>();
+  let u = modU(uStart, n);
+  let remaining = Math.min(len, n);
+  for (let guard = 0; remaining > 1e-9 && guard < n * 2 + 4; guard++) {
+    if (dir > 0) {
+      let seg = Math.floor(u);
+      if (seg >= n) {
+        seg -= n;
+        u -= n;
+      }
+      const t0 = Math.max(0, u - seg);
+      const t1 = Math.min(1, t0 + remaining);
+      const piece = subPiece(r, seg, t0, t1);
+      if (t0 === 0) piece.startNode = r.contour.nodes[seg];
+      if (t0 > 0 || t1 < 1) partial.add(piece);
+      out.push(piece);
+      remaining -= t1 - t0;
+      u = t1 >= 1 ? seg + 1 : seg + t1;
+    } else {
+      let seg = Math.ceil(u) - 1;
+      if (seg < 0) {
+        seg += n;
+        u += n;
+      }
+      const t1 = Math.min(1, u - seg);
+      const t0 = Math.max(0, t1 - remaining);
+      const fwd = subPiece(r, seg, t0, t1);
+      const piece: CurvePiece = {
+        p0: fwd.p3,
+        c1: fwd.c2,
+        c2: fwd.c1,
+        p3: fwd.p0,
+        startNode: t1 === 1 ? r.contour.nodes[(seg + 1) % n] : null,
+      };
+      if (t0 > 0 || t1 < 1) partial.add(piece);
+      out.push(piece);
+      remaining -= t1 - t0;
+      u = seg + t0;
+    }
+  }
+  // Drop slivers left by a cut landing a hair away from a node. Whole
+  // original segments are always kept, however short, so an untouched
+  // contour comes back with exactly its own nodes.
+  return out.filter((pc) => {
+    if (!partial.has(pc)) return true;
+    const span = Math.max(
+      Math.hypot(pc.p3.x - pc.p0.x, pc.p3.y - pc.p0.y),
+      pc.c1 ? Math.hypot(pc.c1.x - pc.p0.x, pc.c1.y - pc.p0.y) : 0,
+      pc.c2 ? Math.hypot(pc.c2.x - pc.p3.x, pc.c2.y - pc.p3.y) : 0,
+    );
+    return span > 0.02;
+  });
+}
+
+function flattenPieces(pieces: CurvePiece[]): Point[] {
+  const out: Point[] = [];
+  for (const pc of pieces) {
+    out.push(pc.p0);
+    if (pc.c1 || pc.c2) {
+      const c1 = pc.c1 ?? pc.p0;
+      const c2 = pc.c2 ?? pc.p3;
+      for (let k = 1; k < 8; k++) out.push(cubicPoint(pc.p0, c1, c2, pc.p3, k / 8));
+    }
+  }
+  return out;
+}
+
+function piecesToNodes(pieces: CurvePiece[]): PathNode[] {
+  const count = pieces.length;
+  return pieces.map((pc, i) => {
+    const before = pieces[(i - 1 + count) % count];
+    const handleIn = before.c2 ? { ...before.c2 } : null;
+    const handleOut = pc.c1 ? { ...pc.c1 } : null;
+    const src = pc.startNode;
+    let type: NodeType = src ? src.type : "corner";
+    if (type === "symmetric" && handleIn && handleOut) {
+      const lin = Math.hypot(handleIn.x - pc.p0.x, handleIn.y - pc.p0.y);
+      const lout = Math.hypot(handleOut.x - pc.p0.x, handleOut.y - pc.p0.y);
+      if (Math.abs(lin - lout) > 0.01 * Math.max(lin, lout, 1e-9)) type = "smooth";
+    }
+    const node: PathNode = { id: shortId("node"), point: { ...pc.p0 }, handleIn, handleOut, type };
+    if (src?.filletTag) node.filletTag = src.filletTag;
+    return node;
+  });
+}
+
+interface RingRun {
+  /** "line" = a clipped edge that couldn't be located on any source. */
+  kind: "curve" | "line";
+  ring: number;
+  dir: 1 | -1;
+  uStart: number;
+  uEnd: number;
+  lenU: number;
+}
+
+/**
+ * Rebuilds one clipped ring (already oriented the way the caller wants it)
+ * from the source contours' original Bézier segments. Returns null when
+ * the ring can't be mapped cleanly, so the caller falls back to a refit.
+ */
+function reconstructRingFromSources(ring: Point[], grid: SourceEdgeGrid): PathNode[] | null {
+  const m = ring.length;
+  if (m < 3) return null;
+  const rings = grid.rings;
+
+  const located: (LocatedEdge | null)[] = new Array(m);
+  let prev: LocatedEdge | null = null;
+  let misses = 0;
+  for (let i = 0; i < m; i++) {
+    const hit = locateEdge(ring[i], ring[(i + 1) % m], grid, prev);
+    located[i] = hit;
+    if (!hit) misses++;
+    prev = hit;
+  }
+  if (misses > Math.max(1, Math.floor(m * 0.02))) return null;
+
+  // Vertex i joins edge i−1 to edge i; it's a break wherever the ring stops
+  // following one source contour continuously.
+  const breaks: number[] = [];
+  for (let i = 0; i < m; i++) {
+    const e0 = located[(i - 1 + m) % m];
+    const e1 = located[i];
+    if (!e0 || !e1 || e0.ring !== e1.ring || e0.dir !== e1.dir || Math.abs(signedUDelta(e0.ub, e1.ua, rings[e0.ring].nSeg)) > 1e-6) {
+      breaks.push(i);
+    }
+  }
+
+  let pieces: CurvePiece[];
+  if (breaks.length === 0) {
+    // The whole ring is one source contour, untouched: hand it back as-is.
+    const e = located[0]!;
+    const r = rings[e.ring];
+    const total = located.reduce((sum, le) => sum + le!.lenU, 0);
+    if (Math.abs(total - r.nSeg) > 1e-3) return null;
+    pieces = extractPieces(r, 0, r.nSeg, e.dir);
+  } else {
+    const runs: RingRun[] = [];
+    for (let bi = 0; bi < breaks.length; bi++) {
+      const s = breaks[bi];
+      let count = (breaks[(bi + 1) % breaks.length] - s + m) % m;
+      if (count === 0) count = m;
+      const first = located[s];
+      if (!first) {
+        runs.push({ kind: "line", ring: -1, dir: 1, uStart: 0, uEnd: 0, lenU: 0 });
+        continue;
+      }
+      let lenU = 0;
+      for (let k = 0; k < count; k++) lenU += located[(s + k) % m]!.lenU;
+      const last = located[(s + count - 1) % m]!;
+      runs.push({ kind: "curve", ring: first.ring, dir: first.dir, uStart: first.ua, uEnd: last.ub, lenU });
+    }
+
+    // Solve each break on the true curves instead of the polygon chords.
+    const R = runs.length;
+    const breakPts: Point[] = breaks.map((i) => ring[i]);
+    for (let bi = 0; bi < R; bi++) {
+      const inc = runs[(bi - 1 + R) % R];
+      const out = runs[bi];
+      if (inc.kind !== "curve" || out.kind !== "curve") continue;
+      const ra = rings[inc.ring];
+      const rb = rings[out.ring];
+      const res = intersectCurvesNear(ra, inc.uEnd, rb, out.uStart, breakPts[bi]);
+      if (!res) continue;
+      const dIn = inc.dir * signedUDelta(res.ua, inc.uEnd, ra.nSeg);
+      const dOut = -out.dir * signedUDelta(res.ub, out.uStart, rb.nSeg);
+      const inLen = inc.lenU + dIn + (inc === out ? dOut : 0);
+      const outLen = out.lenU + dOut + (inc === out ? dIn : 0);
+      if (inLen <= 1e-7 || outLen <= 1e-7) continue;
+      inc.uEnd = res.ua;
+      out.uStart = res.ub;
+      inc.lenU = inLen;
+      if (inc !== out) out.lenU = outLen;
+      breakPts[bi] = res.p;
+    }
+
+    pieces = [];
+    for (let bi = 0; bi < R; bi++) {
+      const run = runs[bi];
+      const p0 = breakPts[bi];
+      const p1 = breakPts[(bi + 1) % R];
+      let ps: CurvePiece[] = run.kind === "curve" ? extractPieces(rings[run.ring], run.uStart, run.lenU, run.dir) : [];
+      if (ps.length === 0) {
+        if (Math.hypot(p1.x - p0.x, p1.y - p0.y) <= 0.02) continue;
+        ps = [{ p0, c1: null, c2: null, p3: p1, startNode: null }];
+      }
+      // Pin the run's ends onto the solved break points (moving the
+      // adjacent handle along so the curve's tangent there is unchanged).
+      const first = ps[0];
+      const dx0 = p0.x - first.p0.x;
+      const dy0 = p0.y - first.p0.y;
+      first.p0 = { ...p0 };
+      if (first.c1) first.c1 = { x: first.c1.x + dx0, y: first.c1.y + dy0 };
+      first.startNode = null;
+      const last = ps[ps.length - 1];
+      const dx1 = p1.x - last.p3.x;
+      const dy1 = p1.y - last.p3.y;
+      last.p3 = { ...p1 };
+      if (last.c2) last.c2 = { x: last.c2.x + dx1, y: last.c2.y + dy1 };
+      pieces.push(...ps);
+    }
+  }
+  if (pieces.length < 2 && !(pieces.length === 1 && (pieces[0].c1 || pieces[0].c2))) return null;
+
+  // Sanity check against the clipper's own ring: same winding, same area
+  // (up to polygon-vs-curve sagitta), same extent. Anything else means the
+  // mapping went wrong somewhere, and the refit fallback is the safer bet.
+  const rebuilt = flattenPieces(pieces);
+  const ringArea = polygonArea(ring);
+  const rebuiltArea = polygonArea(rebuilt);
+  if (Math.sign(ringArea) !== Math.sign(rebuiltArea)) return null;
+  let perimeter = 0;
+  for (let i = 0; i < m; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % m];
+    perimeter += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  if (Math.abs(rebuiltArea - ringArea) > perimeter * 1.5 + Math.abs(ringArea) * 0.01) return null;
+  const rb = ringBounds(ring);
+  const nb = ringBounds(rebuilt);
+  const slack = 4 + Math.hypot(rb.maxX - rb.minX, rb.maxY - rb.minY) * 0.02;
+  if (Math.abs(rb.minX - nb.minX) > slack || Math.abs(rb.maxX - nb.maxX) > slack || Math.abs(rb.minY - nb.minY) > slack || Math.abs(rb.maxY - nb.maxY) > slack) {
+    return null;
+  }
+  return piecesToNodes(pieces);
+}
+
 /**
  * Turns a raw clip-library MultiPolygon result back into simplified,
  * correctly-nested closed contours with smooth handles refitted from local
@@ -418,8 +981,30 @@ function ringSimplifyTolerance(ring: Point[], scale = 1): number {
  */
 const MIN_CONTOUR_AREA = 10; // font units^2 — see doc comment above
 
-function multiPolygonToContours(resultMulti: ClipMultiPolygon, toleranceScale = 1): Contour[] {
+/** Clipper slivers are long and thin; a small ring that is compact (round
+ * or square-ish — every triangle scores below this) is real ink, e.g. a
+ * Spray Brush paint dot, and must survive the MIN_CONTOUR_AREA filter. */
+const COMPACT_RING_QUOTIENT = 0.65;
+
+function keepRing(pts: Point[]): boolean {
+  if (pts.length < 3) return false;
+  const area = Math.abs(polygonArea(pts));
+  if (area >= MIN_CONTOUR_AREA) return true;
+  let perimeter = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    perimeter += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  return area > 0.05 && perimeter > 0 && (4 * Math.PI * area) / (perimeter * perimeter) >= COMPACT_RING_QUOTIENT;
+}
+
+function multiPolygonToContours(resultMulti: ClipMultiPolygon, toleranceScale = 1, sources?: SourceRing[]): Contour[] {
   if (!resultMulti || resultMulti.length === 0) return [];
+  // With the source contours at hand, rings are rebuilt from their original
+  // Béziers (see CURVE-PRESERVING RECONSTRUCTION); the refit below is only
+  // the fallback for a ring that can't be mapped back.
+  const grid = sources && sources.length > 0 ? new SourceEdgeGrid(sources) : null;
 
   const polys: Point[][][] = [];
   for (const poly of resultMulti) {
@@ -428,11 +1013,11 @@ function multiPolygonToContours(resultMulti: ClipMultiPolygon, toleranceScale = 
     // A degenerate exterior means this whole top-level shape is clipper
     // noise (see doc comment) — skip it entirely rather than keeping
     // orphaned holes with nothing real left to cut into.
-    if (exterior.length < 3 || Math.abs(polygonArea(exterior)) < MIN_CONTOUR_AREA) continue;
+    if (!keepRing(exterior)) continue;
     const holes: Point[][] = [];
     for (let i = 1; i < poly.length; i++) {
       const pts = ringToPoints(poly[i]);
-      if (pts.length >= 3 && Math.abs(polygonArea(pts)) >= MIN_CONTOUR_AREA) holes.push(pts);
+      if (keepRing(pts)) holes.push(pts);
     }
     polys.push([exterior, ...holes]);
   }
@@ -460,6 +1045,11 @@ function multiPolygonToContours(resultMulti: ClipMultiPolygon, toleranceScale = 
       const wantPositive = depth % 2 === 0;
       const area = polygonArea(ring);
       const oriented = (area > 0) === wantPositive ? ring : [...ring].reverse();
+      const preserved = grid ? reconstructRingFromSources(oriented, grid) : null;
+      if (preserved) {
+        contours.push({ id: shortId("contour"), nodes: preserved, closed: true });
+        return;
+      }
       const { points, isCorner } = simplifyRingPreservingCorners(oriented, ringSimplifyTolerance(oriented, toleranceScale));
       const nodes: PathNode[] = ringToSmoothNodes(points, isCorner);
       contours.push({ id: shortId("contour"), nodes, closed: true });
@@ -484,7 +1074,14 @@ export function applyBooleanOp(
   const eligible = objectsInZOrder.filter(isBooleanEligible);
   if (eligible.length < 2) return null;
 
-  const multiPolys = eligible.map(objectToMultiPolygon).filter((mp) => mp.length > 0);
+  const sources: SourceRing[] = [];
+  const multiPolys = eligible
+    .map((obj) => {
+      const rings = contourSourceRings(obj.contours);
+      sources.push(...rings);
+      return sourceRingsToMultiPolygon(rings);
+    })
+    .filter((mp) => mp.length > 0);
   if (multiPolys.length < 2) return null;
 
   let resultMulti: ClipMultiPolygon;
@@ -505,7 +1102,7 @@ export function applyBooleanOp(
     return null;
   }
 
-  const contours = multiPolygonToContours(resultMulti, toleranceScale);
+  const contours = multiPolygonToContours(resultMulti, toleranceScale, sources);
   if (contours.length === 0) return null;
 
   return { id: shortId("obj"), kind: "shape", contours };
@@ -552,7 +1149,7 @@ export function applyBooleanOp(
  * texture): this function used to run EVERY input through the full
  * flatten -> exact-clip -> RDP-simplify -> generic-curve-refit round trip
  * unconditionally — even a single already-simple, non-self-crossing contour
- * (`objectToMultiPolygon` unions a lone ring with itself "to force the same
+ * (`sourceRingsToMultiPolygon` unions a lone ring with itself "to force the same
  * self-intersection resolution", per its own doc comment). That round trip
  * is lossy REGARDLESS of `toleranceScale`: `multiPolygonToContours` always
  * throws away the original Bezier handles and rebuilds new ones from a
@@ -673,9 +1270,10 @@ function contoursNeedIntersectionResolution(contours: Contour[]): boolean {
 export function normalizeSelfIntersectingContours(contours: Contour[], toleranceScale = 1): Contour[] {
   if (contours.length === 0) return [];
   if (!contoursNeedIntersectionResolution(contours)) return contours;
-  const multi = objectToMultiPolygon({ id: "tmp-normalize", kind: "expanded", contours });
+  const sources = contourSourceRings(contours);
+  const multi = sourceRingsToMultiPolygon(sources);
   if (multi.length === 0) return contours;
-  const cleaned = multiPolygonToContours(multi, toleranceScale);
+  const cleaned = multiPolygonToContours(multi, toleranceScale, sources);
   return cleaned.length > 0 ? cleaned : contours;
 }
 
@@ -683,7 +1281,7 @@ export function normalizeSelfIntersectingContours(contours: Contour[], tolerance
  * PRECISION EXPAND: exact union of a set of already-simple polygon rings
  * (each an array of {x,y} points) into clean, hole-aware closed contours.
  *
- * Unlike `normalizeSelfIntersectingContours`/`objectToMultiPolygon`, this
+ * Unlike `normalizeSelfIntersectingContours`/`sourceRingsToMultiPolygon`, this
  * does NOT re-flatten Béziers (there are none — the caller passes finished
  * polygon rings) and does NOT run the lossy `PRECLIP_SIMPLIFY_EPSILON`
  * (0.75u) pre-clip simplification. The rings go into the exact
@@ -729,15 +1327,20 @@ export function unionPolygonsToContours(rings: Point[][], toleranceScale = 1): C
  * the solid body of the other and the hole vanishes — the "angka 0 jadi
  * gepeng/hitam penuh" bug. The fix is to keep each object's body/hole
  * structure intact: convert every object into a proper exterior+holes
- * MultiPolygon (via the even-odd resolver `objectToMultiPolygon`, which
+ * MultiPolygon (via the even-odd resolver `sourceRingsToMultiPolygon`, which
  * already pairs an object's own outer contour with its own counters), then
  * union those hole-aware MultiPolygons together with polygon-clipping, which
  * correctly keeps a counter open unless another object's real ink actually
  * covers it. This matches what the live editor shows.
  */
 export function unionObjectsHoleAware(objects: VectorObject[], toleranceScale = 1): Contour[] {
+  const sources: SourceRing[] = [];
   const multiPolys = objects
-    .map(objectToMultiPolygon)
+    .map((obj) => {
+      const rings = contourSourceRings(obj.contours);
+      sources.push(...rings);
+      return sourceRingsToMultiPolygon(rings);
+    })
     .filter((mp) => mp.length > 0);
   if (multiPolys.length === 0) return [];
   let resultMulti: ClipMultiPolygon;
@@ -748,7 +1351,7 @@ export function unionObjectsHoleAware(objects: VectorObject[], toleranceScale = 
   } catch {
     return [];
   }
-  return multiPolygonToContours(resultMulti, toleranceScale);
+  return multiPolygonToContours(resultMulti, toleranceScale, sources);
 }
 
 /**
@@ -826,6 +1429,106 @@ export function resolveTexturedBrushFill(contours: Contour[], toleranceScale = 1
     const textureSolid = texturePolys.length === 1 ? clipUnion(texturePolys[0]) : clipUnion(texturePolys[0], ...texturePolys.slice(1));
     const carved = clipDifference(bodySolid, textureSolid);
     return multiPolygonToContours(carved, toleranceScale);
+  } catch {
+    return normalizeSelfIntersectingContours(contours, toleranceScale);
+  }
+}
+
+/**
+ * Nonzero-style union for a fill made of MANY same-winding pieces — the
+ * Spray Brush's core plus thousands of paint dots. The generic resolvers
+ * above treat one object's contours even-odd (XOR), which would turn every
+ * place two dots overlap, or a dot overlaps the core, into a hole. Here the
+ * large pieces form the body (opposite-winding rings cut its holes), and
+ * every dot is added on top as solid ink. Dots that touch nothing are
+ * passed straight through untouched instead of going through the clipper,
+ * which keeps this fast for a halo of thousands of dots.
+ */
+export function unionSameWindingContours(contours: Contour[], toleranceScale = 1): Contour[] {
+  const sources = contourSourceRings(contours);
+  if (sources.length === 0) return [];
+  const areas = sources.map((r) => polygonArea(r.pts));
+  let maxIdx = 0;
+  areas.forEach((a, i) => {
+    if (Math.abs(a) > Math.abs(areas[maxIdx])) maxIdx = i;
+  });
+  const sign = Math.sign(areas[maxIdx]) || 1;
+  const bigLimit = Math.abs(areas[maxIdx]) * 0.01;
+  const body: SourceRing[] = [];
+  const holes: SourceRing[] = [];
+  const dots: { ring: SourceRing; b: RingBounds }[] = [];
+  sources.forEach((r, i) => {
+    if (Math.sign(areas[i]) !== sign) holes.push(r);
+    else if (Math.abs(areas[i]) >= bigLimit) body.push(r);
+    else dots.push({ ring: r, b: ringBounds(r.pts) });
+  });
+
+  // Which dots overlap another dot or the body's boundary.
+  const edgeGrid = new SourceEdgeGrid([...body, ...holes]);
+  let cell = 1;
+  for (const d of dots) cell = Math.max(cell, d.b.maxX - d.b.minX, d.b.maxY - d.b.minY);
+  const dotGrid = new Map<number, number[]>();
+  const dkey = (ix: number, iy: number) => (ix + 50000) * 100003 + (iy + 50000);
+  dots.forEach((d, i) => {
+    const k = dkey(Math.floor(d.b.minX / cell), Math.floor(d.b.minY / cell));
+    const list = dotGrid.get(k);
+    if (list) list.push(i);
+    else dotGrid.set(k, [i]);
+  });
+  const bodyPolys = [...body, ...holes].map((r) => r.pts);
+  const insideBody = (p: Point) => {
+    let w = 0;
+    for (const r of body) if (pointInPolygon(p, r.pts)) w++;
+    for (const r of holes) if (pointInPolygon(p, r.pts)) w--;
+    return w > 0;
+  };
+  const passThrough: Contour[] = [];
+  const toClip: SourceRing[] = [];
+  dots.forEach((d, i) => {
+    const b = d.b;
+    let touches = false;
+    for (const id of edgeGrid.queryBox(b.minX, b.minY, b.maxX, b.maxY)) {
+      const r = edgeGrid.rings[edgeGrid.edgeRing[id]];
+      const k = edgeGrid.edgeK[id];
+      const p = r.pts[k];
+      const q = r.pts[(k + 1) % r.pts.length];
+      if (Math.max(p.x, q.x) >= b.minX && Math.min(p.x, q.x) <= b.maxX && Math.max(p.y, q.y) >= b.minY && Math.min(p.y, q.y) <= b.maxY) {
+        touches = true;
+        break;
+      }
+    }
+    if (!touches) {
+      const cx = Math.floor(b.minX / cell);
+      const cy = Math.floor(b.minY / cell);
+      outer: for (let ix = cx - 1; ix <= cx + 1; ix++) for (let iy = cy - 1; iy <= cy + 1; iy++) {
+        for (const j of dotGrid.get(dkey(ix, iy)) ?? []) {
+          if (j === i) continue;
+          const o = dots[j].b;
+          if (o.minX <= b.maxX && b.minX <= o.maxX && o.minY <= b.maxY && b.minY <= o.maxY) {
+            touches = true;
+            break outer;
+          }
+        }
+      }
+    }
+    if (touches) toClip.push(d.ring);
+    else if (bodyPolys.length === 0 || !insideBody(d.ring.pts[0])) passThrough.push(d.ring.contour);
+  });
+
+  try {
+    const polys = (rs: SourceRing[]): ClipPolygon[] => rs.map((r) => [toRing(r.pts)]);
+    let solid: ClipMultiPolygon = [];
+    if (body.length > 0) {
+      const bp = polys(body);
+      solid = clipUnion(bp[0], ...bp.slice(1));
+      if (holes.length > 0) {
+        const hp = polys(holes);
+        solid = clipDifference(solid, clipUnion(hp[0], ...hp.slice(1)));
+      }
+    }
+    const dp = polys(toClip);
+    const merged = dp.length === 0 ? solid : solid.length > 0 ? clipUnion(solid, ...dp) : clipUnion(dp[0], ...dp.slice(1));
+    return [...multiPolygonToContours(merged, toleranceScale, [...body, ...holes, ...toClip]), ...passThrough];
   } catch {
     return normalizeSelfIntersectingContours(contours, toleranceScale);
   }

@@ -368,34 +368,27 @@ export const BRUSH_PRESETS: Record<BrushType, BrushPreset> = {
   sprayBrush: {
     id: "sprayBrush",
     label: "Spray Brush",
-    description: "A can of spray paint, not a nib — a solid inked letterform with a grainy stencil-rough edge and a light dust of overspray around it, no dripping paint.",
+    description: "Spray-paint lettering: a solid bold core with swollen ends, dissolving into a soft misty halo of fine paint dots — dense at the edge, fading out smoothly. No drips.",
     settings: {
       size: 46,
-      opacity: 0.9,
-      // Dense resampling, same reasoning as Grunge: more samples along the
-      // path means more even placement for the edge/overspray texture
-      // seeded in sprayBrushOutlineContours.
+      // Spray paint is opaque black ink, not a translucent wash.
+      opacity: 1,
       spacing: 2,
       smoothing: 0.25,
       stabilizer: 0.25,
-      // Reused as the overspray dust's spread rather than a nib shape — 1
-      // keeps the dust close and tight, lower spreads it wider/looser. See
-      // sprayBrushOutlineContours() in strokeToOutline.ts.
+      // Reused as how far the misty halo spreads: 1 keeps it tight to the
+      // letter, lower spreads it wider. See sprayBrushOutlineContours() in
+      // strokeToOutline.ts.
       roundness: 0.75,
       angle: 0,
-      // No taper: the body is a real solid, constant-width stroke (see
-      // sprayBrushOutlineContours) built via the same clean round-pen union
-      // every other constant-width preset uses — tapering it here would
-      // pinch the body to a literal point at each end instead of the
-      // fairly even-width bold letterform a spray can actually leaves.
+      // No taper: the core is a solid constant-width stroke with a small
+      // "dwell" blob at each end, like a can that lingers before moving.
       taperStart: 0,
       taperEnd: 0,
       pressureEnabled: false,
       pressureSensitivity: 0,
-      // Reused as overall texture strength across both texture layers —
-      // edge spray grain and overspray dust (see jitter's doc comment in
-      // types/brush.ts) — higher means a grainier edge and denser
-      // overspray; lower keeps the body closer to a clean solid shape.
+      // Reused as the halo's paint density (see jitter's doc comment in
+      // types/brush.ts): higher = heavier mist, lower = cleaner letter.
       jitter: 0.6,
     },
   },
