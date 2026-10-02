@@ -1477,13 +1477,18 @@ export const useAppStore = create<AppState>()((set, get) => {
       const scratch = state.glyphs[DRAW_CHAR];
       const targetGlyph = target ? state.glyphs[target] : undefined;
       if (!target || target === DRAW_CHAR || !targetGlyph || !scratch || scratch.outline.objects.length === 0) return false;
-      const bounds = outlineBounds(scratch.outline);
+      // Only the selected shapes are sent (a sketch often holds several
+      // glyph shapes at once); with nothing selected, the whole sketch is.
+      const selIds = new Set(state.selectedObjectIds);
+      const chosen = selIds.size > 0 ? scratch.outline.objects.filter((o) => selIds.has(o.id)) : scratch.outline.objects;
+      if (chosen.length === 0) return false;
+      const bounds = outlineBounds({ objects: chosen });
       if (!bounds) return false;
       // Position is kept as drawn vertically (the baseline you sketched
       // against is the glyph's baseline); horizontally the ink is moved to
       // the glyph's own left sidebearing.
       const dx = targetGlyph.lsb - bounds.minX;
-      const objects = scratch.outline.objects.map((o) => translateObject(cloneObjectWithNewIds(o), dx, 0));
+      const objects = chosen.map((o) => translateObject(cloneObjectWithNewIds(o), dx, 0));
       const inkRight = targetGlyph.lsb + (bounds.maxX - bounds.minX);
       let nextGlyph: Glyph = {
         ...targetGlyph,
@@ -1500,7 +1505,9 @@ export const useAppStore = create<AppState>()((set, get) => {
       const snapshot: HistoryEntry = { glyphs: state.glyphs, metrics: state.metrics, kerningPairs: state.kerningPairs, kerningManual: state.kerningManual };
       const nextGlyphs: GlyphMap = { ...state.glyphs, [target]: nextGlyph };
       const clear = state.drawClearAfterApply;
-      const finalGlyphs: GlyphMap = clear ? { ...nextGlyphs, [DRAW_CHAR]: { ...scratch, outline: emptyOutline() } } : nextGlyphs;
+      const chosenIds = new Set(chosen.map((o) => o.id));
+      const remaining = scratch.outline.objects.filter((o) => !chosenIds.has(o.id));
+      const finalGlyphs: GlyphMap = clear ? { ...nextGlyphs, [DRAW_CHAR]: { ...scratch, outline: { objects: remaining } } } : nextGlyphs;
       set({
         glyphs: finalGlyphs,
         glyphsByStyle: { ...state.glyphsByStyle, [state.fontStyle]: finalGlyphs },

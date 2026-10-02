@@ -11,23 +11,25 @@
  *   - square    cell edge
  *   - triangle  edge of an equilateral triangle
  *   - hexagon   flat-to-flat width of a (pointy-top) hexagon
+ *   - circle    diameter of touching circles laid out on a square lattice
  *   - octagon   flat-to-flat width of the octagon in the 4.8.8 mosaic
  *               (octagons + the small diamonds between them)
  */
-export type GridShape = "square" | "triangle" | "hexagon" | "octagon";
+export type GridShape = "square" | "triangle" | "hexagon" | "octagon" | "circle";
 
 export const GRID_SHAPES: ReadonlyArray<{ id: GridShape; label: string }> = [
   { id: "square", label: "Kotak" },
   { id: "triangle", label: "Segitiga" },
   { id: "hexagon", label: "Hexagon" },
   { id: "octagon", label: "Poligon" },
+  { id: "circle", label: "Lingkaran" },
 ];
 
 export const GRID_SIZE_MIN = 2;
 export const GRID_SIZE_MAX = 400;
 
 export function normalizeGridShape(v: unknown): GridShape {
-  return v === "triangle" || v === "hexagon" || v === "octagon" ? v : "square";
+  return v === "triangle" || v === "hexagon" || v === "octagon" || v === "circle" ? v : "square";
 }
 
 const SQRT3 = Math.sqrt(3);
@@ -83,6 +85,14 @@ export function gridPatternSpec(shape: GridShape, size: number): GridPatternSpec
           `M${n(g / 2)} ${n(2 * a)}V${n(h)}`,
       };
     }
+    case "circle": {
+      const r = g / 2;
+      return {
+        width: g,
+        height: g,
+        d: `M0 ${n(r)}A${n(r)} ${n(r)} 0 1 0 ${n(g)} ${n(r)}A${n(r)} ${n(r)} 0 1 0 0 ${n(r)}Z`,
+      };
+    }
     case "octagon": {
       const c = octagonCorner(g);
       return {
@@ -119,6 +129,8 @@ export function gridCellAt(shape: GridShape, size: number, p: Pt): GridCell {
       return hexagonCell(size, p);
     case "octagon":
       return octagonCell(size, p);
+    case "circle":
+      return circleCell(size, p);
     default:
       return squareCell(size, Math.floor(p.x / size), Math.floor(p.y / size));
   }
@@ -129,6 +141,19 @@ export function gridCellCenter(shape: GridShape, size: number, p: Pt): Pt {
     return { x: (Math.floor(p.x / size) + 0.5) * size, y: (Math.floor(p.y / size) + 0.5) * size };
   }
   return gridCellAt(shape, size, p).center;
+}
+
+function circleCell(g: number, p: Pt): GridCell {
+  const cx = Math.floor(p.x / g);
+  const cy = Math.floor(p.y / g);
+  const center = { x: (cx + 0.5) * g, y: (cy + 0.5) * g };
+  const polygon: Pt[] = [];
+  const N = 28;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    polygon.push({ x: center.x + (g / 2) * Math.cos(a), y: center.y + (g / 2) * Math.sin(a) });
+  }
+  return { key: `c${cx},${cy}`, center, polygon };
 }
 
 function squareCell(g: number, cx: number, cy: number): GridCell {

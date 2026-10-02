@@ -68,6 +68,17 @@ function GlyphViewBarInner() {
   // The sketch itself, so the bar can show a live thumbnail of it to drag.
   const sketch = useAppStore((s) => (drawMode ? s.glyphs[DRAW_CHAR] : undefined));
   const sketchHasInk = !!sketch && sketch.outline.objects.length > 0;
+  const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
+  // What would be sent: the selected shapes, or everything when none are selected.
+  const sendGlyph = useMemo(() => {
+    if (!sketch) return undefined;
+    if (selectedObjectIds.length === 0) return sketch;
+    const ids = new Set(selectedObjectIds);
+    return { ...sketch, outline: { objects: sketch.outline.objects.filter((o) => ids.has(o.id)) } };
+  }, [sketch, selectedObjectIds]);
+  const sendHasInk = !!sendGlyph && sendGlyph.outline.objects.length > 0;
+  const hasSelection = selectedObjectIds.length > 0 && sendHasInk;
+  const selectedCount = sendGlyph ? sendGlyph.outline.objects.length : 0;
 
   // Counts shown in the bar. Both are derived on the fly from the live
   // glyph map — nothing is cached or mirrored into state, so the "n jadi"
@@ -124,70 +135,72 @@ function GlyphViewBarInner() {
       </div>
 
       {drawMode && (
-        <div className="fm-glyphview-bar fm-drawbar" data-testid="glyph-view-draw-bar" data-mode={editorMode}>
-          <div
-            className={`fm-drawbar-thumb ${sketchHasInk ? "" : "empty"}`}
-            draggable={sketchHasInk}
-            onDragStart={(e) => {
-              if (!sketchHasInk) { e.preventDefault(); return; }
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData(DRAWING_DRAG_TYPE, "1");
-              e.dataTransfer.setData("text/plain", "fontseru-drawing");
-            }}
-            title={sketchHasInk ? "Seret gambar ini ke salah satu glyph di daftar glyph" : "Gambar sesuatu di canvas dulu"}
-            data-testid="draw-drag-chip"
-          >
-            {sketchHasInk && sketch ? <GlyphThumbnail glyph={sketch} /> : <PenLine size={15} />}
-            {sketchHasInk && <GripHorizontal size={11} className="fm-drawbar-grip" />}
+        <div className="fm-drawbar" data-testid="glyph-view-draw-bar" data-mode={editorMode}>
+          <div className="fm-drawbar-row">
+            <div
+              className={`fm-drawbar-thumb ${sendHasInk ? "" : "empty"}`}
+              draggable={sendHasInk}
+              onDragStart={(e) => {
+                if (!sendHasInk) { e.preventDefault(); return; }
+                e.dataTransfer.effectAllowed = "copy";
+                e.dataTransfer.setData(DRAWING_DRAG_TYPE, "1");
+                e.dataTransfer.setData("text/plain", "fontseru-drawing");
+              }}
+              title={sendHasInk ? "Seret ke salah satu glyph di daftar glyph" : "Gambar sesuatu di canvas dulu"}
+              data-testid="draw-drag-chip"
+            >
+              {sendHasInk && sendGlyph ? <GlyphThumbnail glyph={sendGlyph} /> : <PenLine size={15} />}
+              {sendHasInk && <GripHorizontal size={11} className="fm-drawbar-grip" />}
+            </div>
+            <div className="fm-drawbar-info" data-testid="draw-status">
+              <span className="fm-drawbar-title">
+                {!sketchHasInk ? "Gambar bebas di canvas" : hasSelection ? `${selectedCount} bentuk terpilih` : "Semua bentuk di canvas"}
+              </span>
+              <span className="fm-drawbar-sub">
+                {!sketchHasInk
+                  ? "Pilih tool lalu mulai menggambar"
+                  : drawTargetChar
+                    ? <>Target: <b>{drawTargetChar === " " ? "Space" : drawTargetChar}</b></>
+                    : "Seret ke glyph atau pilih glyph dulu"}
+              </span>
+            </div>
+            {drawApplied && (
+              <span key={drawApplied.nonce} className="fm-drawbar-done" data-testid="draw-applied">
+                ✓ {drawApplied.char}
+              </span>
+            )}
           </div>
-
-          <span className="fm-glyphview-count fm-drawbar-status" data-testid="draw-status">
-            {!sketchHasInk
-              ? "Gambar bebas di canvas"
-              : drawTargetChar
-                ? <>Target: <b>{drawTargetChar === " " ? "Space" : drawTargetChar}</b></>
-                : "Seret ke glyph / pilih lalu Terapkan"}
-          </span>
-
-          <button
-            type="button"
-            className="fm-action-btn accent fm-drawbar-apply"
-            disabled={!sketchHasInk || !drawTargetChar}
-            onClick={() => applyDrawingToGlyph()}
-            title={drawTargetChar ? `Jadikan gambar ini glyph “${drawTargetChar}”` : "Pilih glyph di daftar glyph dulu"}
-            data-testid="draw-apply-btn"
-          >
-            <Wand2 size={13} /> Terapkan
-          </button>
-
-          <div className="fm-glyphview-divider" />
-
-          <label className="fm-glyphview-field fm-drawbar-check" title="Kosongkan canvas setelah gambar diterapkan (bisa di-undo dengan Ctrl+Z)">
-            <input
-              type="checkbox"
-              checked={drawClearAfterApply}
-              onChange={(e) => setDrawClearAfterApply(e.target.checked)}
-              data-testid="draw-clear-after-apply"
-            />
-            <span>Bersihkan otomatis</span>
-          </label>
-
-          <button
-            type="button"
-            className="fm-icon-btn"
-            onClick={clearDrawing}
-            disabled={!sketchHasInk}
-            title="Bersihkan canvas"
-            data-testid="draw-clear-btn"
-          >
-            <Eraser size={13} />
-          </button>
-
-          {drawApplied && (
-            <span key={drawApplied.nonce} className="fm-drawbar-done" data-testid="draw-applied">
-              ✓ “{drawApplied.char}”
-            </span>
-          )}
+          <div className="fm-drawbar-row">
+            <button
+              type="button"
+              className="fm-drawbar-apply"
+              disabled={!sendHasInk || !drawTargetChar}
+              onClick={() => applyDrawingToGlyph()}
+              title={drawTargetChar ? `Jadikan ${hasSelection ? "bentuk terpilih" : "gambar ini"} glyph “${drawTargetChar}”` : "Pilih glyph di daftar glyph dulu"}
+              data-testid="draw-apply-btn"
+            >
+              <Wand2 size={13} /> Terapkan
+            </button>
+            <label className="fm-drawbar-check" title="Hapus bentuk yang sudah diterapkan dari canvas (bisa di-undo dengan Ctrl+Z)">
+              <input
+                type="checkbox"
+                checked={drawClearAfterApply}
+                onChange={(e) => setDrawClearAfterApply(e.target.checked)}
+                data-testid="draw-clear-after-apply"
+              />
+              <span>Auto-bersihkan</span>
+            </label>
+            <button
+              type="button"
+              className="fm-drawbar-clear"
+              onClick={clearDrawing}
+              disabled={!sketchHasInk}
+              title="Bersihkan seluruh canvas"
+              data-testid="draw-clear-btn"
+            >
+              <Eraser size={13} />
+            </button>
+          </div>
         </div>
       )}
 

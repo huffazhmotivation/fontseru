@@ -6451,3 +6451,39 @@ html[data-theme="light"] .fm-update-backdrop {
 .fm-drawbar .fm-drawbar-check span { text-transform: none; letter-spacing: 0; }
 .fm-drawbar { left: 14px; transform: none; max-width: calc(100% - 300px); }
 .fm-drawbar .fm-drawbar-apply { width: auto; flex: none; }
+
+/* ---- Drawing Mode panel v2: compact card, bottom-right of the canvas ---- */
+.fm-drawbar {
+  position: absolute; left: auto; top: auto; transform: none;
+  right: 16px; bottom: 16px; z-index: 21;
+  display: flex; flex-direction: column; gap: 8px;
+  width: 268px; max-width: calc(100% - 32px);
+  padding: 10px; overflow: visible;
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 14px;
+  box-shadow: 0 12px 30px -14px rgba(0,0,0,0.75);
+  font-family: var(--sans); font-size: 12px; color: var(--text-dim);
+}
+.fm-drawbar *, .fm-drawbar button, .fm-drawbar input { font-family: var(--sans); }
+.fm-drawbar-row { display: flex; align-items: center; gap: 10px; }
+.fm-drawbar-info { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
+.fm-drawbar-title { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fm-drawbar-sub { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fm-drawbar-sub b { color: var(--accent); font-weight: 700; }
+.fm-drawbar-done { font-size: 12px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.fm-drawbar-apply {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  height: 30px; padding: 0 14px; border: none; border-radius: 9px; cursor: pointer;
+  background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 700;
+}
+.fm-drawbar-apply:disabled { opacity: 0.4; cursor: not-allowed; }
+.fm-drawbar-check { display: inline-flex; align-items: center; gap: 6px; flex: 1; min-width: 0; font-size: 11.5px; cursor: pointer; white-space: nowrap; }
+.fm-drawbar-check input { accent-color: var(--accent); margin: 0; }
+.fm-drawbar-clear {
+  display: inline-grid; place-items: center; flex: none; width: 30px; height: 30px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); color: var(--text-dim); cursor: pointer;
+}
+.fm-drawbar-clear:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.fm-drawbar-clear:disabled { opacity: 0.4; cursor: not-allowed; }
+.fm-drawbar-thumb { width: 44px; height: 44px; }

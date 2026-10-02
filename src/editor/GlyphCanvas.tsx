@@ -432,7 +432,7 @@ export function GlyphCanvas() {
       if (tool === "zoom") return applyZoomAt(zoom * (e.shiftKey ? 0.8 : 1.25), e.clientX, e.clientY);
       if (tool === "brush") return isNodeBrush ? brushNodeTool.pointerDown(p) : brushTool.pointerDown(p, e);
       if (tool === "pencil") return pencilTool.pointerDown(p);
-      if (tool === "select") return selectTool.pointerDown(p, e.shiftKey, e.metaKey || e.ctrlKey);
+      if (tool === "select") return selectTool.pointerDown(p, e.shiftKey, e.metaKey || e.ctrlKey || (drawMode && e.altKey));
       editor.pointerDown(p, e.shiftKey, e.altKey, e.metaKey || e.ctrlKey);
     },
     [getFontPoint, tool, editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, pan, zoom, applyZoomAt, usingHandPan, sketchGestures, flushPointerMove]
