@@ -19,6 +19,7 @@ import { GhostGlyph } from "./GhostGlyph";
 import { familyGhostOrder, ghostCenterX as ghostCenterXFor, matchingFamilyGlyph } from "./ghostRef";
 import { CanvasRuler, RulerGuideLines, RULER_SIZE } from "./CanvasRuler";
 import { editorCanvasCss } from "./editorCanvasCss";
+import { GridLayer } from "./GridLayer";
 import { RecordingBadge } from "@/timelapse/RecordingBadge";
 import { isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { GlyphOutline, NodeType, Point, VectorObject } from "@/types/geometry";
@@ -47,6 +48,9 @@ export function GlyphCanvas() {
   const setZoom = useAppStore((s) => s.setZoom);
   const showGrid = useAppStore((s) => s.showGrid);
   const gridSize = useAppStore((s) => s.gridSize);
+  const gridShape = useAppStore((s) => s.gridShape);
+  // Drawing Mode: free sketch canvas — baseline is the only metric guide.
+  const drawMode = useAppStore((s) => s.editorMode === "draw");
   const showGuides = useAppStore((s) => s.showGuides);
   const showRuler = useAppStore((s) => s.showRuler);
   const rulerGuides = useAppStore((s) => s.rulerGuides);
@@ -794,8 +798,7 @@ export function GlyphCanvas() {
 
   // Grid and metrics belong only to the editable center canvas. Ghost lanes
   // intentionally contain glyph shapes only.
-  const gridMinX = 0;
-  const gridMaxX = upm;
+  const ghostOn = ghost.enabled && !drawMode;
 
   return (
     <div className="fm-canvas-frame" ref={frameRef}>
@@ -827,7 +830,7 @@ export function GlyphCanvas() {
 
         <defs>
           <clipPath id="fontseru-main-canvas" clipPathUnits="userSpaceOnUse">
-            <rect x={0} y={vbY} width={upm} height={vbH} />
+            <rect x={drawMode ? vbX : 0} y={vbY} width={drawMode ? vbW : upm} height={vbH} />
           </clipPath>
           <clipPath id="ghost-reference-left" clipPathUnits="userSpaceOnUse">
             <rect x={-upm} y={vbY} width={upm} height={vbH} />
@@ -837,7 +840,7 @@ export function GlyphCanvas() {
           </clipPath>
         </defs>
 
-        {ghost.enabled && glyph && ghost.mode === "sample" && !isFeatureGlyphUnicode(glyph.unicode) && (
+        {ghostOn && glyph && ghost.mode === "sample" && !isFeatureGlyphUnicode(glyph.unicode) && (
           <g
             data-testid="ghost-reference-canvas"
             data-ghost-mode="sample"
@@ -858,7 +861,7 @@ export function GlyphCanvas() {
           </g>
         )}
 
-        {ghost.enabled && glyph && ghost.mode === "family" && (
+        {ghostOn && glyph && ghost.mode === "family" && (
           <g
             data-testid="ghost-reference-canvas"
             data-ghost-mode="family"
@@ -905,7 +908,7 @@ export function GlyphCanvas() {
           </g>
         )}
 
-        {ghost.enabled && glyph && ghost.mode === "image" && ghost.imageSrc && (
+ {ghostOn && glyph && ghost.mode === "image" && ghost.imageSrc && (
           <g
             data-testid="ghost-reference-canvas"
             data-ghost-mode="image"
@@ -929,22 +932,13 @@ export function GlyphCanvas() {
           </g>
         )}
 
-        <g clipPath="url(#fontseru-main-canvas)">
-        {showGrid && Array.from({ length: Math.floor((gridMaxX - gridMinX) / gridSize) + 1 }).map((_, i) => {
-          const x = gridMinX + i * gridSize;
-          const major = x === gridMinX || x === 0 || x === upm || x === gridMaxX;
-          return (
-            <line key={"v" + x} x1={x} y1={0} x2={x} y2={totalH}
-              className={major ? "grid-major" : "grid-line"} />
-          );
-        })}
-        {showGrid && Array.from({ length: Math.floor(totalH / gridSize) + 1 }).map((_, i) => {
-          const y = ascender - i * gridSize;
-          return <line key={"h" + i} x1={gridMinX} y1={y} x2={gridMaxX} y2={y} className="grid-line" />;
-        })}
+        {showGrid && (
+          <GridLayer shape={gridShape} size={gridSize} sc={sc} ascender={ascender} vbX={vbX} vbY={vbY} vbW={vbW} vbH={vbH} />
+        )}
 
+        <g clipPath="url(#fontseru-main-canvas)">
         <>
-          {metricGuides.filter(({ key }) => key === "baseline" || showGuides).map(({ key, label, value, className }) => {
+          {metricGuides.filter(({ key }) => key === "baseline" || (showGuides && !drawMode)).map(({ key, label, value, className }) => {
             const trueY = toY(value);
             // Same visual clamp as Advance/LSB/RSB below: if the guide is
             // dragged above/below the current viewport, pin its rendered
@@ -953,14 +947,16 @@ export function GlyphCanvas() {
             const marginY = 20 / sc;
             const y = Math.min(vbY + vbH - marginY, Math.max(vbY + marginY, trueY));
             const active = activeMetricGuide === key;
-            const labelX = Math.max(0, vbX) + 10 / sc;
+            const labelX = (drawMode ? vbX : Math.max(0, vbX)) + 10 / sc;
+            const guideX1 = drawMode ? vbX : 0;
+            const guideX2 = drawMode ? vbX + vbW : upm;
             return (
               <g key={key} className={`metric-guide ${className} ${active ? "active" : ""} ${tool === "home" ? "" : "locked"}`} data-testid={`font-guide-${key}`}>
-                <line x1={0} y1={y} x2={upm} y2={y} className="metric-guide-line" pointerEvents="none" />
+                <line x1={guideX1} y1={y} x2={guideX2} y2={y} className="metric-guide-line" pointerEvents="none" />
                 <line
-                  x1={0}
+                  x1={guideX1}
                   y1={y}
-                  x2={upm}
+                  x2={guideX2}
                   y2={y}
                   className="metric-guide-hit"
                   pointerEvents={tool === "home" ? "stroke" : "none"}
@@ -1000,7 +996,7 @@ export function GlyphCanvas() {
             canvas/viewport itself changes; the handle just stays pinned at
             the edge, like an off-screen indicator, until you pan/zoom back
             to its real position. */}
-        {showGuides && glyph && (() => {
+        {showGuides && glyph && !drawMode && (() => {
           const top = vbY + 14 / sc;
           const handleW = 86 / sc;
           const handleH = 20 / sc;

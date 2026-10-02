@@ -30,6 +30,14 @@ export type ScreenRecordingStatus =
   | "error";
 
 export type TimelapseStrategy = "fast" | "legacy";
+
+/** Where frames come from.
+ *  - "screen": browser screen/tab capture (desktop browsers only).
+ *  - "app": the whole editor (canvas + panels + menus) photographed from the
+ *    page itself — no permission, works on iPad/phones.
+ *  - "canvas": only the glyph being edited, drawn from its data — lightest
+ *    and cleanest, works everywhere. */
+export type TimelapseSource = "screen" | "app" | "canvas";
 export type OutputFormat = "mp4" | "webm";
 
 /** How often (ms) a frame is sampled from the live display stream while
@@ -55,6 +63,7 @@ export interface ScreenRecorderSnapshot {
   /** Which capture strategy produced (or will produce) the current/last
    * recording. Null before the browser's capability has been probed. */
   strategy: TimelapseStrategy | null;
+  source: TimelapseSource;
   /** Container/codec of the finished (or in-progress) recording. */
   outputFormat: OutputFormat | null;
   /** Encoded pixel size actually used, once known (post `loadedmetadata`). */

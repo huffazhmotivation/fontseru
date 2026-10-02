@@ -6,6 +6,8 @@ import { smoothStroke, movingAverageSamples, estimateRoughness, windowRadiusFor 
 import { BRUSH_PRESETS } from "./presets";
 import { flattenContour } from "@/editor/objectOps";
 import { cubicPoint } from "@/editor/bezier";
+import { gridCellsAlong, type GridShape } from "@/editor/gridGeometry";
+import { mergeSprayContours } from "./sprayMerge";
 import { normalizeSelfIntersectingContours, unionPolygonsToContours, resolveTexturedBrushFill, unionSameWindingContours, TIGHT_CURVE_FIDELITY_SCALE, EXPAND_FIDELITY_SCALE } from "@/editor/booleanOps";
 
 /**
@@ -475,17 +477,25 @@ function removeSelfIntersectionLoops(chain: Point[]): Point[] {
   // real loop and must be preserved.
   const maxFoldSpan = Math.max(24, Math.ceil(pts.length * 0.12));
   const maxPasses = 200;
+  // Segments only ever need testing against the next `maxFoldSpan` ones —
+  // anything further is a large loop that's skipped anyway — so the inner
+  // loop is bounded by that instead of walking the whole window just to
+  // `continue` past most of it.
+  const reach = Math.min(window, maxFoldSpan + 1);
+  // After a fold at `i` is collapsed, no earlier pair can have changed:
+  // everything before `i` was already checked without a hit, and a pair
+  // involving the new geometry starts at most `maxFoldSpan` before it. So
+  // the next scan resumes there instead of from the very start of the chain.
+  let startI = 0;
   for (let pass = 0; pass < maxPasses; pass++) {
     let found = false;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const jMax = Math.min(pts.length - 1, i + window);
+    for (let i = startI; i < pts.length - 1; i++) {
+      const jMax = Math.min(pts.length - 1, i + reach);
       for (let j = i + 2; j < jMax; j++) {
-        // Only collapse the crossing if the enclosed span is small (a local
-        // fold). A large enclosed span is an intentional loop — skip it.
-        if (j - i > maxFoldSpan) continue;
         const hit = segmentIntersection(pts[i], pts[i + 1], pts[j], pts[j + 1]);
         if (hit) {
           pts.splice(i + 1, j - i, hit);
+          startI = Math.max(0, i - maxFoldSpan);
           found = true;
           break;
         }
@@ -1512,8 +1522,18 @@ export function centerlineToOutline(
  * always stay connected. This path is reached ONLY when `settings.gridSnap`
  * is set (Pixel Brush exclusively) — see `centerlineToOutlineContours`.
  */
-export function pixelBlockOutline(centerline: { x: number; y: number }[], cellSize: number): Contour[] {
+export function pixelBlockOutline(centerline: { x: number; y: number }[], cellSize: number, shape: GridShape = "square"): Contour[] {
   if (centerline.length === 0 || cellSize <= 0) return [];
+
+  // Non-square grids (triangle / hexagon / polygon mosaic): same idea, every
+  // lattice cell the stroke passes through becomes its own polygon contour.
+  if (shape !== "square") {
+    return gridCellsAlong(shape, cellSize, centerline).map((cell) => ({
+      id: shortId("contour"),
+      closed: true,
+      nodes: cell.polygon.map((point) => ({ id: shortId("node"), point, handleIn: null, handleOut: null, type: "corner" as const })),
+    }));
+  }
 
   // Pointer samples sit at CELL CENTERS (never on grid-line intersections).
   // floor() maps each center back to its containing cell; each square's edges
@@ -3326,9 +3346,12 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
  */
 export function centerlineToOutlineContours(centerline: StrokeSample[], settings: BrushSettings, opts?: { fast?: boolean; spraySpeckCache?: SpraySpeckCache }): Contour[] {
   if (settings.type === "pixel" && settings.gridSnap === true) {
-    return settings.pixelMode === "liquid"
+    const cellShape = settings.cellShape ?? "square";
+    // Liquid fusing is built around the square lattice's corner geometry, so
+    // other grid shapes always use the crisp per-cell blocks.
+    return settings.pixelMode === "liquid" && cellShape === "square"
       ? pixelLiquidOutline(centerline, settings.cellSize ?? settings.size, settings.pixelLiquidSmoothness ?? 0.5, settings)
-      : pixelBlockOutline(centerline, settings.cellSize ?? settings.size);
+      : pixelBlockOutline(centerline, settings.cellSize ?? settings.size, cellShape);
   }
   if (settings.type === "rough") {
     return roughBrushOutlineContours(centerline, settings);
@@ -3420,6 +3443,7 @@ export function normalizeBrushSettings(raw: (Partial<BrushSettings> & { minSize?
     holeSize: raw.holeSize,
     gridSnap: raw.gridSnap,
     cellSize: raw.cellSize,
+    cellShape: raw.cellShape,
     outlineThickness: raw.outlineThickness,
     outlineCapStyle: raw.outlineCapStyle,
     pixelMode: raw.pixelMode,
@@ -3465,33 +3489,104 @@ function resamplePressure(n: number, samples?: StrokeSample[]): number[] {
  * object's stored geometry stays a centerline — this is only for rendering and
  * thumbnails. Different presets => visibly different silhouettes on the same path.
  */
-// Spray Brush's committed field is thousands of speck contours (100k+ nodes
-// on a long stroke) and this function is called for the SAME stroke from
-// several places on every commit — the glyph canvas, thumbnail, overview,
-// ghost layer, glyph-path cache — each one used to rebuild it from scratch.
-// Cache per object, invalidated by anything the result depends on (contour
-// array identity, stroke width, settings snapshot, brush type). Spray only:
-// the other presets are cheap enough that a cache isn't worth the aliasing
-// risk of handing out shared arrays.
-const sprayOutlineCache = new WeakMap<
+// The outline of a committed stroke is derived purely from the stroke
+// object, but it's needed in many places at once — the glyph canvas, the
+// left-hand glyph list thumbnails, the Multi/Overview grids, the ghost layer,
+// the glyph-path cache, auto-kerning — and each used to rebuild it from
+// scratch (for a Spray Brush stroke that's thousands of speck contours; for
+// any brush it's a full offset/clean-up pass per stroke, repeated once per
+// consumer per render). Cache per stroke object, invalidated by anything the
+// result depends on: contour array identity, stroke width, settings snapshot,
+// brush type and the pressure samples. Stroke objects are immutable (an edit
+// produces a new object), and every caller only reads the returned contours.
+const outlineCache = new WeakMap<
   VectorObject,
-  { contours: VectorObject["contours"]; strokeWidth: number | undefined; brushSettings: VectorObject["brushSettings"]; brushType: VectorObject["brushType"]; result: Contour[] }
+  {
+    contours: VectorObject["contours"];
+    strokeWidth: number | undefined;
+    brushSettings: VectorObject["brushSettings"];
+    brushType: VectorObject["brushType"];
+    samples: VectorObject["samples"];
+    result: Contour[];
+  }
 >();
 
 export function brushOutlineContours(obj: VectorObject): Contour[] {
-  if (obj.brushType === "sprayBrush") {
-    const hit = sprayOutlineCache.get(obj);
-    if (hit && hit.contours === obj.contours && hit.strokeWidth === obj.strokeWidth && hit.brushSettings === obj.brushSettings && hit.brushType === obj.brushType) {
-      return hit.result;
-    }
-    const result = brushOutlineContoursUncached(obj);
-    sprayOutlineCache.set(obj, { contours: obj.contours, strokeWidth: obj.strokeWidth, brushSettings: obj.brushSettings, brushType: obj.brushType, result });
-    return result;
+  const hit = outlineCache.get(obj);
+  if (
+    hit &&
+    hit.contours === obj.contours &&
+    hit.strokeWidth === obj.strokeWidth &&
+    hit.brushSettings === obj.brushSettings &&
+    hit.brushType === obj.brushType &&
+    hit.samples === obj.samples
+  ) {
+    return hit.result;
   }
-  return brushOutlineContoursUncached(obj);
+  const result = brushOutlineContoursUncached(obj);
+  outlineCache.set(obj, {
+    contours: obj.contours,
+    strokeWidth: obj.strokeWidth,
+    brushSettings: obj.brushSettings,
+    brushType: obj.brushType,
+    samples: obj.samples,
+    result,
+  });
+  return result;
+}
+
+// Marks a contour list that is already a merged (union) Spray outline, so
+// Expand / export don't run a second, far slower exact union over it.
+const mergedSprayOutlines = new WeakSet<Contour[]>();
+
+/** Spray = core + thousands of dots. Merge them into union outlines (see
+ * sprayMerge.ts); falls back to the raw pieces if the merge can't run. */
+function mergeSprayOutline(raw: Contour[]): Contour[] {
+  let best = -1;
+  let sign = 1;
+  for (const c of raw) {
+    const a = signedArea(c.nodes.map((n) => n.point));
+    if (Math.abs(a) > best) {
+      best = Math.abs(a);
+      sign = Math.sign(a) || 1;
+    }
+  }
+  const merged = mergeSprayContours(raw, sign, signedArea);
+  if (!merged) return raw;
+  mergedSprayOutlines.add(merged);
+  return merged;
+}
+
+/** True for a Spray Brush stroke. */
+export function isSprayStroke(obj: VectorObject): boolean {
+  return obj.kind === "brush" && obj.brushType === "sprayBrush";
+}
+
+/**
+ * Merges ALL the given Spray strokes (one glyph's worth) into ONE expanded
+ * object in a single raster pass. Export unions every object of a glyph
+ * anyway, so combining the sprays first means the slow polygon clipper never
+ * has to sweep thousands of dots per stroke (or re-union stroke against
+ * stroke). Returns null if there's nothing to build.
+ */
+export function mergeSprayStrokes(objs: VectorObject[]): VectorObject | null {
+  const raw = objs.flatMap((o) => brushOutlineContoursRaw(o));
+  if (raw.length === 0) return null;
+  const merged = mergeSprayOutline(raw);
+  const contours = isMergedSprayOutline(merged) ? merged : unionSameWindingContours(raw, TIGHT_CURVE_FIDELITY_SCALE);
+  return contours.length ? { id: shortId("obj"), kind: "expanded", contours } : null;
+}
+
+export function isMergedSprayOutline(contours: Contour[]): boolean {
+  return mergedSprayOutlines.has(contours);
 }
 
 function brushOutlineContoursUncached(obj: VectorObject): Contour[] {
+  const contours = brushOutlineContoursRaw(obj);
+  return obj.brushType === "sprayBrush" ? mergeSprayOutline(contours) : contours;
+}
+
+export function brushOutlineContoursRaw(obj: VectorObject): Contour[] {
   const settings = brushSettingsForObject(obj);
   const contours: Contour[] = [];
   for (const c of obj.contours) {
@@ -4455,7 +4550,9 @@ export function expandStrokeObject(obj: VectorObject): VectorObject | null {
     // Spray: every piece (core, end blobs, thousands of paint dots) is ink
     // of the same winding — union them, never XOR them into holes.
     if (obj.brushType === "sprayBrush") {
-      const sprayed = unionSameWindingContours(raw, TIGHT_CURVE_FIDELITY_SCALE);
+      // Already merged by brushOutlineContours (fast raster-trace union);
+      // only fall back to the exact polygon union if that couldn't run.
+      const sprayed = isMergedSprayOutline(raw) ? raw : unionSameWindingContours(raw, TIGHT_CURVE_FIDELITY_SCALE);
       return sprayed.length ? { id: shortId("obj"), kind: "expanded", contours: sprayed } : null;
     }
     // resolveTexturedBrushFill (not the plain self-intersection normalizer)

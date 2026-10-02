@@ -4,9 +4,10 @@ import { hasOutline } from "@/types/glyph";
 import type { KerningPairs } from "@/types/kerning";
 import { parseKerningKey } from "@/types/kerning";
 import type { FeatureBuilderConfig } from "@/types/opentypeFeatures";
-import type { Point } from "@/types/geometry";
+import type { Contour, Point } from "@/types/geometry";
 import { isFilledObject } from "@/types/geometry";
 import { flattenContour } from "@/editor/objectOps";
+import { closedRingHasCrossing } from "@/utils/segmentGrid";
 import { validateUnicodeMapping, type QAIssue, type QASeverity } from "@/utils/unicodeValidator";
 
 export type { QAIssue, QASeverity };
@@ -114,21 +115,21 @@ function segmentsIntersect(p1: Point, p2: Point, p3: Point, p4: Point): boolean 
 /** True if a single closed contour's own outline crosses itself (a "figure-8"),
  * which produces incorrect fill/winding and is flagged by most font QA tools. */
 function contourSelfIntersects(points: Point[]): boolean {
-  const n = points.length;
-  if (n < 4) return false;
-  for (let i = 0; i < n; i++) {
-    const a1 = points[i];
-    const a2 = points[(i + 1) % n];
-    // Only compare against non-adjacent edges — adjacent edges always share
-    // an endpoint, which isn't a self-intersection.
-    for (let j = i + 2; j < n; j++) {
-      if (i === 0 && j === n - 1) continue;
-      const b1 = points[j];
-      const b2 = points[(j + 1) % n];
-      if (segmentsIntersect(a1, a2, b1, b2)) return true;
-    }
-  }
-  return false;
+  return closedRingHasCrossing(points, segmentsIntersect);
+}
+
+// The crossing test is O(n²) per contour, and the QA report is recomputed
+// whenever any glyph changes. Contours are immutable (an edit produces new
+// contour objects, untouched ones keep their identity), so the result is
+// cached per contour and only edited contours are ever re-tested.
+const selfIntersectCache = new WeakMap<Contour, boolean>();
+
+function cachedContourSelfIntersects(contour: Contour): boolean {
+  const hit = selfIntersectCache.get(contour);
+  if (hit !== undefined) return hit;
+  const result = contourSelfIntersects(flattenContour(contour, 10));
+  selfIntersectCache.set(contour, result);
+  return result;
 }
 
 const SPACE_LIKE = new Set([" ", "\u00a0", "\u2009", "\u200a"]);
@@ -167,8 +168,7 @@ function checkGlyphs(glyphs: GlyphMap, unitsPerEm: number, issues: QAIssue[]) {
         if (!isFilledObject(obj)) continue;
         for (const contour of obj.contours) {
           if (contour.nodes.length < 3) continue;
-          const flat = flattenContour(contour, 10);
-          if (contourSelfIntersects(flat)) {
+          if (cachedContourSelfIntersects(contour)) {
             selfIntersecting.push(char);
             break;
           }

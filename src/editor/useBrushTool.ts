@@ -4,6 +4,7 @@ import { useAppStore } from "@/glyph/store";
 import { samplesToCenterline, centerlineToContour, centerlineToOutlineContours, type SpraySpeckCache } from "@/brushes/strokeToOutline";
 import { StrokeStabilizer } from "@/brushes/strokeStabilizer";
 import { shortId } from "@/utils/id";
+import { gridCellCenter, type GridShape } from "./gridGeometry";
 import { detectQuickShape, quickShapePolyline, QUICK_SHAPE_HOLD_MS, type QuickShapeResult } from "./quickShape";
 
 interface PointerLike { pressure?: number; pointerType?: string; timeStamp?: number; }
@@ -25,11 +26,8 @@ function stylusPressure(e: PointerLike): number {
   return -1;
 }
 
-export function snapToGridCell(p: Point, size: number): Point {
-  return {
-    x: (Math.floor(p.x / size) + 0.5) * size,
-    y: (Math.floor(p.y / size) + 0.5) * size,
-  };
+export function snapToGridCell(p: Point, size: number, shape: GridShape = "square"): Point {
+  return gridCellCenter(shape, size, p);
 }
 
 /**
@@ -68,6 +66,7 @@ export function useBrushTool(hitScale: number) {
   const brush = useAppStore((s) => s.brush);
   const brushCap = useAppStore((s) => s.brushCap);
   const gridSize = useAppStore((s) => s.gridSize);
+  const gridShape = useAppStore((s) => s.gridShape);
   const activeChar = useAppStore((s) => s.activeChar);
   const glyph = useAppStore((s) => s.glyphs[s.activeChar]);
   const commitOutline = useAppStore((s) => s.commitOutline);
@@ -132,7 +131,7 @@ export function useBrushTool(hitScale: number) {
     // Pixel Brush's grid cell size is baked from the CURRENT canvas grid
     // setting for the live preview too, so what you see while drawing
     // matches exactly what gets committed.
-    const settings = pixelSnap ? { ...brush, cellSize: gridSize } : brush;
+    const settings = pixelSnap ? { ...brush, cellSize: gridSize, cellShape: gridShape } : brush;
     // `fast: true` only matters for Spray Brush (every other brush type
     // ignores it) — see sprayBrushOutlineContours' doc comment. Paired with
     // `spraySpeckCache` (this stroke's accumulating dust field, owned by
@@ -157,7 +156,7 @@ export function useBrushTool(hitScale: number) {
       };
     }
     return { centerline: null as Contour | null, outline: centerlineToOutlineContours(cl, settings, { fast: true }) };
-  }, [brush, gridSize, pixelSnap, hitScale]);
+  }, [brush, gridSize, gridShape, pixelSnap, hitScale]);
 
   // PERFORMANCE FIX (lag/patah-patah while drawing, worst on Spray Brush):
   // pointermove can fire far faster than the screen can actually redraw
@@ -193,12 +192,12 @@ export function useBrushTool(hitScale: number) {
   const pointerDown = useCallback((p: Point, e: PointerLike) => {
     // Pixel brush: snap captured points to the centers of canvas grid cells as you draw, for
     // a genuine blocky/pixel-font-friendly stroke rather than a smoothed curve.
-    const snapped = pixelSnap ? snapToGridCell(p, gridSize) : p;
+    const snapped = pixelSnap ? snapToGridCell(p, gridSize, gridShape) : p;
     const sample: StrokeSample = { x: snapped.x, y: snapped.y, pressure: pressureFor(snapped, e) };
     rawSamplesRef.current = [sample];
     stabilizerRef.current = pixelSnap ? null : new StrokeStabilizer(brush.stabilizer ?? 0, hitScale, sample, e.timeStamp ?? performance.now());
     samplesRef.current = stabilizerRef.current ? stabilizerRef.current.samples : [sample];
-    pixelCoreRef.current = pixelSnap ? [isPixelCellCore(p, gridSize)] : [];
+    pixelCoreRef.current = pixelSnap ? [gridShape === "square" ? isPixelCellCore(p, gridSize) : true] : [];
     // Fresh gesture: start this stroke's spray dust field over from empty
     // rather than carrying over the previous stroke's accumulated specks.
     sprayCacheRef.current = null;
@@ -207,24 +206,24 @@ export function useBrushTool(hitScale: number) {
     setPreviewCenterline(null);
     clearQuickShapeHold();
     cancelScheduledPreview();
-  }, [pressureFor, pixelSnap, gridSize, clearQuickShapeHold, cancelScheduledPreview, brush.stabilizer, hitScale]);
+  }, [pressureFor, pixelSnap, gridSize, gridShape, clearQuickShapeHold, cancelScheduledPreview, brush.stabilizer, hitScale]);
 
   const pointerMove = useCallback(
     (p: Point, e: PointerLike) => {
       if (!isDrawing) return;
-      const snapped = pixelSnap ? snapToGridCell(p, gridSize) : p;
+      const snapped = pixelSnap ? snapToGridCell(p, gridSize, gridShape) : p;
       if (pixelSnap) {
         // Pixel Brush stays on its own grid-snapped path, unaffected by
         // Stabilizer — a blocky brush has nothing to stabilize.
         const samples = samplesRef.current;
         const cores = pixelCoreRef.current;
         const last = samples[samples.length - 1];
-        const minMove = gridSize * 0.5;
+        const minMove = gridSize * (gridShape === "square" ? 0.5 : 0.1);
         if (Math.hypot(snapped.x - last.x, snapped.y - last.y) < minMove) {
           // Still inside the same cell: just remember if the pointer got to
           // its core, so an intentional corner cell isn't mistaken for a
           // clipped elbow below.
-          if (isPixelCellCore(p, gridSize)) cores[cores.length - 1] = true;
+          if (gridShape === "square" && isPixelCellCore(p, gridSize)) cores[cores.length - 1] = true;
           return;
         }
         // Diagonal fix: if the cell we're leaving (`last`) was only clipped
@@ -234,7 +233,7 @@ export function useBrushTool(hitScale: number) {
         // detouring through the cell above/beside the diagonal one. A real
         // L-shaped corner is unaffected: drawing one puts the pointer
         // squarely inside the corner cell, which marks it as core.
-        if (samples.length >= 2 && !cores[cores.length - 1]) {
+        if (gridShape === "square" && samples.length >= 2 && !cores[cores.length - 1]) {
           const prev = samples[samples.length - 2];
           const lcx = Math.round(last.x / gridSize - 0.5);
           const lcy = Math.round(last.y / gridSize - 0.5);
@@ -254,7 +253,7 @@ export function useBrushTool(hitScale: number) {
         const sample: StrokeSample = { x: snapped.x, y: snapped.y, pressure: pressureFor(snapped, e) };
         rawSamplesRef.current.push(sample);
         samples.push(sample);
-        cores.push(isPixelCellCore(p, gridSize));
+        cores.push(gridShape === "square" ? isPixelCellCore(p, gridSize) : true);
         schedulePreviewUpdate();
         return;
       }
@@ -296,7 +295,7 @@ export function useBrushTool(hitScale: number) {
       if (!quickShapeRef.current && stabilizerRef.current) samplesRef.current = stabilizerRef.current.samples;
       schedulePreviewUpdate();
     },
-    [isDrawing, brush, schedulePreviewUpdate, pressureFor, gridSize, pixelSnap, hitScale]
+    [isDrawing, brush, schedulePreviewUpdate, pressureFor, gridSize, gridShape, pixelSnap, hitScale]
   );
 
   const pointerUp = useCallback(() => {
@@ -350,11 +349,11 @@ export function useBrushTool(hitScale: number) {
       // Bake the grid cell size in at draw time (Pixel Brush only) so this
       // stroke's blocks stay exactly as drawn even if the canvas grid size
       // is changed later.
-      brushSettings: pixelSnap ? { ...brush, gridSnap: true, cellSize: gridSize } : { ...brush, gridSnap: undefined },
+      brushSettings: pixelSnap ? { ...brush, gridSnap: true, cellSize: gridSize, cellShape: gridShape } : { ...brush, gridSnap: undefined, cellShape: undefined },
       samples: rawSamples,
     };
     commitOutline(activeChar, { objects: [...glyph.outline.objects, obj] });
-  }, [isDrawing, brush, brushCap, glyph, activeChar, commitOutline, gridSize, pixelSnap, hitScale, clearQuickShapeHold]);
+  }, [isDrawing, brush, brushCap, glyph, activeChar, commitOutline, gridSize, gridShape, pixelSnap, hitScale, clearQuickShapeHold]);
 
   const cancel = useCallback(() => {
     rawSamplesRef.current = [];

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { CaptureInterval, OutputResolution, PlaybackSpeed } from "./types";
+import type { CaptureInterval, OutputResolution, PlaybackSpeed, TimelapseSource } from "./types";
 
 /**
  * Purely UI-local state for the Timelapse panel (is it open, what capture
@@ -19,6 +19,9 @@ interface TimelapseUiState {
   /** Longest-edge quality ceiling for the encoded video. Locked once
    * recording starts. */
   resolution: OutputResolution;
+  /** null = not chosen yet; the panel then picks the best one for this device. */
+  source: TimelapseSource | null;
+  setSource: (source: TimelapseSource) => void;
   openPanel: () => void;
   closePanel: () => void;
   setSpeed: (speed: PlaybackSpeed) => void;
@@ -31,6 +34,8 @@ export const useTimelapseUiStore = create<TimelapseUiState>((set) => ({
   speed: 1,
   captureInterval: 2000,
   resolution: "1080p",
+  source: null,
+  setSource: (source) => set({ source }),
   openPanel: () => set({ open: true }),
   closePanel: () => set({ open: false }),
   setSpeed: (speed) => set({ speed }),

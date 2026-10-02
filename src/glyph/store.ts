@@ -2,17 +2,18 @@ import { create } from "zustand";
 import type { UserPlan } from "@/auth/AuthProvider";
 import type { GlyphMap, Glyph, GlyphFamily, FontStyle, CustomFamily } from "@/types/glyph";
 import { MAX_CUSTOM_FAMILIES, hasOutline } from "@/types/glyph";
-import type { GlyphOutline, StrokeCap, VectorObject } from "@/types/geometry";
+import { emptyOutline, type GlyphOutline, type StrokeCap, type VectorObject } from "@/types/geometry";
 import type { ToolId } from "@/types/tool";
 import type { BrushSettings, BrushType } from "@/types/brush";
 import { buildDefaultGlyphs, ensureSpaceGlyph, ensureDefaultSymbols } from "./defaultGlyphs";
-import { charsForCategory } from "./testSentences";
+import { DRAW_CHAR, emptyDrawGlyph, makeDrawGlyph, withoutDrawGlyph } from "./drawMode";
+import { GRID_SIZE_MAX, GRID_SIZE_MIN, normalizeGridShape, type GridShape } from "@/editor/gridGeometry";
 import { cloneGlyphMap, familyFromRegular, newCustomFamilyGlyphs } from "./family";
 import { generateBoldFromRegular, generateItalicFromRegular, generateCustomFromRegular, type FamilyGenerationResult } from "./autoGenerate";
 import { DEFAULT_METRICS, defaultFontInfo, type ExportInfoDraft, type FontInfo, type FontMetrics } from "@/types/font";
 import { BRUSH_PRESETS } from "@/brushes/presets";
 import { cloneObject, deleteNodes } from "@/editor/nodeOps";
-import { cloneObjectWithNewIds, translateObject, objectBounds, objectsBounds, scaleObject, alignOffset, type AlignMode } from "@/editor/objectOps";
+import { cloneObjectWithNewIds, translateObject, objectBounds, objectsBounds, outlineBounds, scaleObject, alignOffset, type AlignMode } from "@/editor/objectOps";
 import type { ShapeKind } from "@/editor/shapeBuilder";
 import { shortId } from "@/utils/id";
 import { expandStrokeObject, normalizeBrushSettings } from "@/brushes/strokeToOutline";
@@ -26,7 +27,7 @@ import type { FeatureBuilderConfig, LigatureRule, AlternateRule, SwashRule, Feat
 import { emptyFeatureConfig, nextFeatureRuleId } from "@/types/opentypeFeatures";
 import { nextFeatureGlyphUnicode, buildFeatureGlyph, isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { GlyphCategory } from "@/types/glyph";
-import type { EditorMode, GlyphFilterId, TypeModeCategory } from "@/types/glyphView";
+import type { EditorMode, GlyphFilterId } from "@/types/glyphView";
 import { clampMultiColumns, clampMultiZoom, clampOverviewSpacing, clampOverviewZoom } from "@/types/glyphView";
 
 export type Theme = "light" | "dark";
@@ -105,6 +106,26 @@ interface HistoryEntry {
   fontInfo?: FontInfo;
   customFamilies?: CustomFamily[];
   featureConfig?: FeatureBuilderConfig;
+}
+/** What Drawing Mode borrows from the normal editing session while it is open. */
+interface DrawStash {
+  /** Real undo/redo timelines — Drawing Mode runs on its own fresh history. */
+  past: HistoryEntry[];
+  future: HistoryEntry[];
+  /** Glyph that was open in Single Mode before the switch. */
+  activeChar: string;
+  /** The real glyph map (scratch excluded) and kerning as they were on entry — leaving the mode records one history step if a sketch was applied in between. */
+  baseGlyphs: GlyphMap;
+  metrics: FontMetrics;
+  kerningPairs: KerningPairs;
+  kerningManual: KerningManualFlags;
+}
+
+function sameGlyphMap(a: GlyphMap, b: GlyphMap): boolean {
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  for (const k of ka) if (a[k] !== b[k]) return false;
+  return true;
 }
 const HISTORY_LIMIT = 120;
 
@@ -264,6 +285,8 @@ interface AppState {
   fitNonce: number;
   showGrid: boolean;
   gridSize: number;
+  /** Guideline-grid shape (Kotak / Segitiga / Hexagon / Poligon). The Pixel brush fills cells of this shape. */
+  gridShape: GridShape;
   showGuides: boolean;
   /** Whether the ruler strips along the top and left of the canvas are visible. */
   showRuler: boolean;
@@ -314,12 +337,22 @@ interface AppState {
   editorMode: EditorMode;
   setEditorMode: (mode: EditorMode) => void;
   toggleEditorMode: () => void;
-  /** Type Mode's active category (Uppercase/Lowercase/Digits/Punctuation/
-   *  Symbols/Multilingual) — decides which preset test sentence GlyphNav
-   *  walks through while `editorMode === "type"`. Session-only, same as
-   *  editorMode itself. */
-  typeModeCategory: TypeModeCategory;
-  setTypeModeCategory: (category: TypeModeCategory) => void;
+  // ------------------------------------------------ Drawing Mode
+  /** Non-null exactly while `editorMode === "draw"`: what to restore on exit. */
+  drawStash: DrawStash | null;
+  /** The sketch itself while Drawing Mode is closed (so it survives switching modes). */
+  drawOutline: GlyphOutline;
+  /** Glyph the sketch will be applied to by the "Terapkan" button. */
+  drawTargetChar: string | null;
+  setDrawTarget: (char: string | null) => void;
+  /** Empty the canvas after a successful apply (undoable with Ctrl+Z in Drawing Mode). */
+  drawClearAfterApply: boolean;
+  setDrawClearAfterApply: (on: boolean) => void;
+  /** Last glyph the sketch was applied to — drives the tile flash + status line. */
+  drawApplied: { char: string; nonce: number } | null;
+  /** Turns the sketch into `char`'s outline (or the chosen target). Returns false when there is nothing to apply. */
+  applyDrawingToGlyph: (char?: string) => boolean;
+  clearDrawing: () => void;
   /** Which glyph subset the overview renders. */
   overviewFilter: GlyphFilterId;
   setOverviewFilter: (filter: GlyphFilterId) => void;
@@ -465,6 +498,7 @@ interface AppState {
   fitGlyph: () => void;
   toggleGrid: () => void;
   setGridSize: (n: number) => void;
+  setGridShape: (shape: GridShape) => void;
   toggleGuides: () => void;
   toggleRuler: () => void;
   addRulerGuide: (guide: RulerGuide) => void;
@@ -590,7 +624,7 @@ interface AppState {
   // history / persistence
   undo: () => void;
   redo: () => void;
-  hydrate: (patch: { glyphs?: GlyphMap; glyphsByStyle?: Partial<GlyphFamily>; fontStyle?: FontStyle; customFamilies?: CustomFamily[]; fontName?: string; fontInfo?: Partial<FontInfo>; exportInfo?: ExportInfoDraft; projectFileName?: string; metrics?: Partial<FontMetrics>; kerningPairs?: KerningPairs; kerningManual?: KerningManualFlags; kerningOverridesByStyle?: KerningOverridesByStyle; kerningOverrideManualByStyle?: KerningOverrideManualByStyle; wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle; featureConfig?: FeatureBuilderConfig; activeChar?: string; gridSize?: number; showGrid?: boolean; showGuides?: boolean; snapEnabled?: boolean; ghost?: Partial<GhostSettings>; brush?: BrushSettings }) => void;
+  hydrate: (patch: { glyphs?: GlyphMap; glyphsByStyle?: Partial<GlyphFamily>; fontStyle?: FontStyle; customFamilies?: CustomFamily[]; fontName?: string; fontInfo?: Partial<FontInfo>; exportInfo?: ExportInfoDraft; projectFileName?: string; metrics?: Partial<FontMetrics>; kerningPairs?: KerningPairs; kerningManual?: KerningManualFlags; kerningOverridesByStyle?: KerningOverridesByStyle; kerningOverrideManualByStyle?: KerningOverrideManualByStyle; wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle; featureConfig?: FeatureBuilderConfig; activeChar?: string; gridSize?: number; gridShape?: GridShape; showGrid?: boolean; showGuides?: boolean; snapEnabled?: boolean; ghost?: Partial<GhostSettings>; brush?: BrushSettings }) => void;
 
   // kerning
   setKerningPair: (left: string, right: string, value: number) => void;
@@ -613,13 +647,6 @@ interface AppState {
    * optically-balanced baseline margin. Fixes inconsistent hand-drawn
    * sidebearings; runs before Auto Kern refines specific pairs on top. */
   autoSpaceAllGlyphs: (options?: { excludeManuallyKerned?: boolean; reKernAfter?: boolean }, onProgress?: (fraction: number) => void) => Promise<AutoSpaceResult>;
-  /** Type Mode's own auto-spacing pass — deliberately separate from
-   *  `autoSpaceAllGlyphs` above and from commitOutline's live per-glyph
-   *  pass (Single/Multi Mode, unchanged). commitOutline calls this once,
-   *  automatically, the moment every character in the active Type Mode
-   *  sentence (typeModeCategory) has ink — never per-stroke. Only ever
-   *  touches that sentence's own glyphs, nothing else in the font. */
-  autoSpaceTypeSentence: () => Promise<void>;
   /** Computes a word-spacing value from the font's own drawn glyphs and applies it (see `suggestWordSpacing`). Returns the value that was set. */
   autoWordSpacing: () => number;
   /** Bakes `trackingUnits` permanently into every glyph's LSB/RSB (split
@@ -1107,6 +1134,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     fitNonce: 0,
     showGrid: true,
     gridSize: 50,
+    gridShape: "square" as GridShape,
     showGuides: true,
     showRuler: true,
     rulerGuides: [],
@@ -1130,7 +1158,11 @@ export const useAppStore = create<AppState>()((set, get) => {
     // Multi Glyph Canvas — defaults chosen so an existing project opens
     // in exactly the surface it always has (Single Mode).
     editorMode: "single",
-    typeModeCategory: "upper",
+    drawStash: null,
+    drawOutline: emptyOutline(),
+    drawTargetChar: null,
+    drawClearAfterApply: true,
+    drawApplied: null,
     overviewFilter: "all",
     overviewQuery: "",
     overviewZoom: 100,
@@ -1353,7 +1385,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     // what guarantees Single and Multi Mode share one single copy of
     // the glyph data and can never drift apart.
     setEditorMode: (mode) => {
-      if (mode === get().editorMode) return;
+      const prevMode = get().editorMode;
+      if (mode === prevMode) return;
       // Flush any in-progress live outline first, exactly like
       // setActiveChar does, so switching away mid-stroke commits the
       // stroke instead of dropping it. Node/handle/object selections
@@ -1361,45 +1394,123 @@ export const useAppStore = create<AppState>()((set, get) => {
       // overview's own drag-rectangle selection can't fight with them
       // (and so returning to Single Mode starts from a clean slate).
       finalizeLive();
-      const state = get();
-      // Entering Type Mode: jump to the active category's first character
-      // so the canvas isn't left showing whatever glyph happened to be
-      // active from Single/Multi Mode (which may not even be in this
-      // category's sentence). Leaving Type Mode leaves activeChar as-is,
-      // same as switching between Single ⇄ Multi always has.
-      const first = mode === "type" ? charsForCategory(state.typeModeCategory)[0] : undefined;
-      set({
-        editorMode: mode,
-        activeChar: first ?? state.activeChar,
-        selectedNodes: [],
+      const cleared = {
+        selectedNodes: [] as NodeRef[],
         selectedHandle: null,
-        selectedObjectIds: [],
+        selectedObjectIds: [] as string[],
         drawingContourId: null,
         liveOutline: null,
-      });
+      };
+      // Leaving Drawing Mode: keep the sketch, take the scratch glyph out of
+      // the font again and put the real undo timeline back.
+      if (prevMode === "draw") {
+        const state = get();
+        const stash = state.drawStash;
+        const scratch = state.glyphs[DRAW_CHAR];
+        const glyphs = withoutDrawGlyph(state.glyphs);
+        const restoredActive = stash && glyphs[stash.activeChar] ? stash.activeChar : Object.keys(glyphs)[0] ?? state.activeChar;
+        // A sketch applied to a real glyph is one undoable step on the real timeline.
+        const applied = !!stash && !sameGlyphMap(glyphs, stash.baseGlyphs);
+        const past = !stash
+          ? state.past
+          : applied
+            ? [...stash.past, { glyphs: stash.baseGlyphs, metrics: stash.metrics, kerningPairs: stash.kerningPairs, kerningManual: stash.kerningManual }].slice(-HISTORY_LIMIT)
+            : stash.past;
+        set({
+          ...cleared,
+          editorMode: mode,
+          drawStash: null,
+          drawOutline: scratch ? scratch.outline : state.drawOutline,
+          glyphs,
+          glyphsByStyle: { ...state.glyphsByStyle, [state.fontStyle]: glyphs },
+          activeChar: restoredActive,
+          past,
+          future: stash && !applied ? stash.future : [],
+        });
+        return;
+      }
+      // Entering Drawing Mode: the sketch becomes a scratch glyph in the
+      // active style's map and the canvas switches to it. The real history
+      // is parked so Ctrl+Z inside Drawing Mode only ever undoes sketching.
+      if (mode === "draw") {
+        const state = get();
+        const scratch = state.drawOutline.objects.length ? makeDrawGlyph(state.drawOutline, state.metrics.unitsPerEm) : emptyDrawGlyph(state.metrics.unitsPerEm);
+        const glyphs = { ...state.glyphs, [DRAW_CHAR]: scratch };
+        set({
+          ...cleared,
+          editorMode: "draw",
+          drawStash: { past: state.past, future: state.future, activeChar: state.activeChar, baseGlyphs: state.glyphs, metrics: state.metrics, kerningPairs: state.kerningPairs, kerningManual: state.kerningManual },
+          glyphs,
+          glyphsByStyle: { ...state.glyphsByStyle, [state.fontStyle]: glyphs },
+          activeChar: DRAW_CHAR,
+          drawTargetChar: null,
+          past: [],
+          future: [],
+          tool: state.tool === "home" ? "select" : state.tool,
+          fitNonce: state.fitNonce + 1,
+        });
+        return;
+      }
+      set({ ...cleared, editorMode: mode });
     },
     toggleEditorMode: () => {
       const next: EditorMode = get().editorMode === "single" ? "multi" : "single";
       get().setEditorMode(next);
     },
-    setTypeModeCategory: (category) => {
-      // Changing category swaps out the whole char sequence GlyphNav is
-      // showing, so jump activeChar to that sequence's first character —
-      // same reasoning as setFontStyle's nextActiveChar fallback below:
-      // staying on a char the new sequence doesn't contain would leave
-      // the canvas showing a glyph absent from the list the user is
-      // looking at.
-      const state = get();
-      const first = charsForCategory(category)[0];
+    setDrawTarget: (char) => set({ drawTargetChar: char }),
+    setDrawClearAfterApply: (on) => set({ drawClearAfterApply: on }),
+    clearDrawing: () => {
+      const { glyphs, editorMode } = get();
+      const scratch = glyphs[DRAW_CHAR];
+      if (editorMode !== "draw" || !scratch || scratch.outline.objects.length === 0) return;
       finalizeLive();
+      const cur = get();
+      commit({ ...cur.glyphs, [DRAW_CHAR]: { ...cur.glyphs[DRAW_CHAR], outline: emptyOutline() } });
+      set({ selectedObjectIds: [], selectedNodes: [], selectedHandle: null, drawingContourId: null });
+    },
+    applyDrawingToGlyph: (char) => {
+      const state0 = get();
+      if (state0.editorMode !== "draw" || !state0.drawStash) return false;
+      finalizeLive();
+      const state = get();
+      const target = char ?? state.drawTargetChar;
+      const scratch = state.glyphs[DRAW_CHAR];
+      const targetGlyph = target ? state.glyphs[target] : undefined;
+      if (!target || target === DRAW_CHAR || !targetGlyph || !scratch || scratch.outline.objects.length === 0) return false;
+      const bounds = outlineBounds(scratch.outline);
+      if (!bounds) return false;
+      // Position is kept as drawn vertically (the baseline you sketched
+      // against is the glyph's baseline); horizontally the ink is moved to
+      // the glyph's own left sidebearing.
+      const dx = targetGlyph.lsb - bounds.minX;
+      const objects = scratch.outline.objects.map((o) => translateObject(cloneObjectWithNewIds(o), dx, 0));
+      const inkRight = targetGlyph.lsb + (bounds.maxX - bounds.minX);
+      let nextGlyph: Glyph = {
+        ...targetGlyph,
+        outline: { objects },
+        advanceWidth: Math.max(targetGlyph.advanceWidth, Math.round(inkRight + targetGlyph.rsb)),
+      };
+      if (state.autoSpacingEnabled) {
+        const suggestion = suggestGlyphSidebearings(nextGlyph, state.metrics);
+        if (suggestion) nextGlyph = applyOpticalSidebearings(nextGlyph, suggestion);
+      }
+      // Drawing Mode's own history gets this step (Ctrl+Z right after Terapkan
+      // brings back both the sketch and the glyph's old outline); the real
+      // timeline records it once, when the mode is left.
+      const snapshot: HistoryEntry = { glyphs: state.glyphs, metrics: state.metrics, kerningPairs: state.kerningPairs, kerningManual: state.kerningManual };
+      const nextGlyphs: GlyphMap = { ...state.glyphs, [target]: nextGlyph };
+      const clear = state.drawClearAfterApply;
+      const finalGlyphs: GlyphMap = clear ? { ...nextGlyphs, [DRAW_CHAR]: { ...scratch, outline: emptyOutline() } } : nextGlyphs;
       set({
-        typeModeCategory: category,
-        activeChar: first ?? state.activeChar,
-        selectedNodes: [],
-        selectedHandle: null,
-        selectedObjectIds: [],
-        drawingContourId: null,
+        glyphs: finalGlyphs,
+        glyphsByStyle: { ...state.glyphsByStyle, [state.fontStyle]: finalGlyphs },
+        past: [...state.past, snapshot].slice(-HISTORY_LIMIT),
+        future: [],
+        drawApplied: { char: target, nonce: (state.drawApplied?.nonce ?? 0) + 1 },
+        drawTargetChar: target,
+        ...(clear ? { selectedObjectIds: [], selectedNodes: [], selectedHandle: null, drawingContourId: null } : {}),
       });
+      return true;
     },
     setOverviewFilter: (filter) =>
       // Changing the filter changes which rows exist, so any scroll
@@ -1425,7 +1536,8 @@ export const useAppStore = create<AppState>()((set, get) => {
       state.setEditorMode("single");
     },
     toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
-    setGridSize: (n) => set({ gridSize: Math.min(200, Math.max(2, Math.round(n))) }),
+    setGridSize: (n) => set({ gridSize: Math.min(GRID_SIZE_MAX, Math.max(GRID_SIZE_MIN, Math.round(n))) }),
+    setGridShape: (shape) => set({ gridShape: normalizeGridShape(shape) }),
     toggleGuides: () => set((s) => ({ showGuides: !s.showGuides })),
     toggleRuler: () => set((s) => ({ showRuler: !s.showRuler })),
     addRulerGuide: (guide) => set((s) => ({ rulerGuides: [...s.rulerGuides, guide] })),
@@ -1538,12 +1650,21 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
     setMetricFocus: (key) => set({ metricFocus: key }),
     setActiveChar: (char) => {
+      // Drawing Mode keeps the canvas on the sketch; picking a glyph in the
+      // list only chooses where Terapkan will send it.
+      if (get().editorMode === "draw") {
+        if (char !== DRAW_CHAR) set({ drawTargetChar: char });
+        return;
+      }
       finalizeLive();
       set({ activeChar: char, selectedNodes: [], selectedHandle: null, selectedObjectIds: [], drawingContourId: null });
     },
 
     setFontStyle: (style) => {
       if (style === get().fontStyle) return;
+      // The sketch lives inside the active style's map; leave Drawing Mode
+      // first (the sketch is kept) so it can't travel into another style.
+      if (get().editorMode === "draw") get().setEditorMode("single");
       // Bold/Italic are PRO-only; Regular always stays open to everyone.
       if (style !== "regular" && !requirePro("family")) return;
       finalizeLive();
@@ -1824,14 +1945,13 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
 
     commitOutline: (char, outline, opts) => {
-      const { glyphs, metrics, autoSpacingEnabled, editorMode, typeModeCategory } = get();
+      const { glyphs, metrics, autoSpacingEnabled } = get();
       const glyph = glyphs[char];
       if (!glyph) return;
       let nextGlyph: Glyph = { ...glyph, outline };
-      // Type Mode deliberately skips this live per-glyph pass entirely —
-      // see autoSpaceTypeSentence below for what replaces it there.
-      // Single/Multi Mode's behavior below is untouched.
-      const isTypeMode = editorMode === "type";
+      // The Drawing Mode sketch is a free shape, not a glyph — it never
+      // gets sidebearing/position treatment (that happens on Terapkan).
+      const isScratch = char === DRAW_CHAR;
       // Live Auto Spacing (font-wide): whenever the master switch is on,
       // finishing a brand-new stroke/shape (pen, shape tool, brush, pencil,
       // paste) immediately re-derives LSB/RSB from the freshly-drawn ink
@@ -1864,27 +1984,13 @@ export const useAppStore = create<AppState>()((set, get) => {
       // been rendered, so pointer-move frames never run this optical pass.
       // Keeping the calculation synchronous preserves the existing commit
       // ordering and guarantees the saved glyph is immediately fully spaced.
-      if (autoSpacingEnabled && !opts?.skipAutoSpacing && !isTypeMode) {
+      if (autoSpacingEnabled && !opts?.skipAutoSpacing && !isScratch) {
         const suggestion = suggestGlyphSidebearings(nextGlyph, metrics);
         if (suggestion) nextGlyph = applyOpticalSidebearings(nextGlyph, suggestion);
       }
       const nextGlyphs = { ...glyphs, [char]: nextGlyph };
       commit(nextGlyphs);
       set({ liveOutline: null });
-
-      // Type Mode: no live per-glyph auto-spacing above, so instead check
-      // whether THIS commit was the one that finished the LAST character
-      // still missing ink in the active sentence — if so, space the whole
-      // sentence in one batch pass. Re-checked on every commit while in
-      // Type Mode (cheap: at most a couple dozen chars), so redrawing part
-      // of an already-complete sentence re-runs it too, but it's a no-op
-      // once every glyph's sidebearings already match the suggestion.
-      if (isTypeMode && autoSpacingEnabled) {
-        const sentenceChars = charsForCategory(typeModeCategory);
-        const allDrawn =
-          sentenceChars.length > 0 && sentenceChars.every((ch) => nextGlyphs[ch] && hasOutline(nextGlyphs[ch]));
-        if (allDrawn) void get().autoSpaceTypeSentence();
-      }
     },
 
     setLiveOutline: (outline) => set({ liveOutline: outline }),
@@ -2396,7 +2502,10 @@ export const useAppStore = create<AppState>()((set, get) => {
       });
     },
 
-    hydrate: (patch) =>
+    hydrate: (patch) => {
+      // Loading a project replaces every glyph map; close Drawing Mode first
+      // so its scratch glyph and parked history don't outlive them.
+      if (get().editorMode === "draw") get().setEditorMode("single");
       set((s) => {
         const incomingRegular = patch.glyphsByStyle?.regular ?? patch.glyphs;
         const fallbackFamily = incomingRegular ? familyFromRegular(incomingRegular) : s.glyphsByStyle;
@@ -2452,6 +2561,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           featureConfig: patch.featureConfig ?? (incomingRegular ? emptyFeatureConfig() : s.featureConfig),
           activeChar,
           gridSize: patch.gridSize ?? s.gridSize,
+          gridShape: patch.gridShape ? normalizeGridShape(patch.gridShape) : s.gridShape,
           showGrid: patch.showGrid ?? s.showGrid,
           showGuides: patch.showGuides ?? s.showGuides,
           snapEnabled: patch.snapEnabled ?? s.snapEnabled,
@@ -2479,7 +2589,8 @@ export const useAppStore = create<AppState>()((set, get) => {
           past: [],
           future: [],
         };
-      }),
+      });
+    },
 
     setKerningPair: (left, right, value) => {
       const { kerningPairs, kerningManual } = get();
@@ -2597,41 +2708,6 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
 
       return result;
-    },
-
-    autoSpaceTypeSentence: async () => {
-      const { glyphs, metrics, typeModeCategory, kerningManual } = get();
-      const sentenceChars = charsForCategory(typeModeCategory);
-      // Subset map — ONLY the active sentence's own glyphs, so the pure
-      // `computeAutoSpaceAllGlyphs` helper (which walks every entry it's
-      // given) never sees, and can never touch, anything else in the font.
-      const subset: GlyphMap = {};
-      for (const ch of sentenceChars) {
-        const g = glyphs[ch];
-        if (g) subset[ch] = g;
-      }
-      if (Object.keys(subset).length === 0) return;
-
-      // Same manually-kerned exclusion autoSpaceAllGlyphs uses by default,
-      // so a Type Mode sentence containing a hand-kerned pair doesn't
-      // shove it out from under that kerning either.
-      let excludeChars: Set<string> | undefined;
-      for (const [key, isManual] of Object.entries(kerningManual)) {
-        if (!isManual) continue;
-        if (!excludeChars) excludeChars = new Set<string>();
-        const [left, right] = decodeKerningKey(key);
-        excludeChars.add(left);
-        excludeChars.add(right);
-      }
-
-      const result = await computeAutoSpaceAllGlyphs(subset, metrics, applyOpticalSidebearings, excludeChars);
-      if (result.updated > 0) {
-        // Merge just the (possibly) updated subset back into the CURRENT
-        // full glyph map — re-read via get() rather than reusing the
-        // `glyphs` destructured above, in case something else committed
-        // in between the await and here.
-        commit({ ...get().glyphs, ...result.glyphs });
-      }
     },
 
     autoSpaceAllGlyphsForContext: async (context, options, onProgress) => {

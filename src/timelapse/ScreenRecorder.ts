@@ -4,8 +4,11 @@ import type {
   OutputResolution,
   ScreenRecorderSnapshot,
   ScreenRecordingStatus,
+  TimelapseSource,
   TimelapseStrategy,
 } from "./types";
+import { canvasFrameSignature, drawCanvasFrame } from "./canvasFrame";
+import { AppFrameCapturer } from "./appFrame";
 import { OUTPUT_FPS } from "./types";
 
 type Listener = (snapshot: ScreenRecorderSnapshot) => void;
@@ -15,7 +18,8 @@ type Listener = (snapshot: ScreenRecorderSnapshot) => void;
 // MediaRecorder actually supports wins. No MP4 candidate here — MP4
 // capture isn't supported by MediaRecorder in any browser, which is the
 // whole reason the "fast" WebCodecs strategy below exists.
-const LEGACY_MIME_CANDIDATES = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+// Safari (incl. iPad) can only record MP4 here, so it's listed too.
+const LEGACY_MIME_CANDIDATES = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"];
 
 function pickLegacyMimeType(): string | undefined {
   if (typeof MediaRecorder === "undefined") return undefined;
@@ -97,6 +101,9 @@ export class ScreenRecorder {
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private videoUrl: string | null = null;
   private strategy: TimelapseStrategy | null = null;
+  private source: TimelapseSource = "screen";
+  private lastFrameSignature: string | null = null;
+  private appCapturer: AppFrameCapturer | null = null;
   private outputFormat: OutputFormat | null = null;
   private outputWidth: number | null = null;
   private outputHeight: number | null = null;
@@ -124,13 +131,27 @@ export class ScreenRecorder {
    * exceeded"). Cache it and only recompute inside `notify()`. */
   private cachedSnapshot: ScreenRecorderSnapshot | null = null;
 
-  isSupported(): boolean {
+  /** Browser screen/tab capture — desktop browsers only (absent on iPad
+   * and phones). */
+  isScreenSupported(): boolean {
     return (
       typeof navigator !== "undefined" &&
       !!navigator.mediaDevices &&
       typeof navigator.mediaDevices.getDisplayMedia === "function" &&
       (typeof MediaRecorder !== "undefined" || typeof VideoEncoder !== "undefined")
     );
+  }
+
+  /** Recording the editor canvas needs only an encoder, no permission. */
+  isCanvasSupported(): boolean {
+    return (
+      typeof VideoEncoder !== "undefined" ||
+      (typeof MediaRecorder !== "undefined" && typeof HTMLCanvasElement !== "undefined" && "captureStream" in HTMLCanvasElement.prototype)
+    );
+  }
+
+  isSupported(): boolean {
+    return this.isScreenSupported() || this.isCanvasSupported();
   }
 
   /** Opens the browser's "choose what to share" picker (must be called
@@ -140,9 +161,11 @@ export class ScreenRecorder {
    * `resolution` only matters for the "fast" strategy (it sets the
    * encoded pixel size); "legacy" always records at the stream's native
    * resolution since MediaRecorder doesn't let us resample it. */
-  async start(captureIntervalMs: CaptureInterval, resolution: OutputResolution): Promise<void> {
+  async start(captureIntervalMs: CaptureInterval, resolution: OutputResolution, source: TimelapseSource = "screen"): Promise<void> {
     if (this.status === "recording" || this.status === "requesting") return;
     this.revokeVideo();
+    this.source = source;
+    this.lastFrameSignature = null;
     this.errorMessage = null;
     this.captureIntervalMs = captureIntervalMs;
     this.status = "requesting";
@@ -154,6 +177,11 @@ export class ScreenRecorder {
     this.totalPausedMs = 0;
     this.pausedAt = null;
     this.notify();
+
+    if (source !== "screen") {
+      await this.startCanvasSource(resolution, source);
+      return;
+    }
 
     let stream: MediaStream;
     try {
@@ -193,6 +221,123 @@ export class ScreenRecorder {
 
     const startedFast = await this.tryStartFast(stream, resolution);
     if (!startedFast) this.startLegacy(stream);
+  }
+
+  /** "Editor canvas" source: no capture permission, frames are drawn from
+   * the glyph data (see canvasFrame.ts). Uses WebCodecs when available,
+   * otherwise a real-time MediaRecorder on the canvas (Safari < 16.4). */
+  private async startCanvasSource(resolution: OutputResolution, source: "app" | "canvas"): Promise<void> {
+    // "app" follows the window's own aspect ratio; "canvas" is a fixed 16:9.
+    let size: { width: number; height: number };
+    if (source === "app") {
+      const v = AppFrameCapturer.viewportSize();
+      size = computeTargetSize(v.width, v.height, resolution);
+    } else {
+      size = resolution === "720p" ? { width: 1280, height: 720 } : resolution === "1080p" ? { width: 1920, height: 1080 } : { width: 1280, height: 720 };
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) {
+      this.fail("Could not create a drawing surface for the timelapse.");
+      return;
+    }
+    if (source === "app") {
+      try {
+        this.appCapturer = new AppFrameCapturer();
+        await this.appCapturer.draw(ctx, size.width, size.height);
+      } catch (err) {
+        this.appCapturer?.dispose();
+        this.appCapturer = null;
+        this.fail(err instanceof Error ? err.message : "Could not capture the app.");
+        return;
+      }
+    } else {
+      drawCanvasFrame(ctx, size.width, size.height);
+      this.lastFrameSignature = canvasFrameSignature();
+    }
+
+    let mediabunny: Awaited<ReturnType<typeof loadMediabunny>> | null = null;
+    let picked: { format: OutputFormat; codec: "avc" | "vp9" | "vp8" } | null = null;
+    if (typeof VideoEncoder !== "undefined") {
+      try {
+        mediabunny = await loadMediabunny();
+        picked = await pickFastFormat(mediabunny, size.width, size.height);
+      } catch {
+        mediabunny = null;
+      }
+    }
+
+    if (mediabunny && picked) {
+      const { Output, Mp4OutputFormat, WebMOutputFormat, BufferTarget, CanvasSource, QUALITY_HIGH } = mediabunny;
+      const output = new Output({
+        format: picked.format === "mp4" ? new Mp4OutputFormat() : new WebMOutputFormat(),
+        target: new BufferTarget(),
+      });
+      const videoSource = new CanvasSource(canvas, { codec: picked.codec, bitrate: QUALITY_HIGH });
+      output.addVideoTrack(videoSource);
+      await output.start();
+      // First frame (the starting state) goes in straight away.
+      await videoSource.add(0, 1 / OUTPUT_FPS);
+
+      this.mediabunny = mediabunny;
+      this.videoEl = null;
+      this.canvas = canvas;
+      this.canvasCtx = ctx;
+      this.mbOutput = output;
+      this.mbVideoSource = videoSource;
+      this.strategy = "fast";
+      this.outputFormat = picked.format;
+      this.outputWidth = size.width;
+      this.outputHeight = size.height;
+      this.frameCount = 1;
+      this.beginClock();
+      this.scheduleNextCapture();
+      return;
+    }
+
+    // Fallback: real-time recording of the canvas.
+    const mimeType = pickLegacyMimeType();
+    if (!mimeType || typeof canvas.captureStream !== "function") {
+      this.fail("This browser can't record video.");
+      return;
+    }
+    const stream = canvas.captureStream(4);
+    this.canvas = canvas;
+    this.canvasCtx = ctx;
+    this.legacyMimeType = mimeType;
+    this.legacyChunks = [];
+    this.strategy = "legacy";
+    this.outputFormat = mimeType.startsWith("video/mp4") ? "mp4" : "webm";
+    this.outputWidth = size.width;
+    this.outputHeight = size.height;
+    const recorder = new MediaRecorder(stream, { mimeType });
+    this.legacyRecorder = recorder;
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) this.legacyChunks.push(e.data);
+    };
+    recorder.onstop = () => this.finalizeLegacy();
+    recorder.start(1000);
+    this.beginClock();
+    this.scheduleNextCapture();
+  }
+
+  private beginClock(): void {
+    this.startedAt = performance.now();
+    this.elapsedMs = 0;
+    this.status = "recording";
+    this.tickTimer = setInterval(() => {
+      this.elapsedMs = performance.now() - (this.startedAt ?? performance.now()) - this.totalPausedMs;
+      this.notify();
+    }, 250);
+    this.notify();
+  }
+
+  private fail(message: string): void {
+    this.status = "error";
+    this.errorMessage = message;
+    this.notify();
   }
 
   /** Attempts the WebCodecs-backed "fast" (real timelapse) path. Returns
@@ -285,7 +430,27 @@ export class ScreenRecorder {
   }
 
   private async captureOneFrame(): Promise<void> {
-    if (this.status !== "recording" || !this.videoEl || !this.canvas || !this.canvasCtx || !this.mbVideoSource) return;
+    if (this.status !== "recording" || !this.canvas || !this.canvasCtx) return;
+    if (this.source !== "screen") {
+      // Unchanged since the last frame → nothing new to show, so skip it:
+      // idle time collapses out of the timelapse.
+      if (await this.frameChanged()) {
+        try {
+          await this.drawSourceFrame();
+          if (this.mbVideoSource) {
+            await this.mbVideoSource.add(this.frameCount / OUTPUT_FPS, 1 / OUTPUT_FPS);
+            this.frameCount += 1;
+            this.notify();
+          }
+        } catch (err) {
+          this.abortFast(err);
+          return;
+        }
+      }
+      if (this.status === "recording") this.scheduleNextCapture();
+      return;
+    }
+    if (!this.videoEl || !this.mbVideoSource) return;
     try {
       this.canvasCtx.drawImage(this.videoEl, 0, 0, this.canvas.width, this.canvas.height);
       const timestamp = this.frameCount / OUTPUT_FPS;
@@ -293,19 +458,38 @@ export class ScreenRecorder {
       this.frameCount += 1;
       this.notify();
     } catch (err) {
-      this.status = "error";
-      this.errorMessage = err instanceof Error ? err.message : "Timelapse encoding failed.";
-      if (this.tickTimer !== null) {
-        clearInterval(this.tickTimer);
-        this.tickTimer = null;
-      }
-      this.stream?.getTracks().forEach((track) => track.stop());
-      this.stream = null;
-      this.notify();
-      this.teardownFastCapture();
+      this.abortFast(err);
       return;
     }
     if (this.status === "recording") this.scheduleNextCapture();
+  }
+
+  /** Whether a frame from the canvas/app source would differ from the last. */
+  private async frameChanged(): Promise<boolean> {
+    if (this.source === "app") return this.appCapturer?.isDirty() ?? false;
+    const signature = canvasFrameSignature();
+    if (signature === this.lastFrameSignature) return false;
+    this.lastFrameSignature = signature;
+    return true;
+  }
+
+  private async drawSourceFrame(): Promise<void> {
+    if (!this.canvas || !this.canvasCtx) return;
+    if (this.source === "app" && this.appCapturer) await this.appCapturer.draw(this.canvasCtx, this.canvas.width, this.canvas.height);
+    else drawCanvasFrame(this.canvasCtx, this.canvas.width, this.canvas.height);
+  }
+
+  private abortFast(err: unknown): void {
+    this.status = "error";
+    this.errorMessage = err instanceof Error ? err.message : "Timelapse encoding failed.";
+    if (this.tickTimer !== null) {
+      clearInterval(this.tickTimer);
+      this.tickTimer = null;
+    }
+    this.stream?.getTracks().forEach((track) => track.stop());
+    this.stream = null;
+    this.notify();
+    this.teardownFastCapture();
   }
 
   private startLegacy(stream: MediaStream): void {
@@ -354,14 +538,11 @@ export class ScreenRecorder {
       clearInterval(this.tickTimer);
       this.tickTimer = null;
     }
-    if (this.strategy === "fast") {
-      if (this.captureTimeoutId !== null) {
-        clearTimeout(this.captureTimeoutId);
-        this.captureTimeoutId = null;
-      }
-    } else {
-      this.legacyRecorder?.pause();
+    if (this.captureTimeoutId !== null) {
+      clearTimeout(this.captureTimeoutId);
+      this.captureTimeoutId = null;
     }
+    if (this.strategy !== "fast") this.legacyRecorder?.pause();
     this.pausedAt = performance.now();
     this.status = "paused";
     this.notify();
@@ -379,11 +560,8 @@ export class ScreenRecorder {
       this.elapsedMs = performance.now() - (this.startedAt ?? performance.now()) - this.totalPausedMs;
       this.notify();
     }, 250);
-    if (this.strategy === "fast") {
-      this.scheduleNextCapture();
-    } else {
-      this.legacyRecorder?.resume();
-    }
+    if (this.strategy !== "fast") this.legacyRecorder?.resume();
+    if (this.strategy === "fast" || this.source !== "screen") this.scheduleNextCapture();
     this.notify();
   }
 
@@ -398,14 +576,20 @@ export class ScreenRecorder {
     this.status = "processing";
     this.notify();
 
+    if (this.captureTimeoutId !== null) {
+      clearTimeout(this.captureTimeoutId);
+      this.captureTimeoutId = null;
+    }
     if (this.strategy === "fast") {
-      if (this.captureTimeoutId !== null) {
-        clearTimeout(this.captureTimeoutId);
-        this.captureTimeoutId = null;
-      }
       void this.finalizeFast();
     } else {
-      this.legacyRecorder?.stop();
+      const recorder = this.legacyRecorder;
+      if (this.source !== "screen") {
+        // Draw the final state, then give it a moment to reach the recorder.
+        void this.drawSourceFrame().finally(() => setTimeout(() => recorder?.stop(), 400));
+      } else {
+        recorder?.stop();
+      }
     }
     this.stream?.getTracks().forEach((track) => track.stop());
     this.stream = null;
@@ -413,6 +597,12 @@ export class ScreenRecorder {
 
   private async finalizeFast(): Promise<void> {
     try {
+      // Canvas source: make sure the final state is the last frame.
+      if (this.source !== "screen" && this.canvas && this.canvasCtx && this.mbVideoSource && (await this.frameChanged())) {
+        await this.drawSourceFrame();
+        await this.mbVideoSource.add(this.frameCount / OUTPUT_FPS, 1 / OUTPUT_FPS);
+        this.frameCount += 1;
+      }
       if (this.mbOutput) await this.mbOutput.finalize();
       const buffer = (this.mbOutput?.target as { buffer?: ArrayBuffer } | undefined)?.buffer;
       if (buffer) {
@@ -433,6 +623,8 @@ export class ScreenRecorder {
   }
 
   private teardownFastCapture(): void {
+    this.appCapturer?.dispose();
+    this.appCapturer = null;
     if (this.videoEl) {
       this.videoEl.pause();
       this.videoEl.srcObject = null;
@@ -445,6 +637,8 @@ export class ScreenRecorder {
   }
 
   private finalizeLegacy(): void {
+    this.appCapturer?.dispose();
+    this.appCapturer = null;
     const blob = new Blob(this.legacyChunks, { type: this.legacyMimeType ?? "video/webm" });
     this.legacyChunks = [];
     this.videoUrl = URL.createObjectURL(blob);
@@ -483,6 +677,7 @@ export class ScreenRecorder {
       videoUrl: this.videoUrl,
       errorMessage: this.errorMessage,
       strategy: this.strategy,
+      source: this.source,
       outputFormat: this.outputFormat,
       outputWidth: this.outputWidth,
       outputHeight: this.outputHeight,

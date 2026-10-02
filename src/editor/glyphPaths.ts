@@ -279,3 +279,78 @@ export function getGlyphPaths(glyph: Glyph, ascender: number): GlyphPathEntry[] 
   byAscender.set(ascender, entries);
   return entries;
 }
+
+/* ------------------------------------------------------------------ *
+ * Progressive path building
+ *
+ * `getGlyphPaths` is synchronous and cached per glyph object, which is
+ * right for one glyph — but a grid showing hundreds of glyphs the first
+ * time (entering Multi mode, opening the Overview, after a project load)
+ * used to build every glyph's paths inside a single React render: seconds
+ * of frozen UI. `useGlyphPaths` builds them in small time slices between
+ * frames instead, so the grid appears at once with placeholders and fills
+ * in progressively. Cached glyphs are returned immediately, so nothing
+ * changes for the glyph being edited or once the cache is warm.
+ * ------------------------------------------------------------------ */
+
+/** The cached paths for this glyph, or null if they haven't been built yet. */
+export function peekGlyphPaths(glyph: Glyph, ascender: number): GlyphPathEntry[] | null {
+  return glyphPathCache.get(glyph)?.get(ascender) ?? null;
+}
+
+interface WarmTask {
+  glyph: Glyph;
+  ascender: number;
+  callbacks: Set<() => void>;
+}
+
+const warmQueue: WarmTask[] = [];
+const warmTasks = new WeakMap<Glyph, Map<number, WarmTask>>();
+let warmScheduled = false;
+const WARM_SLICE_MS = 10;
+
+function runWarmSlice(): void {
+  warmScheduled = false;
+  const start = performance.now();
+  while (warmQueue.length > 0 && performance.now() - start < WARM_SLICE_MS) {
+    const task = warmQueue.shift()!;
+    warmTasks.get(task.glyph)?.delete(task.ascender);
+    if (task.callbacks.size === 0) continue; // every cell that wanted it went away
+    try {
+      getGlyphPaths(task.glyph, task.ascender);
+    } catch {
+      // A glyph whose geometry can't be built stays a placeholder rather
+      // than breaking every other cell.
+    }
+    for (const cb of task.callbacks) cb();
+  }
+  if (warmQueue.length > 0) scheduleWarm();
+}
+
+function scheduleWarm(): void {
+  if (warmScheduled) return;
+  warmScheduled = true;
+  setTimeout(runWarmSlice, 0);
+}
+
+/** Builds `glyph`'s paths in a background time slice, then calls `onReady`.
+ * Returns a cancel function (call it on unmount / when the glyph changes). */
+export function warmGlyphPaths(glyph: Glyph, ascender: number, onReady: () => void): () => void {
+  let byAscender = warmTasks.get(glyph);
+  if (!byAscender) {
+    byAscender = new Map();
+    warmTasks.set(glyph, byAscender);
+  }
+  let task = byAscender.get(ascender);
+  if (!task) {
+    task = { glyph, ascender, callbacks: new Set() };
+    byAscender.set(ascender, task);
+    warmQueue.push(task);
+    scheduleWarm();
+  }
+  task.callbacks.add(onReady);
+  const t = task;
+  return () => {
+    t.callbacks.delete(onReady);
+  };
+}

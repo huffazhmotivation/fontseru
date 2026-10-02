@@ -42,6 +42,7 @@ export interface FontSeruProjectV1 {
     activeChar: string;
     fontStyle?: FontStyle;
     gridSize: number;
+    gridShape?: "square" | "triangle" | "hexagon" | "octagon";
     showGrid: boolean;
     showGuides: boolean;
     /** Optional so older .fs files without this field still open fine. */

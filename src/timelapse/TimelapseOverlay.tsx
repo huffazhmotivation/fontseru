@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { X, Circle, Download, Film, Loader2, RotateCcw, MonitorPlay, Pause, Play } from "lucide-react";
+import { X, Circle, Download, Film, Loader2, RotateCcw, MonitorPlay, Pause, Play, PenTool } from "lucide-react";
 import { screenRecorder } from "./ScreenRecorder";
 import { useScreenRecorderState } from "./useTimelapse";
 import { useTimelapseUiStore } from "./timelapseUiStore";
@@ -39,7 +39,16 @@ export function TimelapseOverlay() {
   const { status, elapsedMs, videoUrl, errorMessage, strategy, outputFormat, outputWidth, outputHeight, frameCount, estimatedOutputMs } =
     useScreenRecorderState();
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const supported = screenRecorder.isSupported();
+  const screenOk = screenRecorder.isScreenSupported();
+  const canvasOk = screenRecorder.isCanvasSupported();
+  const supported = screenOk || canvasOk;
+  const chosenSource = useTimelapseUiStore((s) => s.source);
+  const setSource = useTimelapseUiStore((s) => s.setSource);
+  // Touch devices (iPad, phones) have no screen capture at all, so the
+  // permission-free "Whole app" source is the default there (and anywhere
+  // else screen capture is missing); desktop keeps screen capture.
+  const coarse = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
+  const source = chosenSource ?? (!screenOk || (coarse && canvasOk) ? "app" : "screen");
 
   useEffect(() => {
     if (!open) return;
@@ -93,7 +102,7 @@ export function TimelapseOverlay() {
           {!supported && (
             <div className="fm-timelapse-stage">
               <div className="fm-timelapse-empty">
-                Screen recording isn't supported in this browser. Try the latest Chrome, Edge, or Firefox.
+                Video recording isn't supported in this browser. Try a recent Safari (iOS/iPadOS 16.4+), Chrome, Edge, or Firefox.
               </div>
             </div>
           )}
@@ -102,14 +111,69 @@ export function TimelapseOverlay() {
             <>
               <div className="fm-timelapse-stage">
                 <div className="fm-timelapse-empty">
-                  <MonitorPlay size={22} />
+                  {source === "canvas" ? <PenTool size={22} /> : <MonitorPlay size={22} />}
                   <br />
                   <br />
-                  Press <strong>Start Recording</strong>, then choose <strong>this tab</strong> when your browser asks what
-                  to share. Everything you do afterwards — switching panels, drawing, opening menus — gets captured exactly
-                  as it looks on screen, then compressed into a real timelapse video (MP4 where the browser supports it).
+                  {source === "app" ? (
+                    <>
+                      Press <strong>Start Recording</strong> and keep working. The whole editor — canvas, panels and menus —
+                      is recorded, no screen-sharing permission needed, so this works on iPad and phones too. Moments where
+                      nothing changes are skipped automatically. Frames take a moment to capture, so pick a slower speed-up
+                      (2s or 5s) on older devices.
+                    </>
+                  ) : source === "canvas" ? (
+                    <>
+                      Press <strong>Start Recording</strong> and just keep drawing. The glyph you're editing is recorded
+                      stroke by stroke — no screen-sharing permission needed, so this works on iPad and phones too. Idle
+                      moments are skipped automatically.
+                    </>
+                  ) : (
+                    <>
+                      Press <strong>Start Recording</strong>, then choose <strong>this tab</strong> when your browser asks
+                      what to share. Everything you do afterwards — switching panels, drawing, opening menus — gets
+                      captured exactly as it looks on screen, then compressed into a real timelapse video (MP4 where the
+                      browser supports it).
+                    </>
+                  )}
                 </div>
               </div>
+
+              {canvasOk && (
+                <div className="fm-timelapse-speed-row">
+                  <span className="fm-timelapse-label">Record</span>
+                  <div className="fm-align-group" role="group" aria-label="Recording source">
+                    <button
+                      type="button"
+                      className={`fm-timelapse-speed-btn ${source === "app" ? "is-active" : ""}`}
+                      onClick={() => setSource("app")}
+                      title="The whole editor — canvas, panels, menus. No permission needed; works on every device."
+                      data-testid="timelapse-source-app"
+                    >
+                      Whole app
+                    </button>
+                    <button
+                      type="button"
+                      className={`fm-timelapse-speed-btn ${source === "canvas" ? "is-active" : ""}`}
+                      onClick={() => setSource("canvas")}
+                      title="Only the glyph you're editing, drawn from its data. Lightest option."
+                      data-testid="timelapse-source-canvas"
+                    >
+                      Glyph only
+                    </button>
+                    {screenOk && (
+                      <button
+                        type="button"
+                        className={`fm-timelapse-speed-btn ${source === "screen" ? "is-active" : ""}`}
+                        onClick={() => setSource("screen")}
+                        title="The whole browser tab via screen sharing (desktop browsers only)."
+                        data-testid="timelapse-source-screen"
+                      >
+                        Screen share
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="fm-timelapse-speed-row">
                 <span className="fm-timelapse-label">Speed-up</span>
@@ -151,7 +215,7 @@ export function TimelapseOverlay() {
                 <button
                   type="button"
                   className="fm-timelapse-record-btn"
-                  onClick={() => screenRecorder.start(captureInterval, resolution)}
+                  onClick={() => screenRecorder.start(captureInterval, resolution, source)}
                   data-testid="timelapse-record-toggle"
                 >
                   <Circle size={13} fill="currentColor" />
@@ -167,7 +231,7 @@ export function TimelapseOverlay() {
                 <Loader2 size={20} className="fm-spin" />
                 <br />
                 <br />
-                Waiting for you to pick a tab to share…
+                {source === "canvas" ? "Starting…" : "Waiting for you to pick a tab to share…"}
               </div>
             </div>
           )}
@@ -184,7 +248,7 @@ export function TimelapseOverlay() {
                   ) : (
                     <>
                       Recording in progress. Go do the work you want captured — you can close this panel, it keeps running
-                      until you hit <strong>Stop Recording</strong> (or stop sharing from your browser's own toolbar). Need
+                      until you hit <strong>Stop Recording</strong> (or stop sharing from your browser's own toolbar, if you're sharing the screen). Need
                       a break? Hit <strong>Pause</strong> and it'll wait for you.
                     </>
                   )}
@@ -192,7 +256,7 @@ export function TimelapseOverlay() {
               </div>
               <div className="fm-timelapse-frame-meta">
                 <span className="fm-timelapse-action-pill">
-                  {strategy === "fast" ? (outputFormat === "mp4" ? "MP4" : "WEBM") : "WEBM · real-time"}
+                  {`${outputFormat === "mp4" ? "MP4" : "WEBM"}${strategy === "fast" ? "" : " · real-time"}`}
                 </span>
                 {strategy === "fast" && outputWidth && outputHeight && (
                   <span>
@@ -272,7 +336,7 @@ export function TimelapseOverlay() {
             <>
               <div className="fm-timelapse-stage fm-timelapse-video-stage">
                 {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                <video ref={videoRef} src={videoUrl} controls className="fm-timelapse-video" data-testid="timelapse-video" />
+                <video ref={videoRef} src={videoUrl} controls playsInline className="fm-timelapse-video" data-testid="timelapse-video" />
               </div>
 
               <div className="fm-timelapse-frame-meta">

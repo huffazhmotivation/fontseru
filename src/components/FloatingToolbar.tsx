@@ -120,6 +120,7 @@ function ShapeToolButton() {
 export function FloatingToolbar() {
   const tool = useAppStore((s) => s.tool);
   const setTool = useAppStore((s) => s.setTool);
+  const drawMode = useAppStore((s) => s.editorMode === "draw");
   const openTrace = useAppStore((s) => s.openTrace);
   const openProModal = useAppStore((s) => s.openProModal);
   const { isPro } = useAuth();
@@ -151,7 +152,7 @@ export function FloatingToolbar() {
     <div className="fm-floating-toolbar" data-testid="floating-toolbar" ref={toolbarRef}>
       {GROUPS.map((group, gi) => (
         <div className="fm-tool-group" key={gi}>
-          {group.map((t) => {
+          {group.filter((t) => !(drawMode && t.id === "home")).map((t) => {
             const Icon = t.id === "home" ? null : ICONS[t.id as keyof typeof ICONS];
             const enabled = t.phase <= CURRENT_PHASE;
             const locked = PRO_LOCKED_TOOLS.has(t.id) && !isPro;

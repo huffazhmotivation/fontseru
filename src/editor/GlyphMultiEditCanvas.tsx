@@ -5,7 +5,7 @@ import { useAppStore } from "@/glyph/store";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { clampMultiZoom, MULTI_BASE_CELL_PX } from "@/types/glyphView";
 import type { Point, VectorObject } from "@/types/geometry";
-import { getGlyphPaths } from "./glyphPaths";
+import { useGlyphPaths } from "./useGlyphPaths";
 import { filterGlyphChars } from "./glyphFilter";
 import { useGlyphEditor } from "./useGlyphEditor";
 import { useBrushTool } from "./useBrushTool";
@@ -35,13 +35,10 @@ import {
   cellOrigin,
   cellWidthAt,
   computeMultiEditLayout,
-  computeSentenceLayout,
   visibleCellIndices,
   worldToGlyphPoint,
   type MultiEditLayout,
 } from "./multiEditLayout";
-import { charsForCategory } from "@/glyph/testSentences";
-import { standardGlyphMetrics } from "@/glyph/defaultGlyphs";
 import { useSketchGestures } from "./useSketchGestures";
 
 /**
@@ -168,7 +165,10 @@ const PassiveCell = memo(function PassiveCell({
   drawn,
   showPlaceholder,
 }: PassiveCellProps) {
-  if (!drawn) {
+  // Built in background time slices the first time (see useGlyphPaths), so
+  // opening a grid of hundreds of glyphs doesn't freeze the page.
+  const paths = useGlyphPaths(glyph, ascender, drawn);
+  if (!drawn || !paths) {
     if (!showPlaceholder) return null;
     return (
       <text
@@ -184,7 +184,7 @@ const PassiveCell = memo(function PassiveCell({
   }
   return (
     <>
-      {getGlyphPaths(glyph, ascender).map((entry) =>
+      {paths.map((entry) =>
         entry.kind === "stroke" ? (
           <path
             key={entry.id}
@@ -539,12 +539,6 @@ export function GlyphMultiEditCanvas() {
 
   const filter = useAppStore((s) => s.overviewFilter);
   const query = useAppStore((s) => s.overviewQuery);
-  const editorMode = useAppStore((s) => s.editorMode);
-  const typeModeCategory = useAppStore((s) => s.typeModeCategory);
-  // Type Mode: baseline only, same rule as Single Mode (GlyphCanvas) —
-  // deliberately independent of the user's own persisted showGuides
-  // toggle, so entering/leaving Type Mode never flips it.
-  const effectiveShowGuides = editorMode === "type" ? false : showGuides;
   const spacing = useAppStore((s) => s.overviewSpacing);
   const columns = useAppStore((s) => s.multiColumns);
   const zoom = useAppStore((s) => s.multiZoom);
@@ -569,39 +563,16 @@ export function GlyphMultiEditCanvas() {
   const processMoveRef = useRef<(sample: PointerMoveSample) => void>(() => {});
 
   const totalH = Math.max(1, ascender - descender);
-  // Type Mode's line-wrap width. Not user-configurable (not asked for) —
-  // 16 em-widths is a comfortable reading-length line for the pangram-
-  // length preset sentences in glyph/testSentences.ts.
-  const typeFlowWrapWidth = upm * 16;
-  const isTypeFlow = editorMode === "type";
-
   // ------------------------------------------------------------ layout
   const chars = useMemo(
-    () =>
-      isTypeFlow
-        ? charsForCategory(typeModeCategory)
-        : filterGlyphChars(glyphs, filter, selectedGlyphChars, query),
-    [isTypeFlow, typeModeCategory, glyphs, filter, selectedGlyphChars, query]
+    () => filterGlyphChars(glyphs, filter, selectedGlyphChars, query),
+    [glyphs, filter, selectedGlyphChars, query]
   );
 
-  const layout: MultiEditLayout = useMemo(() => {
-    if (isTypeFlow) {
-      // Reads LIVE advance widths (glyph's own if drawn, else the same
-      // standard-metrics estimate defaultGlyphs.ts uses for an undrawn
-      // glyph) — `glyphs` is a dependency below, so the moment a glyph
-      // gets an outline and auto-spacing gives it a real advance width,
-      // every glyph after it reflows on the very next render.
-      return computeSentenceLayout({
-        chars,
-        advanceWidthFor: (ch) => glyphs[ch]?.advanceWidth ?? standardGlyphMetrics(ch, upm).advanceWidth,
-        upm,
-        totalH,
-        spacing,
-        wrapWidth: typeFlowWrapWidth,
-      });
-    }
-    return computeMultiEditLayout({ count: chars.length, columns, upm, totalH, spacing });
-  }, [isTypeFlow, chars, glyphs, columns, upm, totalH, spacing, typeFlowWrapWidth]);
+  const layout: MultiEditLayout = useMemo(
+    () => computeMultiEditLayout({ count: chars.length, columns, upm, totalH, spacing }),
+    [chars, columns, upm, totalH, spacing]
+  );
 
   useLayoutEffect(() => {
     const el = frameRef.current;
@@ -1252,7 +1223,7 @@ export function GlyphMultiEditCanvas() {
                   right glyph purely from where it lands — that was always
                   position-based and never depended on this rect being
                   drawn. Only the visible boundary goes away. */}
-              {!isTypeFlow && (
+              {(
                 <rect
                   className="fm-mx-cell-box"
                   x={0}
@@ -1268,7 +1239,7 @@ export function GlyphMultiEditCanvas() {
                   the glyph's own advance line landed on the same pixels —
                   two different meanings, one line. Offsetting it keeps the
                   box edge honest as a metric. */}
-              {!isTypeFlow && (isActive || isSelected) && (
+              {(isActive || isSelected) && (
                 <rect
                   className={`fm-mx-cell-ring${isActive ? "" : " soft"}`}
                   x={-5 / sc}
@@ -1310,7 +1281,7 @@ export function GlyphMultiEditCanvas() {
                 baseline={baseline}
                 advanceWidth={cellGlyph.advanceWidth}
                 lsb={cellGlyph.lsb}
-                showGuides={effectiveShowGuides}
+                showGuides={showGuides}
                 showGrid={showGrid}
                 gridSize={gridSize}
                 guides={rulerGuides}

@@ -79,7 +79,8 @@ export default function App() {
   // as running text via a "flow" layout instead of a grid — see
   // editor/multiEditLayout.ts's computeSentenceLayout.
   const editorMode = useAppStore((s) => s.editorMode);
-  const overviewMode = (editorMode === "multi" || editorMode === "type") && !sketchMode;
+  const overviewMode = editorMode === "multi" && !sketchMode;
+  const drawMode = editorMode === "draw" && !sketchMode;
   const appMode = useAppModeStore((s) => s.appMode);
   useKeyboardShortcuts();
 
@@ -152,8 +153,28 @@ export default function App() {
         featureConfig: state.featureConfig,
       });
     };
-    const unsub = useAppStore.subscribe(() => {
+    const unsub = useAppStore.subscribe((state, prev) => {
       if (!hydratedRef.current) return;
+      // Only the project data is persisted. Pan/zoom/hover/selection and the
+      // like change the store constantly and must not queue a save (nor keep
+      // pushing an already-queued one further away).
+      if (
+        state.glyphsByStyle === prev.glyphsByStyle &&
+        state.fontStyle === prev.fontStyle &&
+        state.customFamilies === prev.customFamilies &&
+        state.fontName === prev.fontName &&
+        state.fontInfo === prev.fontInfo &&
+        state.exportInfo === prev.exportInfo &&
+        state.metrics === prev.metrics &&
+        state.kerningPairs === prev.kerningPairs &&
+        state.kerningManual === prev.kerningManual &&
+        state.kerningOverridesByStyle === prev.kerningOverridesByStyle &&
+        state.kerningOverrideManualByStyle === prev.kerningOverrideManualByStyle &&
+        state.wordSpacingOverridesByStyle === prev.wordSpacingOverridesByStyle &&
+        state.featureConfig === prev.featureConfig
+      ) {
+        return;
+      }
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(flush, 350);
     });
@@ -203,7 +224,7 @@ export default function App() {
       <div className="fm-body">
         <GlyphNav />
         <div className="fm-canvas-wrap">
-          <div className="fm-canvas-area" data-editor-mode={overviewMode ? editorMode : "single"}>
+          <div className="fm-canvas-area" data-editor-mode={overviewMode || drawMode ? editorMode : "single"}>
             {/* Exactly one canvas surface is mounted at a time. Both read
                 the same glyph map from the store, and all view state
                 (single: zoom/pan — multi: overviewZoom/overviewScroll)
@@ -215,11 +236,11 @@ export default function App() {
                 Brush/Node/Select all act on whichever cell you point at. */}
             <FloatingToolbar />
             {!sketchMode && <GlyphViewBar />}
-            {!overviewMode && <SketchModeToggle />}
+            {!overviewMode && !drawMode && <SketchModeToggle />}
             {sketchMode && <SketchToolbar />}
             {sketchMode && <GlyphStepper />}
             {sketchMode && <SketchRightPanelToggle />}
-            {!sketchMode && !overviewMode && <GlyphSideNav />}
+            {!sketchMode && !overviewMode && !drawMode && <GlyphSideNav />}
             {!sketchMode && <MobileDrawerToggles />}
           </div>
           <ProductionPreviewBar />

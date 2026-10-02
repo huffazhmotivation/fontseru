@@ -1,6 +1,8 @@
+import { familyWithoutDrawGlyph, withoutDrawGlyph } from "@/glyph/drawMode";
 import type { ExportInfoDraft, FontInfo, FontMetrics } from "@/types/font";
 import type { CustomFamily, FontStyle, GlyphFamily, GlyphMap } from "@/types/glyph";
 import type { KerningManualFlags, KerningPairs, KerningOverridesByStyle, KerningOverrideManualByStyle, WordSpacingOverridesByStyle } from "@/types/kerning";
+import type { GridShape } from "@/editor/gridGeometry";
 import type { BrushSettings } from "@/types/brush";
 import type { FeatureBuilderConfig } from "@/types/opentypeFeatures";
 import {
@@ -27,6 +29,7 @@ export interface ProjectSource {
   exportInfo?: ExportInfoDraft;
   activeChar: string;
   gridSize: number;
+  gridShape?: GridShape;
   showGrid: boolean;
   showGuides: boolean;
   snapEnabled: boolean;
@@ -46,8 +49,8 @@ export function createFontSeruProject(source: ProjectSource): FontSeruProject {
       name: source.fontName,
       info: source.fontInfo,
       metrics: source.metrics,
-      glyphs: source.glyphs,
-      glyphsByStyle: source.glyphsByStyle,
+      glyphs: withoutDrawGlyph(source.glyphs),
+      glyphsByStyle: source.glyphsByStyle ? familyWithoutDrawGlyph(source.glyphsByStyle) : undefined,
       customFamilies: source.customFamilies,
       kerningPairs: source.kerningPairs,
       kerningManual: source.kerningManual,
@@ -61,6 +64,7 @@ export function createFontSeruProject(source: ProjectSource): FontSeruProject {
       activeChar: source.activeChar,
       fontStyle: source.fontStyle,
       gridSize: source.gridSize,
+      gridShape: source.gridShape,
       showGrid: source.showGrid,
       showGuides: source.showGuides,
       snapEnabled: source.snapEnabled,

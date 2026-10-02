@@ -191,7 +191,7 @@ if (typeof console !== "undefined") {
   console.info(`[FontSeru] export engine build: ${FONTSERU_EXPORT_BUILD}`);
 }
 
-import { expandStrokeObject } from "@/brushes/strokeToOutline";
+import { expandStrokeObject, isSprayStroke, mergeSprayStrokes } from "@/brushes/strokeToOutline";
 import {
   applyBooleanOp,
   isBooleanEligible,
@@ -975,8 +975,27 @@ function exportableObjects(glyph: Glyph): VectorObject[] {
   // centerline + width and need expanding into their filled silhouette
   // first before they can take part in any boolean/union math below.
   const expanded: VectorObject[] = [];
+  // All Spray strokes of the glyph are merged together in one fast raster
+  // pass (see mergeSprayStrokes) instead of expanded + unioned one by one.
+  const sprays = objects.filter(isSprayStroke);
+  let sprayMerged: VectorObject | null = null;
+  let sprayEmitted = false;
+  if (sprays.length >= 2) {
+    try {
+      sprayMerged = mergeSprayStrokes(sprays);
+    } catch (error) {
+      console.warn(`[FontSeru] Spray merge failed in U+${glyph.unicode.toString(16).toUpperCase()}; expanding strokes individually.`, error);
+    }
+  }
   for (const obj of objects) {
     try {
+      if (sprayMerged && isSprayStroke(obj)) {
+        if (!sprayEmitted) {
+          expanded.push(sprayMerged);
+          sprayEmitted = true;
+        }
+        continue;
+      }
       if (obj.kind === "shape" || obj.kind === "expanded") {
         expanded.push(obj);
       } else {

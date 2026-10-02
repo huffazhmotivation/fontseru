@@ -43,7 +43,7 @@ export function RecordingBadge() {
         type="button"
         className="fm-timelapse-badge-label"
         onClick={openPanel}
-        title="Screen recording — click to open"
+        title="Timelapse recording — click to open"
         data-testid="timelapse-badge-open"
       >
         <Circle size={9} className="fm-timelapse-badge-dot" fill="currentColor" />

@@ -28,6 +28,7 @@ const BRUSH_ICON: Record<BrushType, typeof PenLine> = {
 export function RightPanel() {
   const activeChar = useAppStore((s) => s.activeChar);
   const glyph = useAppStore((s) => s.glyphs[activeChar]);
+  const drawMode = useAppStore((s) => s.editorMode === "draw");
   const tool = useAppStore((s) => s.tool);
   const selectedNodes = useAppStore((s) => s.selectedNodes);
   const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
@@ -62,11 +63,11 @@ export function RightPanel() {
   return (
     <div className="fm-rightpanel" data-testid="right-panel">
       <div className="fm-panel-header">
-        <div className="fm-panel-glyph"><GlyphThumbnail glyph={glyph} /></div>
+        <div className="fm-panel-glyph">{drawMode ? null : <GlyphThumbnail glyph={glyph} />}</div>
         <div className="fm-panel-meta">
-          <div className="fm-panel-char">{glyph.char}</div>
-          <div className="fm-panel-code">{unicodeHex(glyph.unicode)}</div>
-          <div className="fm-panel-cat">{category}</div>
+          <div className="fm-panel-char">{drawMode ? "✎" : glyph.char}</div>
+          <div className="fm-panel-code">{drawMode ? "Canvas bebas" : unicodeHex(glyph.unicode)}</div>
+          <div className="fm-panel-cat">{drawMode ? "Mode Drawing" : category}</div>
         </div>
       </div>
 
@@ -88,7 +89,7 @@ export function RightPanel() {
         <GlyphPanel char={activeChar} glyph={glyph} />
       )}
 
-      {tool === "home" && (
+      {tool === "home" && !drawMode && (
         <>
           <GlyphMetricsSection char={activeChar} glyph={glyph} />
           <FontMetricsSection />

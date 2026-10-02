@@ -33,7 +33,7 @@ const CATEGORY_OPTIONS: { id: GlyphCategory; label: string; Icon: typeof CaseUpp
  * costs nothing while off.
  */
 function ProductionPreviewContent() {
-  const open = useAppStore((s) => s.productionPreviewOpen);
+  const open = useAppStore((s) => s.productionPreviewOpen && s.editorMode !== "draw");
   const toggle = useAppStore((s) => s.toggleProductionPreview);
   const scale = useAppStore((s) => s.productionPreviewScale);
   const setScale = useAppStore((s) => s.setProductionPreviewScale);

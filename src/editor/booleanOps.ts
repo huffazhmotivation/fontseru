@@ -3,6 +3,7 @@ import { isFilledObject } from "@/types/geometry";
 import { flattenContour } from "./objectOps";
 import { cubicPoint, cubicTangent, splitCubic } from "./bezier";
 import { simplifyPolyline } from "@/utils/simplify";
+import { closedRingHasCrossing, closedRingsHaveCrossing } from "@/utils/segmentGrid";
 import { shortId } from "@/utils/id";
 import {
   union as clipUnion,
@@ -1206,16 +1207,7 @@ function boundsOverlap(a: RingBounds, b: RingBounds): boolean {
 
 /** True if this closed polygon crosses itself anywhere. */
 function ringSelfIntersects(ring: Point[]): boolean {
-  const n = ring.length;
-  if (n < 4) return false;
-  for (let i = 0; i < n; i++) {
-    const a0 = ring[i], a1 = ring[(i + 1) % n];
-    for (let j = i + 2; j < n; j++) {
-      if (i === 0 && j === n - 1) continue; // adjacent through the wrap-around
-      if (segmentsProperlyCross(a0, a1, ring[j], ring[(j + 1) % n])) return true;
-    }
-  }
-  return false;
+  return closedRingHasCrossing(ring, segmentsProperlyCross);
 }
 
 /** True if two different closed polygons' boundaries actually cross —
@@ -1226,14 +1218,7 @@ function ringSelfIntersects(ring: Point[]): boolean {
  * well-separated contours (e.g. Rough brush's texture holes). */
 function ringsCross(a: Point[], b: Point[]): boolean {
   if (!boundsOverlap(ringBounds(a), ringBounds(b))) return false;
-  const na = a.length, nb = b.length;
-  for (let i = 0; i < na; i++) {
-    const a0 = a[i], a1 = a[(i + 1) % na];
-    for (let j = 0; j < nb; j++) {
-      if (segmentsProperlyCross(a0, a1, b[j], b[(j + 1) % nb])) return true;
-    }
-  }
-  return false;
+  return closedRingsHaveCrossing(a, b, segmentsProperlyCross);
 }
 
 /** Cheap pre-check for `normalizeSelfIntersectingContours`: does this set of
@@ -1259,10 +1244,23 @@ function contoursNeedIntersectionResolution(contours: Contour[]): boolean {
     if (ring.length < 3) return true; // degenerate — let the clip path's own handling deal with it
     if (ringSelfIntersects(ring)) return true;
   }
-  for (let i = 0; i < rings.length; i++) {
-    for (let j = i + 1; j < rings.length; j++) {
-      if (ringsCross(rings[i], rings[j])) return true;
+  // Only rings whose bounding boxes overlap can cross, so sweep along x
+  // instead of testing every pair (a Spray glyph has thousands of rings).
+  const bounds = rings.map(ringBounds);
+  const order = rings.map((_, i) => i).sort((p, q) => bounds[p].minX - bounds[q].minX);
+  const active: number[] = [];
+  for (const i of order) {
+    const bi = bounds[i];
+    let w = 0;
+    for (let k = 0; k < active.length; k++) {
+      const j = active[k];
+      if (bounds[j].maxX < bi.minX) continue; // finished before this ring starts: drop it
+      active[w++] = j;
+      const bj = bounds[j];
+      if (bj.minY <= bi.maxY && bi.minY <= bj.maxY && ringsCross(rings[i], rings[j])) return true;
     }
+    active.length = w;
+    active.push(i);
   }
   return false;
 }

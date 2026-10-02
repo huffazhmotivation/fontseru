@@ -4,6 +4,7 @@ import { hasOutline } from "@/types/glyph";
 import type { FontMetrics } from "@/types/font";
 import { outlineBounds, translateObject, skewObject, objectBounds, emptyBounds, mergeBounds, boundsValid } from "@/editor/objectOps";
 import type { VectorObject } from "@/types/geometry";
+import { gridCellAt, gridCellCenter, normalizeGridShape, type GridShape } from "@/editor/gridGeometry";
 import { inkExtentAtYIndexed, cachedInkIndex, INK_CONTOUR_STEPS } from "./autoKern";
 
 // Same flatten resolution — and the SAME shared cache, keyed by outline
@@ -44,6 +45,11 @@ export interface GlyphSpacingSuggestion {
   rsb: number;
 }
 
+/** Grid shape a Pixel Brush object's cells were drawn on (square for anything saved before grid shapes existed). */
+function pixelCellShape(obj: VectorObject): GridShape {
+  return normalizeGridShape(obj.brushSettings?.cellShape);
+}
+
 /** Grid cell size (font units) of a Pixel Brush object, or 0 if `obj` isn't one. */
 function pixelCellSize(obj: VectorObject): number {
   if (obj.kind !== "brush" || obj.brushType !== "pixel" || obj.brushSettings?.gridSnap !== true) return 0;
@@ -66,10 +72,8 @@ function pixelCellSize(obj: VectorObject): number {
 function snapPixelObjectToLattice(obj: VectorObject): VectorObject {
   const cell = pixelCellSize(obj);
   if (!cell) return obj;
-  const snap = (p: { x: number; y: number }) => ({
-    x: (Math.floor(p.x / cell) + 0.5) * cell,
-    y: (Math.floor(p.y / cell) + 0.5) * cell,
-  });
+  const shape = pixelCellShape(obj);
+  const snap = (p: { x: number; y: number }) => gridCellCenter(shape, cell, p);
   return {
     ...obj,
     contours: obj.contours.map((c) => ({
@@ -84,9 +88,16 @@ function objectInkBounds(obj: VectorObject) {
   const cell = pixelCellSize(obj);
   if (!cell) return objectBounds(obj);
   let b = emptyBounds();
+  const shape = pixelCellShape(obj);
   const h = cell / 2;
   for (const c of obj.contours) {
     for (const n of c.nodes) {
+      if (shape !== "square") {
+        // Non-square cells: ink spans the actual cell polygon under the node.
+        const poly = gridCellAt(shape, cell, n.point).polygon;
+        for (const v of poly) b = mergeBounds(b, { minX: v.x, minY: v.y, maxX: v.x, maxY: v.y });
+        continue;
+      }
       b = mergeBounds(b, { minX: n.point.x - h, minY: n.point.y - h, maxX: n.point.x + h, maxY: n.point.y + h });
     }
   }

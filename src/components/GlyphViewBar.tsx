@@ -1,11 +1,12 @@
 import { memo, useMemo } from "react";
-import { LayoutGrid, Square, Minus, Plus, X, Maximize2, PenLine } from "lucide-react";
+import { LayoutGrid, Square, Minus, Plus, X, Maximize2, PenLine, Eraser, Wand2, GripHorizontal } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
-import { GLYPH_FILTERS, MULTI_COLUMNS_MAX, MULTI_ZOOM_MAX, MULTI_ZOOM_MIN, OVERVIEW_SPACING_MAX, OVERVIEW_SPACING_MIN, TYPE_MODE_CATEGORIES } from "@/types/glyphView";
-import type { GlyphFilterId, TypeModeCategory } from "@/types/glyphView";
+import { GLYPH_FILTERS, MULTI_COLUMNS_MAX, MULTI_ZOOM_MAX, MULTI_ZOOM_MIN, OVERVIEW_SPACING_MAX, OVERVIEW_SPACING_MIN } from "@/types/glyphView";
+import type { GlyphFilterId } from "@/types/glyphView";
 import { countDrawnGlyphs, filterGlyphChars } from "@/editor/glyphFilter";
-import { charsForCategory } from "@/glyph/testSentences";
-import { hasOutline } from "@/types/glyph";
+import { DRAW_CHAR } from "@/glyph/drawMode";
+import { GlyphThumbnail } from "./GlyphThumbnail";
+import { DRAWING_DRAG_TYPE } from "./drawingDrag";
 
 /**
  * The zoom slider is logarithmic: the multi canvas spans roughly 8%–4000%
@@ -38,8 +39,12 @@ function sliderToZoom(value: number): number {
 function GlyphViewBarInner() {
   const editorMode = useAppStore((s) => s.editorMode);
   const setEditorMode = useAppStore((s) => s.setEditorMode);
-  const typeModeCategory = useAppStore((s) => s.typeModeCategory);
-  const setTypeModeCategory = useAppStore((s) => s.setTypeModeCategory);
+  const drawTargetChar = useAppStore((s) => s.drawTargetChar);
+  const drawClearAfterApply = useAppStore((s) => s.drawClearAfterApply);
+  const setDrawClearAfterApply = useAppStore((s) => s.setDrawClearAfterApply);
+  const drawApplied = useAppStore((s) => s.drawApplied);
+  const applyDrawingToGlyph = useAppStore((s) => s.applyDrawingToGlyph);
+  const clearDrawing = useAppStore((s) => s.clearDrawing);
   const filter = useAppStore((s) => s.overviewFilter);
   const setOverviewFilter = useAppStore((s) => s.setOverviewFilter);
   const query = useAppStore((s) => s.overviewQuery);
@@ -59,7 +64,10 @@ function GlyphViewBarInner() {
   const clearGlyphSelection = useAppStore((s) => s.clearGlyphSelection);
 
   const multi = editorMode === "multi";
-  const typeMode = editorMode === "type";
+  const drawMode = editorMode === "draw";
+  // The sketch itself, so the bar can show a live thumbnail of it to drag.
+  const sketch = useAppStore((s) => (drawMode ? s.glyphs[DRAW_CHAR] : undefined));
+  const sketchHasInk = !!sketch && sketch.outline.objects.length > 0;
 
   // Counts shown in the bar. Both are derived on the fly from the live
   // glyph map — nothing is cached or mirrored into state, so the "n jadi"
@@ -69,15 +77,6 @@ function GlyphViewBarInner() {
     [multi, glyphs, filter, selectedGlyphChars, query]
   );
   const drawnCount = useMemo(() => (multi ? countDrawnGlyphs(glyphs) : 0), [multi, glyphs]);
-
-  // Type Mode's own counts — scoped to the active category's sentence,
-  // not the whole font, since that's the "n tampil · n jadi" the flow
-  // canvas is actually showing.
-  const typeChars = useMemo(() => (typeMode ? charsForCategory(typeModeCategory) : []), [typeMode, typeModeCategory]);
-  const typeDrawnCount = useMemo(
-    () => typeChars.reduce((n, ch) => n + (glyphs[ch] && hasOutline(glyphs[ch]) ? 1 : 0), 0),
-    [typeChars, glyphs]
-  );
 
   return (
     <>
@@ -115,87 +114,80 @@ function GlyphViewBarInner() {
         </button>
         <button
           type="button"
-          className={typeMode ? "on" : ""}
-          onClick={() => setEditorMode("type")}
-          title="Type Mode — gambar glyph mengikuti urutan kalimat contoh, bukan A-Z; hanya baseline yang tampil"
-          data-testid="glyph-view-type"
+          className={drawMode ? "on" : ""}
+          onClick={() => setEditorMode("draw")}
+          title="Mode Drawing — gambar bebas di canvas, lalu terapkan hasilnya ke glyph mana pun. Hanya garis baseline yang tampil."
+          data-testid="glyph-view-draw"
         >
-          <PenLine size={13} /> Type
+          <PenLine size={13} /> Drawing
         </button>
       </div>
 
-      {typeMode && (
-        <div className="fm-glyphview-bar" data-testid="glyph-view-type-bar" data-mode={editorMode}>
-          <label className="fm-glyphview-field">
-            <span>Kalimat</span>
-            <select
-              value={typeModeCategory}
-              onChange={(e) => setTypeModeCategory(e.target.value as TypeModeCategory)}
-              data-testid="glyph-view-type-category"
-            >
-              {TYPE_MODE_CATEGORIES.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </label>
+      {drawMode && (
+        <div className="fm-glyphview-bar fm-drawbar" data-testid="glyph-view-draw-bar" data-mode={editorMode}>
+          <div
+            className={`fm-drawbar-thumb ${sketchHasInk ? "" : "empty"}`}
+            draggable={sketchHasInk}
+            onDragStart={(e) => {
+              if (!sketchHasInk) { e.preventDefault(); return; }
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData(DRAWING_DRAG_TYPE, "1");
+              e.dataTransfer.setData("text/plain", "fontseru-drawing");
+            }}
+            title={sketchHasInk ? "Seret gambar ini ke salah satu glyph di daftar glyph" : "Gambar sesuatu di canvas dulu"}
+            data-testid="draw-drag-chip"
+          >
+            {sketchHasInk && sketch ? <GlyphThumbnail glyph={sketch} /> : <PenLine size={15} />}
+            {sketchHasInk && <GripHorizontal size={11} className="fm-drawbar-grip" />}
+          </div>
+
+          <span className="fm-glyphview-count fm-drawbar-status" data-testid="draw-status">
+            {!sketchHasInk
+              ? "Gambar bebas di canvas"
+              : drawTargetChar
+                ? <>Target: <b>{drawTargetChar === " " ? "Space" : drawTargetChar}</b></>
+                : "Seret ke glyph / pilih lalu Terapkan"}
+          </span>
+
+          <button
+            type="button"
+            className="fm-action-btn accent fm-drawbar-apply"
+            disabled={!sketchHasInk || !drawTargetChar}
+            onClick={() => applyDrawingToGlyph()}
+            title={drawTargetChar ? `Jadikan gambar ini glyph “${drawTargetChar}”` : "Pilih glyph di daftar glyph dulu"}
+            data-testid="draw-apply-btn"
+          >
+            <Wand2 size={13} /> Terapkan
+          </button>
 
           <div className="fm-glyphview-divider" />
 
-          <label className="fm-glyphview-field fm-glyphview-slider">
-            <span>Spacing</span>
+          <label className="fm-glyphview-field fm-drawbar-check" title="Kosongkan canvas setelah gambar diterapkan (bisa di-undo dengan Ctrl+Z)">
             <input
-              type="range"
-              min={OVERVIEW_SPACING_MIN}
-              max={OVERVIEW_SPACING_MAX}
-              step={1}
-              value={spacing}
-              onChange={(e) => setOverviewSpacing(Number(e.target.value))}
-              data-testid="glyph-view-type-spacing"
-              style={{
-                ["--fm-range-fill" as string]: `${((spacing - OVERVIEW_SPACING_MIN) / (OVERVIEW_SPACING_MAX - OVERVIEW_SPACING_MIN)) * 100}%`,
-              }}
+              type="checkbox"
+              checked={drawClearAfterApply}
+              onChange={(e) => setDrawClearAfterApply(e.target.checked)}
+              data-testid="draw-clear-after-apply"
             />
-          </label>
-
-          <label className="fm-glyphview-field fm-glyphview-slider">
-            <span>Zoom</span>
-            <button type="button" className="fm-icon-btn" onClick={() => setMultiZoom(zoom * 0.8)} title="Perkecil">
-              <Minus size={12} />
-            </button>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={1}
-              value={zoomToSlider(zoom)}
-              onChange={(e) => setMultiZoom(sliderToZoom(Number(e.target.value)))}
-              data-testid="glyph-view-type-zoom"
-              style={{
-                ["--fm-range-fill" as string]: `${zoomToSlider(zoom)}%`,
-              }}
-            />
-            <button type="button" className="fm-icon-btn" onClick={() => setMultiZoom(zoom * 1.25)} title="Perbesar">
-              <Plus size={12} />
-            </button>
+            <span>Bersihkan otomatis</span>
           </label>
 
           <button
             type="button"
             className="fm-icon-btn"
-            onClick={fitMultiCanvas}
-            title="Pas-kan seluruh kalimat ke layar"
-            data-testid="glyph-view-type-fit"
+            onClick={clearDrawing}
+            disabled={!sketchHasInk}
+            title="Bersihkan canvas"
+            data-testid="draw-clear-btn"
           >
-            <Maximize2 size={12} />
+            <Eraser size={13} />
           </button>
 
-          <div className="fm-glyphview-divider" />
-
-          <span className="fm-glyphview-count" data-testid="glyph-view-type-count">
-            {typeDrawnCount} / {typeChars.length} jadi
-          </span>
+          {drawApplied && (
+            <span key={drawApplied.nonce} className="fm-drawbar-done" data-testid="draw-applied">
+              ✓ “{drawApplied.char}”
+            </span>
+          )}
         </div>
       )}
 

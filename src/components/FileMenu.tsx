@@ -4,6 +4,7 @@ import { useAppStore } from "@/glyph/store";
 import { useAuth } from "@/auth/AuthProvider";
 import { useExportUsage } from "@/hooks/useExportUsage";
 import type { FontInfo } from "@/types/font";
+import { withoutDrawGlyph } from "@/glyph/drawMode";
 import { FONT_STYLES, fontStyleLabel, hasOutline, type CustomFamily, type FontStyle, type Glyph, type GlyphFamily } from "@/types/glyph";
 import {
   createFontSeruProject,
@@ -33,7 +34,7 @@ import { effectiveKerningPairs, effectiveWordSpacing } from "@/types/kerning";
 import { createZipBlob } from "@/utils/zip";
 import { Toast, type ToastKind, type ToastMessage } from "@/components/Toast";
 import { InfoTip } from "@/components/InfoTip";
-import { runFontQA, type QAIssue, type QASeverity } from "@/utils/fontQA";
+import { runFontQA, type QAIssue, type QAReport, type QASeverity } from "@/utils/fontQA";
 
 // --- Export Information System -------------------------------------------
 // Purely additive: this data drives the OpenType name-table fields already
@@ -53,6 +54,8 @@ const LICENSE_TYPE_OPTIONS = ["Personal", "Commercial", "Corporate", "Extended"]
 type LicenseType = (typeof LICENSE_TYPE_OPTIONS)[number] | "";
 
 type ExportTab = "fontinfo" | "license" | "qa";
+
+const EMPTY_QA_REPORT: QAReport = { issues: [], errorCount: 0, warningCount: 0, infoCount: 0, passCount: 0, readyToExport: true };
 
 interface FontInfoFormState {
   fontName: string;
@@ -204,8 +207,9 @@ function snapshotFromStore() {
     kerningOverrideManualByStyle: s.kerningOverrideManualByStyle,
     wordSpacingOverridesByStyle: s.wordSpacingOverridesByStyle,
     featureConfig: s.featureConfig,
-    activeChar: s.activeChar,
+    activeChar: s.drawStash ? s.drawStash.activeChar : s.activeChar,
     gridSize: s.gridSize,
+    gridShape: s.gridShape,
     showGrid: s.showGrid,
     showGuides: s.showGuides,
     snapEnabled: s.snapEnabled,
@@ -234,6 +238,7 @@ function hydrateProject(project: ReturnType<typeof parseFontSeruProject>, filena
     featureConfig: project.font.featureConfig,
     activeChar: project.editor.activeChar,
     gridSize: project.editor.gridSize,
+    gridShape: project.editor.gridShape,
     showGrid: project.editor.showGrid,
     showGuides: project.editor.showGuides,
     snapEnabled: project.editor.snapEnabled,
@@ -287,7 +292,7 @@ function hasExportableVectorGlyph(glyph: Glyph): boolean {
 function detectExportableStyles(family: GlyphFamily, customFamilies: ReadonlyArray<CustomFamily>): FamilyStyleSelection {
   const result: FamilyStyleSelection = {};
   for (const { id } of exportableStyleList(customFamilies)) {
-    result[id] = Object.values(family[id] ?? {}).some(hasExportableVectorGlyph);
+    result[id] = Object.values(withoutDrawGlyph(family[id] ?? {})).some(hasExportableVectorGlyph);
   }
   return result;
 }
@@ -669,7 +674,11 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   // designer is actually looking at right now. Recomputes live as the
   // export dialog stays open, so fixes made elsewhere reflect immediately.
   const qaReport = useMemo(() => {
-    const qaGlyphs = glyphsByStyle[qaFontStyle] ?? glyphsByStyle.regular ?? {};
+    // The report is only ever shown inside the Export dialog. It used to be
+    // recomputed on EVERY glyph edit even with the dialog closed, which is
+    // a full geometry scan of the whole font on each stroke.
+    if (!exportOpen) return EMPTY_QA_REPORT;
+    const qaGlyphs = withoutDrawGlyph(glyphsByStyle[qaFontStyle] ?? glyphsByStyle.regular ?? {});
     const effectiveKerning = effectiveKerningPairs(qaKerningPairs, qaKerningOverridesByStyle, qaFontStyle);
     // Export dialog keeps its own draft (fontInfoForm/licenseInfoForm) that
     // only gets written back into the store when Export actually runs (see
@@ -721,6 +730,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     debouncedFontInfoForm,
     debouncedLicenseInfo,
     customFamilies,
+    exportOpen,
   ]);
 
   const dismissToast = useCallback(() => setToast(null), []);
@@ -1159,7 +1169,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
         let generated: Awaited<ReturnType<typeof generateFontFiles>>;
         try {
           generated = await generateFontFiles(
-            s.glyphsByStyle[style],
+            withoutDrawGlyph(s.glyphsByStyle[style]),
             styleMetrics,
             exportInfo,
             effectiveKerning,

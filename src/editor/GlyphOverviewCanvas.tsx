@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { useAppStore } from "@/glyph/store";
 import { hasOutline, type Glyph } from "@/types/glyph";
 import { clampOverviewZoom } from "@/types/glyphView";
-import { getGlyphPaths } from "./glyphPaths";
+import { useGlyphPaths } from "./useGlyphPaths";
 import { filterGlyphChars } from "./glyphFilter";
 import {
   cellRect,
@@ -79,6 +79,7 @@ function GlyphTileView({
   active,
 }: TileProps) {
   const drawn = hasOutline(glyph);
+  const paths = useGlyphPaths(glyph, ascender, drawn);
   const { scale, translateX, translateY } = glyphTileTransform(
     rect,
     glyph.advanceWidth,
@@ -111,9 +112,9 @@ function GlyphTileView({
         x2={rect.x + rect.w - 2}
         y2={baselineY}
       />
-      {drawn ? (
+      {drawn && paths ? (
         <g transform={`translate(${translateX} ${translateY}) scale(${scale})`}>
-          {getGlyphPaths(glyph, ascender).map((entry) =>
+          {paths.map((entry) =>
             entry.kind === "stroke" ? (
               <path
                 key={entry.id}

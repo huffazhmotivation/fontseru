@@ -1,3 +1,4 @@
+import type { GridShape } from "@/editor/gridGeometry";
 export type BrushType =
   | "round"
   | "monoline"
@@ -62,6 +63,8 @@ export interface BrushSettings {
    * `gridSnap` — every other brush ignores this field entirely.
    */
   cellSize?: number;
+  /** Pixel Brush only: which guideline-grid shape the cells come from, baked in at draw time alongside `cellSize`. Absent = "square" (every stroke saved before grid shapes existed). */
+  cellShape?: GridShape;
   /** Outline Brush only: border thickness as a fraction of the nib's half-width. The interior stays hollow — see outlineBrushOutlineContours. */
   outlineThickness?: number;
   /** Pixel Brush only: "blocks" (default) keeps the original crisp grid-cell

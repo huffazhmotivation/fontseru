@@ -6403,3 +6403,51 @@ html[data-theme="light"] .fm-update-backdrop {
 @media (max-width: 599px) and (pointer: coarse) {
   .fm-topbar .fm-topbar-more-hide.fm-topbar-phone-show { display: none !important; }
 }
+
+/* ================================================== DRAWING MODE
+   Free-sketch canvas: bar with the draggable sketch chip + Terapkan. */
+.fm-drawbar { gap: 10px; }
+.fm-drawbar-thumb {
+  position: relative;
+  width: 38px; height: 38px; flex: none;
+  display: grid; place-items: center;
+  border-radius: 9px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  cursor: grab;
+}
+.fm-drawbar-thumb:not(.empty):hover { border-color: var(--accent); }
+.fm-drawbar-thumb:not(.empty):active { cursor: grabbing; }
+.fm-drawbar-thumb.empty { cursor: default; opacity: 0.7; }
+.fm-drawbar-thumb svg { max-width: 30px; max-height: 30px; }
+.fm-drawbar-grip { position: absolute; bottom: 1px; right: 1px; opacity: 0.55; }
+.fm-drawbar-status { min-width: 0; white-space: nowrap; }
+.fm-drawbar-status b { color: var(--text); }
+.fm-drawbar-apply { padding: 5px 11px; white-space: nowrap; }
+.fm-drawbar-apply:disabled { opacity: 0.45; cursor: not-allowed; }
+.fm-drawbar-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+.fm-drawbar-check input { accent-color: var(--accent); margin: 0; }
+.fm-drawbar-done { color: var(--accent); font-weight: 700; white-space: nowrap; animation: fm-trace-applied-flash 1.2s ease; }
+.fm-drawbar .fm-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Grid shape + size controls (bottom bar) */
+.fm-grid-controls { gap: 4px; }
+.fm-grid-shape-select {
+  height: 24px; padding: 0 6px; border-radius: 7px;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); font-size: 11.5px; cursor: pointer;
+}
+.fm-grid-size-input {
+  width: 46px; height: 24px; padding: 0 4px; text-align: center;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 7px;
+  font-family: var(--mono); font-size: 11.5px;
+  -moz-appearance: textfield;
+}
+.fm-grid-size-input::-webkit-outer-spin-button,
+.fm-grid-size-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.fm-drawbar > * { flex: none; }
+.fm-drawbar .fm-drawbar-check span { text-transform: none; letter-spacing: 0; }
+.fm-drawbar { left: 14px; transform: none; max-width: calc(100% - 300px); }
+.fm-drawbar .fm-drawbar-apply { width: auto; flex: none; }

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.5.0",
   "type": "module",
-  "description": "FontSeru — a modern, browser-based vector type & font design studio. Original clean editor UI with a professional Bézier engine.",
+  "description": "FontSeru \u2014 a modern, browser-based vector type & font design studio. Original clean editor UI with a professional B\u00e9zier engine.",
   "scripts": {
     "postinstall": "node scripts/patch-opentype.mjs",
     "patch:opentype": "node scripts/patch-opentype.mjs",
@@ -17,6 +17,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
     "@xenova/transformers": "^2.17.2",
+    "html2canvas-pro": "^2.4.5",
     "imagetracerjs": "^1.2.6",
     "jspdf": "^2.5.2",
     "lucide-react": "^0.454.0",
