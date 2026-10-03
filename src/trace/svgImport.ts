@@ -765,7 +765,7 @@ export function parseSvgMarkup(text: string): SvgImportResult {
  * text/html), so this looks for the outermost `<svg>` tag rather than
  * requiring the whole string to be a clean, standalone document.
  */
-function extractSvgMarkup(text: string): string | null {
+export function extractSvgMarkup(text: string): string | null {
   if (!text || text.indexOf("<svg") === -1) return null;
   const start = text.indexOf("<svg");
   const end = text.lastIndexOf("</svg>");
@@ -800,7 +800,15 @@ export async function pasteSvgFromSystemClipboard(): Promise<boolean> {
 
   const markup = extractSvgMarkup(text);
   if (!markup) return false;
+  return pasteSvgMarkup(markup);
+}
 
+/**
+ * Imports an SVG string (already extracted from the clipboard, or received
+ * from the Design tab) into the active glyph. Shared by the OS-clipboard
+ * path above and the Font ⇄ Design bridge (`lib/seruBridge.ts`).
+ */
+export function pasteSvgMarkup(markup: string): boolean {
   let parsed: SvgImportResult;
   try {
     parsed = parseSvgMarkup(markup);

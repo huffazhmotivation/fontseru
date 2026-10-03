@@ -6,7 +6,7 @@ import {
   CopyPlus, Trash2, Film, MoreHorizontal,
 } from "lucide-react";
 import { CopyIcon, PasteIcon } from "@/components/icons/ClipboardIcons";
-import { pasteSvgFromSystemClipboard } from "@/trace/svgImport";
+import { copyAndPublish, pasteFromButton, hasBridgeClip } from "@/lib/seruBridge";
 import { useAppStore } from "@/glyph/store";
 import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
 import type { AlignMode } from "@/editor/objectOps";
@@ -60,7 +60,7 @@ export function TopBar() {
   const alignSelectedObjects = useAppStore((s) => s.alignSelectedObjects);
   const booleanSelectedObjects = useAppStore((s) => s.booleanSelectedObjects);
   const flipSelectedObjects = useAppStore((s) => s.flipSelectedObjects);
-  const copySelection = useAppStore((s) => s.copySelection);
+  const copySelection = copyAndPublish;
   const pasteClipboard = useAppStore((s) => s.pasteClipboard);
   const selectedNodeCount = useAppStore((s) => s.selectedNodes.length);
   const hasInternalClipboard = useAppStore((s) => (s.clipboard?.length ?? 0) > 0);
@@ -81,17 +81,11 @@ export function TopBar() {
   // from Illustrator/Affinity arrives there as SVG text).
   const canReadSystemClipboard =
     typeof navigator !== "undefined" && typeof navigator.clipboard?.readText === "function";
-  const canPaste = hasInternalClipboard || canReadSystemClipboard;
+  const canPaste = hasInternalClipboard || canReadSystemClipboard || hasBridgeClip();
   const handlePaste = React.useCallback(async () => {
-    // Button order is internal-first (unlike Cmd/Ctrl+V): on iPad/Android
-    // every OS-clipboard read pops a system "Paste" permission bubble, so
-    // when FontSeru already holds a copy it pastes that instantly and only
-    // reaches for the OS clipboard when there is nothing of its own.
-    if (useAppStore.getState().clipboard?.length) {
-      useAppStore.getState().pasteClipboard();
-      return;
-    }
-    await pasteSvgFromSystemClipboard();
+    // Internal-first (see pasteFromButton): no OS-clipboard permission bubble on tablets
+    // when FontSeru or the Design tab already holds a fresh copy.
+    await pasteFromButton();
   }, []);
   // One Delete for both selection kinds: Node tool → selected anchor
   // points, Select tool → whole objects. The store keeps the two mutually
@@ -294,7 +288,7 @@ export function TopBar() {
           type="button"
           className="fm-align-btn"
           disabled={selectedObjectIds.length === 0}
-          onClick={() => { copySelection(); pasteClipboard(); }}
+          onClick={() => { useAppStore.getState().copySelection(); pasteClipboard(); }}
           title="Duplicate"
           aria-label="Duplicate"
           data-testid="duplicate-btn"
@@ -426,7 +420,7 @@ export function TopBar() {
               <div className="fm-filemenu-sep" />
               <button
                 disabled={selectedObjectIds.length === 0}
-                onClick={() => { copySelection(); pasteClipboard(); setMoreOpen(false); }}
+                onClick={() => { useAppStore.getState().copySelection(); pasteClipboard(); setMoreOpen(false); }}
               >
                 <CopyPlus size={14} strokeWidth={1.7} /> Duplicate
               </button>

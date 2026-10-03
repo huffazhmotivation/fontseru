@@ -6,6 +6,7 @@ import { saveVersion, importFilesViaPicker } from '../lib/library';
 import * as C from '../engine/commands';
 import { newProject, openProject, saveProject } from '../lib/actions';
 import { TopMenus } from './TopMenus';
+import { useTablet, setTabletPref, setPalm } from '../store/tablet';
 
 /** Saat DesignSeru dibuka di dalam FontSeru (iframe, Mode Design): tab Font / Design / Motion di bar atas, tepat di kanan logo.
  *  Klik tab mengirim pesan ke FontSeru yang menukar mode; di luar FontSeru komponen ini tidak tampil. */
@@ -74,13 +75,14 @@ export function TopBar() {
   const savedAt = useStore((s) => s.savedAt);
   const layersOpen = useStore((s) => s.layersOpen);
   const rightOpen = useStore((s) => s.rightOpen);
+  const tablet = useTablet((s) => s.tablet);
   const [editName, setEditName] = useState(false);
 
   return (
-    <header className="relative z-30 flex h-11 shrink-0 items-center gap-1 border-b border-line bg-app pl-2 pr-2">
+    <header className="ds-topbar relative z-30 flex h-11 shrink-0 items-center gap-1 border-b border-line bg-app pl-2 pr-2">
       <MainMenu />
       <ModeSwitch />
-      <span className="mx-1.5 hidden h-4 w-px bg-line sm:block" />
+      <span className={`mx-1.5 h-4 w-px bg-line ${tablet ? 'block' : 'hidden sm:block'}`} />
 
       <div className="relative z-10 flex min-w-0 items-center gap-2">
         {editName ? (
@@ -110,7 +112,7 @@ export function TopBar() {
             <PencilLine size={12} className="shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-100" />
           </button>
         )}
-        <SavedBadge savedAt={savedAt} />
+        <SavedBadge savedAt={savedAt} tablet={tablet} />
       </div>
 
       <TopMenus />
@@ -121,7 +123,7 @@ export function TopBar() {
             <Search size={15} strokeWidth={1.75} />
           </button>
         </Tip>
-        <div className="hidden items-center sm:flex">
+        <div className={`items-center ${tablet ? 'flex' : 'hidden sm:flex'}`}>
           <HistoryMenu />
         </div>
         <Tip label="Urungkan" shortcut={`${MOD}Z`} side="bottom">
@@ -150,7 +152,7 @@ export function TopBar() {
             <SlidersHorizontal size={15} strokeWidth={1.75} />
           </button>
         </Tip>
-        <div className="hidden sm:block">
+        <div className={tablet ? 'block' : 'hidden sm:block'}>
           <ShareMenu />
         </div>
         <button className="btn-primary ml-1.5 h-7 px-3" onClick={() => getS().set({ exportOpen: true })}>
@@ -161,7 +163,7 @@ export function TopBar() {
   );
 }
 
-function SavedBadge({ savedAt }: { savedAt: number | null }) {
+function SavedBadge({ savedAt, tablet }: { savedAt: number | null; tablet?: boolean }) {
   const [, tick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => tick((x) => x + 1), 30000);
@@ -171,7 +173,7 @@ function SavedBadge({ savedAt }: { savedAt: number | null }) {
   const sec = Math.round((Date.now() - savedAt) / 1000);
   const label = sec < 45 ? 'Tersimpan' : sec < 3600 ? `Tersimpan · ${Math.round(sec / 60)} mnt` : 'Tersimpan';
   return (
-    <span className="hidden shrink-0 items-center gap-1.5 text-xs text-faint md:flex" title="Tersimpan otomatis di browser ini">
+    <span className={`shrink-0 items-center gap-1.5 text-xs text-faint ${tablet ? 'flex' : 'hidden md:flex'}`} title="Tersimpan otomatis di browser ini">
       <span className="h-1.5 w-1.5 rounded-full bg-ok" />
       {label}
     </span>
@@ -195,14 +197,16 @@ function MainMenu() {
   );
   const head = (t: string) => <div className="px-2 pb-1 pt-2 text-2xs font-semibold uppercase tracking-[0.08em] text-faint">{t}</div>;
   const sel = useStore((s) => s.selection.length);
+  const tablet = useTablet((s) => s.tablet);
+  const palm = useTablet((s) => s.palm);
   return (
     <div ref={ref} className="relative z-10">
       <button className="flex h-8 items-center gap-2 rounded-ctl pl-1 pr-1.5 hover:bg-hover" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="sm:hidden">
+        <span className={tablet ? 'hidden' : 'sm:hidden'}>
           <Logo size={24} />
         </span>
-        <span className="hidden pl-1 sm:inline">
-          <Wordmark height={17} />
+        <span className={`pl-1 ${tablet ? 'inline' : 'hidden sm:inline'}`}>
+          <Wordmark height={tablet ? 15 : 17} />
         </span>
         <ChevronDown size={12} strokeWidth={2} className={`text-faint transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -232,6 +236,9 @@ function MainMenu() {
           {item('Grid titik', () => getS().setToolOpts((o) => ({ ...o, dotGrid: !o.dotGrid })))}
           {item('Hapus semua guide', C.clearGuides)}
           {item('Ganti tema', C.toggleTheme)}
+          {head('Tablet')}
+          {item(`Mode tablet: ${tablet ? 'aktif' : 'mati'}`, () => setTabletPref(!tablet))}
+          {tablet && item(`Tolak telapak tangan: ${palm ? 'aktif' : 'mati'}`, () => setPalm(!palm))}
         </div>
       )}
     </div>

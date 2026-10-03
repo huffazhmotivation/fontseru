@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Undo2, Redo2, Copy, Clipboard, CopyPlus, Trash2, GripHorizontal } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
+import { copyAndPublish, pasteFromButton, hasBridgeClip } from "@/lib/seruBridge";
 
 type DragPos = { left: number; top: number };
 
@@ -147,7 +148,7 @@ export function SketchToolbar() {
         type="button"
         className="fm-tool"
         disabled={selectedObjectIds.length === 0}
-        onClick={copySelection}
+        onClick={copyAndPublish}
         title="Copy"
         data-testid="sketch-copy-btn"
       >
@@ -157,8 +158,8 @@ export function SketchToolbar() {
       <button
         type="button"
         className="fm-tool"
-        disabled={!clipboard || clipboard.length === 0}
-        onClick={pasteClipboard}
+        disabled={(!clipboard || clipboard.length === 0) && !hasBridgeClip()}
+        onClick={() => void pasteFromButton()}
         title="Paste"
         data-testid="sketch-paste-btn"
       >

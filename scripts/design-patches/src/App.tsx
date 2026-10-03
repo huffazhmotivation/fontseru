@@ -18,6 +18,7 @@ import { PdfImportDialog } from './ui/PdfImportDialog';
 import { useMockup } from './lib/mockup/store';
 import { loadLibrary, startAutoVersions } from './lib/library';
 import { installAutoOutline } from './lib/textcurves';
+import { tabletState } from './store/tablet';
 
 // dialog berat dimuat saat pertama kali dibuka (chunk terpisah)
 const ShortcutsDialog = lazy(() => import('./ui/ShortcutsDialog').then((m) => ({ default: m.ShortcutsDialog })));
@@ -68,7 +69,11 @@ export default function App() {
     } catch {
       /* abaikan */
     }
-    if (window.innerWidth < 768) getS().set({ leftOpen: false, rightOpen: false, layersOpen: false });
+    if (tabletState().tablet && !hasLayout) {
+      // tablet: lanskap = semua panel terbuka (sudah diperkecil); potret = panel menjadi lembar yang dibuka seperlunya
+      const wide = window.innerWidth >= 1000;
+      getS().set({ leftOpen: wide, rightOpen: wide, layersOpen: wide });
+    } else if (window.innerWidth < 768) getS().set({ leftOpen: false, rightOpen: false, layersOpen: false });
     else if (window.innerWidth < 1400 && !hasLayout) getS().set({ layersOpen: false });
     const unsubLayout = useStore.subscribe((s, p) => {
       if (s.leftOpen === p.leftOpen && s.rightOpen === p.rightOpen && s.layersOpen === p.layersOpen && s.assetCat === p.assetCat) return;
@@ -95,7 +100,7 @@ export default function App() {
         if (saved.camera) getS().set({ camera: saved.camera });
         else getS().set({ fitPending: true });
       } else {
-        getS().loadDoc(emptyDoc(), 'Tanpa Judul'); // kanvas kosong sebagai default
+        getS().loadDoc(emptyDoc(), 'Tanpa judul');
         getS().set({ fitPending: true });
       }
       if (getS().fitPending && getS().viewport.w > 1) {
@@ -140,15 +145,17 @@ export default function App() {
             )}
           </div>
         </main>
-        {!focus && <LayersColumn />}
-        {showRight && (
+        <div className="ds-right contents">
+          {!focus && <LayersColumn />}
+          {showRight && (
           <aside
-            className="w-[264px] shrink-0 overflow-y-auto border-l border-line bg-panel max-md:absolute max-md:bottom-0 max-md:right-0 max-md:top-0 max-md:z-30 max-md:shadow-pop"
+            className="ds-props w-[264px] shrink-0 overflow-y-auto border-l border-line bg-panel max-md:absolute max-md:bottom-0 max-md:right-0 max-md:top-0 max-md:z-30 max-md:shadow-pop"
             aria-label="Properti"
           >
             <PropertiesPanel />
           </aside>
-        )}
+          )}
+        </div>
       </div>
       {!focus && <BottomBar />}
       <CommandPalette />

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppModeStore, type AppMode } from "@/mode/appModeStore";
+import { initSeruBridge, registerDesignFrame } from "@/lib/seruBridge";
 
 /**
  * Design mode: the DesignSeru editor, hosted as a separate static app in
@@ -19,6 +20,21 @@ import { useAppModeStore, type AppMode } from "@/mode/appModeStore";
 export function DesignStudio({ active, theme }: { active: boolean; theme: string }) {
   const [started, setStarted] = useState(active);
   const [loaded, setLoaded] = useState(false);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+
+  // Jembatan salin-tempel SVG Font ⇄ Design (lihat lib/seruBridge.ts).
+  useEffect(() => initSeruBridge(), []);
+
+  // Mode tablet DesignSeru (iPad / tablet Android) terdeteksi otomatis di dalam iframe; ?tablet=1 / ?tablet=0
+  // pada alamat FontSeru diteruskan supaya bisa dipaksa dari luar.
+  const tabletParam = (() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get("tablet");
+      return q === "1" || q === "0" ? `&tablet=${q}` : "";
+    } catch {
+      return "";
+    }
+  })();
 
   useEffect(() => {
     if (started) return;
@@ -27,6 +43,25 @@ export function DesignStudio({ active, theme }: { active: boolean; theme: string
   }, [started]);
 
   useEffect(() => { if (active) setStarted(true); }, [active]);
+
+  // Fokus keyboard mengikuti tab aktif. Tanpa ini, setelah menekan tab "Font" di bar atas Design, fokus tetap tertinggal
+  // di iframe yang sudah disembunyikan sehingga Ctrl+V / pintasan lain tidak sampai ke FontSeru (dan sebaliknya).
+  useEffect(() => {
+    const win = frameRef.current?.contentWindow;
+    if (!started) return;
+    try {
+      if (active) {
+        frameRef.current?.focus();
+        win?.focus();
+      } else {
+        frameRef.current?.blur();
+        (document.activeElement as HTMLElement | null)?.blur?.();
+        window.focus();
+      }
+    } catch {
+      /* fokus lintas-frame ditolak: abaikan */
+    }
+  }, [active, started]);
 
   // The embedded app's mode tabs report clicks here.
   useEffect(() => {
@@ -52,10 +87,14 @@ export function DesignStudio({ active, theme }: { active: boolean; theme: string
       <div className="fm-design-stage">
         <iframe
           className="fm-design-frame"
+          ref={frameRef}
           title="DesignSeru"
-          src={`${import.meta.env.BASE_URL}design/index.html?v=${__APP_BUILD_ID__}`}
+          src={`${import.meta.env.BASE_URL}design/index.html?v=${__APP_BUILD_ID__}${tabletParam}`}
           allow="clipboard-read; clipboard-write; fullscreen; camera; microphone"
-          onLoad={() => setLoaded(true)}
+          onLoad={() => {
+            setLoaded(true);
+            registerDesignFrame(frameRef.current?.contentWindow ?? null);
+          }}
           data-testid="design-frame"
         />
         {!loaded && <div className="fm-design-loading">Memuat DesignSeru…</div>}
