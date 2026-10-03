@@ -23,6 +23,7 @@ import { ProUpsellModal } from "@/components/ProUpsellModal";
 import { ProductTour } from "@/components/ProductTour/ProductTour";
 import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
 import { useAppModeStore } from "@/mode/appModeStore";
+import { DesignStudio } from "@/mode/DesignStudio";
 
 // Chromium currently has a much more expensive compositing path for
 // backdrop-filter over a large, live SVG surface than Safari/Firefox. Keep
@@ -202,6 +203,9 @@ export default function App() {
   // The font project state above keeps living/persisting in the background
   // (all hooks already ran), so switching back to Font mode restores it
   // untouched. The ModeTabs switcher is rendered inside the Motion top bar.
+  if (appMode === "design") {
+    return <DesignStudio theme={theme} />;
+  }
   if (appMode === "motion") {
     return (
       <Suspense fallback={<div className="fm-motion-loading">Memuat Mode Motion…</div>}>

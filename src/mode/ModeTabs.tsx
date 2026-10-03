@@ -1,8 +1,9 @@
-import { Type, Clapperboard } from "lucide-react";
+import { Type, Clapperboard, PenTool } from "lucide-react";
 import { useAppModeStore, type AppMode } from "@/mode/appModeStore";
 
 const TABS: { mode: AppMode; label: string; icon: typeof Type }[] = [
   { mode: "font", label: "Font", icon: Type },
+  { mode: "design", label: "Design", icon: PenTool },
   { mode: "motion", label: "Motion", icon: Clapperboard },
 ];
 
@@ -34,7 +35,7 @@ export function ModeTabs() {
             aria-selected={active}
             className={`fm-mode-tab ${active ? "active" : ""}`}
             onClick={() => setAppMode(mode)}
-            title={mode === "font" ? "Mode Font — desain & ekspor huruf" : "Mode Motion — animasi teks jadi video"}
+            title={mode === "font" ? "Mode Font — desain & ekspor huruf" : mode === "design" ? "Mode Design — editor desain vektor, gambar & mockup" : "Mode Motion — animasi teks jadi video"}
             data-testid={`mode-tab-${mode}`}
           >
             <Icon size={15} strokeWidth={2} />

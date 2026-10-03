@@ -6487,3 +6487,12 @@ html[data-theme="light"] .fm-update-backdrop {
 .fm-drawbar-clear:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
 .fm-drawbar-clear:disabled { opacity: 0.4; cursor: not-allowed; }
 .fm-drawbar-thumb { width: 44px; height: 44px; }
+
+/* ================================================== DESIGN MODE (embedded DesignSeru) */
+.fm-design-shell { background: var(--bg); }
+.fm-design-bar {
+  flex: none; height: 44px; display: flex; align-items: center; gap: 12px;
+  padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.fm-design-hint { font-size: 11.5px; color: var(--text-dim); }
+.fm-design-frame { flex: 1 1 auto; width: 100%; min-height: 0; border: 0; display: block; background: var(--bg); }

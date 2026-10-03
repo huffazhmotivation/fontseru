@@ -53,6 +53,11 @@ export default defineConfig(({ command }) => ({
         importScripts: ["sw-migrate.js"],
         clientsClaim: true,
         globPatterns: ["**/*.{js,css,html,svg,png,woff,woff2,ico}"],
+        // Mode Design = aplikasi terpisah (public/design) yang dimuat di iframe.
+        // Besar (~130MB) dan punya index.html sendiri, jadi jangan di-precache
+        // dan jangan dialihkan ke index.html FontSeru oleh service worker.
+        globIgnores: ["design/**"],
+        navigateFallbackDenylist: [/^\/design\//],
       },
       devOptions: {
         // Keep local `npm run dev` behaving exactly like before — the
