@@ -40,6 +40,10 @@ import {
   type MultiEditLayout,
 } from "./multiEditLayout";
 import { useSketchGestures } from "./useSketchGestures";
+import { useLongPress } from "./useLongPress";
+import { selectionUnitIds } from "./objectOps";
+import { CanvasContextMenu, type CanvasMenuPos } from "@/components/CanvasContextMenu";
+import { NodeTypePopup, type NodePopupState } from "@/components/NodeTypePopup";
 
 /**
  * MULTI GLYPH EDIT CANVAS
@@ -621,6 +625,15 @@ export function GlyphMultiEditCanvas() {
   // closure would still be bound to the PREVIOUS glyph.
   const toolsRef = useRef({ editor, brushTool, brushNodeTool, pencilTool, selectTool });
   toolsRef.current = { editor, brushTool, brushNodeTool, pencilTool, selectTool };
+
+  // Right-click (PC) / long-press (tablet) context menu and the node-type
+  // popup shown after clicking a node. `lastUpRef` remembers where the last
+  // pointer was released so the popup can open right next to the node.
+  const [ctxMenu, setCtxMenu] = useState<CanvasMenuPos | null>(null);
+  const [nodePopup, setNodePopup] = useState<NodePopupState | null>(null);
+  const lastUpRef = useRef<{ x: number; y: number } | null>(null);
+  const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
+  const closeNodePopup = useCallback(() => { setNodePopup(null); toolsRef.current.editor.clearNodeClick(); }, []);
   // Brush tool, Node draw mode: same toolbar button as freehand Brush, just
   // captured Pen-tool style. Same flag GlyphCanvas uses — without honouring
   // it here the Multi canvas silently fell back to freehand drawing.
@@ -730,6 +743,32 @@ export function GlyphMultiEditCanvas() {
     [layout, ascender]
   );
 
+  /** Focus the glyph cell under the pointer, select the object under it
+   *  (unless already selected) and open the context menu there. */
+  const openContextMenuAt = useCallback(
+    (clientX: number, clientY: number) => {
+      const world = toWorld(clientX, clientY);
+      if (!world) return;
+      const index = focusCellAt(world);
+      if (index === null) return;
+      const p = glyphPointFor(index, world);
+      const store = useAppStore.getState();
+      const outline = toolsRef.current.editor.outline;
+      const tol = 6 * hitScale;
+      let hitId: string | null = null;
+      for (let i = outline.objects.length - 1; i >= 0; i--) {
+        if (pointHitsObject(outline.objects[i], p, tol)) { hitId = outline.objects[i].id; break; }
+      }
+      if (hitId && !store.selectedObjectIds.includes(hitId)) {
+        store.selectObjects(selectionUnitIds(outline, hitId));
+      }
+      setNodePopup(null);
+      setCtxMenu({ x: clientX, y: clientY });
+    },
+    [toWorld, focusCellAt, glyphPointFor, hitScale]
+  );
+  const { begin: lpBegin, move: lpMove, cancel: lpCancel } = useLongPress(openContextMenuAt);
+
   // Multi-touch extras layered on top of the existing pointer pipeline:
   // pinch-to-zoom, 2/3-finger tap for undo/redo, and simple palm rejection —
   // the same behaviour GlyphCanvas already gives Single Mode. Multi and
@@ -770,7 +809,7 @@ export function GlyphMultiEditCanvas() {
     (e: ReactPointerEvent<SVGSVGElement>) => {
       e.preventDefault();
       flushPointerMoveRef.current();
-      if (sketchGestures.handlePointerDown(e)) return;
+      if (sketchGestures.handlePointerDown(e)) { lpCancel(); return; }
       (e.target as Element).setPointerCapture?.(e.pointerId);
 
       // Middle-mouse (scroll-wheel click) drag, Hand tool and Space-drag
@@ -807,6 +846,9 @@ export function GlyphMultiEditCanvas() {
         return;
       }
       gestureCellRef.current = index;
+      // Touch / pen long-press -> context menu, only for Select/Node (the
+      // drawing tools would otherwise lose a stroke while the finger rests).
+      if (tool === "select" || tool === "node") lpBegin(e);
 
       const p = glyphPointFor(index, world);
       const t = toolsRef.current;
@@ -829,6 +871,8 @@ export function GlyphMultiEditCanvas() {
       focusCellAt,
       glyphPointFor,
       sketchGestures,
+      lpBegin,
+      lpCancel,
     ]
   );
 
@@ -903,6 +947,7 @@ export function GlyphMultiEditCanvas() {
   };
 
   const onPointerMove = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
+    lpMove(e);
     if (brushDirectMoveRef.current(e.nativeEvent)) return;
     pendingMoveRef.current = {
       clientX: e.clientX,
@@ -921,7 +966,7 @@ export function GlyphMultiEditCanvas() {
       pendingMoveRef.current = null;
       if (pending) processMoveRef.current(pending);
     });
-  }, []);
+  }, [lpMove]);
 
   useEffect(
     () => () => {
@@ -936,7 +981,11 @@ export function GlyphMultiEditCanvas() {
     // Commit the newest sample before releasing, so the last few pixels of
     // a stroke are never dropped by the frame queue.
     flushPointerMove();
-    if (e) sketchGestures.handlePointerUp(e);
+    lpCancel();
+    if (e) {
+      lastUpRef.current = { x: e.clientX, y: e.clientY };
+      sketchGestures.handlePointerUp(e);
+    }
     panDragRef.current = null;
     gestureCellRef.current = null;
     const t = toolsRef.current;
@@ -944,7 +993,24 @@ export function GlyphMultiEditCanvas() {
     if (tool === "pencil") return t.pencilTool.pointerUp();
     if (tool === "select") return t.selectTool.pointerUp();
     t.editor.pointerUp();
-  }, [tool, isNodeBrush, sketchGestures]);
+  }, [tool, isNodeBrush, sketchGestures, lpCancel]);
+
+  // Right mouse button / native long-press menu -> our context menu.
+  const onContextMenu = useCallback((e: ReactMouseEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    lpCancel();
+    openContextMenuAt(e.clientX, e.clientY);
+  }, [lpCancel, openContextMenuAt]);
+
+  // A plain click on a node (Node tool) -> Corner / Smooth / Symmetric popup.
+  useEffect(() => {
+    const click = editor.nodeClick;
+    if (!click) return;
+    const at = lastUpRef.current;
+    if (tool === "node" && at) setNodePopup({ x: at.x, y: at.y, ref: click.ref });
+    editor.clearNodeClick();
+  }, [editor.nodeClick, editor, tool]);
+  useEffect(() => { if (tool !== "node") setNodePopup(null); }, [tool]);
 
   useEffect(() => {
     const onUp = (e: PointerEvent) => endGesture(e);
@@ -1137,6 +1203,7 @@ export function GlyphMultiEditCanvas() {
         onPointerMove={onPointerMove}
         onPointerUp={endGesture}
         onDoubleClick={onDoubleClick}
+        onContextMenu={onContextMenu}
         style={{
           touchAction: "none",
           ...(showRuler
@@ -1513,6 +1580,8 @@ export function GlyphMultiEditCanvas() {
       {chars.length === 0 && (
         <div className="fm-ov-empty">Tidak ada glyph yang cocok dengan filter ini.</div>
       )}
+      {ctxMenu && <CanvasContextMenu pos={ctxMenu} onClose={closeCtxMenu} />}
+      {nodePopup && <NodeTypePopup popup={nodePopup} onClose={closeNodePopup} />}
     </div>
   );
 }

@@ -223,3 +223,10 @@ export function pointHitsObject(obj: VectorObject, p: Point, tolerance: number):
 export function boundsIntersectRect(b: Bounds, rx: number, ry: number, rw: number, rh: number): boolean {
   return b.minX <= rx + rw && b.maxX >= rx && b.minY <= ry + rh && b.maxY >= ry;
 }
+
+/** Ids that select together with `objectId`: its whole group, or just itself. */
+export function selectionUnitIds(outline: GlyphOutline, objectId: string): string[] {
+  const hit = outline.objects.find((o) => o.id === objectId);
+  if (!hit?.groupId) return [objectId];
+  return outline.objects.filter((o) => o.groupId === hit.groupId).map((o) => o.id);
+}

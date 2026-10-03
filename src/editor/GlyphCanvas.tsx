@@ -9,7 +9,7 @@ import { useSelectTool, handlePositions, type HandleId, type SkewHandleId } from
 import { useSketchGestures } from "./useSketchGestures";
 import { clientToFontPoint } from "./coords";
 import { objectFillPath, objectStrokePath, toSvgPoint, contourToPath } from "./pathBuilder";
-import { outlineBounds, pointHitsObject } from "./objectOps";
+import { outlineBounds, pointHitsObject, selectionUnitIds } from "./objectOps";
 import { getCornerHandles } from "./nodeOps";
 import { hitTestSegments } from "./segmentHitTest";
 import { findOverlappingObjectIds } from "./overlapDetect";
@@ -20,6 +20,9 @@ import { familyGhostOrder, ghostCenterX as ghostCenterXFor, matchingFamilyGlyph 
 import { CanvasRuler, RulerGuideLines, RULER_SIZE } from "./CanvasRuler";
 import { editorCanvasCss } from "./editorCanvasCss";
 import { GridLayer } from "./GridLayer";
+import { useLongPress } from "./useLongPress";
+import { CanvasContextMenu, type CanvasMenuPos } from "@/components/CanvasContextMenu";
+import { NodeTypePopup, type NodePopupState } from "@/components/NodeTypePopup";
 import { RecordingBadge } from "@/timelapse/RecordingBadge";
 import { isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { GlyphOutline, NodeType, Point, VectorObject } from "@/types/geometry";
@@ -145,6 +148,15 @@ export function GlyphCanvas() {
   const hitScale = 1 / sc;
 
   const editor = useGlyphEditor(hitScale);
+
+  // Right-click (PC) / long-press (tablet) context menu and the node-type
+  // popup shown after clicking a node. `lastUpRef` remembers where the last
+  // pointer was released so the node popup can open right next to the node.
+  const [ctxMenu, setCtxMenu] = useState<CanvasMenuPos | null>(null);
+  const [nodePopup, setNodePopup] = useState<NodePopupState | null>(null);
+  const lastUpRef = useRef<{ x: number; y: number } | null>(null);
+  const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
+  const closeNodePopup = useCallback(() => { setNodePopup(null); editor.clearNodeClick(); }, [editor]);
   const brushTool = useBrushTool(hitScale);
   const brushNodeTool = useBrushNodeTool(hitScale);
   const pencilTool = usePencilTool(hitScale);
@@ -181,6 +193,30 @@ export function GlyphCanvas() {
       svgRef.current ? clientToFontPoint(svgRef.current, e.clientX, e.clientY, ascender) : null,
     [ascender]
   );
+
+  /** Select whatever object sits under the pointer (unless it is already part
+   *  of the selection), then open the context menu there. */
+  const openContextMenuAt = useCallback(
+    (clientX: number, clientY: number) => {
+      const p = getFontPoint({ clientX, clientY });
+      const store = useAppStore.getState();
+      if (p) {
+        const tol = 6 * hitScale;
+        const objs = editor.outline.objects;
+        let hitId: string | null = null;
+        for (let i = objs.length - 1; i >= 0; i--) {
+          if (pointHitsObject(objs[i], p, tol)) { hitId = objs[i].id; break; }
+        }
+        if (hitId && !store.selectedObjectIds.includes(hitId)) {
+          store.selectObjects(selectionUnitIds(editor.outline, hitId));
+        }
+      }
+      setNodePopup(null);
+      setCtxMenu({ x: clientX, y: clientY });
+    },
+    [getFontPoint, hitScale, editor.outline]
+  );
+  const longPress = useLongPress(openContextMenuAt);
 
   const applyZoomAt = useCallback(
     (newZoom: number, clientX: number, clientY: number) => {
@@ -421,9 +457,15 @@ export function GlyphCanvas() {
       // CSS, stops that selection from ever starting.
       e.preventDefault();
       flushPointerMove();
-      if (sketchGestures.handlePointerDown(e)) return;
+      // Right mouse button only opens the context menu (see onContextMenu);
+      // it must never draw / place nodes / start a drag.
+      if (e.pointerType === "mouse" && e.button === 2) return;
+      if (sketchGestures.handlePointerDown(e)) { longPress.cancel(); return; }
       const p = getFontPoint(e);
       if (!p) return;
+      // Touch / pen long-press -> context menu, only for Select/Node (the
+      // drawing tools would otherwise lose a stroke while the finger rests).
+      if (tool === "select" || tool === "node") longPress.begin(e);
       (e.target as Element).setPointerCapture?.(e.pointerId);
       if (usingHandPan(e)) {
         panDragRef.current = { startClient: { x: e.clientX, y: e.clientY }, startPan: pan };
@@ -435,12 +477,17 @@ export function GlyphCanvas() {
       if (tool === "select") return selectTool.pointerDown(p, e.shiftKey, e.metaKey || e.ctrlKey || (drawMode && e.altKey));
       editor.pointerDown(p, e.shiftKey, e.altKey, e.metaKey || e.ctrlKey);
     },
-    [getFontPoint, tool, editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, pan, zoom, applyZoomAt, usingHandPan, sketchGestures, flushPointerMove]
+    [getFontPoint, tool, editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, pan, zoom, applyZoomAt, usingHandPan, sketchGestures, flushPointerMove, longPress]
   );
 
-  const onPointerMove = queuePointerMove;
+  const onPointerMove = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
+    longPress.move(e);
+    queuePointerMove(e);
+  }, [longPress, queuePointerMove]);
 
   const onPointerUp = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
+    lastUpRef.current = { x: e.clientX, y: e.clientY };
+    longPress.cancel();
     flushPointerMove();
     sketchGestures.handlePointerUp(e);
     panDragRef.current = null;
@@ -448,7 +495,18 @@ export function GlyphCanvas() {
     if (tool === "pencil") return pencilTool.pointerUp();
     if (tool === "select") return selectTool.pointerUp();
     editor.pointerUp();
-  }, [editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, tool, sketchGestures, flushPointerMove]);
+  }, [editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, tool, sketchGestures, flushPointerMove, longPress]);
+
+  const onContextMenu = useCallback((e: ReactMouseEvent<SVGSVGElement>) => {
+    // Replaces the browser menu on right-click; also swallows the native
+    // long-press menu some touch browsers fire so ours is the only one.
+    e.preventDefault();
+    longPress.cancel();
+    if (tool === "brush" || tool === "pencil" || tool === "pen" || tool === "hand" || tool === "zoom") {
+      if (e.nativeEvent instanceof PointerEvent && e.nativeEvent.pointerType !== "mouse") return;
+    }
+    openContextMenuAt(e.clientX, e.clientY);
+  }, [tool, longPress, openContextMenuAt]);
 
   const onDoubleClick = useCallback(
     (e: ReactMouseEvent<SVGSVGElement>) => {
@@ -542,6 +600,8 @@ export function GlyphCanvas() {
 
   useEffect(() => {
     function onWindowPointerUp(e: PointerEvent) {
+      lastUpRef.current = { x: e.clientX, y: e.clientY };
+      longPress.cancel();
       flushPointerMove();
       sketchGestures.handlePointerUp(e);
       panDragRef.current = null;
@@ -554,6 +614,7 @@ export function GlyphCanvas() {
     // (e.g. the OS interrupts a touch gesture); it must NOT run the same
     // commit path as pointerup, so normal-mode tool behavior is unchanged.
     function onWindowPointerCancel(e: PointerEvent) {
+      longPress.cancel();
       sketchGestures.handlePointerUp(e);
     }
     window.addEventListener("pointerup", onWindowPointerUp);
@@ -562,7 +623,17 @@ export function GlyphCanvas() {
       window.removeEventListener("pointerup", onWindowPointerUp);
       window.removeEventListener("pointercancel", onWindowPointerCancel);
     };
-  }, [editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, tool, sketchGestures, flushPointerMove]);
+  }, [editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, tool, sketchGestures, flushPointerMove, longPress]);
+
+  // A plain click on a node (Node tool) -> Corner / Smooth / Symmetric popup.
+  useEffect(() => {
+    const click = editor.nodeClick;
+    if (!click) return;
+    const at = lastUpRef.current;
+    if (tool === "node" && at) setNodePopup({ x: at.x, y: at.y, ref: click.ref });
+    editor.clearNodeClick();
+  }, [editor.nodeClick, editor, tool]);
+  useEffect(() => { if (tool !== "node") setNodePopup(null); }, [tool]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -821,6 +892,7 @@ export function GlyphCanvas() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onDoubleClick={onDoubleClick}
+        onContextMenu={onContextMenu}
         style={{
           touchAction: "none",
           ...(showRuler ? { position: "absolute", top: RULER_SIZE, left: RULER_SIZE, width: `calc(100% - ${RULER_SIZE}px)`, height: `calc(100% - ${RULER_SIZE}px)` } : {}),
@@ -1290,6 +1362,8 @@ export function GlyphCanvas() {
         )}
       </svg>
       <RecordingBadge />
+      {ctxMenu && <CanvasContextMenu pos={ctxMenu} onClose={closeCtxMenu} />}
+      {nodePopup && <NodeTypePopup popup={nodePopup} onClose={closeNodePopup} />}
     </div>
   );
 }

@@ -3,8 +3,10 @@ import App from './App';
 import './index.css';
 import { initTablet } from './store/tablet';
 import { initSeruBridge } from './lib/seruBridge';
+import { installPenUndo } from './engine/penUndo';
 
 initTablet(); // deteksi iPad/tablet sebelum render pertama
+installPenUndo(); // Urungkan saat Pen menggambar = cabut 1 titik terakhir, bukan seluruh path
 initSeruBridge(); // salin-tempel SVG antar tab Font ⇄ Design (aktif juga saat berdiri sendiri)
 
 createRoot(document.getElementById('root')!).render(<App />);

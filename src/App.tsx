@@ -72,16 +72,16 @@ export default function App() {
   const traceOpen = useAppStore((s) => s.traceOpen);
   const featureBuilderOpen = useAppStore((s) => s.featureBuilderOpen);
   const timelapseOpen = useTimelapseUiStore((s) => s.open);
-  // Multi Glyph Canvas. Sketch Mode keeps its own dedicated single-glyph
-  // drawing surface (pen/tablet gestures, GlyphStepper, sketch toolbar),
-  // so the overview is only offered outside it — `overviewMode` is the
-  // single flag the whole layout below keys off. Type Mode renders on
+  // Multi Glyph Canvas. Sketch Mode (pen/tablet gestures, sketch toolbar)
+  // now works on every canvas surface — Single, Multi and Drawing — so
+  // `overviewMode` / `drawMode` no longer depend on it; they are the flags
+  // the whole layout below keys off. Type Mode renders on
   // this same multi-glyph surface (GlyphMultiEditCanvas), just laid out
   // as running text via a "flow" layout instead of a grid — see
   // editor/multiEditLayout.ts's computeSentenceLayout.
   const editorMode = useAppStore((s) => s.editorMode);
-  const overviewMode = editorMode === "multi" && !sketchMode;
-  const drawMode = editorMode === "draw" && !sketchMode;
+  const overviewMode = editorMode === "multi";
+  const drawMode = editorMode === "draw";
   const appMode = useAppModeStore((s) => s.appMode);
   useKeyboardShortcuts();
 
@@ -244,10 +244,14 @@ export default function App() {
                 the same tool palette the single canvas has — Pen/Pencil/
                 Brush/Node/Select all act on whichever cell you point at. */}
             <FloatingToolbar />
-            {!sketchMode && <GlyphViewBar />}
-            {!overviewMode && !drawMode && <SketchModeToggle />}
+            {/* The Single / Multi / Drawing switch stays available while
+                sketching so every surface can be sketched on. */}
+            <GlyphViewBar />
+            <SketchModeToggle />
             {sketchMode && <SketchToolbar />}
-            {sketchMode && <GlyphStepper />}
+            {/* Multi shows every glyph at once, so only Single and Drawing
+                (where it picks the target glyph) need the stepper. */}
+            {sketchMode && !overviewMode && <GlyphStepper />}
             {sketchMode && <SketchRightPanelToggle />}
             {!sketchMode && !overviewMode && !drawMode && <GlyphSideNav />}
             {!sketchMode && <MobileDrawerToggles />}

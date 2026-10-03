@@ -6640,3 +6640,100 @@ html[data-theme="light"] .fm-update-backdrop {
 @media (min-width: 600px) and (max-width: 1180px) and (pointer: coarse) and (max-aspect-ratio: 5/3) {
   .fm-topbar { position: relative; z-index: 45; }
 }
+
+/* ================================================================
+   Canvas context menu (right-click / long-press) + node type popup.
+   Additive only. Rendered via portal into .fm-root so theme vars apply.
+   ================================================================ */
+.fm-ctx-menu {
+  position: fixed;
+  z-index: 300;
+  min-width: 184px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 12px;
+  box-shadow: 0 16px 38px -12px rgba(0, 0, 0, 0.75);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.fm-ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.fm-ctx-item:hover:not(:disabled),
+.fm-ctx-item:focus-visible:not(:disabled) { background: var(--panel-2); outline: none; }
+.fm-ctx-item:disabled { opacity: 0.38; cursor: default; }
+.fm-ctx-item.danger { color: #ff6b6b; }
+.fm-ctx-icon { display: inline-flex; width: 18px; justify-content: center; color: var(--text-dim); }
+.fm-ctx-item.danger .fm-ctx-icon { color: inherit; }
+.fm-ctx-sep { height: 1px; margin: 3px 4px; background: var(--line); }
+@media (pointer: coarse) {
+  .fm-ctx-item { padding: 12px 12px; font-size: 13.5px; }
+}
+
+.fm-nodepop {
+  position: fixed;
+  z-index: 300;
+  padding: 7px;
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 12px;
+  box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.75);
+  font-family: var(--sans);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.fm-nodepop-title {
+  padding: 0 4px 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.fm-nodepop-row { display: flex; gap: 5px; }
+.fm-nodepop-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 68px;
+  padding: 8px 8px 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.fm-nodepop-btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.fm-nodepop-btn.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+@media (pointer: coarse) {
+  .fm-nodepop-btn { min-width: 76px; padding: 11px 8px 9px; }
+}
+
+/* Sketch Mode on the Multi / Drawing surfaces: the glyph-view bar owns the top
+   centre and top-right, so the sketch pill collapses to its icon (same circle
+   the phone layout already uses) to keep clear of it. */
+.fm-canvas-area[data-editor-mode="multi"] .fm-sketch-toggle,
+.fm-canvas-area[data-editor-mode="draw"] .fm-sketch-toggle { padding: 8px; border-radius: 50%; }
+.fm-canvas-area[data-editor-mode="multi"] .fm-sketch-toggle-label,
+.fm-canvas-area[data-editor-mode="draw"] .fm-sketch-toggle-label { display: none; }

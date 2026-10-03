@@ -27,7 +27,7 @@ export interface Rect { x: number; y: number; w: number; h: number; }
 
 type DragState =
   | { mode: "pen-place"; contourId: string; nodeId: string }
-  | { mode: "move-selection"; refs: NodeRef[]; origin: Point }
+  | { mode: "move-selection"; refs: NodeRef[]; origin: Point; clickRef?: NodeRef }
   | {
       mode: "move-handle";
       contourId: string;
@@ -120,6 +120,12 @@ export function useGlyphEditor(hitScale: number) {
 
   const dragRef = useRef<DragState>(null);
   const baseOutlineRef = useRef<GlyphOutline | null>(null);
+  // Node click -> Corner/Smooth/Symmetric popup. `nodeClick` is set when a
+  // node was pressed and released without a real drag (see pointerUp); the
+  // canvas turns it into a popup anchored at the pointer-up position.
+  const [nodeClick, setNodeClick] = useState<{ ref: NodeRef; nonce: number } | null>(null);
+  const nodeMovedRef = useRef(false);
+  const clearNodeClick = useCallback(() => setNodeClick(null), []);
   const [marqueeRect, setMarqueeRect] = useState<Rect | null>(null);
   const marqueeRectRef = useRef<Rect | null>(null);
   // Live readout for a Cmd/Ctrl-drag corner-round: shows the fillet radius
@@ -417,7 +423,8 @@ export function useGlyphEditor(hitScale: number) {
           selectNodes(nextSelection);
         }
         baseOutlineRef.current = cloneOutline(outline);
-        dragRef.current = { mode: "move-selection", refs: nextSelection, origin: p };
+        nodeMovedRef.current = false;
+        dragRef.current = { mode: "move-selection", refs: nextSelection, origin: p, clickRef: shiftKey ? undefined : ref };
         return;
       }
 
@@ -488,6 +495,8 @@ export function useGlyphEditor(hitScale: number) {
 
       if (drag.mode === "move-selection") {
         const rawDelta = subtract(p, drag.origin);
+        // More than ~4 screen px of travel = a real drag, not a click.
+        if (length(rawDelta) > 4 * hitScale) nodeMovedRef.current = true;
         setLiveOutline(moveNodesBy(base, drag.refs, shiftKey ? axisLock(rawDelta) : rawDelta));
         return;
       }
@@ -658,6 +667,14 @@ export function useGlyphEditor(hitScale: number) {
       baseOutlineRef.current = null;
       return;
     }
+    if (drag.mode === "move-selection" && drag.clickRef && !nodeMovedRef.current) {
+      // Plain click on a node (no drag): drop any sub-threshold jitter and
+      // let the canvas pop up the node-type chooser.
+      if (liveOutline) setLiveOutline(null);
+      baseOutlineRef.current = null;
+      setNodeClick({ ref: drag.clickRef, nonce: Date.now() });
+      return;
+    }
     // Reached for move-selection, curve/segment-bend, round-corner, and
     // move-handle drags — all in-place refinements of ink that's already on
     // the canvas. Skip the live Auto Spacing re-center here (see
@@ -714,7 +731,7 @@ export function useGlyphEditor(hitScale: number) {
 
   return {
     outline, nodeableOutline, selectedNodes, selectedHandle, drawingContourId, marqueeRect, roundCornerLabel, handleSnapGuide,
-    pointerDown, pointerMove, pointerUp, cycleNodeType, insertNodeAt,
+    pointerDown, pointerMove, pointerUp, cycleNodeType, insertNodeAt, nodeClick, clearNodeClick,
     deleteSelectedNodes, nudgeNodes, finishOpenContour, isCurrentEndpoint,
     findObjectOfContour: (cid: string) => findObjectOfContour(outline, cid),
   };
