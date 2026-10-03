@@ -147,13 +147,13 @@ export function UpdatePrompt() {
     if (applyingRef.current) return;
     applyingRef.current = true;
     setPhaseBoth("updating");
-    // Pengaman terakhir: kalau 15 dtk kemudian halaman belum berpindah,
+    // Pengaman terakhir: kalau 9 dtk kemudian halaman belum berpindah,
     // paksa muat ulang dari jaringan (jangan pernah berputar selamanya).
     window.setTimeout(() => {
       const url = new URL(window.location.href);
       url.searchParams.set(BUST_PARAM, Date.now().toString(36));
       window.location.replace(url.toString());
-    }, 15000);
+    }, 9000);
     const prev = readGuard();
     const tries = (prev?.tries || 0) + 1;
     writeGuard({ at: Date.now(), tries });
@@ -163,18 +163,17 @@ export function UpdatePrompt() {
     // Percobaan sebelumnya belum berhasil → langsung jalur bersih total.
     if (tries >= 2) { await hardRefresh(); return; }
 
+    // Jalur cepat: service worker baru sudah menunggu → aktifkan & muat ulang
+    // (biasanya < 1 dtk). Tanpa itu, atau bila tidak bereaksi dalam 2,5 dtk,
+    // langsung jalur bersih total — tidak ada lagi menunggu 6–15 dtk.
     try {
-      const reg = registrationRef.current || (await navigator.serviceWorker?.getRegistration?.()) || null;
-      if (reg) {
-        await withTimeout(reg.update().catch(() => {}), 6000);
-        if (reg.installing) await waitForInstalled(reg, 15000);
-        const waiting = reg.waiting;
-        if (waiting && navigator.serviceWorker) {
-          navigator.serviceWorker.addEventListener("controllerchange", () => reloadOnce(false), { once: true });
-          waiting.postMessage({ type: "SKIP_WAITING" });
-          await sleep(6000);
-          if (reloadingRef.current) return;
-        }
+      const reg = registrationRef.current || (await withTimeout(navigator.serviceWorker?.getRegistration?.() ?? Promise.resolve(undefined), 1500)) || null;
+      const waiting = reg?.waiting;
+      if (waiting && navigator.serviceWorker) {
+        navigator.serviceWorker.addEventListener("controllerchange", () => reloadOnce(false), { once: true });
+        waiting.postMessage({ type: "SKIP_WAITING" });
+        await sleep(2500);
+        if (reloadingRef.current) return;
       }
     } catch { /* jatuh ke jalur bersih total */ }
     if (!reloadingRef.current) await hardRefresh();

@@ -3619,11 +3619,11 @@ input[type="number"]::-webkit-outer-spin-button {
    atribut data-theme pada <html> (dipasang App.tsx). Default = gelap. */
 .fm-update-backdrop {
   --panel: #121212; --panel-2: #191919; --line: #282828;
-  --text: #f0f0f0; --text-dim: #8e8e8e; --accent: #c6f24e; --accent-ink: #0c0f08;
+  --text: #f0f0f0; --text-dim: #8e8e8e; --text-faint: #5e5e5e; --accent: #c6f24e; --accent-2: #b4e03c; --accent-ink: #0c0f08;
 }
 html[data-theme="light"] .fm-update-backdrop {
   --panel: #ffffff; --panel-2: #f4f4f4; --line: #e6e6e6;
-  --text: #181818; --text-dim: #686868; --accent: #4a5a68; --accent-ink: #ffffff;
+  --text: #181818; --text-dim: #686868; --text-faint: #9a9a9a; --accent: #4a5a68; --accent-2: #3a4855; --accent-ink: #ffffff;
 }
 .fm-update-backdrop {
   font-family: Inter, system-ui, -apple-system, sans-serif;

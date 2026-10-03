@@ -9,6 +9,7 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="${1:?path ke folder proyek DesignSeru}"
 cp "$HERE/scripts/design-patches/TopBar.tsx" "$SRC/src/ui/TopBar.tsx"
 cp "$HERE/scripts/design-patches/decor.ts" "$SRC/src/lib/decor.ts"
+cp "$HERE/scripts/design-patches/App.tsx" "$SRC/src/App.tsx"
 cp "$HERE/design.env" "$SRC/.env.production"
 (cd "$SRC" && npm install --no-audit --no-fund && node scripts/prepare-assets.mjs && npx vite build --base=./ --outDir dist)
 rm -rf "$HERE/public/design"
