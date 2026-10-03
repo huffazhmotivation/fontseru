@@ -15,11 +15,11 @@ import { handleFiles } from '../lib/library';
 import { onImageLoaded } from '../engine/images';
 import { onFxReady } from '../engine/imagefx';
 import { placeSvgText } from '../lib/place';
-import { zoomToFit, paste as pasteInternal } from '../engine/commands';
 import { isSvgText, classifyClipText } from '../lib/seruBridge';
+import { zoomToFit, paste as pasteInternal } from '../engine/commands';
 import type { Pt } from '../engine/geometry';
 import { createTouchRouter } from '../tools/touch';
-import { withVirtualMods, useTablet } from '../store/tablet';
+import { withVirtualMods, useTablet, tabletState } from '../store/tablet';
 import { TabletModifiers } from './TabletModifiers';
 
 export function CanvasView() {
@@ -191,47 +191,27 @@ export function CanvasView() {
       onPointerUp(withVirtualMods(e), pos(e));
     };
     // sentuhan jari: cubit zoom, ketuk 2 jari = undo, 3 jari = redo, palm rejection
-    const touch = createTouchRouter({ down: rawDown, move: rawMove, up: rawUp, pos });
-    // tablet: tahan satu jari diam di kanvas = klik kanan di PC (menu konteks). Dibatalkan bila jari bergeser,
-    // diangkat, atau jari kedua menyentuh (cubit zoom / ketuk 2-3 jari).
-    const LONG_PRESS_MS = 800;
-    const LONG_PRESS_SLOP = 10;
-    const lp = { t: 0, id: -1, x: 0, y: 0 };
-    const lpCancel = () => {
-      if (lp.t) clearTimeout(lp.t);
-      lp.t = 0;
-      lp.id = -1;
+    // tekan-tahan jari (tablet) = klik kanan: pilih objek di bawah jari lalu tampilkan menu konteks
+    const longPress = (e: PointerEvent, p: Pt) => {
+      setCanvasRect(cv.getBoundingClientRect());
+      const right = new Proxy(e, {
+        get(t, k) {
+          if (k === 'button') return 2;
+          const val = Reflect.get(t, k, t);
+          return typeof val === 'function' ? val.bind(t) : val;
+        },
+      });
+      onPointerDown(right, p); // cabang klik kanan: memilih objek di bawah titik bila belum terpilih
+      getS().set({ menu: { x: p.x, y: p.y } });
     };
+    const touch = createTouchRouter({ down: rawDown, move: rawMove, up: rawUp, pos, longPress });
+    let lastType = '';
     const down = (e: PointerEvent) => {
-      if (e.pointerType === 'touch') {
-        if (lp.id !== -1) lpCancel();
-        else if (e.isPrimary) {
-          lp.id = e.pointerId;
-          lp.x = e.clientX;
-          lp.y = e.clientY;
-          lp.t = window.setTimeout(() => {
-            lp.t = 0;
-            lp.id = -1;
-            const r = el.getBoundingClientRect();
-            getS().set({ menu: { x: lp.x - r.left, y: lp.y - r.top } });
-            try {
-              navigator.vibrate?.(12);
-            } catch {
-              /* tidak didukung */
-            }
-          }, LONG_PRESS_MS);
-        }
-      }
+      lastType = e.pointerType;
       touch.down(e);
     };
-    const move = (e: PointerEvent) => {
-      if (lp.id === e.pointerId && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > LONG_PRESS_SLOP) lpCancel();
-      touch.move(e);
-    };
-    const up = (e: PointerEvent) => {
-      if (lp.id === e.pointerId) lpCancel();
-      touch.up(e, e.type === 'pointercancel');
-    };
+    const move = (e: PointerEvent) => touch.move(e);
+    const up = (e: PointerEvent) => touch.up(e, e.type === 'pointercancel');
     const dbl = (e: MouseEvent) => {
       flushMove();
       onDoubleClick(pos(e));
@@ -243,6 +223,8 @@ export function CanvasView() {
     };
     const ctx = (e: MouseEvent) => {
       e.preventDefault();
+      // mode tablet: menu dibuka oleh tekan-tahan 3 detik, bukan oleh long-press bawaan browser (±0,5 detik)
+      if (lastType === 'touch' && tabletState().tablet) return;
       const r = el.getBoundingClientRect();
       getS().set({ menu: { x: e.clientX - r.left, y: e.clientY - r.top } });
     };
@@ -276,7 +258,6 @@ export function CanvasView() {
       cv.removeEventListener('wheel', wheel);
       cv.removeEventListener('contextmenu', ctx);
       cv.removeEventListener('pointerleave', leave);
-      lpCancel();
       touch.dispose();
     };
   }, []);

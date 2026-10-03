@@ -21,7 +21,7 @@ import {
   flatOrder,
   descendants,
 } from '../model/doc';
-import { isEditable, dropPoints } from './editpts';
+import { isEditable, dropSelected } from './editpts';
 import { unionBox, worldAABB, normalizePath, hasGeometry, mapNodePoints, nodeMatrix, applyM, cmdsToAnchors, shapeCmds } from './geometry';
 import { translateTree, rotateNodes } from './transform';
 import { expandStrokeNode } from './stroke';
@@ -69,7 +69,7 @@ export function deleteAnchors() {
   const id = s.editPathId!;
   const n = s.doc.nodes[id];
   if (!n || !isEditable(n)) return;
-  const next = dropPoints(n, s.editContour, s.selAnchors);
+  const next = dropSelected(n, s.selAnchors);
   s.mutate('Hapus titik', (d) => {
     if (!next) removeNodes(d, [id]);
     else d.nodes[id] = normalizePath(next);
