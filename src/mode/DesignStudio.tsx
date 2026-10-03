@@ -53,7 +53,7 @@ export function DesignStudio({ active, theme }: { active: boolean; theme: string
         <iframe
           className="fm-design-frame"
           title="DesignSeru"
-          src={`${import.meta.env.BASE_URL}design/index.html`}
+          src={`${import.meta.env.BASE_URL}design/index.html?v=${__APP_BUILD_ID__}`}
           allow="clipboard-read; clipboard-write; fullscreen; camera; microphone"
           onLoad={() => setLoaded(true)}
           data-testid="design-frame"

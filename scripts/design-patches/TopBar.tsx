@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, Undo2, Redo2, Moon, Sun, History, Share2, Search, Layers, SlidersHorizontal, PencilLine } from 'lucide-react';
+import { Type, PenTool, Clapperboard, ChevronDown, Undo2, Redo2, Moon, Sun, History, Share2, Search, Layers, SlidersHorizontal, PencilLine } from 'lucide-react';
 import { useStore, getS } from '../store/store';
 import { usePopover, Kbd, MOD, SHIFT, Tip } from './primitives';
 import { saveVersion, importFilesViaPicker } from '../lib/library';
@@ -7,18 +7,25 @@ import * as C from '../engine/commands';
 import { newProject, openProject, saveProject } from '../lib/actions';
 import { TopMenus } from './TopMenus';
 
-/** Saat DesignSeru dibuka di dalam FontSeru (iframe, Mode Design): tab Font / Design / Motion di bar atas.
+/** Saat DesignSeru dibuka di dalam FontSeru (iframe, Mode Design): tab Font / Design / Motion di bar atas, tepat di kanan logo.
  *  Klik tab mengirim pesan ke FontSeru yang menukar mode; di luar FontSeru komponen ini tidak tampil. */
 const EMBEDDED = typeof window !== 'undefined' && window.parent !== window;
 function ModeSwitch() {
   if (!EMBEDDED) return null;
   const go = (mode: 'font' | 'motion') => window.parent.postMessage({ type: 'fontseru:set-mode', mode }, location.origin);
-  const base = 'h-7 rounded-ctl px-3 text-sm font-semibold transition-colors';
+  const base = 'inline-flex h-7 items-center gap-1.5 rounded-ctl px-3 text-sm font-semibold transition-colors';
+  const idle = `${base} text-muted hover:text-ink`;
   return (
-    <div role="tablist" aria-label="Mode editor" className="mr-1 flex shrink-0 items-center gap-0.5 rounded-bar border border-line bg-field p-0.5">
-      <button type="button" role="tab" aria-selected={false} className={`${base} text-muted hover:text-ink`} onClick={() => go('font')}>Font</button>
-      <button type="button" role="tab" aria-selected className={`${base} bg-accent text-on-accent`}>Design</button>
-      <button type="button" role="tab" aria-selected={false} className={`${base} text-muted hover:text-ink`} onClick={() => go('motion')}>Motion</button>
+    <div role="tablist" aria-label="Mode editor" className="mx-1.5 flex shrink-0 items-center gap-0.5 rounded-bar border border-line bg-field p-0.5">
+      <button type="button" role="tab" aria-selected={false} className={idle} onClick={() => go('font')}>
+        <Type size={14} strokeWidth={2} /> Font
+      </button>
+      <button type="button" role="tab" aria-selected className={`${base} bg-accent text-on-accent`}>
+        <PenTool size={14} strokeWidth={2} /> Design
+      </button>
+      <button type="button" role="tab" aria-selected={false} className={idle} onClick={() => go('motion')}>
+        <Clapperboard size={14} strokeWidth={2} /> Motion
+      </button>
     </div>
   );
 }
@@ -71,8 +78,8 @@ export function TopBar() {
 
   return (
     <header className="relative z-30 flex h-11 shrink-0 items-center gap-1 border-b border-line bg-app pl-2 pr-2">
-      <ModeSwitch />
       <MainMenu />
+      <ModeSwitch />
       <span className="mx-1.5 hidden h-4 w-px bg-line sm:block" />
 
       <div className="relative z-10 flex min-w-0 items-center gap-2">

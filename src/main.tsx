@@ -11,7 +11,28 @@ if (!rootEl) {
   throw new Error("Root element #root not found in index.html");
 }
 
-createRoot(rootEl).render(
+// Safety net for Design mode (DesignSeru is an iframe of /design/index.html).
+// A service worker from before that folder existed answers the iframe's
+// navigation with THIS app's index.html; this app would then open Design mode
+// again inside the iframe, and so on — the page sat on "Memperbarui…" forever.
+// If we are running framed at /design/, we are that wrong page: drop the stale
+// service workers/caches and reload once so the real design app is fetched.
+const framedAtDesign = window.top !== window.self && window.location.pathname.includes("/design/");
+if (framedAtDesign) {
+  const KEY = "fs-design-frame-recover";
+  void (async () => {
+    try {
+      if (sessionStorage.getItem(KEY)) return;
+      sessionStorage.setItem(KEY, "1");
+      const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
+      await Promise.all(regs.map((r) => r.unregister().catch(() => false)));
+      if ("caches" in window) await Promise.all((await caches.keys()).map((k) => caches.delete(k)));
+    } catch {
+      /* best effort */
+    }
+    window.location.reload();
+  })();
+} else createRoot(rootEl).render(
   <StrictMode>
     <AuthProvider>
       <App />
