@@ -203,18 +203,23 @@ export default function App() {
   // The font project state above keeps living/persisting in the background
   // (all hooks already ran), so switching back to Font mode restores it
   // untouched. The ModeTabs switcher is rendered inside the Motion top bar.
-  if (appMode === "design") {
-    return <DesignStudio theme={theme} />;
-  }
+  // DesignSeru is preloaded in the background (see DesignStudio) so switching
+  // to Design mode is instant instead of waiting on a cold iframe load.
+  const designHost = <DesignStudio active={appMode === "design"} theme={theme} />;
+  if (appMode === "design") return <>{null}{designHost}</>;
   if (appMode === "motion") {
     return (
-      <Suspense fallback={<div className="fm-motion-loading">Memuat Mode Motion…</div>}>
-        <MotionStudio />
-      </Suspense>
+      <>
+        <Suspense fallback={<div className="fm-motion-loading">Memuat Mode Motion…</div>}>
+          <MotionStudio />
+        </Suspense>
+        {designHost}
+      </>
     );
   }
 
   return (
+    <>
     <div
       className="fm-root"
       data-theme={theme}
@@ -271,5 +276,7 @@ export default function App() {
       <EmailConfirmedWelcome />
       <ProUpsellModal />
     </div>
+    {designHost}
+    </>
   );
 }

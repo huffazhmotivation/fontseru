@@ -1,12 +1,17 @@
 #!/bin/sh
 # Rebuild the embedded DesignSeru app (Mode Design) into public/design.
 # Usage: scripts/build-design.sh /path/to/Optimized_Design_WebApp_Production
-# Needs two small patches in the design source so it works under a sub-path
-# (already applied in the shipped build): TopBar.tsx favicon and decor.ts
-# textures must resolve via document.baseURI instead of "/...".
+# Copies scripts/design-patches/* over the design source first (sub-path asset
+# URLs + the Font/Design/Motion tabs in its top bar) and uses ../design.env
+# as its .env.production (Pexels key).
 set -e
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="${1:?path ke folder proyek DesignSeru}"
+cp "$HERE/scripts/design-patches/TopBar.tsx" "$SRC/src/ui/TopBar.tsx"
+cp "$HERE/scripts/design-patches/decor.ts" "$SRC/src/lib/decor.ts"
+cp "$HERE/design.env" "$SRC/.env.production"
 (cd "$SRC" && npm install --no-audit --no-fund && node scripts/prepare-assets.mjs && npx vite build --base=./ --outDir dist)
-rm -rf "$(dirname "$0")/../public/design"
-cp -R "$SRC/dist" "$(dirname "$0")/../public/design"
+rm -rf "$HERE/public/design"
+cp -R "$SRC/dist" "$HERE/public/design"
+perl -0pi -e 's|(<meta name="theme-color"[^>]*>)|$1<style>html{background:#0b0b0b}</style>|' "$HERE/public/design/index.html"
 echo "OK: public/design diperbarui"
