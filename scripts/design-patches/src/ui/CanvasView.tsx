@@ -192,9 +192,46 @@ export function CanvasView() {
     };
     // sentuhan jari: cubit zoom, ketuk 2 jari = undo, 3 jari = redo, palm rejection
     const touch = createTouchRouter({ down: rawDown, move: rawMove, up: rawUp, pos });
-    const down = (e: PointerEvent) => touch.down(e);
-    const move = (e: PointerEvent) => touch.move(e);
-    const up = (e: PointerEvent) => touch.up(e, e.type === 'pointercancel');
+    // tablet: tahan satu jari diam di kanvas = klik kanan di PC (menu konteks). Dibatalkan bila jari bergeser,
+    // diangkat, atau jari kedua menyentuh (cubit zoom / ketuk 2-3 jari).
+    const LONG_PRESS_MS = 800;
+    const LONG_PRESS_SLOP = 10;
+    const lp = { t: 0, id: -1, x: 0, y: 0 };
+    const lpCancel = () => {
+      if (lp.t) clearTimeout(lp.t);
+      lp.t = 0;
+      lp.id = -1;
+    };
+    const down = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') {
+        if (lp.id !== -1) lpCancel();
+        else if (e.isPrimary) {
+          lp.id = e.pointerId;
+          lp.x = e.clientX;
+          lp.y = e.clientY;
+          lp.t = window.setTimeout(() => {
+            lp.t = 0;
+            lp.id = -1;
+            const r = el.getBoundingClientRect();
+            getS().set({ menu: { x: lp.x - r.left, y: lp.y - r.top } });
+            try {
+              navigator.vibrate?.(12);
+            } catch {
+              /* tidak didukung */
+            }
+          }, LONG_PRESS_MS);
+        }
+      }
+      touch.down(e);
+    };
+    const move = (e: PointerEvent) => {
+      if (lp.id === e.pointerId && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > LONG_PRESS_SLOP) lpCancel();
+      touch.move(e);
+    };
+    const up = (e: PointerEvent) => {
+      if (lp.id === e.pointerId) lpCancel();
+      touch.up(e, e.type === 'pointercancel');
+    };
     const dbl = (e: MouseEvent) => {
       flushMove();
       onDoubleClick(pos(e));
@@ -239,6 +276,7 @@ export function CanvasView() {
       cv.removeEventListener('wheel', wheel);
       cv.removeEventListener('contextmenu', ctx);
       cv.removeEventListener('pointerleave', leave);
+      lpCancel();
       touch.dispose();
     };
   }, []);

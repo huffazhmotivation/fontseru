@@ -6586,15 +6586,16 @@ html[data-theme="light"] .fm-update-backdrop {
   .fm-mobile-nav-toggle svg, .fm-mobile-panel-toggle svg { width: 15px; height: 15px; }
 
   /* ---- Floating toolbar: smaller tools + icons ---- */
-  .fm-floating-toolbar { bottom: 8px; padding: 3px; border-radius: 12px; }
-  .fm-tool { width: 30px; height: 30px; border-radius: 8px; }
-  .fm-tool svg { width: 15px; height: 15px; }
-  .fm-home-tool-icon { width: 15px; height: 15px; }
-  .fm-tool-group { gap: 2px; }
-  .fm-toolbar-divider { height: 17px; margin: 0 4px; }
-  .fm-tool-tip { bottom: 36px; font-size: 10px; padding: 4px 7px; }
-  .fm-shape-popover { padding: 4px; gap: 3px; border-radius: 10px; bottom: calc(100% + 8px); }
-  .fm-shape-popover-btn { width: 28px; height: 28px; border-radius: 7px; }
+  .fm-floating-toolbar { bottom: 8px; padding: 4px; border-radius: 13px; }
+  .fm-tool { width: 35px; height: 35px; border-radius: 9px; }
+  .fm-tool svg { width: 18px; height: 18px; }
+  .fm-home-tool-icon { width: 18px; height: 18px; }
+  .fm-tool-group { gap: 3px; }
+  .fm-toolbar-divider { height: 19px; margin: 0 5px; }
+  .fm-tool-tip { bottom: 41px; font-size: 10.5px; padding: 4px 8px; }
+  .fm-shape-popover { padding: 4px; gap: 3px; border-radius: 11px; bottom: calc(100% + 8px); }
+  .fm-shape-popover-btn { width: 32px; height: 32px; border-radius: 8px; }
+  .fm-shape-popover-btn svg { width: 17px; height: 17px; }
   .fm-tool-lock-badge { width: 12px; height: 12px; }
 
   /* ---- Canvas-docked chips: Single/Multi/Drawing pill + view bar ---- */
@@ -6607,11 +6608,11 @@ html[data-theme="light"] .fm-update-backdrop {
   /* ---- Drawing tab: "Terapkan" card — compact, and lifted ABOVE the
      floating toolbar. It used to sit at bottom:16px on the right while the
      toolbar is centered at the bottom, so on tablet widths they overlapped.
-     Toolbar footprint here = 8px gap + ~40px tall, so the card starts
+     Toolbar footprint here = 8px gap + ~45px tall, so the card starts
      above that with a small gap. The chip order stays right-aligned. ---- */
   .fm-drawbar {
     right: 10px;
-    bottom: 58px;
+    bottom: 64px;
     width: 232px;
     padding: 8px;
     gap: 6px;
@@ -6624,4 +6625,18 @@ html[data-theme="light"] .fm-update-backdrop {
   .fm-drawbar-apply { height: 26px; padding: 0 10px; font-size: 11px; border-radius: 8px; }
   .fm-drawbar-check { font-size: 10.5px; }
   .fm-drawbar-clear { width: 26px; height: 26px; border-radius: 8px; }
+}
+
+/* ---- Tablet: File menu (and the other topbar dropdowns/dialogs rendered
+   inside the top bar) opened behind the side panels in Chrome.
+   Cause: on tablet the top bar is a scroll container with
+   `-webkit-overflow-scrolling: touch` (see the tablet top-bar block above),
+   which makes it its own stacking context. The File dropdown's z-index (80)
+   was therefore only ranked *inside* the bar, while the bar itself sat at
+   z-index:auto — below the glyph/inspector panels (and their drawers,
+   z-index 30) that come later in the page. Giving the bar its own explicit
+   z-index lifts the whole bar, dropdown included, above the panels. Kept
+   below modal layers (≥200), so dialogs/Test Lab still cover it. ---- */
+@media (min-width: 600px) and (max-width: 1180px) and (pointer: coarse) and (max-aspect-ratio: 5/3) {
+  .fm-topbar { position: relative; z-index: 45; }
 }
