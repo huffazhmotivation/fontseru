@@ -6499,3 +6499,129 @@ html[data-theme="light"] .fm-update-backdrop {
 .fm-design-stage { position: relative; flex: 1 1 auto; min-height: 0; background: var(--bg); }
 .fm-design-stage .fm-design-frame { position: absolute; inset: 0; height: 100%; }
 .fm-design-loading { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); color: var(--text-dim); font-size: 12.5px; pointer-events: none; }
+
+/* ================================================== TABLET COMPACT MODE (editor tab)
+   Tablet-only (iPad / Android tablet; same band signals as the tablet top/
+   bottom-bar block earlier in this file: 600–1180px + touch + near-square
+   aspect). Everything in the Font editor tab — side panels, panel controls,
+   floating toolbar, canvas chips — is scaled down a notch so more of the
+   canvas stays visible. Phones (<600px), laptops (pointer: fine) and
+   desktops (>1180px) are NOT matched, so nothing there changes. Declared
+   last so it wins over the generic ≤1180 / ≤900 rules above. CSS only. */
+@media (min-width: 600px) and (max-width: 1180px) and (pointer: coarse) and (max-aspect-ratio: 5/3) {
+  /* ---- Top bar: one more step smaller (still ≥30px touch targets) ---- */
+  .fm-topbar { gap: 2px; padding: 4px 6px; }
+  .fm-topbar .fm-topbtn,
+  .fm-topbar-more-btn > .fm-topbtn { padding: 4px; min-width: 30px; min-height: 30px; }
+  .fm-topbar .fm-topbtn svg { width: 15px; height: 15px; }
+  .fm-topbar .fm-topbtn-group .fm-align-btn { width: 30px; height: 30px; border-radius: 8px; }
+  .fm-topbar .fm-topbtn-group .fm-align-btn svg { width: 14px; height: 14px; }
+  .fm-theme-toggle { width: 30px; height: 30px; }
+  .fm-topbar .fm-fontname { padding: 4px 8px; font-size: 12px; }
+
+  /* ---- Bottom bar ---- */
+  .fm-bottombar { gap: 2px; padding: 3px 6px; }
+  .fm-bottombar button { padding: 4px; min-width: 28px; min-height: 28px; }
+  .fm-bottombar button svg { width: 14px; height: 14px; }
+  .fm-bottombar .fm-icon-btn { min-width: 24px; min-height: 24px; padding: 4px !important; }
+  .fm-grid-shape-select { height: 22px; font-size: 10.5px; }
+  .fm-grid-size-input { height: 22px; width: 40px; font-size: 10.5px; }
+
+  /* ---- Left panel (glyph list) ---- */
+  .fm-glyphnav { width: 176px; }
+  .fm-glyphnav-head { padding: 9px 9px 7px; }
+  .fm-glyphnav-eyebrow-row { margin-bottom: 6px; }
+  .fm-panel-eyebrow { font-size: 9px; margin-bottom: 6px; }
+  .fm-glyph-count-badge { font-size: 9.5px; padding: 1px 6px; }
+  .fm-glyph-select-toggle { font-size: 9.5px; padding: 2px 7px; }
+  .fm-family-tabs { gap: 4px; margin-bottom: 6px; }
+  .fm-family-tabs button { height: 25px; font-size: 10px; padding: 0 4px; border-radius: 7px; }
+  .fm-search input { font-size: 11px; }
+  .fm-glyphlist { padding: 0 8px 10px; }
+  .fm-group-label { font-size: 9px; margin: 10px 2px 5px; }
+  .fm-grid { gap: 4px; }
+  .fm-tile { border-radius: 8px; }
+  .fm-thumb-char { font-size: 15px; }
+  .fm-thumb-char.fm-thumb-char-multi { font-size: 9px; }
+  .fm-tile-dot { top: 4px; right: 4px; width: 5px; height: 5px; }
+  .fm-glyphnav-foot { padding: 7px 8px 8px; }
+  .fm-glyphnav-foot .fm-action-btn { padding: 7px; font-size: 11px; margin-top: 6px; }
+  .fm-glyph-select-hint { padding: 6px 9px; font-size: 10px; }
+
+  /* ---- Right panel (inspector) ---- */
+  .fm-rightpanel { width: 214px; }
+  .fm-panel-header { padding: 10px 12px; gap: 10px; }
+  .fm-panel-glyph { width: 42px; height: 42px; border-radius: 10px; }
+  .fm-panel-glyph .fm-thumb-char { font-size: 24px; }
+  .fm-panel-char { font-size: 17px; }
+  .fm-panel-code { font-size: 10px; margin-top: 2px; }
+  .fm-panel-cat { font-size: 9px; margin-top: 3px; }
+  .fm-section-head { padding: 9px 12px; }
+  .fm-section-title { font-size: 9.5px; }
+  .fm-section-body { padding: 0 12px 11px; }
+  .fm-field { margin-bottom: 8px; }
+  .fm-field label { font-size: 10.5px; margin-bottom: 3px; }
+  .fm-field input[type="number"] { padding: 5px 8px; font-size: 11.5px; border-radius: 7px; }
+  .fm-field select { font-size: 11.5px; }
+  .fm-slider-row-label { font-size: 10.5px; margin-bottom: 3px; }
+  .fm-slider-row-label span { font-size: 10px; }
+  .fm-field input.fm-slider-number { width: 56px; padding: 3px 6px; font-size: 10.5px; }
+  .fm-slider-row-label .fm-numeric-control { width: 58px; }
+  .fm-checkbox-row { font-size: 11px; gap: 7px; }
+  .fm-hint { font-size: 10px; line-height: 1.5; }
+  .fm-action-btn { padding: 7px; font-size: 11px; border-radius: 8px; margin-top: 7px; gap: 6px; }
+  .fm-brush-grid { gap: 5px; }
+  .fm-brush-card { padding: 6px 7px; gap: 6px; border-radius: 9px; }
+  .fm-brush-icon { width: 22px; height: 22px; border-radius: 7px; }
+  .fm-brush-icon svg { width: 13px; height: 13px; }
+  .fm-brush-name { font-size: 10.5px; }
+  .fm-width-profile-grid { gap: 4px; }
+  .fm-width-profile-btn { padding: 4px 6px; border-radius: 7px; }
+  .fm-status-pill { font-size: 10px; }
+
+  /* ---- Drawer widths (portrait: panels slide in over the canvas) ---- */
+  .fm-root:not([data-sketch-mode="true"]) .fm-glyphnav { width: min(62vw, 210px); }
+  .fm-root:not([data-sketch-mode="true"]) .fm-rightpanel { width: min(66vw, 236px); }
+  .fm-mobile-nav-toggle, .fm-mobile-panel-toggle { width: 32px; height: 32px; border-radius: 9px; }
+  .fm-mobile-nav-toggle svg, .fm-mobile-panel-toggle svg { width: 15px; height: 15px; }
+
+  /* ---- Floating toolbar: smaller tools + icons ---- */
+  .fm-floating-toolbar { bottom: 8px; padding: 3px; border-radius: 12px; }
+  .fm-tool { width: 30px; height: 30px; border-radius: 8px; }
+  .fm-tool svg { width: 15px; height: 15px; }
+  .fm-home-tool-icon { width: 15px; height: 15px; }
+  .fm-tool-group { gap: 2px; }
+  .fm-toolbar-divider { height: 17px; margin: 0 4px; }
+  .fm-tool-tip { bottom: 36px; font-size: 10px; padding: 4px 7px; }
+  .fm-shape-popover { padding: 4px; gap: 3px; border-radius: 10px; bottom: calc(100% + 8px); }
+  .fm-shape-popover-btn { width: 28px; height: 28px; border-radius: 7px; }
+  .fm-tool-lock-badge { width: 12px; height: 12px; }
+
+  /* ---- Canvas-docked chips: Single/Multi/Drawing pill + view bar ---- */
+  .fm-glyphview-mode { top: 8px; right: 8px; padding: 2px; border-radius: 10px; }
+  .fm-glyphview-mode button { padding: 4px 8px; font-size: 10.5px; gap: 4px; border-radius: 7px; }
+  .fm-glyphview-mode button svg { width: 12px; height: 12px; }
+  .fm-glyphview-bar { padding: 4px 8px; gap: 6px; font-size: 10.5px; border-radius: 11px; }
+  .fm-canvas-area { padding: clamp(6px, 1.4vw, 14px); }
+
+  /* ---- Drawing tab: "Terapkan" card — compact, and lifted ABOVE the
+     floating toolbar. It used to sit at bottom:16px on the right while the
+     toolbar is centered at the bottom, so on tablet widths they overlapped.
+     Toolbar footprint here = 8px gap + ~40px tall, so the card starts
+     above that with a small gap. The chip order stays right-aligned. ---- */
+  .fm-drawbar {
+    right: 10px;
+    bottom: 58px;
+    width: 232px;
+    padding: 8px;
+    gap: 6px;
+    border-radius: 12px;
+  }
+  .fm-drawbar-row { gap: 8px; }
+  .fm-drawbar-thumb { width: 34px; height: 34px; border-radius: 8px; }
+  .fm-drawbar-title { font-size: 11.5px; }
+  .fm-drawbar-sub { font-size: 10px; }
+  .fm-drawbar-apply { height: 26px; padding: 0 10px; font-size: 11px; border-radius: 8px; }
+  .fm-drawbar-check { font-size: 10.5px; }
+  .fm-drawbar-clear { width: 26px; height: 26px; border-radius: 8px; }
+}
