@@ -126,14 +126,18 @@ export function UpdatePrompt() {
   // muat dari jaringan. Selalu berhasil mengambil versi terbaru.
   const hardRefresh = useCallback(async () => {
     applyingRef.current = true;
+    // Setiap langkah dibatasi waktu: unregister()/caches.delete() kadang
+    // menggantung (mis. saat service worker lama masih memproses sesuatu),
+    // dan itulah yang membuat popup berputar tanpa akhir. Apa pun yang
+    // terjadi, ujungnya tetap muat ulang dari jaringan.
     try {
-      const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
-      await Promise.all(regs.map((r) => r.unregister().catch(() => false)));
+      const regs = (await withTimeout(navigator.serviceWorker?.getRegistrations?.() ?? Promise.resolve([]), 2500)) || [];
+      await withTimeout(Promise.all(regs.map((r) => r.unregister().catch(() => false))), 2500);
     } catch { /* abaikan */ }
     try {
       if ("caches" in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
+        const keys = (await withTimeout(caches.keys(), 2500)) || [];
+        await withTimeout(Promise.all(keys.map((k) => caches.delete(k))), 3000);
       }
     } catch { /* abaikan */ }
     reloadOnce(true);
@@ -143,6 +147,13 @@ export function UpdatePrompt() {
     if (applyingRef.current) return;
     applyingRef.current = true;
     setPhaseBoth("updating");
+    // Pengaman terakhir: kalau 15 dtk kemudian halaman belum berpindah,
+    // paksa muat ulang dari jaringan (jangan pernah berputar selamanya).
+    window.setTimeout(() => {
+      const url = new URL(window.location.href);
+      url.searchParams.set(BUST_PARAM, Date.now().toString(36));
+      window.location.replace(url.toString());
+    }, 15000);
     const prev = readGuard();
     const tries = (prev?.tries || 0) + 1;
     writeGuard({ at: Date.now(), tries });
@@ -274,6 +285,13 @@ export function UpdatePrompt() {
               ? "Pembaruan otomatis belum berhasil. Tekan tombol di bawah untuk membersihkan cache dan memuat versi terbaru."
               : "Ada pembaruan FontSeru. Muat ulang sekarang untuk memakai fitur dan perbaikan terbaru."}
         </p>
+        {updating && (
+          <div className="fm-update-actions">
+            <button type="button" className="fm-update-later" onClick={() => { void hardRefresh(); }} data-testid="update-force-btn">
+              Tidak bergerak? Muat ulang paksa
+            </button>
+          </div>
+        )}
         {!updating && (
           <div className="fm-update-actions">
             <button
