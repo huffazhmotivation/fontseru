@@ -1,4 +1,4 @@
-import{m as Wi,e as dn}from"./photo-mEBCJVOT.js";import"./index-dOXKHIDv.js";import"./vendor-react-CWYMBATd.js";import"./vendor-ui-icons-BCHq_Erv.js";import"./vendor-paper-CTMgL_Tv.js";import"./elements-B4ER6PJa.js";/**
+import{m as Wi,e as dn}from"./photo-DNxTFMie.js";import"./index-CJ5EBkgZ.js";import"./vendor-react-CWYMBATd.js";import"./vendor-ui-icons-C1hnbQJp.js";import"./vendor-paper-CTMgL_Tv.js";import"./elements-B4ER6PJa.js";/**
  * @license
  * Copyright 2010-2024 Three.js Authors
  * SPDX-License-Identifier: MIT

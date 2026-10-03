@@ -3,8 +3,9 @@
 # Usage: scripts/build-design.sh /path/to/designserupro-main
 # Menyalin scripts/design-patches/src/* ke sumber DesignSeru (sub-path aset relatif, tab Font/Design/Motion di top bar,
 # jembatan salin-tempel SVG Font <-> Design), memakai ../design.env sebagai .env.production (kunci Pexels), lalu build.
-# Catatan: berkas patch adalah salinan penuh dari DesignSeru v1.10.1 (mode tablet) + patch; bila DesignSeru berubah di
+# Catatan: berkas patch adalah salinan penuh dari DesignSeru (v1.10.x terbaru, mode tablet) + patch; bila DesignSeru berubah di
 # berkas yang sama, terapkan ulang perubahan tersebut ke scripts/design-patches/src terlebih dulu.
+# Undo-Pen kini bawaan DesignSeru (smartUndo), jadi penUndo.ts tidak lagi dipakai.
 set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="${1:?path ke folder proyek DesignSeru}"

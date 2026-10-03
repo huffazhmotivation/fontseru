@@ -9,13 +9,16 @@ import { FrameRename } from './FrameRename';
 import { FloatingToolbar } from './Toolbar';
 import { AIDock } from './AIDock';
 import { NodeKindMenu } from './NodeKindMenu';
+import { GradStopPicker } from './GradStopPicker';
+import { JobFx } from './JobFx';
 import { ReplaceChip } from './ReplaceChip';
+import { ActionChip } from './ActionChip';
+import { isSvgText, classifyClipText } from '../lib/seruBridge';
 import { DRAG_TYPE, placePayload } from '../lib/drop';
 import { handleFiles } from '../lib/library';
 import { onImageLoaded } from '../engine/images';
 import { onFxReady } from '../engine/imagefx';
 import { placeSvgText } from '../lib/place';
-import { isSvgText, classifyClipText } from '../lib/seruBridge';
 import { zoomToFit, paste as pasteInternal } from '../engine/commands';
 import type { Pt } from '../engine/geometry';
 import { createTouchRouter } from '../tools/touch';
@@ -89,7 +92,9 @@ export function CanvasView() {
         s.toolOpts !== p.toolOpts ||
         s.editingTextId !== p.editingTextId ||
         s.renamingFrameId !== p.renamingFrameId ||
-        s.gradStop !== p.gradStop
+        s.gradStop !== p.gradStop ||
+        s.gradTarget !== p.gradTarget ||
+        s.gradPick !== p.gradPick
       )
         schedule();
     });
@@ -206,13 +211,50 @@ export function CanvasView() {
     };
     const touch = createTouchRouter({ down: rawDown, move: rawMove, up: rawUp, pos, longPress });
     let lastType = '';
+    // iPad/tablet: Safari sering tidak mengirim event 'dblclick' untuk ketukan jari/pen di kanvas (touch-action: none).
+    // Ketuk 2x dideteksi sendiri dari pointerdown/up lalu diteruskan ke handler klik-ganda yang sama.
+    const active = new Set<number>();
+    let multi = false;
+    let tapStart: { t: number; x: number; y: number } | null = null;
+    let lastTap: { t: number; x: number; y: number } | null = null;
+    let synthAt = 0;
+    const TAP_MS = 380,
+      TAP_MOVE = 12,
+      DBL_MS = 380,
+      DBL_DIST = 28;
     const down = (e: PointerEvent) => {
       lastType = e.pointerType;
+      if (e.pointerType !== 'mouse') {
+        active.add(e.pointerId);
+        if (active.size > 1) multi = true;
+        tapStart = { t: e.timeStamp, x: e.clientX, y: e.clientY };
+      }
       touch.down(e);
     };
     const move = (e: PointerEvent) => touch.move(e);
-    const up = (e: PointerEvent) => touch.up(e, e.type === 'pointercancel');
-    const dbl = (e: MouseEvent) => {
+    const up = (e: PointerEvent) => {
+      const cancel = e.type === 'pointercancel';
+      if (e.pointerType !== 'mouse' && active.has(e.pointerId)) {
+        active.delete(e.pointerId);
+        const wasMulti = multi;
+        if (!active.size) multi = false;
+        const st = tapStart;
+        tapStart = null;
+        const isTap = !cancel && !wasMulti && !!st && e.timeStamp - st.t < TAP_MS && Math.hypot(e.clientX - st.x, e.clientY - st.y) < TAP_MOVE;
+        if (!isTap) lastTap = null;
+        else if (lastTap && e.timeStamp - lastTap.t < DBL_MS && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < DBL_DIST) {
+          lastTap = null;
+          synthAt = e.timeStamp;
+          touch.up(e, false);
+          dbl(e);
+          return;
+        } else lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
+      }
+      touch.up(e, cancel);
+    };
+    const dbl = (e: MouseEvent | PointerEvent) => {
+      // dblclick bawaan yang menyusul ketukan 2x yang sudah ditangani di atas diabaikan
+      if (e.type === 'dblclick' && performance.now() - synthAt < 700) return;
       flushMove();
       onDoubleClick(pos(e));
     };
@@ -223,7 +265,7 @@ export function CanvasView() {
     };
     const ctx = (e: MouseEvent) => {
       e.preventDefault();
-      // mode tablet: menu dibuka oleh tekan-tahan 3 detik, bukan oleh long-press bawaan browser (±0,5 detik)
+      // mode tablet: menu dibuka oleh tekan-tahan singkat / chip Aksi, bukan oleh long-press bawaan browser (±0,5 detik)
       if (lastType === 'touch' && tabletState().tablet) return;
       const r = el.getBoundingClientRect();
       getS().set({ menu: { x: e.clientX - r.left, y: e.clientY - r.top } });
@@ -294,7 +336,10 @@ export function CanvasView() {
       <TextEditor />
       <FrameRename />
       <NodeKindMenu />
+      <GradStopPicker />
+      <JobFx />
       <ReplaceChip />
+      <ActionChip />
       {tablet && <TabletModifiers />}
       {!focus && (
         <>

@@ -6,6 +6,7 @@ import { saveVersion, importFilesViaPicker } from '../lib/library';
 import * as C from '../engine/commands';
 import { newProject, openProject, saveProject } from '../lib/actions';
 import { TopMenus } from './TopMenus';
+import { smartUndo, smartRedo } from '../tools/interaction';
 import { useTablet, setTabletPref, setPalm } from '../store/tablet';
 
 /** Saat DesignSeru dibuka di dalam FontSeru (iframe, Mode Design): tab Font / Design / Motion di bar atas, tepat di kanan logo.
@@ -70,8 +71,8 @@ export function Wordmark({ height = 18 }: { height?: number }) {
 export function TopBar() {
   const fileName = useStore((s) => s.fileName);
   const theme = useStore((s) => s.theme);
-  const canUndo = useStore((s) => s.past.length > 0);
-  const canRedo = useStore((s) => s.future.length > 0);
+  const canUndo = useStore((s) => s.past.length > 0 || !!s.penDrawingId);
+  const canRedo = useStore((s) => s.future.length > 0 || !!s.penDrawingId);
   const savedAt = useStore((s) => s.savedAt);
   const layersOpen = useStore((s) => s.layersOpen);
   const rightOpen = useStore((s) => s.rightOpen);
@@ -127,12 +128,12 @@ export function TopBar() {
           <HistoryMenu />
         </div>
         <Tip label="Urungkan" shortcut={`${MOD}Z`} side="bottom">
-          <button className="icon-btn" aria-label="Urungkan" disabled={!canUndo} onClick={() => getS().undo()}>
+          <button className="icon-btn" aria-label="Urungkan" disabled={!canUndo} onClick={() => smartUndo()}>
             <Undo2 size={15} strokeWidth={1.75} />
           </button>
         </Tip>
         <Tip label="Ulangi" shortcut={`${MOD}${SHIFT}Z`} side="bottom">
-          <button className="icon-btn" aria-label="Ulangi" disabled={!canRedo} onClick={() => getS().redo()}>
+          <button className="icon-btn" aria-label="Ulangi" disabled={!canRedo} onClick={() => smartRedo()}>
             <Redo2 size={15} strokeWidth={1.75} />
           </button>
         </Tip>
@@ -222,8 +223,8 @@ function MainMenu() {
           {item('Riwayat versi…', () => getS().set({ versionsOpen: true }))}
           {item('Pintasan keyboard…', () => getS().set({ shortcutsOpen: true }))}
           {head('Edit')}
-          {item('Urungkan', () => getS().undo(), `${MOD}Z`)}
-          {item('Ulangi', () => getS().redo(), `${MOD}${SHIFT}Z`)}
+          {item('Urungkan', () => smartUndo(), `${MOD}Z`)}
+          {item('Ulangi', () => smartRedo(), `${MOD}${SHIFT}Z`)}
           {item('Duplikat', C.duplicate, `${MOD}D`, !sel)}
           {item('Grupkan', C.group, `${MOD}G`, !sel)}
           {item('Pisahkan grup', C.ungroupSel, `${MOD}${SHIFT}G`, !sel)}
