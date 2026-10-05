@@ -23,8 +23,8 @@ function ModeSwitch() {
       <button type="button" role="tab" aria-selected={false} className={idle} onClick={() => go('font')}>
         <Type size={14} strokeWidth={2} /> Font
       </button>
-      <button type="button" role="tab" aria-selected className={`${base} bg-accent text-on-accent`}>
-        <PenTool size={14} strokeWidth={2} /> Design
+      <button type="button" role="tab" aria-selected className={`${base} border border-line bg-panel text-ink shadow-sm`}>
+        <PenTool size={14} strokeWidth={2} className="text-accent" /> Design
       </button>
       <button type="button" role="tab" aria-selected={false} className={idle} onClick={() => go('motion')}>
         <Clapperboard size={14} strokeWidth={2} /> Motion

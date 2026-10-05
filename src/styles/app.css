@@ -6737,3 +6737,75 @@ html[data-theme="light"] .fm-update-backdrop {
 .fm-canvas-area[data-editor-mode="draw"] .fm-sketch-toggle { padding: 8px; border-radius: 50%; }
 .fm-canvas-area[data-editor-mode="multi"] .fm-sketch-toggle-label,
 .fm-canvas-area[data-editor-mode="draw"] .fm-sketch-toggle-label { display: none; }
+
+/* ==========================================================================
+   MODE TABLET (iPad / tablet Android) — Mode Font
+   Dipasang lewat <html data-tablet="true"> (src/mode/tablet.ts). Semua panel
+   dan ikon dikecilkan supaya seluruh antarmuka muat dalam satu layar tanpa
+   menggulir, tetapi ikon penting tetap berukuran nyaman disentuh (≥ 30px).
+   Tidak menyentuh desktop/HP dan tidak menyentuh Mode Design (iframe terpisah).
+   ========================================================================== */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) {
+  /* panel lebih ramping */
+  --tb: 31px;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyphnav { width: 176px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-rightpanel { width: 232px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyphnav-head { padding: 10px 10px 8px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-canvas-area { padding: 8px; }
+
+/* bar atas: semua tombol tampil langsung sebagai ikon kecil, tanpa menu "More" */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar {
+  gap: 2px; padding: 4px 6px; overflow-x: hidden; flex-wrap: nowrap;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-topbtn,
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar-more-btn > .fm-topbtn {
+  font-size: 0; gap: 0; padding: 0; min-width: var(--tb); width: var(--tb); min-height: var(--tb); height: var(--tb); justify-content: center;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-topbtn svg { width: 16px; height: 16px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbtn-group { gap: 1px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-align-group { gap: 0; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-align-btn { width: 26px; height: 28px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-divider,
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-align-divider { display: none; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-theme-toggle { width: var(--tb); height: var(--tb); }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-fontname { min-width: 40px; max-width: 90px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-logo-image { max-width: 66px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-mode-tab { height: 26px; padding: 0 7px; gap: 0; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-mode-tab span { display: none; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-mode-tab svg { width: 16px; height: 16px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-auth-avatar-btn { padding: 2px; gap: 0; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-auth-plan-badge { display: none; }
+
+/* bar bawah */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar { gap: 2px; padding: 3px 6px; overflow-x: hidden; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar button {
+  font-size: 0; gap: 0; padding: 0; min-width: 30px; min-height: 30px; justify-content: center;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar button svg { width: 15px; height: 15px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-icon-btn { min-width: 26px; min-height: 26px; padding: 0 !important; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-bottom-divider { display: none; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-zoom-controls input[type="range"] { width: 56px; }
+
+/* layar lebar (iPad landscape): tidak ada menu "More" — semuanya langsung di bar */
+@media (min-width: 901px) {
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar-more-hide,
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar-more-hide { display: inline-flex !important; align-items: center; }
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar-more-btn,
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar-more-btn { display: none !important; }
+}
+
+/* kolom huruf, toolbar mengambang, panah glyph */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyph-sidenav-btn { width: 36px; height: 36px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyph-sidenav-btn svg { width: 20px; height: 20px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyph-sidenav-btn-left { left: 24px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyph-sidenav-btn-right { right: 24px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar { overflow-x: auto; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar button { min-width: 28px; min-height: 28px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-icon-btn { min-width: 24px; min-height: 24px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-zoom-controls input[type="range"] { display: none; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-upm { display: none !important; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-grid-size-input { width: 44px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-grid-shape-select { width: 58px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyphnav { width: 188px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-hint-inline { gap: 2px; }

@@ -110,3 +110,49 @@
     font-size: 12px;
   }
 }
+
+/* ==========================================================================
+   Pad tablet (Mode Font & Mode Motion): Salin · Tempel · Hapus / Shift · Alt · Cmd
+   Tampil hanya bila <TabletPad/> dirender (tablet). Pojok kiri bawah kanvas.
+   ========================================================================== */
+.fm-tpad {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 25;
+  display: grid;
+  grid-template-columns: repeat(3, 36px);
+  gap: 3px;
+  padding: 4px;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--panel, #1b1b1f) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text, #fff) 12%, transparent);
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.fm-tpad-btn {
+  width: 36px;
+  height: 33px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-dim, #aaa);
+  font: 600 17px/1 -apple-system, "Inter", sans-serif;
+  cursor: pointer;
+  padding: 0;
+}
+.fm-tpad-btn:active { background: color-mix(in srgb, var(--text, #fff) 12%, transparent); color: var(--text, #fff); }
+.fm-tpad-btn[data-danger="true"]:active { color: #ff5d5d; }
+.fm-tpad-mod[data-on="true"] {
+  background: var(--accent-soft, rgba(160, 255, 80, 0.15));
+  color: var(--accent, #b6ff3c);
+  border-color: color-mix(in srgb, var(--accent, #b6ff3c) 45%, transparent);
+}

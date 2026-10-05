@@ -24,6 +24,9 @@ import { ProductTour } from "@/components/ProductTour/ProductTour";
 import { useTimelapseUiStore } from "@/timelapse/timelapseUiStore";
 import { useAppModeStore } from "@/mode/appModeStore";
 import { DesignStudio } from "@/mode/DesignStudio";
+import { TabletPad } from "@/mode/TabletPad";
+import { applyTabletAttr } from "@/mode/tablet";
+import { copyAndPublish, pasteFromButton } from "@/lib/seruBridge";
 
 // Chromium currently has a much more expensive compositing path for
 // backdrop-filter over a large, live SVG surface than Safari/Firefox. Keep
@@ -60,6 +63,13 @@ const TimelapseOverlay = lazy(() =>
 // fetched the first time the user switches into Motion mode.
 const MotionStudio = lazy(() => import("@/motion/MotionStudio"));
 
+/** Hapus dari tombol tablet: node terpilih bila ada, selain itu objek terpilih (sama dengan menu klik-kanan). */
+function deleteSelection() {
+  const st = useAppStore.getState();
+  if (st.selectedNodes?.length) st.deleteSelectedNodes();
+  else st.deleteSelectedObjects();
+}
+
 export default function App() {
   const theme = useAppStore((s) => s.theme);
   const sketchMode = useAppStore((s) => s.sketchMode);
@@ -84,6 +94,7 @@ export default function App() {
   const drawMode = editorMode === "draw";
   const appMode = useAppModeStore((s) => s.appMode);
   useKeyboardShortcuts();
+  useEffect(() => { applyTabletAttr(); }, []);
 
   // Once a heavy overlay has been opened for the first time, keep mounting
   // it forever afterwards (its own internal `if (!open) return null` hides
@@ -247,6 +258,12 @@ export default function App() {
             {/* The Single / Multi / Drawing switch stays available while
                 sketching so every surface can be sketched on. */}
             <GlyphViewBar />
+            {/* iPad / tablet: Salin · Tempel · Hapus + Shift · Alt · Cmd di pojok kiri bawah kanvas */}
+            <TabletPad
+              onCopy={copyAndPublish}
+              onPaste={() => void pasteFromButton()}
+              onDelete={deleteSelection}
+            />
             <SketchModeToggle />
             {sketchMode && <SketchToolbar />}
             {/* Multi shows every glyph at once, so only Single and Drawing

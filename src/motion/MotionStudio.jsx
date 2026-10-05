@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useReducer, useCallback, useMemo, useImperativeHandle } from "react";
 import { ModeTabs } from "@/mode/ModeTabs";
+import { TabletPad } from "@/mode/TabletPad";
 import { decodeAudioFile, transcribeAudio, getLanguageOptions, splitCaptionText, groupCaptionSentences } from "@/motion/autoCaption";
 import { loadMotionProject, saveMotionProject, clearMotionProject, serializeProjectForExport, deserializeImportedProject } from "@/motion/motionPersist";
 import {
@@ -4067,6 +4068,23 @@ const GlobalStyle = () => (
       .mfs-preview-btn, .mfs-export-btn { padding:0 10px; font-size:11.5px; }
       .mfs-frame-dims { font-size:10.5px; }
     }
+
+    /* MODE TABLET (iPad / tablet Android, <html data-tablet="true"> dari src/mode/tablet.ts): bar atas satu baris, panel
+       dan ikon dikecilkan supaya semuanya muat dalam satu layar; ikon penting tetap ≥ 28px. */
+    @media (min-width: 861px) {
+      html[data-tablet="true"] .mfs-root { grid-template-columns: 176px minmax(0,1fr) 150px 222px; }
+      html[data-tablet="true"] .mfs-top { height:48px; min-height:0; flex-wrap:nowrap; row-gap:0; padding:0 8px; overflow:hidden; }
+      html[data-tablet="true"] .mfs-top-left, html[data-tablet="true"] .mfs-top-right { flex-wrap:nowrap; gap:4px; min-width:0; }
+      html[data-tablet="true"] .mfs-top-left { gap:6px; }
+      html[data-tablet="true"] .mfs-brand-text, html[data-tablet="true"] .mfs-top-info { display:none; }
+      html[data-tablet="true"] .mfs-top .fm-mode-tab { padding:0 9px; gap:0; height:28px; }
+      html[data-tablet="true"] .mfs-top .fm-mode-tab span { display:none; }
+      html[data-tablet="true"] .mfs-top .mfs-icon-btn { width:28px; height:28px; }
+      html[data-tablet="true"] .mfs-top-sep { margin:0 1px; }
+      html[data-tablet="true"] .mfs-preview-btn, html[data-tablet="true"] .mfs-export-btn { padding:0 9px; font-size:11.5px; }
+    }
+    html[data-tablet="true"] .mfs-center { position:relative; }
+    html[data-tablet="true"] .mfs-center > .fm-tpad { bottom:52px; }
   `}</style>
 );
 
@@ -5268,6 +5286,13 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
 
   return (
     <div className="mfs-center">
+      {!playback.previewOpen && (
+        <TabletPad
+          onCopy={() => pressKey("c", { ctrlKey: true })}
+          onPaste={() => pressKey("v", { ctrlKey: true })}
+          onDelete={() => pressKey("Delete")}
+        />
+      )}
       <div className={`mfs-canvas-wrap ${playback.previewOpen ? "is-playing" : ""}`} ref={wrapRef}>
         <canvas
           ref={canvasRef}
@@ -6846,6 +6871,9 @@ function ProjectMenu({ project, dispatch }) {
     </div>
   );
 }
+
+// Tombol pad tablet memicu pintasan keyboard yang sama (handler global di App), seperti menekan tombolnya di PC.
+const pressKey = (key, mods = {}) => window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...mods }));
 
 const TopBar = React.memo(function TopBar({ project, dispatch, canUndo, canRedo, playback, exportState, onPreview, onExport, onAlign, theme, onToggleTheme }) {
   const mediaCount = project.clips.filter((c) => c.type !== "text").length;
