@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Type, PenTool, Clapperboard, ChevronDown, Undo2, Redo2, Moon, Sun, History, Share2, Search, Layers, SlidersHorizontal, PencilLine } from 'lucide-react';
+import { Type, PenTool, Clapperboard, ChevronDown, Undo2, Redo2, Moon, Sun, History, Printer, Share2, Search, Layers, SlidersHorizontal, PencilLine } from 'lucide-react';
 import { useStore, getS } from '../store/store';
 import { usePopover, Kbd, MOD, SHIFT, Tip } from './primitives';
 import { saveVersion, importFilesViaPicker } from '../lib/library';
 import * as C from '../engine/commands';
-import { newProject, openProject, saveProject } from '../lib/actions';
+import { newProject, openProject, saveProject, openRecentProject } from '../lib/actions';
+import { listRecent, removeRecent, type RecentItem } from '../lib/persist';
 import { TopMenus } from './TopMenus';
 import { smartUndo, smartRedo } from '../tools/interaction';
 import { sbCanUndo } from '../tools/shapebuilder';
@@ -160,6 +161,12 @@ export function TopBar() {
         <div className={tablet ? 'block' : 'hidden sm:block'}>
           <ShareMenu />
         </div>
+        <Tip label="Cetak (ukuran asli)" shortcut={`${MOD}P`} side="bottom">
+          <button className="btn-line ml-1.5 h-7 gap-1.5 px-2.5" aria-label="Cetak" onClick={() => getS().set({ printOpen: true })}>
+            <Printer size={14} strokeWidth={1.75} />
+            <span className="hidden min-[1500px]:inline">Cetak</span>
+          </button>
+        </Tip>
         <button className="btn-primary ml-1.5 h-7 px-3" onClick={() => getS().set({ exportOpen: true })}>
           Ekspor
         </button>
@@ -182,6 +189,44 @@ function SavedBadge({ savedAt, tablet }: { savedAt: number | null; tablet?: bool
       <span className="h-1.5 w-1.5 rounded-full bg-ok" />
       {label}
     </span>
+  );
+}
+
+/** daftar proyek terakhir dibuka (di menu logo) */
+function RecentList({ onPick }: { onPick: (id: string) => void }) {
+  const [list, setList] = useState<RecentItem[]>([]);
+  useEffect(() => {
+    let dead = false;
+    const load = () => void listRecent().then((l) => !dead && setList(l));
+    load();
+    window.addEventListener('designseru:recent', load);
+    return () => {
+      dead = true;
+      window.removeEventListener('designseru:recent', load);
+    };
+  }, []);
+  if (!list.length) return <div className="px-2 py-1.5 text-xs text-faint">Belum ada proyek terakhir. Simpan atau buka proyek (.seru) dulu.</div>;
+  const ago = (t: number) => {
+    const m = Math.round((Date.now() - t) / 60000);
+    if (m < 1) return 'baru saja';
+    if (m < 60) return `${m} mnt lalu`;
+    if (m < 1440) return `${Math.round(m / 60)} jam lalu`;
+    return new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+  };
+  return (
+    <>
+      {list.slice(0, 8).map((r) => (
+        <div key={r.id} className="group flex items-center">
+          <button className="menu-item min-w-0 flex-1" onClick={() => onPick(r.id)} title={r.name}>
+            <span className="min-w-0 flex-1 truncate">{r.name}</span>
+            <span className="ml-2 shrink-0 text-2xs text-faint">{ago(r.time)}</span>
+          </button>
+          <button className="icon-btn mr-0.5 hidden h-6 w-6 group-hover:flex" aria-label={`Hapus ${r.name} dari daftar`} title="Hapus dari daftar" onClick={() => void removeRecent(r.id)}>
+            ×
+          </button>
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -216,12 +261,21 @@ function MainMenu() {
         <ChevronDown size={12} strokeWidth={2} className={`text-faint transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div role="menu" className="popover animate-drop absolute left-0 top-10 z-40 max-h-[calc(100vh-64px)] w-64 overflow-y-auto p-1">
+        <div role="menu" className="popover animate-drop absolute left-0 top-10 z-40 max-h-[calc(100dvh-112px)] w-64 overflow-y-auto overscroll-contain p-1 pb-2">
           {head('File')}
           {item('Dokumen baru', newProject)}
-          {item('Buka proyek (.pulpen)…', openProject, `${MOD}O`)}
+          {item('Buka proyek (.seru)…', openProject, `${MOD}O`)}
+          {head('Terakhir dibuka')}
+          <RecentList
+            onPick={(id) => {
+              setOpen(false);
+              void openRecentProject(id);
+            }}
+          />
+          {head('Berkas')}
           {item('Impor file… (SVG, gambar, PDF)', importFilesViaPicker)}
-          {item('Simpan proyek (.pulpen)', saveProject, `${MOD}S`)}
+          {item('Simpan proyek (.seru)', saveProject, `${MOD}S`)}
+          {item('Cetak…', () => getS().set({ printOpen: true }), `${MOD}P`)}
           {item('Ekspor…', () => getS().set({ exportOpen: true }), `${MOD}${SHIFT}E`)}
           {item('Simpan versi', () => saveVersion())}
           {item('Riwayat versi…', () => getS().set({ versionsOpen: true }))}
@@ -314,7 +368,7 @@ function ShareMenu() {
         <div className="popover animate-drop absolute right-0 top-9 z-40 w-72 p-3.5">
           <div className="text-sm font-semibold">Bagikan desain</div>
           <p className="mt-1 text-sm leading-relaxed text-muted">
-            Kolaborasi real-time menyusul. Untuk sekarang, simpan file <b className="font-semibold text-ink">.pulpen</b> lalu kirim ke rekanmu. Mereka bisa
+            Kolaborasi real-time menyusul. Untuk sekarang, simpan file <b className="font-semibold text-ink">.seru</b> lalu kirim ke rekanmu. Mereka bisa
             membukanya lewat menu Buka proyek.
           </p>
           <button
@@ -324,7 +378,7 @@ function ShareMenu() {
               saveProject();
             }}
           >
-            Simpan file .pulpen
+            Simpan file .seru
           </button>
         </div>
       )}

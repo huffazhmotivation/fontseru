@@ -74,7 +74,10 @@ export function CanvasView() {
         const c = getS().camera;
         getS().set({ camera: { ...c, x: c.x + (r.width - prev.w) / 2, y: c.y + (r.height - prev.h) / 2 } });
       }
-      schedule();
+      // kanvas baru saja dikosongkan oleh perubahan ukuran → gambar SEKARANG (di frame yang sama), bukan di frame berikutnya;
+      // kalau tidak, satu frame kosong tampil dan layar berkedip hitam/putih saat jendela diseret untuk diperbesar
+      dirty = true;
+      flush();
     };
     const ro = new ResizeObserver(resize);
     ro.observe(el);
