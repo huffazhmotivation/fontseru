@@ -1,0 +1,64 @@
+{
+  "name": "fontseru-desktop",
+  "productName": "FontSeru",
+  "version": "0.5.0",
+  "description": "FontSeru — studio font, desain & motion (offline)",
+  "author": "FontSeru",
+  "main": "main.cjs",
+  "private": true,
+  "build": {
+    "appId": "app.fontseru.desktop",
+    "productName": "FontSeru",
+    "files": [
+      "main.cjs",
+      "dist/**/*"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "identity": null,
+      "artifactName": "FontSeru-${version}-macOS.${ext}"
+    },
+    "dmg": {
+      "title": "FontSeru"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FontSeru",
+      "artifactName": "FontSeru-Setup-${version}-windows-x64.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  }
+}

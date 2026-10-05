@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Crown, LogIn, LogOut } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { useAppStore } from "@/glyph/store";
+import { isDesktopApp } from "@/lib/desktop";
 
 function initialsFromEmail(email: string | null | undefined): string {
   if (!email) return "?";
@@ -62,6 +63,15 @@ export function AuthWidget() {
     setMenuOpen(false);
     await signOut();
   };
+
+  // Aplikasi desktop: tanpa login, Pro aktif — cukup tampilkan lencana Pro.
+  if (isDesktopApp) {
+    return (
+      <span className="fm-auth-plan-badge fm-auth-plan-pro" title="Semua fitur Pro aktif" data-testid="auth-pro-badge">
+        <Crown size={11} /> Pro
+      </span>
+    );
+  }
 
   if (initializing) {
     return <div className="fm-auth-placeholder" aria-hidden="true" />;

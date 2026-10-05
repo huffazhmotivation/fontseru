@@ -1,3 +1,4 @@
+import { isDesktopApp } from "@/lib/desktop";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/auth/AuthProvider";
@@ -66,6 +67,8 @@ export function useExportUsage(): UseExportUsageResult {
   }, [refresh, isPro]);
 
   const consumeExport = useCallback(async (): Promise<ConsumeResult> => {
+    // Aplikasi desktop: Pro aktif tanpa login, ekspor tidak dibatasi.
+    if (isDesktopApp) return { allowed: true, usage: { unlimited: true, used: 0, limit: 0, period: "" } };
     if (!supabase || !user) {
       // No session / not configured: never silently allow an export whose
       // usage we can't actually record.

@@ -6815,3 +6815,9 @@ html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-fontname 
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-mode-tab { padding: 0 7px; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-logo-image { max-width: 130px; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-align-btn { width: 20px; }
+
+/* dialog Save As (pengganti window.prompt, yang tidak ada di aplikasi desktop) */
+.fm-saveas-dialog { width: min(380px, calc(100vw - 32px)); padding: 22px 22px 18px; gap: 14px; }
+.fm-saveas-dialog h2 { margin: 0; font-size: 16px; font-weight: 700; }
+.fm-saveas-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.fm-saveas-actions button { width: auto; min-width: 84px; }

@@ -927,10 +927,20 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     }
   };
 
+  // window.prompt() tidak ada di aplikasi desktop (Electron), jadi nama berkas ditanyakan lewat dialog sendiri.
+  const [saveAsOpen, setSaveAsOpen] = useState(false);
+  const [saveAsName, setSaveAsName] = useState("");
+
   const saveAs = () => {
-    const current = safeProjectBaseName(useAppStore.getState().fontName || projectFileName);
-    const chosen = window.prompt("Save FontSeru project as", current);
+    setSaveAsName(safeProjectBaseName(useAppStore.getState().fontName || projectFileName));
+    setSaveAsOpen(true);
+    setOpen(false);
+  };
+
+  const confirmSaveAs = () => {
+    const chosen = saveAsName.trim();
     if (!chosen) return;
+    setSaveAsOpen(false);
     try {
       const filename = `${safeProjectBaseName(chosen)}.fs`;
       setProjectFileName(filename);
@@ -939,8 +949,6 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
     } catch (error) {
       console.error("[FontSeru] Project save-as failed.", error);
       showToast("Unable to save the project.", "error");
-    } finally {
-      setOpen(false);
     }
   };
 
@@ -2155,6 +2163,49 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
         </div>
       )}
 
+      {saveAsOpen && (
+        <div
+          className="fm-export-backdrop"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setSaveAsOpen(false);
+          }}
+        >
+          <form
+            className="fm-export-dialog fm-saveas-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="saveas-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              confirmSaveAs();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setSaveAsOpen(false);
+            }}
+          >
+            <h2 id="saveas-title">Save As…</h2>
+            <label className="fm-export-field">
+              <span>Nama berkas project (.fs)</span>
+              <input
+                value={saveAsName}
+                onChange={(event) => setSaveAsName(event.target.value)}
+                onFocus={(event) => event.target.select()}
+                autoFocus
+                spellCheck={false}
+                data-testid="saveas-input"
+              />
+            </label>
+            <div className="fm-saveas-actions">
+              <button type="button" className="fm-secondary-btn" onClick={() => setSaveAsOpen(false)}>
+                Batal
+              </button>
+              <button type="submit" className="fm-primary-btn" disabled={!saveAsName.trim()}>
+                Simpan
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       {cloudSaveSuccess && (
         <div
           className="fm-export-backdrop"

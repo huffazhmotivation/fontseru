@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { Session, User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase, authRedirectSnapshot } from "@/lib/supabaseClient";
 import { useAppStore } from "@/glyph/store";
+import { isDesktopApp } from "@/lib/desktop";
 
 export type UserPlan = "free" | "pro";
 
@@ -430,12 +431,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // src/glyph/store.ts) — `profiles.plan` (via `profile` above) remains the
   // only source of truth; this effect never reads the store back.
   useEffect(() => {
-    const plan: UserPlan = profile?.plan ?? "free";
+    const plan: UserPlan = isDesktopApp ? "pro" : profile?.plan ?? "free";
     useAppStore.getState().setPlan(plan);
   }, [profile]);
 
   const value = useMemo<AuthContextValue>(() => {
-    const plan = profile?.plan ?? "free";
+    const plan: UserPlan = isDesktopApp ? "pro" : profile?.plan ?? "free";
     return {
       isConfigured: isSupabaseConfigured,
       initializing,

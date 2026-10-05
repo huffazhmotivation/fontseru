@@ -4,7 +4,7 @@
     <g transform="matrix(1,0,0,1,-198,-3388)">
         <g transform="matrix(1,0,0,1,0,634)">
             <g transform="matrix(0.644518,0,0,0.644518,70.385382,570.372093)">
-                <rect x="198" y="3388" width="301" height="301"/>
+                <rect x="198" y="3388" width="301" height="301" rx="68" ry="68"/>
             </g>
         </g>
         <g transform="matrix(1,0,0,1,0,634)">
