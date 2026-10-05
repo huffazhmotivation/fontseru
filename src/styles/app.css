@@ -285,7 +285,7 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
 
 /* ------------------------------------------------------------------ TOP BAR */
 .fm-topbar {
-  min-height: 54px;
+  min-height: 48px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -325,8 +325,8 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
 .fm-logo-image {
   display: block;
   width: auto;
-  height: 29px;
-  max-width: clamp(64px, 9vw, 112px);
+  height: 24px;
+  max-width: 130px;
   object-fit: contain;
   flex: 0 0 auto;
 }
@@ -6770,7 +6770,6 @@ html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-divider,
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-align-divider { display: none; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-theme-toggle { width: var(--tb); height: var(--tb); }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-fontname { min-width: 40px; max-width: 90px; }
-html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-logo-image { max-width: 66px; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-mode-tab { height: 28px; padding: 0 10px; gap: 6px; font-size: 12px; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-auth-avatar-btn { padding: 2px; gap: 0; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-auth-plan-badge { display: none; }
@@ -6810,8 +6809,9 @@ html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-hint-inline { gap: 2
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) { --tb: 29px; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-mode-tab { padding: 0 8px; gap: 5px; font-size: 11.5px; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-align-btn { width: 24px; height: 26px; }
-html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-logo-image { max-width: 56px; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar { gap: 1px; padding: 4px 4px; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-align-btn { width: 22px; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-fontname { min-width: 30px; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-mode-tab { padding: 0 7px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-logo-image { max-width: 130px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-align-btn { width: 20px; }

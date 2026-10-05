@@ -84,7 +84,7 @@ export function TopBar() {
   const [editName, setEditName] = useState(false);
 
   return (
-    <header className="ds-topbar relative z-30 flex h-11 shrink-0 items-center gap-1 border-b border-line bg-app pl-2 pr-2">
+    <header className="ds-topbar relative z-30 flex h-12 shrink-0 items-center gap-1 border-b border-line bg-app pl-2 pr-2" style={{ height: 48 }}>
       <MainMenu />
       <ModeSwitch />
       <span className={`mx-1.5 h-4 w-px bg-line ${tablet ? 'block' : 'hidden sm:block'}`} />
@@ -211,7 +211,7 @@ function MainMenu() {
           <Logo size={24} />
         </span>
         <span className={`pl-1 ${tablet ? 'inline' : 'hidden sm:inline'}`}>
-          <Wordmark height={tablet ? 15 : 17} />
+          <Wordmark height={24} />
         </span>
         <ChevronDown size={12} strokeWidth={2} className={`text-faint transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>

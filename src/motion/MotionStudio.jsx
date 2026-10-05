@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState, useReducer, useCallback, useMemo, useImperativeHandle } from "react";
 import { ModeTabs } from "@/mode/ModeTabs";
 import { TabletPad } from "@/mode/TabletPad";
+import motionLogoDark from "@/assets/logo-motion-dark.svg";
+import motionLogoLight from "@/assets/logo-motion-light.svg";
 import { decodeAudioFile, transcribeAudio, getLanguageOptions, splitCaptionText, groupCaptionSentences } from "@/motion/autoCaption";
 import { loadMotionProject, saveMotionProject, clearMotionProject, serializeProjectForExport, deserializeImportedProject } from "@/motion/motionPersist";
 import {
@@ -3720,6 +3722,7 @@ const GlobalStyle = () => (
     .mfs-export-btn:hover { background:#6a5aff; }
     .mfs-export-btn:disabled, .mfs-preview-btn:disabled { opacity:0.5; cursor:not-allowed; }
     .mfs-brand { display:flex; align-items:center; gap:8px; font-weight:600; letter-spacing:-0.01em; }
+    .mfs-logo-image { display:block; height:24px; width:auto; flex:0 0 auto; }
     .mfs-brand-mark { width:20px; height:20px; border-radius:5px; background:linear-gradient(135deg,var(--accent),#4b3ff0); display:flex; align-items:center; justify-content:center; }
 
     .mfs-btn { display:inline-flex; align-items:center; gap:6px; background:var(--bg-elevated); border:1px solid var(--border-light); color:var(--text); padding:6px 10px; border-radius:var(--radius); font-size:12.5px; font-weight:500; cursor:pointer; }
@@ -4080,7 +4083,9 @@ const GlobalStyle = () => (
       html[data-tablet="true"] .mfs-top .fm-mode-tab { padding:0 7px; gap:5px; height:28px; font-size:11.5px; }
       html[data-tablet="true"] .mfs-top .mfs-icon-btn { width:28px; height:28px; }
       html[data-tablet="true"] .mfs-top-sep { margin:0 1px; }
-      html[data-tablet="true"] .mfs-preview-btn, html[data-tablet="true"] .mfs-export-btn { padding:0 9px; font-size:11.5px; }
+      html[data-tablet="true"] .mfs-preview-btn, html[data-tablet="true"] .mfs-export-btn { padding:0 9px; font-size:11.5px; white-space:nowrap; }
+      html[data-tablet="true"] .mfs-top .mfs-frame-dims { display:none; }
+      html[data-tablet="true"] .mfs-top .mfs-align-group .mfs-icon-btn { width:24px; }
     }
     html[data-tablet="true"] .mfs-center { position:relative; }
     html[data-tablet="true"] .mfs-center > .fm-tpad { bottom:52px; }
@@ -6888,7 +6893,7 @@ const TopBar = React.memo(function TopBar({ project, dispatch, canUndo, canRedo,
   return (
     <div className="mfs-top">
       <div className="mfs-top-left">
-        <div className="mfs-brand"><div className="mfs-brand-mark"><Wand2 size={12} color="#fff" /></div><span className="mfs-brand-text">Motion Font Studio</span></div>
+        <div className="mfs-brand" aria-label="MotionSeru"><img className="mfs-logo-image" src={theme === "light" ? motionLogoLight : motionLogoDark} alt="MotionSeru" draggable={false} /></div>
         <ModeTabs />
         <FrameSizeControl frameSize={project.frameSize} dispatch={dispatch} />
         <ProjectMenu project={project} dispatch={dispatch} />
