@@ -12,3 +12,6 @@ createRoot(document.getElementById('root')!).render(<App />);
 // pustaka ikon lengkap dimuat saat browser senggang (tidak menghambat muat awal)
 const idle = (cb: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(cb, { timeout: 4000 }) : setTimeout(cb, 2500));
 idle(() => import('./lib/icons').then((m) => m.loadLucide()).catch(() => {}));
+
+// PWA DesignSeru tidak dipakai di FontSeru: aplikasi ini berjalan di sub-folder /design/ (iframe) dan FontSeru punya
+// service worker sendiri di akar situs (Mode Design sengaja tidak di-cache offline, lihat vite.config.ts FontSeru).

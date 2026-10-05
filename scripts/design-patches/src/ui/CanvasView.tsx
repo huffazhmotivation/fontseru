@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { useStore, getS } from '../store/store';
-import { render, invalidateViewCache } from '../engine/render';
+import { render, invalidateViewCache, fxResultsReady } from '../engine/render';
 import { onDoubleClick, onPointerDown, onPointerMove, onPointerUp, onWheel, setCanvasRect } from '../tools/interaction';
 import { registerCanvas } from '../tools/extra';
 import { onFontLoaded, relayoutAll } from '../engine/text';
-import { TextEditor } from './CanvasExtras';
+import { TextEditor, ShapeBuilderChip } from './CanvasExtras';
 import { FrameRename } from './FrameRename';
 import { FloatingToolbar } from './Toolbar';
 import { AIDock } from './AIDock';
@@ -112,7 +112,7 @@ export function CanvasView() {
       schedule();
     });
     const offFx = onFxReady(() => {
-      invalidateViewCache();
+      fxResultsReady();
       schedule();
     });
     // tempel gambar / SVG dari clipboard sistem
@@ -340,6 +340,7 @@ export function CanvasView() {
       <JobFx />
       <ReplaceChip />
       <ActionChip />
+      <ShapeBuilderChip />
       {tablet && <TabletModifiers />}
       {!focus && (
         <>

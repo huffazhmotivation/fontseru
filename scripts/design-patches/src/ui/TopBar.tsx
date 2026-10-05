@@ -7,6 +7,7 @@ import * as C from '../engine/commands';
 import { newProject, openProject, saveProject } from '../lib/actions';
 import { TopMenus } from './TopMenus';
 import { smartUndo, smartRedo } from '../tools/interaction';
+import { sbCanUndo } from '../tools/shapebuilder';
 import { useTablet, setTabletPref, setPalm } from '../store/tablet';
 
 /** Saat DesignSeru dibuka di dalam FontSeru (iframe, Mode Design): tab Font / Design / Motion di bar atas, tepat di kanan logo.
@@ -71,7 +72,7 @@ export function Wordmark({ height = 18 }: { height?: number }) {
 export function TopBar() {
   const fileName = useStore((s) => s.fileName);
   const theme = useStore((s) => s.theme);
-  const canUndo = useStore((s) => s.past.length > 0 || !!s.penDrawingId);
+  const canUndo = useStore((s) => s.past.length > 0 || !!s.penDrawingId || (s.tool === 'shapebuilder' && !!s.overlay && sbCanUndo()));
   const canRedo = useStore((s) => s.future.length > 0 || !!s.penDrawingId);
   const savedAt = useStore((s) => s.savedAt);
   const layersOpen = useStore((s) => s.layersOpen);
