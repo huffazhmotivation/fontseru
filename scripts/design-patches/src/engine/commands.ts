@@ -746,7 +746,7 @@ export function zoomAt(factor: number, sx?: number, sy?: number) {
   const { camera, viewport } = s;
   const px = sx ?? viewport.w / 2,
     py = sy ?? viewport.h / 2;
-  const z = Math.min(256, Math.max(0.02, camera.zoom * factor));
+  const z = Math.min(256, Math.max(0.002, camera.zoom * factor));
   const wx = (px - camera.x) / camera.zoom,
     wy = (py - camera.y) / camera.zoom;
   s.set({ camera: { zoom: z, x: px - wx * z, y: py - wy * z } });
@@ -765,7 +765,7 @@ export function zoomToFit(onlySelection = false) {
     return;
   }
   const pad = 80;
-  const z = Math.min(8, Math.max(0.02, Math.min((s.viewport.w - pad * 2) / (b.w || 1), (s.viewport.h - pad * 2) / (b.h || 1))));
+  const z = Math.min(8, Math.max(0.002, Math.min((s.viewport.w - pad * 2) / (b.w || 1), (s.viewport.h - pad * 2) / (b.h || 1))));
   s.set({
     camera: { zoom: z, x: s.viewport.w / 2 - (b.x + b.w / 2) * z, y: s.viewport.h / 2 - (b.y + b.h / 2) * z },
   });
