@@ -4077,8 +4077,7 @@ const GlobalStyle = () => (
       html[data-tablet="true"] .mfs-top-left, html[data-tablet="true"] .mfs-top-right { flex-wrap:nowrap; gap:4px; min-width:0; }
       html[data-tablet="true"] .mfs-top-left { gap:6px; }
       html[data-tablet="true"] .mfs-brand-text, html[data-tablet="true"] .mfs-top-info { display:none; }
-      html[data-tablet="true"] .mfs-top .fm-mode-tab { padding:0 9px; gap:0; height:28px; }
-      html[data-tablet="true"] .mfs-top .fm-mode-tab span { display:none; }
+      html[data-tablet="true"] .mfs-top .fm-mode-tab { padding:0 7px; gap:5px; height:28px; font-size:11.5px; }
       html[data-tablet="true"] .mfs-top .mfs-icon-btn { width:28px; height:28px; }
       html[data-tablet="true"] .mfs-top-sep { margin:0 1px; }
       html[data-tablet="true"] .mfs-preview-btn, html[data-tablet="true"] .mfs-export-btn { padding:0 9px; font-size:11.5px; }

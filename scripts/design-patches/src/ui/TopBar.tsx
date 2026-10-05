@@ -16,18 +16,21 @@ const EMBEDDED = typeof window !== 'undefined' && window.parent !== window;
 function ModeSwitch() {
   if (!EMBEDDED) return null;
   const go = (mode: 'font' | 'motion') => window.parent.postMessage({ type: 'fontseru:set-mode', mode }, location.origin);
-  const base = 'inline-flex h-7 items-center gap-1.5 rounded-ctl px-3 text-sm font-semibold transition-colors';
+  // ukuran persis sama dengan tab Font / Motion (ModeTabs di FontSeru) supaya ketiganya satu kesatuan
+  const tabStyle = { height: 30, padding: '0 13px', gap: 7, fontSize: 12.5, letterSpacing: '-0.01em', borderRadius: 8, lineHeight: 1 } as const;
+  const base = 'inline-flex items-center whitespace-nowrap border border-transparent font-semibold transition-colors';
   const idle = `${base} text-muted hover:text-ink`;
+  const on = 'inline-flex items-center whitespace-nowrap border border-line font-semibold bg-panel text-ink shadow-sm';
   return (
-    <div role="tablist" aria-label="Mode editor" className="mx-1.5 flex shrink-0 items-center gap-0.5 rounded-bar border border-line bg-field p-0.5">
-      <button type="button" role="tab" aria-selected={false} className={idle} onClick={() => go('font')}>
-        <Type size={14} strokeWidth={2} /> Font
+    <div role="tablist" aria-label="Mode editor" className="mx-1.5 flex shrink-0 items-center border border-line bg-field" style={{ padding: 3, gap: 3, borderRadius: 11 }}>
+      <button type="button" role="tab" aria-selected={false} className={idle} style={tabStyle} onClick={() => go('font')}>
+        <Type size={15} strokeWidth={2} className="opacity-80" /> <span>Font</span>
       </button>
-      <button type="button" role="tab" aria-selected className={`${base} border border-line bg-panel text-ink shadow-sm`}>
-        <PenTool size={14} strokeWidth={2} className="text-accent" /> Design
+      <button type="button" role="tab" aria-selected className={on} style={tabStyle}>
+        <PenTool size={15} strokeWidth={2} className="text-accent" /> <span>Design</span>
       </button>
-      <button type="button" role="tab" aria-selected={false} className={idle} onClick={() => go('motion')}>
-        <Clapperboard size={14} strokeWidth={2} /> Motion
+      <button type="button" role="tab" aria-selected={false} className={idle} style={tabStyle} onClick={() => go('motion')}>
+        <Clapperboard size={15} strokeWidth={2} className="opacity-80" /> <span>Motion</span>
       </button>
     </div>
   );
