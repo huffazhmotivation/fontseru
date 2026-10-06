@@ -185,3 +185,46 @@ export function ensureDefaultSymbols(glyphs: GlyphMap, unitsPerEm: number): Glyp
   }
   return { ...glyphs, ...additions };
 }
+
+/**
+ * Migration/self-heal for glyph maps that are missing part of FontSeru's
+ * standard glyph inventory — Numbers, Punctuation, base Symbols, or even
+ * letters. This happens for any project that did not start from
+ * `buildDefaultGlyphs()`: an imported .ttf/.otf only carries the glyphs that
+ * font happened to ship (e.g. a font with no digits), and that map is then
+ * saved into the .fs project and autosave as-is. The glyph list hides any
+ * group with zero glyphs, so the whole "Numbers" section simply vanished.
+ *
+ * Same contract as `ensureSpaceGlyph` / `ensureDefaultSymbols`: it only ADDS
+ * an empty, ready-to-draw slot for a standard character that is genuinely
+ * absent (checked by code point, not just the map key, so a glyph reachable
+ * under another key is never duplicated) and never touches a glyph that
+ * already exists. Returns `glyphs` unchanged — same reference — when nothing
+ * is missing, so calling it on every load is cheap.
+ */
+export function ensureDefaultGlyphSlots(glyphs: GlyphMap, unitsPerEm: number): GlyphMap {
+  const haveUnicodes = new Set<number>();
+  for (const g of Object.values(glyphs)) {
+    haveUnicodes.add(g.unicode);
+    for (const u of g.unicodes ?? []) haveUnicodes.add(u);
+  }
+  let additions: GlyphMap | null = null;
+  for (const group of GLYPH_GROUPS) {
+    for (const ch of group.chars) {
+      const code = ch.codePointAt(0) ?? 0;
+      if (glyphs[ch] || haveUnicodes.has(code)) continue;
+      const { advanceWidth, lsb, rsb } = standardGlyphMetrics(ch, unitsPerEm);
+      (additions ??= {})[ch] = {
+        char: ch,
+        unicode: code,
+        category: group.id,
+        advanceWidth,
+        lsb,
+        rsb,
+        outline: emptyOutline(),
+        components: [],
+      };
+    }
+  }
+  return additions ? { ...glyphs, ...additions } : glyphs;
+}

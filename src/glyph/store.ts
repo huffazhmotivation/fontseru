@@ -5,7 +5,7 @@ import { MAX_CUSTOM_FAMILIES, hasOutline } from "@/types/glyph";
 import { emptyOutline, type GlyphOutline, type StrokeCap, type VectorObject } from "@/types/geometry";
 import type { ToolId } from "@/types/tool";
 import type { BrushSettings, BrushType } from "@/types/brush";
-import { buildDefaultGlyphs, ensureSpaceGlyph, ensureDefaultSymbols } from "./defaultGlyphs";
+import { buildDefaultGlyphs, ensureSpaceGlyph, ensureDefaultGlyphSlots } from "./defaultGlyphs";
 import { DRAW_CHAR, emptyDrawGlyph, makeDrawGlyph, withoutDrawGlyph } from "./drawMode";
 import { GRID_SIZE_MAX, GRID_SIZE_MIN, normalizeGridShape, type GridShape } from "@/editor/gridGeometry";
 import { cloneGlyphMap, familyFromRegular, newCustomFamilyGlyphs } from "./family";
@@ -2537,11 +2537,15 @@ export const useAppStore = create<AppState>()((set, get) => {
         // font). Backfill it per style so every style's glyph map is
         // QA-clean and layout-consistent, without touching a style that
         // already has a real U+0020 mapping.
+        // Same idea for the rest of the standard inventory (Numbers,
+        // Punctuation, Symbols, letters): an imported font or an older
+        // project that lacks them gets empty ready-to-draw slots added,
+        // so those glyph-list sections never silently disappear.
         const unitsPerEm = patch.metrics?.unitsPerEm ?? s.metrics.unitsPerEm;
         const familyWithSpace: GlyphFamily = Object.fromEntries(
           Object.entries(family).map(([styleId, glyphs]) => [
             styleId,
-            ensureDefaultSymbols(ensureSpaceGlyph(glyphs, unitsPerEm), unitsPerEm),
+            ensureDefaultGlyphSlots(ensureSpaceGlyph(glyphs, unitsPerEm), unitsPerEm),
           ])
         ) as GlyphFamily;
         const activeGlyphs = familyWithSpace[style];

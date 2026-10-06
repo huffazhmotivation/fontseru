@@ -1,0 +1,21 @@
+module.exports = async ({ go, ev, files, shot, sleep, key, click }) => {
+  await go('http://localhost:3000/');
+  await ev(`localStorage.setItem('fontseru.appMode','font'); true`);
+  await go('http://localhost:3000/');
+  await files('input[type=file]', __dirname + '/StackSansNotch.ttf');
+  await sleep(4500);
+  await ev(`document.querySelectorAll('.fm-toast button, [class*=toast] button').forEach(b=>b.click()); document.querySelector('[data-testid="glyph-tile-S"]').click(); true`);
+  await sleep(800);
+  await shot('font-select');
+  await key('n', 'KeyN');
+  await sleep(600);
+  await shot('font-node');
+  await ev(`document.querySelector('[data-testid="glyph-view-multi"]').click(); true`);
+  await sleep(1500);
+  await shot('font-multi');
+  await ev(`document.querySelector('[data-testid="glyph-view-single"]').click(); true`);
+  await sleep(800);
+  await ev(`document.querySelector('[data-testid="test-lab-btn"]').click(); true`);
+  await sleep(2500);
+  await shot('testlab');
+};

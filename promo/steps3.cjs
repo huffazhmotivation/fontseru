@@ -1,0 +1,51 @@
+const setVal = (sel, v) => `(()=>{const el=document.querySelector(${JSON.stringify(sel)}); const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto,'value').set.call(el,${JSON.stringify(v)}); el.dispatchEvent(new Event('input',{bubbles:true})); return true})()`;
+module.exports = async ({ go, ev, files, shot, sleep, key, win }) => {
+  const dbg = win.webContents.debugger;
+  await go('http://localhost:3000/');
+  await ev(`localStorage.setItem('fontseru.appMode','font'); true`);
+  await go('http://localhost:3000/');
+  await files('input[type=file]', __dirname + '/StackSansNotch.ttf');
+  await sleep(4500);
+  await ev(`document.querySelector('[data-testid="glyph-view-multi"]').click(); true`);
+  await sleep(1200);
+  for (let i = 0; i < 10; i++) await dbg.sendCommand('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 900, y: 500, deltaX: 0, deltaY: -800 });
+  await sleep(800);
+  await shot('font-multi');
+  await ev(`document.querySelector('[data-testid="glyph-view-single"]').click(); true`);
+  await sleep(500);
+  await ev(`document.querySelector('[data-testid="test-lab-btn"]').click(); true`);
+  await sleep(2000);
+  await ev(`[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Pangrams').click(); true`);
+  await sleep(1500);
+  await shot('testlab-pangram');
+  await ev(`[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Paragraph').click(); true`);
+  await sleep(1500);
+  await shot('testlab-paragraph');
+  await key('Escape', 'Escape');
+  await ev(`document.querySelector('.fm-lab-close, [aria-label="Close"], [title="Close"]')?.click(); true`);
+  await sleep(800);
+  // export dialog
+  await ev(`document.querySelector('.fm-filemenu-wrap button').click(); true`);
+  await sleep(400);
+  await ev(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Export Font')).click(); true`);
+  await sleep(1500);
+  await shot('export');
+  await key('Escape', 'Escape');
+  // motion
+  await ev(`localStorage.setItem('fontseru.appMode','motion'); true`);
+  await go('http://localhost:3000/');
+  await sleep(2500);
+  await files('input[accept=".otf,.ttf,.woff2,.woff"]', __dirname + '/StackSansNotch.ttf');
+  await sleep(2000);
+  await ev(setVal('.mfs-right textarea', 'FontSeru'));
+  await sleep(800);
+  await shot('motion-0');
+  await ev(`document.querySelector('.mfs-transport .mfs-play-btn').click(); true`);
+  await sleep(1400);
+  await shot('motion-play');
+  // design
+  await ev(`localStorage.setItem('fontseru.appMode','design'); true`);
+  await go('http://localhost:3000/');
+  await sleep(7000);
+  await shot('design');
+};

@@ -1,0 +1,137 @@
+<!doctype html>
+<meta charset="utf-8" />
+<script type="module">
+import { Output, Mp4OutputFormat, BufferTarget, VideoSampleSource, VideoSample, AudioBufferSource, canEncodeAudio, QUALITY_VERY_HIGH } from '../node_modules/mediabunny/dist/bundles/mediabunny.min.mjs';
+const { ipcRenderer } = require('electron');
+
+/* ---------- musik: elektronik minimal ala keynote, 120 BPM, Am–F–C–G ---------- */
+async function music(dur, hits) {
+  const SR = 48000;
+  const ctx = new OfflineAudioContext(2, SR * dur, SR);
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -14; comp.ratio.value = 4;
+  const master = ctx.createGain(); master.gain.value = 0.85;
+  comp.connect(master).connect(ctx.destination);
+  // fade akhir
+  master.gain.setValueAtTime(0.85, dur - 1.2); master.gain.linearRampToValueAtTime(0, dur);
+
+  const noise = ctx.createBuffer(1, SR * 2, SR);
+  { const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  const noiseSrc = (t, len) => { const s = ctx.createBufferSource(); s.buffer = noise; s.start(t, Math.random(), len); return s; };
+
+  // reverb sederhana (impulse noise meluruh)
+  const ir = ctx.createBuffer(2, SR * 2.5, SR);
+  for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3); }
+  const verb = ctx.createConvolver(); verb.buffer = ir;
+  const verbGain = ctx.createGain(); verbGain.gain.value = 0.35;
+  verb.connect(verbGain).connect(comp);
+
+  const B = 0.5; // 1 ketukan
+  const kick = (t, g = 1) => {
+    const o = ctx.createOscillator(), a = ctx.createGain();
+    o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
+    a.gain.setValueAtTime(0.9 * g, t); a.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+    o.connect(a).connect(comp); o.start(t); o.stop(t + 0.45);
+  };
+  const hat = (t, g = 1) => {
+    const s = noiseSrc(t, 0.06), f = ctx.createBiquadFilter(), a = ctx.createGain();
+    f.type = 'highpass'; f.frequency.value = 7500;
+    a.gain.setValueAtTime(0.09 * g, t); a.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    s.connect(f).connect(a).connect(comp);
+  };
+  const clap = (t) => {
+    const s = noiseSrc(t, 0.2), f = ctx.createBiquadFilter(), a = ctx.createGain();
+    f.type = 'bandpass'; f.frequency.value = 1800; f.Q.value = 0.8;
+    a.gain.setValueAtTime(0.22, t); a.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    s.connect(f).connect(a); a.connect(comp); a.connect(verb);
+  };
+  const note = (f0, t, len, { type = 'sawtooth', gain = 0.05, cutoff = 1400, attack = 0.02, rel = 0.3, det = [0], toVerb = 0 } = {}) => {
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff; f.Q.value = 0.6;
+    const a = ctx.createGain();
+    a.gain.setValueAtTime(0, t); a.gain.linearRampToValueAtTime(gain, t + attack);
+    a.gain.setValueAtTime(gain, t + len); a.gain.linearRampToValueAtTime(0, t + len + rel);
+    f.connect(a).connect(comp); if (toVerb) { const v = ctx.createGain(); v.gain.value = toVerb; a.connect(v).connect(verb); }
+    for (const d of det) { const o = ctx.createOscillator(); o.type = type; o.frequency.value = f0; o.detune.value = d; o.connect(f); o.start(t); o.stop(t + len + rel + 0.05); }
+  };
+  const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+  const CH = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]]; // Am F C G
+  const BASS = [45, 41, 36, 43];
+  const impact = (t, g = 1) => {
+    const o = ctx.createOscillator(), a = ctx.createGain();
+    o.frequency.setValueAtTime(70, t); o.frequency.exponentialRampToValueAtTime(30, t + 1.2);
+    a.gain.setValueAtTime(0.7 * g, t); a.gain.exponentialRampToValueAtTime(0.001, t + 1.6);
+    o.connect(a).connect(comp); o.start(t); o.stop(t + 1.7);
+    const s = noiseSrc(t, 1.2), f = ctx.createBiquadFilter(), b = ctx.createGain();
+    f.type = 'lowpass'; f.frequency.setValueAtTime(5000, t); f.frequency.exponentialRampToValueAtTime(200, t + 1.0);
+    b.gain.setValueAtTime(0.25 * g, t); b.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
+    s.connect(f).connect(b); b.connect(comp); b.connect(verb);
+  };
+  const riser = (t0, t1, g = 1) => {
+    const s = noiseSrc(t0, t1 - t0), f = ctx.createBiquadFilter(), a = ctx.createGain();
+    f.type = 'bandpass'; f.Q.value = 2; f.frequency.setValueAtTime(300, t0); f.frequency.exponentialRampToValueAtTime(7000, t1);
+    a.gain.setValueAtTime(0.001, t0); a.gain.exponentialRampToValueAtTime(0.22 * g, t1);
+    s.connect(f).connect(a); a.connect(comp); a.connect(verb);
+  };
+  const shimmer = (t) => { for (let i = 0; i < 6; i++) note(hz(81 + [0, 3, 7, 12, 15, 19][i]), t + i * 0.06, 0.12, { type: 'triangle', gain: 0.03, cutoff: 9000, rel: 0.9, toVerb: 0.8 }); };
+
+  // intro: pad lembut + kilau saat S selesai digambar
+  note(hz(45), 0.2, 3.0, { gain: 0.07, cutoff: 600, attack: 1.4, rel: 0.6, det: [-8, 8] });
+  for (const m of CH[0]) note(hz(m), 0.2, 3.0, { gain: 0.025, cutoff: 900, attack: 1.6, rel: 0.6, det: [-10, 10], toVerb: 0.6 });
+  const H0 = hits.length ? hits[0] : 3.4;
+  riser(H0 - 1.8, H0 - 0.05, 0.7);
+  shimmer(H0 - 1.4);
+  impact(H0);
+
+  const START = hits.length ? hits[0] : 3.4, END = hits.length > 2 ? hits[hits.length - 1] : dur - 1.7;
+  // groove START → END
+  for (let t = START; t < END - 0.1; t += B) {
+    const beat = Math.round((t - START) / B);
+    const bar = Math.floor(beat / 4);
+    const chord = Math.floor(bar / 2) % 4;
+    kick(t, beat % 4 === 0 ? 1 : 0.8);
+    if (t > START + 3.9) { hat(t + B / 2); if (beat % 2 === 1 && t > START + 7.6) clap(t); }
+    if (t > START + 11) hat(t + B / 4, 0.5), hat(t + (3 * B) / 4, 0.5);
+    // bas oktaf
+    note(hz(BASS[chord]), t, B * 0.42, { gain: 0.12, cutoff: 420, rel: 0.08, det: [0] });
+    note(hz(BASS[chord] + 12), t + B / 2, B * 0.3, { gain: 0.06, cutoff: 700, rel: 0.06 });
+    if (beat % 8 === 0) for (const m of CH[chord]) note(hz(m + 12), t, B * 7.6, { gain: 0.018, cutoff: 1800, attack: 0.4, rel: 0.6, det: [-12, 12], toVerb: 0.5 });
+    // arpeggio di bagian tengah
+    if (t > START + 7.6 && t < END - 6) for (let k = 0; k < 4; k++) { const m = CH[chord][k % 3] + 24; note(hz(m), t + (k * B) / 4, B / 6, { type: 'square', gain: 0.012, cutoff: 3500, rel: 0.12, toVerb: 0.4 }); }
+  }
+  for (const t of (hits.length > 2 ? hits.slice(1, -1) : [11.0, 14.6, 18.2, 22.6, 25.7])) { impact(t, 0.45); shimmer(t); }
+  riser(END - 1.4, END, 1);
+  impact(END, 1.1);
+  // akhir: akor terbuka
+  for (const m of [57, 64, 69, 72, 76]) note(hz(m), END, dur - END - 1.2, { gain: 0.03, cutoff: 2200, attack: 0.05, rel: 0.8, det: [-9, 9], toVerb: 0.8 });
+  note(hz(33), END, dur - END - 1.2, { gain: 0.12, cutoff: 300, rel: 0.6 });
+  return ctx.startRendering();
+}
+
+let output, video, W, H, FPS;
+window.encInit = async (w, h, fps, dur, hitsStr) => {
+  const hits = hitsStr ? hitsStr.split(',').map(Number) : [];
+  W = w; H = h; FPS = fps;
+  output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target: new BufferTarget() });
+  video = new VideoSampleSource({ codec: 'avc', bitrate: QUALITY_VERY_HIGH, keyFrameInterval: 1 });
+  output.addVideoTrack(video, { frameRate: fps });
+  const aacOk = await canEncodeAudio('aac').catch(() => false);
+  let audio = null;
+  if (aacOk) { audio = new AudioBufferSource({ codec: 'aac', bitrate: 192e3 }); output.addAudioTrack(audio); }
+  await output.start();
+  if (audio) { const buf = await music(dur, hits); await audio.add(buf); audio.close(); }
+  return aacOk;
+};
+ipcRenderer.on('frame', async (_e, i, buf) => {
+  const data = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  const vf = new VideoFrame(data, { format: 'BGRA', codedWidth: W, codedHeight: H, timestamp: Math.round((i * 1e6) / FPS), duration: Math.round(1e6 / FPS) });
+  const s = new VideoSample(vf);
+  await video.add(s);
+  s.close(); vf.close();
+  ipcRenderer.send('ack');
+});
+window.encFinish = async () => {
+  video.close();
+  await output.finalize();
+  return new Uint8Array(output.target.buffer);
+};
+</script>

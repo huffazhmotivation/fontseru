@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<title>FontSeru — Promo</title>
+<style>
+  :root { --lime: #c6f24e; --pink: #ff4da6; --purple: #9b6cff; }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  body { height: 100vh; }
+  #stage {
+    position: absolute; width: 1920px; height: 1080px; overflow: hidden; background: #000;
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Inter, sans-serif;
+    color: #f5f5f7; transform-origin: 0 0;
+  }
+  .abs { position: absolute; left: 0; top: 0; }
+  #bg { position: absolute; inset: 0; }
+  .h { position: absolute; left: 0; width: 100%; text-align: center; font-weight: 700; letter-spacing: -0.035em; line-height: 1.02; white-space: nowrap; top: 66px; font-size: 84px; display: none; }
+  .h .w { display: inline-block; }
+  .h.sm { top: 168px; font-size: 34px; font-weight: 500; color: #a1a1a6; letter-spacing: -0.01em; }
+  .grad-lime { background: linear-gradient(100deg, #e9ff9a 0%, var(--lime) 40%, #5fcf6a 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .grad-pink { background: linear-gradient(100deg, #ffb3d9, var(--pink) 50%, #ff7a59); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .grad-purple { background: linear-gradient(100deg, #d7c6ff, var(--purple) 55%, #5b7bff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .grad-tri { background: linear-gradient(95deg, var(--lime) 0%, #8fe3a0 25%, var(--pink) 55%, var(--purple) 85%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .screen { position: absolute; border-radius: 18px; overflow: hidden; display: none; background: #0b0b0b;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.13), 0 40px 120px rgba(0,0,0,.75), 0 0 140px rgba(198,242,78,.07); }
+  .screen img { display: block; width: 100%; height: 100%; position: absolute; left: 0; top: 0; }
+  #persp { position: absolute; inset: 0; perspective: 2200px; perspective-origin: 50% 40%; }
+  .ipad { position: absolute; background: #111; border-radius: 54px; padding: 24px; display: none;
+    box-shadow: 0 0 0 2px #2a2a2c, 0 0 0 4px #0a0a0a, 0 50px 140px rgba(0,0,0,.8); }
+  .ipad .glass { border-radius: 30px; overflow: hidden; width: 100%; height: 100%; position: relative; background: #0b0b0b; }
+  .ipad img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: none; }
+  .chip { position: absolute; padding: 16px 30px; border-radius: 999px; font-weight: 700; font-size: 34px; letter-spacing: -0.02em; color: #0b0d0c; background: var(--lime); box-shadow: 0 20px 60px rgba(198,242,78,.25); display: none; white-space: nowrap; }
+  .chip.dark { background: rgba(28,28,30,.86); color: #f5f5f7; box-shadow: 0 0 0 1px rgba(255,255,255,.14), 0 20px 50px rgba(0,0,0,.6); backdrop-filter: blur(10px); }
+  .chip .dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: var(--lime); margin-right: 12px; vertical-align: 3px; }
+  .tablabel { position: absolute; font-size: 34px; font-weight: 700; letter-spacing: -0.02em; text-align: center; width: 400px; display: none; }
+  #cursor { position: absolute; width: 44px; height: 44px; display: none; z-index: 20; filter: drop-shadow(0 4px 10px rgba(0,0,0,.6)); }
+  #ripple { position: absolute; border: 4px solid var(--lime); border-radius: 50%; display: none; z-index: 19; }
+  #logo { position: absolute; left: 0; top: 0; transform-origin: 0 0; display: none; }
+  #logo svg { display: block; overflow: visible; }
+  #controls { position: fixed; left: 16px; bottom: 12px; right: 16px; display: flex; gap: 12px; align-items: center; font: 13px -apple-system, sans-serif; color: #aaa; z-index: 9; }
+  #controls input { flex: 1; }
+  #controls button { background: #222; color: #eee; border: 1px solid #333; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  body.render #controls { display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div>
+  <div id="persp">
+    <div id="scrA" class="screen"><img src="shots/r-select.png" /><img id="scrA2" src="shots/r-node.png" /></div>
+        <div id="scrFam" class="screen"><img data-k="0" src="shots/rf-0.png" /><img data-k="1" src="shots/rf-p2.png" /><img data-k="2" src="shots/rf-p4.png" /><img data-k="3" src="shots/rf-1.png" /><img data-k="4" src="shots/rf-2.png" /></div>
+    <div id="scrKern" class="screen"><img data-k="0" src="shots/rk-0.png" /><img data-k="1" src="shots/rk-p2.png" /><img data-k="2" src="shots/rk-p4.png" /><img data-k="3" src="shots/rk-p6.png" /><img data-k="4" src="shots/rk-p8.png" /><img data-k="5" src="shots/rk-1.png" /></div>
+    <div id="scrFeat" class="screen"><img data-k="0" src="shots/r-feat.png" /><img data-k="1" src="shots/r-labfeature.png" /></div>
+    <div id="scrMl" class="screen"><img data-k="0" src="shots/rm-0.png" /><img data-k="1" src="shots/rm-1.png" /><img data-k="2" src="shots/rm-s01.png" /><img data-k="3" src="shots/rm-s02.png" /><img data-k="4" src="shots/rm-s03.png" /><img data-k="5" src="shots/rm-s04.png" /><img data-k="6" src="shots/rm-s05.png" /><img data-k="7" src="shots/rm-s06.png" /><img data-k="8" src="shots/rm-s07.png" /><img data-k="9" src="shots/rm-s08.png" /><img data-k="10" src="shots/rm-s09.png" /><img data-k="11" src="shots/rm-s10.png" /><img data-k="12" src="shots/rm-s11.png" /><img data-k="13" src="shots/rm-s12.png" /><img data-k="14" src="shots/rm-s13.png" /><img data-k="15" src="shots/rm-s14.png" /><img data-k="16" src="shots/rm-s15.png" /><img data-k="17" src="shots/rm-s16.png" /><img data-k="18" src="shots/rm-2.png" /><img data-k="19" src="shots/rm-3.png" /></div>
+    <div id="scrC" class="screen"><img src="shots/r-pangram.png" /></div>
+    <div id="scrTab" class="screen"><img data-k="0" src="shots/r-node.png" /><img data-k="1" src="shots/design-1.png" /><img data-k="2" src="shots/r-motion.png" /></div>
+    <div id="card0" class="screen"><img src="shots/r-node.png" /></div>
+    <div id="card1" class="screen"><img src="shots/design-1.png" /></div>
+    <div id="card2" class="screen"><img src="shots/r-motion.png" /></div>
+    <div id="ipad" class="ipad"><div class="glass" id="ipadGlass"><!--BRUSH--></div></div>
+    <div id="scrE" class="screen"><img src="shots/r-export.png" /></div>
+  </div>
+
+  <div id="logo"><!--LOGO--></div>
+  <div id="intro-sm" class="h sm" style="top: 470px; font-size: 40px;">Memperkenalkan</div>
+
+  <div id="h2" class="h"></div><div id="h3" class="h"></div><div id="hBrush" class="h"></div><div id="hBrushS" class="h sm"></div>
+  <div id="h4" class="h"></div><div id="hFam" class="h"></div><div id="hFamS" class="h sm"></div>
+  <div id="hKern" class="h"></div><div id="hKernS" class="h sm"></div><div id="hFeat" class="h"></div><div id="hFeatS" class="h sm"></div>
+  <div id="hMl" class="h"></div><div id="hMlS" class="h sm"></div><div id="h5" class="h"></div><div id="h6" class="h"></div><div id="h8" class="h"></div>
+  <div id="endTag" class="h" style="top: 690px; font-size: 64px;">Buat font-mu <span class="grad-lime">sendiri.</span></div>
+  <div id="endSub" class="h sm" style="top: 800px; font-size: 32px;">Web · macOS · Windows · iPad</div>
+
+  <div id="lab0" class="tablabel grad-lime">Font</div>
+  <div id="lab1" class="tablabel grad-pink">Design</div>
+  <div id="lab2" class="tablabel grad-purple">Motion</div>
+  <div id="chips"></div>
+  <svg id="cursor" viewBox="0 0 24 24"><path d="M4 2 L4 19 L8.5 15 L11.5 21.5 L14.3 20.3 L11.4 13.9 L17.5 13.9 Z" fill="#fff" stroke="#000" stroke-width="1.3" stroke-linejoin="round"/></svg>
+  <div id="ripple"></div>
+</div>
+<div id="controls"><button id="play">⏯</button><input id="scrub" type="range" min="0" max="57" step="0.01" value="0" /><span id="tc">0.00</span></div>
+
+<script>
+const DUR = 57;
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = (p) => (p >= 1 ? 1 : 1 - Math.pow(2, -10 * p));
+const eInOut = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+const eIn = (p) => p * p * p;
+const eBack = (p) => { const c1 = 1.5, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+const css = (el, o) => { for (const k in o) el.style[k] = o[k]; };
+const show = (el, v) => { el.style.display = v ? 'block' : 'none'; };
+
+/* ---------------- headlines ---------------- */
+const HEAD = {
+  h2: [['Desain huruf.', ''], ['Langsung di browser.', 'grad-lime']],
+  h3: [['Setiap kurva.', ''], ['Setiap titik.', 'grad-lime']],
+  hBrush: [['Coret saja.', ''], ['Jadi font.', 'grad-lime']],
+  hBrushS: [['Belasan brush — calligraphic, oil, marker, spray. Seperti menggambar di iPad.', '']],
+  h4: [['Ratusan glyph.', ''], ['Satu kanvas.', 'grad-lime']],
+  hFam: [['Bold & Italic.', ''], ['Otomatis.', 'grad-lime']],
+  hFamS: [['Plus family custom-mu sendiri — seperti "Regular Clean" ini.', '']],
+  hKern: [['Kerning?', ''], ['Sekali klik.', 'grad-lime']],
+  hKernS: [['Jarak antarhuruf yang berantakan langsung rapi.', '']],
+  hFeat: [['Ligature & alternate.', ''], ['Tanpa coding.', 'grad-lime']],
+  hFeatS: [['fi · fl · ff jadi satu, plus alternate — fitur OpenType dibuat otomatis.', '']],
+  hMl: [['Multibahasa.', ''], ['Sekali klik.', 'grad-lime']],
+  hMlS: [['176 huruf beraksen dibuat otomatis dari huruf dasar & tanda aksenmu.', '']],
+  h5: [['Uji setiap', ''], ['kata.', 'grad-lime']],
+  h6: [['Satu aplikasi.', ''], ['Tiga studio.', 'grad-tri']],
+  h8: [['Ekspor ke', ''], ['format standar.', 'grad-lime']],
+};
+for (const id in HEAD) $(id).innerHTML = HEAD[id].map(([txt, cls]) => txt.split(' ').map((w) => `<span class="w ${cls}">${w}</span>`).join(' ')).join(' ');
+function headline(id, t, a, b, stagger = 0.09) {
+  const el = $(id);
+  const vis = t > a - 0.05 && t < b + 0.05;
+  show(el, vis);
+  if (!vis) return;
+  el.querySelectorAll('.w').forEach((w, i) => {
+    const p = eOut(seg(t, a + i * stagger, a + i * stagger + 0.9));
+    const q = eIn(seg(t, b - 0.45, b));
+    css(w, { opacity: String(p * (1 - q)), transform: `translateY(${(1 - p) * 60 - q * 30}px)`, filter: `blur(${(1 - p) * 18 + q * 12}px)` });
+  });
+}
+
+/* ---------------- screens ---------------- */
+const SW = 1440, SH = 900, SY = 665, SWD = 1300;
+function place(el, { x = 960, y = SY, w = SWD, s = 1, rx = 0, ry = 0, rz = 0, tz = 0, o = 1, blur = 0, ox = 50, oy = 50 }) {
+  const h = (w * SH) / SW;
+  el._p = { left: x - w / 2, top: y - h / 2, w, h, s };
+  css(el, {
+    width: w + 'px', height: h + 'px', left: x - w / 2 + 'px', top: y - h / 2 + 'px',
+    transform: `translateZ(${tz}px) rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg) scale(${s})`,
+    transformOrigin: `${ox}% ${oy}%`, opacity: String(o), filter: blur ? `blur(${blur}px)` : 'none', display: o <= 0.001 ? 'none' : 'block',
+  });
+}
+function innerZoom(el, z, fx, fy) {
+  el._z = { z, fx, fy };
+  el.querySelectorAll('img').forEach((im) => css(im, { transform: `scale(${z})`, transformOrigin: `${fx * 100}% ${fy * 100}%` }));
+}
+/** stack of states inside one screen: crossfade to image k (fractional k = blend) */
+function stack(el, k) {
+  el.querySelectorAll('img[data-k]').forEach((im) => {
+    const i = +im.dataset.k;
+    const o = clamp(1 - Math.abs(k - i) * 1) * (i <= Math.ceil(k) ? 1 : 0);
+    im.style.opacity = String(i === Math.floor(k) ? 1 : i === Math.ceil(k) ? k - Math.floor(k) : 0);
+    im.style.display = i === Math.floor(k) || i === Math.ceil(k) ? '' : 'none';
+  });
+}
+/** on-stage position of an image point (fraction px,py) in a flat (unrotated, scale-1) screen */
+function pt(el, px, py) {
+  const p = el._p, z = el._z || { z: 1, fx: 0.5, fy: 0.5 };
+  return [p.left + z.fx * p.w + (px - z.fx) * p.w * z.z, p.top + z.fy * p.h + (py - z.fy) * p.h * z.z];
+}
+/** focal-point zoom that keeps a target point centred-ish: zoom z and focus f interpolate together */
+function cursorAt(x, y, o = 1, press = 0) {
+  const c = $('cursor');
+  show(c, o > 0.01);
+  css(c, { left: x - 6 + 'px', top: y - 4 + 'px', opacity: String(o), transform: `scale(${1 - press * 0.15})` });
+}
+function ripple(x, y, p) {
+  const r = $('ripple');
+  show(r, p > 0 && p < 1);
+  const d = 30 + p * 120;
+  css(r, { width: d + 'px', height: d + 'px', left: x - d / 2 + 'px', top: y - d / 2 + 'px', opacity: String(1 - p) });
+}
+
+/* ---------------- logo ---------------- */
+let logoReady = false, markLen = 1000, LB = null;
+function initLogo() {
+  const svg = document.querySelector('#logoSvg');
+  const st = $('lmStroke');
+  markLen = st.getTotalLength();
+  st.style.strokeDasharray = String(markLen);
+  // measure mark + wordmark boxes (svg is 1136x304 when unscaled)
+  $('logo').style.display = 'block'; $('logo').style.transform = 'none';
+  const sr = svg.getBoundingClientRect(), stg = $('stage').getBoundingClientRect();
+  const k = 1920 / stg.width; // stage may be scaled in preview
+  const mr = $('lmFill').getBoundingClientRect(), wr = $('lw').getBoundingClientRect();
+  LB = {
+    mark: { x: (mr.left - sr.left) * k, y: (mr.top - sr.top) * k, w: mr.width * k, h: mr.height * k },
+    word: { x: (wr.left - sr.left) * k, w: wr.width * k },
+    W: sr.width * k, H: sr.height * k,
+  };
+  logoReady = true;
+}
+
+/* ---------------- brush sequence ---------------- */
+const BRUSH_N = 83, BRUSH_O = 49;
+
+/* ---------------- chips ---------------- */
+const CHIPS = ['TTF', 'OTF', 'WOFF', 'WOFF2'];
+$('chips').innerHTML = CHIPS.map((c, i) => `<div class="chip" id="chip${i}">${c}</div>`).join('') +
+  `<div class="chip dark" id="bchip0"><span class="dot"></span>Calligraphic</div><div class="chip dark" id="bchip1"><span class="dot" style="background:#ff9f43"></span>Oil Brush</div>` +
+  `<div class="chip dark" id="mlchip">170 → 346 glyph · otomatis</div>`;
+
+function bgFor(t) {
+  let c = '198,242,78', a = 0.16;
+  if (t > 47.4 && t < 51.7) { const f = seg(t, 48.6, 51.0) * 2; c = f < 0.7 ? '198,242,78' : f < 1.4 ? '255,77,166' : '155,108,255'; a = 0.2; }
+  if (t < 1.0) a *= seg(t, 0, 1.0);
+  return `radial-gradient(1200px 700px at 50% 62%, rgba(${c},${a}) 0%, rgba(${c},${a * 0.25}) 40%, rgba(0,0,0,0) 70%), #000`;
+}
+
+let cur = 0;
+/* kamera di dalam layar: zoom z dengan titik (cx,cy) diusahakan di tengah, tapi tidak pernah keluar batas gambar */
+function innerView(el, z, cx, cy) {
+  const p = el._p; const W = p.w, H = p.h;
+  const tx = clamp(W / 2 - cx * W * z, W - W * z, 0), ty = clamp(H / 2 - cy * H * z, H - H * z, 0);
+  el._v = { z, tx, ty };
+  el.querySelectorAll('img').forEach((im) => css(im, { transform: `translate(${tx}px, ${ty}px) scale(${z})`, transformOrigin: '0 0' }));
+}
+function vpt(el, px, py) { const p = el._p, v = el._v || { z: 1, tx: 0, ty: 0 }; return [p.left + v.tx + px * p.w * v.z, p.top + v.ty + py * p.h * v.z]; }
+/* kamera berpindah mulus antar "shot": daftar [waktu, z, cx, cy] */
+function camera(keys, t) {
+  if (t <= keys[0][0]) return keys[0].slice(1);
+  for (let i = 0; i < keys.length - 1; i++) {
+    const a = keys[i], b = keys[i + 1];
+    if (t <= b[0]) { const p = eInOut(seg(t, a[0], b[0])); return [lerp(a[1], b[1], p), lerp(a[2], b[2], p), lerp(a[3], b[3], p)]; }
+  }
+  return keys[keys.length - 1].slice(1);
+}
+/* kursor bergerak di antara titik-titik [waktu, x, y]; klik di waktu tertentu */
+function cursorPath(keys, t) {
+  for (let i = 0; i < keys.length - 1; i++) {
+    const a = keys[i], b = keys[i + 1];
+    if (t <= b[0]) { const p = eInOut(seg(t, a[0], b[0])); return [lerp(a[1], b[1], p), lerp(a[2], b[2], p)]; }
+  }
+  const l = keys[keys.length - 1]; return [l[1], l[2]];
+}
+const press = (t, at) => seg(t, at - 0.06, at) - seg(t, at, at + 0.14);
+
+function render(tt) {
+  cur = tt;
+  let t = tt;
+  $('bg').style.background = bgFor(tt);
+  let cursorShown = false, rippleShown = false;
+  const cur2 = (x, y, o, pr) => { cursorAt(x, y, o, pr); cursorShown = true; };
+  const rip = (x, y, p) => { ripple(x, y, p); if (p > 0 && p < 1) rippleShown = true; };
+  const sceneIn = (el, a, b, extra = {}) => {
+    const inP = eOut(seg(tt, a, a + 0.9)), outP = eIn(seg(tt, b - 0.45, b));
+    const vis = tt > a - 0.02 && tt < b + 0.02;
+    place(el, Object.assign({ s: lerp(0.93, 1, inP) * (1 - outP * 0.06), o: vis ? inP * (1 - outP) : 0, blur: (1 - inP) * 16 + outP * 14 }, extra));
+    return vis;
+  };
+
+  /* ===== 0 – 4.35 : logo (dan 54 – 57 : penutup) ===== */
+  {
+    const smO = Math.min(eOut(seg(tt, 0.25, 0.85)), 1 - eIn(seg(tt, 1.2, 1.7)));
+    show($('intro-sm'), smO > 0.001);
+    css($('intro-sm'), { opacity: String(smO), filter: `blur(${(1 - smO) * 8}px)` });
+    const inIntro = tt < 4.4, inEnd = tt > 53.9;
+    show($('logo'), logoReady && (inIntro || inEnd));
+    if (logoReady && (inIntro || inEnd)) {
+      const draw = inIntro ? eInOut(seg(tt, 1.3, 2.5)) : 1;
+      const fill = inIntro ? eOut(seg(tt, 2.2, 2.8)) : 1;
+      const slide = inIntro ? eInOut(seg(tt, 2.7, 3.5)) : 1;
+      const wipe = inIntro ? eOut(seg(tt, 3.0, 3.8)) : eOut(seg(tt, 54.3, 55.2));
+      const out = inIntro ? eIn(seg(tt, 3.9, 4.35)) : 0;
+      const endIn = inEnd ? eOut(seg(tt, 53.9, 54.7)) : 1;
+      $('lmStroke').style.strokeDashoffset = String(markLen * (1 - draw));
+      $('lmStroke').style.opacity = String((1 - fill) * (draw > 0 ? 1 : 0));
+      $('lmFill').style.opacity = String(fill);
+      $('lw').style.clipPath = `inset(0 ${(1 - wipe) * 100}% 0 0)`;
+      $('lw').style.opacity = String(wipe > 0 ? 1 : 0);
+      const finalScale = 1000 / LB.W;
+      const fx = 960 - (LB.W * finalScale) / 2, fy = (inEnd ? 380 : 540) - (LB.H * finalScale) / 2;
+      const markScale = 2.6;
+      const mx = 960 - (LB.mark.x + LB.mark.w / 2) * markScale, my = 520 - (LB.mark.y + LB.mark.h / 2) * markScale;
+      const sc = lerp(markScale, finalScale, slide) * (inEnd ? lerp(0.85, 1, endIn) : 1);
+      css($('logo'), {
+        transform: `translate(${lerp(mx, fx, slide)}px, ${lerp(my, fy, slide)}px) scale(${sc * (1 + out * 0.15)})`,
+        opacity: String((1 - out) * (inEnd ? endIn : 1)),
+        filter: `blur(${out * 14 + (inEnd ? (1 - endIn) * 12 : 0)}px) drop-shadow(0 0 ${30 * fill}px rgba(198,242,78,${0.35 * fill}))`,
+      });
+    }
+    const p3 = eOut(seg(tt, 54.8, 55.6)), p4 = eOut(seg(tt, 55.2, 55.9));
+    show($('endTag'), tt > 54.7); show($('endSub'), tt > 55.1);
+    css($('endTag'), { opacity: String(p3), transform: `translateY(${(1 - p3) * 30}px)`, filter: `blur(${(1 - p3) * 10}px)` });
+    css($('endSub'), { opacity: String(p4) });
+  }
+
+  /* ===== 4.35 – 11.6 : editor + node (glyph R milik Ravager) ===== */
+  headline('h2', tt, 4.35, 8.1);
+  headline('h3', tt, 8.35, 11.45);
+  {
+    const inP = eOut(seg(tt, 4.5, 6.0)), outP = eIn(seg(tt, 11.3, 11.75)), zoomP = eInOut(seg(tt, 8.2, 10.0));
+    place($('scrA'), { y: lerp(1000, SY, inP), rx: lerp(38, 0, inP), s: lerp(0.86, 1, inP) * (1 + seg(tt, 6, 8.2) * 0.03) * (1 - outP * 0.08), o: (tt > 4.45 && tt < 11.8 ? 1 : 0) * (1 - outP), blur: outP * 14, oy: 30 });
+    $('scrA2').style.opacity = String(eInOut(seg(tt, 7.0, 7.6)));
+    innerView($('scrA'), lerp(1, 2.3, zoomP) + seg(tt, 10, 11.7) * 0.1, 0.392, 0.484);
+  }
+
+  /* ===== 11.6 – 17.5 : brush di iPad ===== */
+  headline('hBrush', tt, 11.75, 17.3);
+  headline('hBrushS', tt, 12.3, 17.3, 0.02);
+  {
+    const inP = eOut(seg(tt, 11.7, 12.9)), outP = eIn(seg(tt, 17.1, 17.55));
+    const W = 1180, H = 820, el = $('ipad');
+    const vis = tt > 11.65 && tt < 17.6;
+    show(el, vis);
+    if (vis) {
+      css(el, {
+        width: W + 'px', height: H + 'px', left: 960 - W / 2 - 24 + 'px', top: 680 - H / 2 - 24 + 'px',
+        transform: `perspective(2400px) rotateX(${lerp(26, 4, inP)}deg) rotateZ(${lerp(-6, 0, inP)}deg) scale(${lerp(0.64, 0.86, inP) * (1 - outP * 0.06)}) translateY(${(1 - inP) * 180}px)`,
+        opacity: String(Math.min(1, inP * 1.6) * (1 - outP)), filter: outP ? `blur(${outP * 14}px)` : 'none',
+      });
+      const f = Math.round(clamp((tt - 12.5) * 18, 0, BRUSH_N - 1));
+      if (el._f !== f) { if (el._f != null) el._imgs[el._f].style.display = 'none'; el._imgs[f].style.display = 'block'; el._f = f; }
+    }
+    const f = (tt - 12.5) * 18;
+    const c0 = vis ? Math.min(eOut(seg(f, 0, 6)), 1 - eIn(seg(f, BRUSH_O - 4, BRUSH_O))) : 0;
+    const c1 = vis ? Math.min(eOut(seg(f, BRUSH_O, BRUSH_O + 6)), 1 - outP) : 0;
+    for (const [id, o] of [['bchip0', c0], ['bchip1', c1]]) {
+      show($(id), o > 0.01);
+      css($(id), { left: '1510px', top: '520px', opacity: String(o), transform: `translateY(${(1 - o) * 30}px) scale(${0.85 + 0.15 * o})` });
+    }
+  }
+
+  /* ===== 17.5 – 23.3 : auto family ===== */
+  headline('hFam', tt, 17.65, 23.1);
+  headline('hFamS', tt, 18.2, 23.1, 0.02);
+  {
+    const el = $('scrFam'), A = 17.5;
+    const vis = sceneIn(el, A, 23.3);
+    // 1 lihat baris Bold kosong → 2 kamera turun ke tombol Auto Bold → klik → 3 naik lagi: baris Bold terisi → 4 tab custom
+    const [z, cx, cy] = camera([[A + 0.4, 1.0, 0.5, 0.5], [A + 1.2, 1.7, 0.5, 0.33], [A + 1.9, 1.7, 0.5, 0.33], [A + 2.5, 1.9, 0.5, 0.82], [A + 3.4, 1.9, 0.5, 0.82], [A + 4.0, 1.25, 0.5, 0.38], [A + 4.9, 1.25, 0.5, 0.45], [A + 5.3, 1.15, 0.5, 0.6]], tt);
+    innerView(el, z, cx, cy);
+    const clickAt = A + 3.0;
+    const k = eInOut(seg(tt, clickAt + 0.1, clickAt + 0.3)) + eInOut(seg(tt, clickAt + 0.45, clickAt + 0.65)) + eInOut(seg(tt, clickAt + 0.8, clickAt + 1.0)) + eInOut(seg(tt, A + 4.85, A + 5.1));
+    stack(el, k);
+    if (vis && tt > A + 2.4 && tt < A + 3.6) {
+      const [bx, by] = vpt(el, 0.497, 0.859);
+      const [x, y] = cursorPath([[A + 2.4, bx + 260, by - 120], [A + 2.95, bx, by]], tt);
+      cur2(x, y, Math.min(seg(tt, A + 2.4, A + 2.6), 1 - seg(tt, A + 3.4, A + 3.6)), press(tt, clickAt));
+      rip(bx, by, seg(tt, clickAt, clickAt + 0.6));
+    }
+  }
+
+  /* ===== 23.3 – 29.0 : auto kerning ===== */
+  headline('hKern', tt, 23.45, 28.8);
+  headline('hKernS', tt, 24.0, 28.8, 0.02);
+  {
+    const el = $('scrKern'), A = 23.3;
+    const vis = sceneIn(el, A, 29.0);
+    const [z, cx, cy] = camera([[A + 0.4, 1.0, 0.5, 0.5], [A + 1.2, 2.1, 0.2, 0.3], [A + 2.1, 2.1, 0.2, 0.33], [A + 2.8, 2.2, 0.82, 0.33], [A + 3.6, 2.2, 0.82, 0.33], [A + 4.4, 1.05, 0.4, 0.45], [A + 5.7, 1.05, 0.4, 0.45]], tt);
+    innerView(el, z, cx, cy);
+    const clickAt = A + 3.2;
+    const k = clamp((tt - clickAt - 0.05) / 0.15) + clamp((tt - clickAt - 0.3) / 0.15) + clamp((tt - clickAt - 0.55) / 0.15) + clamp((tt - clickAt - 0.8) / 0.15) + eInOut(seg(tt, clickAt + 1.0, clickAt + 1.3));
+    stack(el, k);
+    if (vis && tt > A + 2.6 && tt < A + 3.9) {
+      const [bx, by] = vpt(el, 0.818, 0.325);
+      const [x, y] = cursorPath([[A + 2.6, bx - 240, by + 160], [A + 3.15, bx, by]], tt);
+      cur2(x, y, Math.min(seg(tt, A + 2.6, A + 2.8), 1 - seg(tt, A + 3.7, A + 3.9)), press(tt, clickAt));
+      rip(bx, by, seg(tt, clickAt, clickAt + 0.6));
+    }
+  }
+
+  /* ===== 29.0 – 33.4 : feature builder → hasil langsung di Test Lab ===== */
+  headline('hFeat', tt, 29.15, 33.2);
+  headline('hFeatS', tt, 29.7, 33.2, 0.02);
+  {
+    const el = $('scrFeat'), A = 29.0;
+    sceneIn(el, A, 33.4);
+    const [z, cx, cy] = camera([[A + 0.5, 1.0, 0.5, 0.5], [A + 1.3, 1.7, 0.5, 0.33], [A + 2.0, 1.7, 0.5, 0.42], [A + 2.6, 2.3, 0.3, 0.3], [A + 4.4, 2.4, 0.3, 0.3]], tt);
+    innerView(el, z, cx, cy);
+    stack(el, eInOut(seg(tt, A + 2.0, A + 2.5)));
+  }
+
+  /* ===== 33.4 – 39.2 : multilingual otomatis ===== */
+  headline('hMl', tt, 33.55, 39.0);
+  headline('hMlS', tt, 34.1, 39.0, 0.02);
+  {
+    const el = $('scrMl'), A = 33.4;
+    const vis = sceneIn(el, A, 39.2);
+    // fokus ke panel glyph kiri + tombol; klik; daftar glyph tergulir menampilkan huruf baru; lalu kanvas multi
+    const [z, cx, cy] = camera([[A + 0.4, 1.0, 0.5, 0.5], [A + 1.2, 2.2, 0.07, 0.8], [A + 3.9, 2.2, 0.07, 0.6], [A + 4.5, 1.15, 0.45, 0.5], [A + 5.8, 1.1, 0.5, 0.5]], tt);
+    innerView(el, z, cx, cy);
+    const clickAt = A + 1.9;
+    // 0 sebelum, 1 status setelah klik, 2..17 gulir daftar glyph, 18 glyph Ö, 19 kanvas multi
+    let k = eInOut(seg(tt, clickAt + 0.05, clickAt + 0.2));
+    if (tt > clickAt + 0.5) k = 1 + clamp((tt - clickAt - 0.5) / 1.4) * 16;
+    if (tt > A + 4.1) k = 17 + eInOut(seg(tt, A + 4.1, A + 4.35)) + eInOut(seg(tt, A + 4.6, A + 4.9));
+    stack(el, k);
+    if (vis && tt > A + 1.1 && tt < A + 2.6) {
+      const [bx, by] = vpt(el, 0.0725, 0.969);
+      const [x, y] = cursorPath([[A + 1.1, bx + 280, by - 200], [A + 1.8, bx, by]], tt);
+      cur2(x, y, Math.min(seg(tt, A + 1.1, A + 1.3), 1 - seg(tt, A + 2.4, A + 2.6)), press(tt, clickAt));
+      rip(bx, by, seg(tt, clickAt, clickAt + 0.6));
+    }
+    const mo = vis ? Math.min(eBack(seg(tt, clickAt + 0.3, clickAt + 0.9)), 1 - eIn(seg(tt, 38.75, 39.2))) : 0;
+    show($('mlchip'), mo > 0.01);
+    css($('mlchip'), { left: '1240px', top: '935px', opacity: String(clamp(mo)), transform: `scale(${0.7 + 0.3 * mo})` });
+  }
+
+  /* ===== 39.2 – 42.4 : test lab ===== */
+  headline('h5', tt, 39.35, 42.2);
+  {
+    const el = $('scrC');
+    const inP = eOut(seg(tt, 39.2, 40.2)), outP = eIn(seg(tt, 41.95, 42.4));
+    place(el, { x: lerp(1500, 960, inP), ry: lerp(-32, 0, inP), s: 1 - outP * 0.08, o: (tt > 39.15 && tt < 42.45 ? 1 : 0) * Math.min(1, inP * 2) * (1 - outP), blur: outP * 14 });
+    innerView(el, lerp(1, 1.8, eInOut(seg(tt, 40.0, 42.0))), 0.33, 0.28);
+  }
+
+  /* ===== 42.4 – 47.8 : zoom ke tab mode, klik Design lalu Motion (pelan) ===== */
+  headline('h6', tt, 42.55, 51.4);
+  {
+    const el = $('scrTab'), A = 42.4;
+    const toCards = eInOut(seg(tt, 47.5, 48.3));
+    const inP = eOut(seg(tt, A, A + 0.9));
+    const vis = tt > A - 0.02 && tt < 48.35;
+    place(el, { s: lerp(0.93, 1, inP), o: vis ? inP * (1 - toCards) : 0, blur: (1 - inP) * 16 });
+    const [z, cx, cy] = camera([[A + 0.6, 1.0, 0.5, 0.5], [A + 1.6, 2.6, 0.17, 0.05], [A + 4.3, 2.6, 0.17, 0.05], [A + 5.1, 1.0, 0.5, 0.5]], tt);
+    innerView(el, z, cx, cy);
+    const c1 = A + 2.3, c2 = A + 3.6;
+    stack(el, eInOut(seg(tt, c1 + 0.12, c1 + 0.5)) + eInOut(seg(tt, c2 + 0.12, c2 + 0.5)));
+    if (vis && tt > A + 1.5 && tt < A + 4.5) {
+      // posisi tab: Font-mode capture vs Design-mode capture sedikit berbeda
+      const pD = vpt(el, 0.143, 0.02), pM = vpt(el, 0.238, 0.022), pS = vpt(el, 0.2, 0.2);
+      const [x, y] = cursorPath([[A + 1.5, pS[0], pS[1]], [c1 - 0.1, pD[0], pD[1]], [c1 + 0.6, pD[0], pD[1]], [c2 - 0.1, pM[0], pM[1]]], tt);
+      cur2(x, y, Math.min(seg(tt, A + 1.5, A + 1.75), 1 - seg(tt, A + 4.2, A + 4.5)), press(tt, c1) + press(tt, c2));
+      if (tt < c1 + 0.8) rip(pD[0], pD[1], seg(tt, c1, c1 + 0.7)); else rip(pM[0], pM[1], seg(tt, c2, c2 + 0.7));
+    }
+    // carousel 3 studio — lebih kecil, lebih pelan, tidak terpotong
+    const appear = toCards, gone = eIn(seg(tt, 51.2, 51.65));
+    const f = eInOut(seg(tt, 48.9, 49.7)) + eInOut(seg(tt, 50.2, 51.0)); // Font → Design → Motion
+    for (let i = 0; i < 3; i++) {
+      const d = i - f, ad = Math.abs(d);
+      place($('card' + i), { x: 960 + d * 540 * appear, y: 630, w: 800, tz: -ad * 380, ry: -d * 28, s: (1 - gone * 0.08) * lerp(0.85, 1, appear),
+        o: (tt > 47.45 && tt < 51.7 ? appear : 0) * (1 - gone) * clamp(1.5 - ad * 0.6) });
+      const lo = (tt > 47.45 && tt < 51.7 ? appear : 0) * (1 - gone) * clamp(1 - ad * 0.8);
+      show($('lab' + i), lo > 0.01);
+      css($('lab' + i), { left: 960 - 200 + d * 540 + 'px', top: '940px', opacity: String(lo) });
+    }
+  }
+
+  /* ===== 51.6 – 54.0 : ekspor ===== */
+  headline('h8', tt, 51.75, 53.8);
+  {
+    const el = $('scrE');
+    const inP = eOut(seg(tt, 51.6, 52.5)), outP = eIn(seg(tt, 53.55, 54.0));
+    place(el, { y: 610, w: 1200, s: lerp(0.9, 1, inP) * (1 - outP * 0.08), o: (tt > 51.55 && tt < 54.05 ? inP : 0) * (1 - outP), blur: (1 - inP) * 16 + outP * 14 });
+    innerView(el, lerp(1.15, 1.45, seg(tt, 51.6, 54.0)), 0.55, 0.5);
+    CHIPS.forEach((c, i) => {
+      const p = eBack(seg(tt, 52.2 + i * 0.13, 52.8 + i * 0.13));
+      const ch = $('chip' + i);
+      show(ch, tt > 52.1 && tt < 54.05);
+      css(ch, { left: [600, 790, 1000, 1240][i] + 'px', top: '960px', opacity: String(clamp(p) * (1 - outP)), transform: `translateY(${(1 - p) * 60}px) scale(${0.6 + 0.4 * p})`, background: ['#c6f24e', '#d9ff7a', '#9fe870', '#7fd13b'][i] });
+    });
+  }
+
+  if (!cursorShown) show($('cursor'), false);
+  if (!rippleShown) show($('ripple'), false);
+  $('tc').textContent = tt.toFixed(2);
+}
+
+/* ---------------- player / render hooks ---------------- */
+const params = new URLSearchParams(location.search);
+const stage = $('stage');
+if (params.get('render') === '1') document.body.classList.add('render');
+function fit() {
+  if (document.body.classList.contains('render')) { stage.style.transform = 'none'; stage.style.left = '0'; stage.style.top = '0'; return; }
+  const s = Math.min(innerWidth / 1920, (innerHeight - 50) / 1080);
+  stage.style.transform = `scale(${s})`;
+  stage.style.left = (innerWidth - 1920 * s) / 2 + 'px';
+  stage.style.top = (innerHeight - 50 - 1080 * s) / 2 + 'px';
+}
+addEventListener('resize', fit); fit();
+$('ipad')._imgs = [...document.querySelectorAll('#ipadGlass img')];
+window.__ready = Promise.all([...document.images].map((im) => (im.decode ? im.decode().catch(() => {}) : null))).then(() => { initLogo(); window.__glyphReady = true; });
+window.__render = (t) => new Promise((res) => { render(t); requestAnimationFrame(() => requestAnimationFrame(res)); });
+window.__prewarm = async () => { for (let t = 0; t <= DUR; t += 0.25) await window.__render(t); };
+
+let playing = params.get('render') !== '1', t0 = performance.now(), base = 0;
+$('play').onclick = () => { playing = !playing; t0 = performance.now(); base = cur; if (playing) loop(); };
+$('scrub').oninput = (e) => { base = +e.target.value; t0 = performance.now(); render(base); };
+function loop() {
+  if (!playing) return;
+  let t = base + (performance.now() - t0) / 1000;
+  if (t > DUR) { base = 0; t0 = performance.now(); t = 0; }
+  if (logoReady) render(t);
+  $('scrub').value = t;
+  requestAnimationFrame(loop);
+}
+window.__ready.then(() => { render(0); if (playing) loop(); });
+</script>
+</body>
+</html>

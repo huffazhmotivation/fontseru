@@ -1,0 +1,5 @@
+Name: Ravager
+Designer: Arifin St
+Version: 1.000
+Copyright: Copyright © 2026
+Creation Date: 2026-10-05

@@ -1,0 +1,43 @@
+const setVal = (expr, v) => `(()=>{const el=${expr}; if(!el) return 'missing'; const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:el.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto,'value').set.call(el,${JSON.stringify(v)}); el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); return 'ok'})()`;
+const btn = (txt, root = 'document') => `[...${root}.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(txt)})`;
+module.exports = async ({ go, ev, files, shot, sleep }) => {
+  await go('app://local/index.html', 1680, 1050);
+  await ev(`localStorage.setItem('fontseru.appMode','font'); true`);
+  await go('app://local/index.html', 1680, 1050);
+  await ev(`window.confirm=()=>true; window.alert=()=>{}; true`);
+  await files('input[type=file]', __dirname + '/StackSansNotch.ttf');
+  await sleep(4500);
+  await ev(`document.querySelectorAll('[class*=toast] button').forEach(b=>b.click()); document.querySelector('[data-testid="glyph-tile-a"]').click(); true`);
+  await sleep(500);
+
+  /* ---- feature builder ---- */
+  await ev(`document.querySelector('[data-testid="feature-builder-btn"]').click(); true`);
+  await sleep(1200);
+  const sels = `[...document.querySelectorAll('[data-testid=feature-builder-overlay] select')]`;
+  console.log('opts', await ev(`JSON.stringify(${sels}[0] && [...${sels}[0].options].slice(0,5).map(o=>o.value))`));
+  console.log(await ev(setVal(`${sels}[0]`, 'f')), await ev(setVal(`${sels}[1]`, 'i')));
+  await sleep(300);
+  console.log(await ev(setVal(`document.querySelectorAll('[data-testid=feature-builder-overlay] .fm-feature-input')[0]`, 'f_i')));
+  await sleep(400);
+  await ev(`[...document.querySelectorAll('[data-testid=feature-builder-overlay] .fm-feature-section')][0].querySelectorAll('button').forEach(b=>{if(b.textContent.includes('Preview'))b.click()}); true`);
+  await sleep(600);
+  await ev(`[...[...document.querySelectorAll('[data-testid=feature-builder-overlay] .fm-feature-section')][0].querySelectorAll('button')].find(b=>b.textContent.includes('Create Glyph'))?.click(); true`);
+  await sleep(700);
+  console.log('exists', await ev(`[...[...document.querySelectorAll('[data-testid=feature-builder-overlay] .fm-feature-section')][0].querySelectorAll('button')].map(b=>b.textContent.trim()).join('|')`));
+  await shot('feat-1');
+  await ev(`[...[...document.querySelectorAll('[data-testid=feature-builder-overlay] .fm-feature-section')][0].querySelectorAll('button')].find(b=>b.textContent.trim()==='Add')?.click(); true`);
+  await sleep(500);
+  console.log(await ev(setVal(`${sels}[2]`, 'a')));
+  await sleep(300);
+  console.log(await ev(setVal(`document.querySelectorAll('[data-testid=feature-builder-overlay] .fm-feature-input')[1]`, 'a.alt1')));
+  await sleep(400);
+  await ev(`[...document.querySelectorAll('[data-testid=feature-builder-overlay] .fm-feature-section')][1].querySelectorAll('button').forEach(b=>{if(b.textContent.includes('Preview'))b.click()}); true`);
+  await sleep(600);
+  await ev(`[...[...document.querySelectorAll('[data-testid=feature-builder-overlay] .fm-feature-section')][1].querySelectorAll('button')].find(b=>b.textContent.includes('Create Glyph'))?.click(); true`);
+  await sleep(700);
+  console.log('exists', await ev(`[...[...document.querySelectorAll('[data-testid=feature-builder-overlay] .fm-feature-section')][1].querySelectorAll('button')].map(b=>b.textContent.trim()).join('|')`));
+  await shot('feat-2');
+  await ev(`[...[...document.querySelectorAll('[data-testid=feature-builder-overlay] .fm-feature-section')][1].querySelectorAll('button')].find(b=>b.textContent.trim()==='Add')?.click(); true`);
+  await sleep(800);
+  await shot('feat-3');
+};

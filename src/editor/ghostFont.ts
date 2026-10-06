@@ -26,7 +26,11 @@ import type { Font, Glyph as OtGlyph } from "opentype.js";
  * the ghost also works offline.
  */
 
-const GHOST_FONT_URL = `${import.meta.env.BASE_URL}fonts/ghost/NotoSans-SemiBold.woff`;
+// The file name changed (…-math.woff) when the nine math symbols ∞ √ ∏ ∂ ∫ ≠ ≈ ≤ ≥ were
+// merged in from Noto Sans Math (also SIL OFL 1.1). Without them those glyph
+// slots had no Sample ghost at all. A new name also guarantees browsers and the
+// service worker never keep serving the old font from a stale cache entry.
+const GHOST_FONT_URL = `${import.meta.env.BASE_URL}fonts/ghost/NotoSans-SemiBold-math.woff`;
 
 /** Reference-font geometry for one ghost character, in the reference
  *  font's own units, y-down, baseline at y = 0. */

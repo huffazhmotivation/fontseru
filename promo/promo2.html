@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<title>FontSeru — Promo</title>
+<style>
+  :root { --lime: #c6f24e; --pink: #ff4da6; --purple: #9b6cff; }
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  body { height: 100vh; }
+  #stage {
+    position: absolute; width: 1920px; height: 1080px; overflow: hidden; background: #000;
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Inter, sans-serif;
+    color: #f5f5f7; transform-origin: 0 0;
+  }
+  .abs { position: absolute; left: 0; top: 0; }
+  #bg { position: absolute; inset: 0; }
+  .h { position: absolute; left: 0; width: 100%; text-align: center; font-weight: 700; letter-spacing: -0.035em; line-height: 1.02; white-space: nowrap; top: 66px; font-size: 84px; display: none; }
+  .h .w { display: inline-block; }
+  .h.sm { top: 168px; font-size: 34px; font-weight: 500; color: #a1a1a6; letter-spacing: -0.01em; }
+  .grad-lime { background: linear-gradient(100deg, #e9ff9a 0%, var(--lime) 40%, #5fcf6a 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .grad-pink { background: linear-gradient(100deg, #ffb3d9, var(--pink) 50%, #ff7a59); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .grad-purple { background: linear-gradient(100deg, #d7c6ff, var(--purple) 55%, #5b7bff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .grad-tri { background: linear-gradient(95deg, var(--lime) 0%, #8fe3a0 25%, var(--pink) 55%, var(--purple) 85%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .screen { position: absolute; border-radius: 18px; overflow: hidden; display: none; background: #0b0b0b;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.13), 0 40px 120px rgba(0,0,0,.75), 0 0 140px rgba(198,242,78,.07); }
+  .screen img { display: block; width: 100%; height: 100%; position: absolute; left: 0; top: 0; }
+  #persp { position: absolute; inset: 0; perspective: 2200px; perspective-origin: 50% 40%; }
+  .ipad { position: absolute; background: #111; border-radius: 54px; padding: 24px; display: none;
+    box-shadow: 0 0 0 2px #2a2a2c, 0 0 0 4px #0a0a0a, 0 50px 140px rgba(0,0,0,.8); }
+  .ipad .glass { border-radius: 30px; overflow: hidden; width: 100%; height: 100%; position: relative; background: #0b0b0b; }
+  .ipad img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: none; }
+  .chip { position: absolute; padding: 16px 30px; border-radius: 999px; font-weight: 700; font-size: 34px; letter-spacing: -0.02em; color: #0b0d0c; background: var(--lime); box-shadow: 0 20px 60px rgba(198,242,78,.25); display: none; white-space: nowrap; }
+  .chip.dark { background: rgba(28,28,30,.86); color: #f5f5f7; box-shadow: 0 0 0 1px rgba(255,255,255,.14), 0 20px 50px rgba(0,0,0,.6); backdrop-filter: blur(10px); }
+  .chip .dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: var(--lime); margin-right: 12px; vertical-align: 3px; }
+  .tablabel { position: absolute; font-size: 34px; font-weight: 700; letter-spacing: -0.02em; text-align: center; width: 400px; display: none; }
+  #cursor { position: absolute; width: 44px; height: 44px; display: none; z-index: 20; filter: drop-shadow(0 4px 10px rgba(0,0,0,.6)); }
+  #ripple { position: absolute; border: 4px solid var(--lime); border-radius: 50%; display: none; z-index: 19; }
+  #logo { position: absolute; left: 0; top: 0; transform-origin: 0 0; display: none; }
+  #logo svg { display: block; overflow: visible; }
+  #controls { position: fixed; left: 16px; bottom: 12px; right: 16px; display: flex; gap: 12px; align-items: center; font: 13px -apple-system, sans-serif; color: #aaa; z-index: 9; }
+  #controls input { flex: 1; }
+  #controls button { background: #222; color: #eee; border: 1px solid #333; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  body.render #controls { display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div>
+  <div id="persp">
+    <div id="scrA" class="screen"><img src="shots/font-select.png" /><img id="scrA2" src="shots/font-node.png" /></div>
+    <div id="scrB" class="screen"><img src="shots/font-multi.png" /></div>
+    <div id="scrFam" class="screen"><img data-k="0" src="shots/fam-0.png" /><img data-k="1" src="shots/fam-bp2.png" /><img data-k="2" src="shots/fam-1.png" /><img data-k="3" src="shots/fam-2.png" /><img data-k="4" src="shots/fam-3.png" /><img data-k="5" src="shots/fam-4.png" /></div>
+    <div id="scrKern" class="screen"><img data-k="0" src="shots/k2-0.png" /><img data-k="1" src="shots/k2-p1.png" /><img data-k="2" src="shots/k2-p3.png" /><img data-k="3" src="shots/k2-p5.png" /><img data-k="4" src="shots/k2-p8.png" /><img data-k="5" src="shots/k2-1.png" /></div>
+    <div id="scrFeat" class="screen"><img data-k="0" src="shots/feat-1.png" /><img data-k="1" src="shots/feat-3.png" /></div>
+    <div id="scrMl" class="screen"><img data-k="0" src="shots/ml-0.png" /><img data-k="1" src="shots/ml-1.png" /><img data-k="2" src="shots/ml-2.png" /></div>
+    <div id="scrC" class="screen"><img src="shots/testlab-pangram.png" /></div>
+    <div id="scrTab" class="screen"><img data-k="0" src="shots/font-node.png" /><img data-k="1" src="shots/design-1.png" /><img data-k="2" src="shots/motion-play.png" /></div>
+    <div id="card0" class="screen"><img src="shots/font-node.png" /></div>
+    <div id="card1" class="screen"><img src="shots/design-1.png" /></div>
+    <div id="card2" class="screen"><img src="shots/motion-play.png" /></div>
+    <div id="ipad" class="ipad"><div class="glass" id="ipadGlass"><img src="shots/brush-s/f000.png" /><img src="shots/brush-s/f001.png" /><img src="shots/brush-s/f002.png" /><img src="shots/brush-s/f003.png" /><img src="shots/brush-s/f004.png" /><img src="shots/brush-s/f005.png" /><img src="shots/brush-s/f006.png" /><img src="shots/brush-s/f007.png" /><img src="shots/brush-s/f008.png" /><img src="shots/brush-s/f009.png" /><img src="shots/brush-s/f010.png" /><img src="shots/brush-s/f011.png" /><img src="shots/brush-s/f012.png" /><img src="shots/brush-s/f013.png" /><img src="shots/brush-s/f014.png" /><img src="shots/brush-s/f015.png" /><img src="shots/brush-s/f016.png" /><img src="shots/brush-s/f017.png" /><img src="shots/brush-s/f018.png" /><img src="shots/brush-s/f019.png" /><img src="shots/brush-s/f020.png" /><img src="shots/brush-s/f021.png" /><img src="shots/brush-s/f022.png" /><img src="shots/brush-s/f023.png" /><img src="shots/brush-s/f024.png" /><img src="shots/brush-s/f025.png" /><img src="shots/brush-s/f026.png" /><img src="shots/brush-s/f027.png" /><img src="shots/brush-s/f028.png" /><img src="shots/brush-s/f029.png" /><img src="shots/brush-s/f030.png" /><img src="shots/brush-s/f031.png" /><img src="shots/brush-s/f032.png" /><img src="shots/brush-s/f033.png" /><img src="shots/brush-s/f034.png" /><img src="shots/brush-s/f035.png" /><img src="shots/brush-s/f036.png" /><img src="shots/brush-s/f037.png" /><img src="shots/brush-s/f038.png" /><img src="shots/brush-s/f039.png" /><img src="shots/brush-s/f040.png" /><img src="shots/brush-s/f041.png" /><img src="shots/brush-s/f042.png" /><img src="shots/brush-s/f043.png" /><img src="shots/brush-s/f044.png" /><img src="shots/brush-s/f045.png" /><img src="shots/brush-s/f046.png" /><img src="shots/brush-s/f047.png" /><img src="shots/brush-s/f048.png" /><img src="shots/brush-s/f049.png" /><img src="shots/brush-s/f050.png" /><img src="shots/brush-s/f051.png" /><img src="shots/brush-s/f052.png" /><img src="shots/brush-s/f053.png" /><img src="shots/brush-s/f054.png" /><img src="shots/brush-s/f055.png" /><img src="shots/brush-s/f056.png" /><img src="shots/brush-s/f057.png" /><img src="shots/brush-s/f058.png" /><img src="shots/brush-s/f059.png" /><img src="shots/brush-s/f060.png" /><img src="shots/brush-s/f061.png" /><img src="shots/brush-s/f062.png" /><img src="shots/brush-s/f063.png" /><img src="shots/brush-s/f064.png" /><img src="shots/brush-s/f065.png" /><img src="shots/brush-s/f066.png" /><img src="shots/brush-s/f067.png" /><img src="shots/brush-s/f068.png" /><img src="shots/brush-s/f069.png" /><img src="shots/brush-s/f070.png" /><img src="shots/brush-s/f071.png" /><img src="shots/brush-s/f072.png" /><img src="shots/brush-s/f073.png" /><img src="shots/brush-s/f074.png" /><img src="shots/brush-s/f075.png" /><img src="shots/brush-s/f076.png" /><img src="shots/brush-s/f077.png" /><img src="shots/brush-s/f078.png" /><img src="shots/brush-s/f079.png" /><img src="shots/brush-s/f080.png" /><img src="shots/brush-s/f081.png" /><img src="shots/brush-s/f082.png" /></div></div>
+    <div id="scrE" class="screen"><img src="shots/export.png" /></div>
+  </div>
+
+  <div id="logo"><svg id="logoSvg" viewBox="0 0 568 152" width="1136" height="304"><defs>
+        <linearGradient id="_Linear1" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(118.229087,-33.941365,11.893288,41.428287,339.563866,1903.247091)"><stop offset="0" style="stop-color:rgb(96,131,0);stop-opacity:1"/><stop offset="1" style="stop-color:rgb(206,255,71);stop-opacity:1"/></linearGradient>
+        <linearGradient id="_Linear2" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(224.365857,-231,183.705628,224.365857,742,2336)"><stop offset="0" style="stop-color:rgb(96,131,0);stop-opacity:1"/><stop offset="1" style="stop-color:rgb(206,255,71);stop-opacity:1"/></linearGradient>
+    </defs><g transform="matrix(1,0,0,1,821.493088,-3009.799773)"><g id="lw">
+        <g transform="matrix(1.767755,0,0,1.767755,-1045.265552,-237.473614)">
+            <path d="M241.533,1862.933L241.533,1897.933L246.133,1897.933L246.133,1883.383L263.383,1883.383L263.383,1879.283L246.133,1879.283L246.133,1867.033L265.383,1867.033L265.383,1862.933L241.533,1862.933Z" style="fill:white;fill-rule:nonzero;"/>
+        </g>
+        <g transform="matrix(1.767755,0,0,1.767755,-1045.265552,-237.473614)">
+            <path d="M281.083,1898.733C289.733,1898.733 295.383,1892.633 295.383,1883.983C295.383,1875.283 289.733,1869.133 281.083,1869.133C272.433,1869.133 266.783,1875.283 266.783,1883.983C266.783,1892.633 272.433,1898.733 281.083,1898.733ZM281.083,1894.583C275.283,1894.583 271.433,1890.483 271.433,1883.983C271.433,1877.383 275.283,1873.283 281.083,1873.283C286.883,1873.283 290.683,1877.383 290.683,1883.983C290.683,1890.483 286.883,1894.583 281.083,1894.583Z" style="fill:white;fill-rule:nonzero;"/>
+        </g>
+        <g transform="matrix(1.767755,0,0,1.767755,-1045.265552,-237.473614)">
+            <path d="M298.833,1869.933L298.833,1897.933L303.333,1897.933L303.333,1883.833C303.333,1877.183 307.183,1873.083 311.683,1873.083C316.233,1873.083 317.733,1876.133 317.733,1881.333L317.733,1897.933L322.233,1897.933L322.233,1880.683C322.233,1872.133 318.183,1869.133 312.783,1869.133C307.383,1869.133 304.583,1871.833 303.333,1874.683L303.333,1869.933L298.833,1869.933Z" style="fill:white;fill-rule:nonzero;"/>
+        </g>
+        <g transform="matrix(1.767755,0,0,1.767755,-1045.265552,-237.473614)">
+            <path d="M324.533,1869.933L324.533,1873.783L329.233,1873.783L329.233,1890.833C329.233,1895.083 331.733,1897.933 336.783,1897.933L340.083,1897.933L340.083,1894.083L336.833,1894.083C334.833,1894.083 333.733,1893.133 333.733,1890.833L333.733,1873.783L339.283,1873.783L339.283,1869.933L333.733,1869.933L333.733,1862.933L329.233,1862.933L329.233,1869.933L324.533,1869.933Z" style="fill:white;fill-rule:nonzero;"/>
+        </g>
+        <g transform="matrix(1.767755,0,0,1.767755,-1045.265552,-237.473614)">
+            <path d="M350.333,1886.783C350.683,1890.333 353.783,1892.483 357.833,1892.483C361.533,1892.483 364.333,1891.233 364.333,1888.483C364.333,1881.683 343.533,1886.833 343.533,1872.433C343.533,1866.533 349.233,1862.133 357.333,1862.133C365.033,1862.133 370.883,1867.183 370.883,1874.033L363.683,1874.033C363.383,1870.483 361.333,1868.333 357.083,1868.333C352.833,1868.333 350.633,1870.083 350.633,1872.433C350.633,1879.783 371.433,1874.233 371.433,1888.483C371.433,1894.983 366.283,1898.733 357.533,1898.733C349.433,1898.733 343.383,1893.683 343.133,1886.783L350.333,1886.783ZM388.083,1898.733C379.433,1898.733 373.783,1892.633 373.783,1883.983C373.783,1875.283 379.433,1869.133 388.083,1869.133C395.683,1869.133 402.283,1875.333 400.833,1886.183L380.783,1886.183C381.383,1889.983 383.583,1892.683 388.083,1892.683C391.083,1892.683 393.033,1891.133 393.833,1889.033L400.883,1889.033C399.683,1894.783 394.883,1898.733 388.083,1898.733ZM388.083,1875.133C383.983,1875.183 381.783,1877.433 380.983,1880.683L394.183,1880.683C393.933,1877.833 391.983,1875.133 388.083,1875.133ZM410.983,1883.983L410.983,1897.933L404.283,1897.933L404.283,1869.933L410.983,1869.933L410.983,1874.333C412.033,1871.583 414.433,1869.133 419.933,1869.133L419.933,1875.733C413.983,1875.733 410.983,1877.333 410.983,1883.983ZM440.883,1883.683L440.883,1869.933L447.583,1869.933L447.583,1897.933L440.883,1897.933L440.883,1893.533C439.783,1896.233 437.233,1898.733 431.933,1898.733C426.533,1898.733 422.633,1895.733 422.633,1887.183L422.633,1869.933L429.283,1869.933L429.283,1886.533C429.283,1890.133 429.883,1892.883 433.783,1892.883C437.033,1892.883 440.883,1890.333 440.883,1883.683Z" style="fill:url(#_Linear1);"/>
+        </g>
+        </g><g id="lm"><g id="lmFill"><g transform="matrix(0.737604,0,0,0.737604,-1678.094965,1438.703877)">
+            <g transform="matrix(1,0,0,0.891775,419.330765,252.813853)">
+                <path d="M821.191,2336L775.247,2336C756.885,2336 742,2319.309 742,2298.719L742,2142.281C742,2121.691 756.885,2105 775.247,2105L851.776,2105L792.557,2208.207C790.25,2212.228 790.085,2217.342 792.128,2221.54C794.171,2225.738 798.095,2228.35 802.36,2228.35L830.374,2228.35C836.687,2228.35 842.595,2231.84 846.165,2237.679C849.735,2243.519 850.508,2250.956 848.232,2257.56L821.191,2336ZM870.754,2105L939.753,2105C958.115,2105 973,2121.691 973,2142.281L973,2298.719C973,2319.309 958.115,2336 939.753,2336L838.43,2336L920.319,2208.689C923.917,2203.095 924.418,2195.713 921.616,2189.573C918.815,2183.433 913.182,2179.57 907.032,2179.57L868.582,2179.57C863.193,2179.57 858.152,2176.584 855.116,2171.592C852.079,2166.599 851.439,2160.247 853.406,2154.621L870.754,2105Z" style="fill:url(#_Linear2);"/>
+            </g>
+        </g>
+    </g><g transform="matrix(0.737604,0,0,0.737604,-1678.094965,1438.703877)">
+            <g transform="matrix(1,0,0,0.891775,419.330765,252.813853)">
+                <path d="M821.191,2336L775.247,2336C756.885,2336 742,2319.309 742,2298.719L742,2142.281C742,2121.691 756.885,2105 775.247,2105L851.776,2105L792.557,2208.207C790.25,2212.228 790.085,2217.342 792.128,2221.54C794.171,2225.738 798.095,2228.35 802.36,2228.35L830.374,2228.35C836.687,2228.35 842.595,2231.84 846.165,2237.679C849.735,2243.519 850.508,2250.956 848.232,2257.56L821.191,2336ZM870.754,2105L939.753,2105C958.115,2105 973,2121.691 973,2142.281L973,2298.719C973,2319.309 958.115,2336 939.753,2336L838.43,2336L920.319,2208.689C923.917,2203.095 924.418,2195.713 921.616,2189.573C918.815,2183.433 913.182,2179.57 907.032,2179.57L868.582,2179.57C863.193,2179.57 858.152,2176.584 855.116,2171.592C852.079,2166.599 851.439,2160.247 853.406,2154.621L870.754,2105Z" id="lmStroke" style="fill:none;stroke:#c6f24e;stroke-width:4;stroke-linejoin:round;"/>
+            </g>
+        </g>
+    </g></g></svg></div>
+  <div id="intro-sm" class="h sm" style="top: 470px; font-size: 40px;">Memperkenalkan</div>
+
+  <div id="h2" class="h"></div><div id="h3" class="h"></div><div id="hBrush" class="h"></div><div id="hBrushS" class="h sm"></div>
+  <div id="h4" class="h"></div><div id="hFam" class="h"></div><div id="hFamS" class="h sm"></div>
+  <div id="hKern" class="h"></div><div id="hKernS" class="h sm"></div><div id="hFeat" class="h"></div><div id="hFeatS" class="h sm"></div>
+  <div id="hMl" class="h"></div><div id="hMlS" class="h sm"></div><div id="h5" class="h"></div><div id="h6" class="h"></div><div id="h8" class="h"></div>
+  <div id="endTag" class="h" style="top: 690px; font-size: 64px;">Buat font-mu <span class="grad-lime">sendiri.</span></div>
+  <div id="endSub" class="h sm" style="top: 800px; font-size: 32px;">Web · macOS · Windows · iPad</div>
+
+  <div id="lab0" class="tablabel grad-lime">Font</div>
+  <div id="lab1" class="tablabel grad-pink">Design</div>
+  <div id="lab2" class="tablabel grad-purple">Motion</div>
+  <div id="chips"></div>
+  <svg id="cursor" viewBox="0 0 24 24"><path d="M4 2 L4 19 L8.5 15 L11.5 21.5 L14.3 20.3 L11.4 13.9 L17.5 13.9 Z" fill="#fff" stroke="#000" stroke-width="1.3" stroke-linejoin="round"/></svg>
+  <div id="ripple"></div>
+</div>
+<div id="controls"><button id="play">⏯</button><input id="scrub" type="range" min="0" max="55" step="0.01" value="0" /><span id="tc">0.00</span></div>
+
+<script>
+const DUR = 55;
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = (p) => (p >= 1 ? 1 : 1 - Math.pow(2, -10 * p));
+const eInOut = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+const eIn = (p) => p * p * p;
+const eBack = (p) => { const c1 = 1.5, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+const css = (el, o) => { for (const k in o) el.style[k] = o[k]; };
+const show = (el, v) => { el.style.display = v ? 'block' : 'none'; };
+
+/* ---------------- headlines ---------------- */
+const HEAD = {
+  h2: [['Desain huruf.', ''], ['Langsung di browser.', 'grad-lime']],
+  h3: [['Setiap kurva.', ''], ['Setiap titik.', 'grad-lime']],
+  hBrush: [['Coret saja.', ''], ['Jadi font.', 'grad-lime']],
+  hBrushS: [['Belasan brush — calligraphic, oil, marker, spray. Seperti menggambar di iPad.', '']],
+  h4: [['Ratusan glyph.', ''], ['Satu kanvas.', 'grad-lime']],
+  hFam: [['Bold & Italic.', ''], ['Otomatis.', 'grad-lime']],
+  hFamS: [['Plus family custom-mu sendiri — atur tebal & kemiringannya.', '']],
+  hKern: [['Kerning?', ''], ['Sekali klik.', 'grad-lime']],
+  hKernS: [['Jarak antarhuruf yang berantakan langsung rapi.', '']],
+  hFeat: [['Ligature & alternate.', ''], ['Tanpa coding.', 'grad-lime']],
+  hFeatS: [['Fitur OpenType dibuat otomatis saat ekspor.', '']],
+  hMl: [['Multibahasa.', ''], ['Sekali klik.', 'grad-lime']],
+  hMlS: [['Huruf beraksen Eropa, Vietnam & lainnya ditambahkan otomatis.', '']],
+  h5: [['Uji setiap', ''], ['kata.', 'grad-lime']],
+  h6: [['Satu aplikasi.', ''], ['Tiga studio.', 'grad-tri']],
+  h8: [['Ekspor ke', ''], ['format standar.', 'grad-lime']],
+};
+for (const id in HEAD) $(id).innerHTML = HEAD[id].map(([txt, cls]) => txt.split(' ').map((w) => `<span class="w ${cls}">${w}</span>`).join(' ')).join(' ');
+function headline(id, t, a, b, stagger = 0.09) {
+  const el = $(id);
+  const vis = t > a - 0.05 && t < b + 0.05;
+  show(el, vis);
+  if (!vis) return;
+  el.querySelectorAll('.w').forEach((w, i) => {
+    const p = eOut(seg(t, a + i * stagger, a + i * stagger + 0.9));
+    const q = eIn(seg(t, b - 0.45, b));
+    css(w, { opacity: String(p * (1 - q)), transform: `translateY(${(1 - p) * 60 - q * 30}px)`, filter: `blur(${(1 - p) * 18 + q * 12}px)` });
+  });
+}
+
+/* ---------------- screens ---------------- */
+const SW = 1440, SH = 900, SY = 665, SWD = 1300;
+function place(el, { x = 960, y = SY, w = SWD, s = 1, rx = 0, ry = 0, rz = 0, tz = 0, o = 1, blur = 0, ox = 50, oy = 50 }) {
+  const h = (w * SH) / SW;
+  el._p = { left: x - w / 2, top: y - h / 2, w, h, s };
+  css(el, {
+    width: w + 'px', height: h + 'px', left: x - w / 2 + 'px', top: y - h / 2 + 'px',
+    transform: `translateZ(${tz}px) rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg) scale(${s})`,
+    transformOrigin: `${ox}% ${oy}%`, opacity: String(o), filter: blur ? `blur(${blur}px)` : 'none', display: o <= 0.001 ? 'none' : 'block',
+  });
+}
+function innerZoom(el, z, fx, fy) {
+  el._z = { z, fx, fy };
+  el.querySelectorAll('img').forEach((im) => css(im, { transform: `scale(${z})`, transformOrigin: `${fx * 100}% ${fy * 100}%` }));
+}
+/** stack of states inside one screen: crossfade to image k (fractional k = blend) */
+function stack(el, k) {
+  el.querySelectorAll('img[data-k]').forEach((im) => {
+    const i = +im.dataset.k;
+    const o = clamp(1 - Math.abs(k - i) * 1) * (i <= Math.ceil(k) ? 1 : 0);
+    im.style.opacity = String(i === Math.floor(k) ? 1 : i === Math.ceil(k) ? k - Math.floor(k) : 0);
+    im.style.display = i === Math.floor(k) || i === Math.ceil(k) ? '' : 'none';
+  });
+}
+/** on-stage position of an image point (fraction px,py) in a flat (unrotated, scale-1) screen */
+function pt(el, px, py) {
+  const p = el._p, z = el._z || { z: 1, fx: 0.5, fy: 0.5 };
+  return [p.left + z.fx * p.w + (px - z.fx) * p.w * z.z, p.top + z.fy * p.h + (py - z.fy) * p.h * z.z];
+}
+/** focal-point zoom that keeps a target point centred-ish: zoom z and focus f interpolate together */
+function cursorAt(x, y, o = 1, press = 0) {
+  const c = $('cursor');
+  show(c, o > 0.01);
+  css(c, { left: x - 6 + 'px', top: y - 4 + 'px', opacity: String(o), transform: `scale(${1 - press * 0.15})` });
+}
+function ripple(x, y, p) {
+  const r = $('ripple');
+  show(r, p > 0 && p < 1);
+  const d = 30 + p * 120;
+  css(r, { width: d + 'px', height: d + 'px', left: x - d / 2 + 'px', top: y - d / 2 + 'px', opacity: String(1 - p) });
+}
+
+/* ---------------- logo ---------------- */
+let logoReady = false, markLen = 1000, LB = null;
+function initLogo() {
+  const svg = document.querySelector('#logoSvg');
+  const st = $('lmStroke');
+  markLen = st.getTotalLength();
+  st.style.strokeDasharray = String(markLen);
+  // measure mark + wordmark boxes (svg is 1136x304 when unscaled)
+  $('logo').style.display = 'block'; $('logo').style.transform = 'none';
+  const sr = svg.getBoundingClientRect(), stg = $('stage').getBoundingClientRect();
+  const k = 1920 / stg.width; // stage may be scaled in preview
+  const mr = $('lmFill').getBoundingClientRect(), wr = $('lw').getBoundingClientRect();
+  LB = {
+    mark: { x: (mr.left - sr.left) * k, y: (mr.top - sr.top) * k, w: mr.width * k, h: mr.height * k },
+    word: { x: (wr.left - sr.left) * k, w: wr.width * k },
+    W: sr.width * k, H: sr.height * k,
+  };
+  logoReady = true;
+}
+
+/* ---------------- brush sequence ---------------- */
+const BRUSH_N = 83, BRUSH_O = 49;
+
+/* ---------------- chips ---------------- */
+const CHIPS = ['TTF', 'OTF', 'WOFF', 'WOFF2'];
+$('chips').innerHTML = CHIPS.map((c, i) => `<div class="chip" id="chip${i}">${c}</div>`).join('') +
+  `<div class="chip dark" id="bchip0"><span class="dot"></span>Calligraphic</div><div class="chip dark" id="bchip1"><span class="dot" style="background:#ff9f43"></span>Oil Brush</div>` +
+  `<div class="chip dark" id="mlchip">419 → 443 glyph</div>`;
+
+function bgFor(t) {
+  let c = '198,242,78', a = 0.16;
+  if (t > 43.4 && t < 49.2) { const f = seg(t, 44.0, 47.4) * 2; c = f < 0.7 ? '198,242,78' : f < 1.4 ? '255,77,166' : '155,108,255'; a = 0.2; }
+  if (t < 1.0) a *= seg(t, 0, 1.0);
+  return `radial-gradient(1200px 700px at 50% 62%, rgba(${c},${a}) 0%, rgba(${c},${a * 0.25}) 40%, rgba(0,0,0,0) 70%), #000`;
+}
+
+let cur = 0;
+function render(t) {
+  cur = t;
+  $('bg').style.background = bgFor(t);
+  let cursorShown = false, rippleShown = false;
+  const cur2 = (x, y, o, press) => { cursorAt(x, y, o, press); cursorShown = true; };
+  const rip = (x, y, p) => { ripple(x, y, p); if (p > 0 && p < 1) rippleShown = true; };
+
+  /* ===== 0 – 4.3 : intro logo (mark draws, fills, wordmark wipes in) ===== */
+  {
+    const smO = Math.min(eOut(seg(t, 0.25, 0.85)), 1 - eIn(seg(t, 1.2, 1.7)));
+    show($('intro-sm'), smO > 0.001);
+    css($('intro-sm'), { opacity: String(smO), filter: `blur(${(1 - smO) * 8}px)` });
+    const inIntro = t < 4.4, inEnd = t > 51.6;
+    show($('logo'), logoReady && (inIntro || inEnd));
+    if (logoReady && (inIntro || inEnd)) {
+      const draw = inIntro ? eInOut(seg(t, 1.3, 2.5)) : 1;
+      const fill = inIntro ? eOut(seg(t, 2.2, 2.8)) : 1;
+      const slide = inIntro ? eInOut(seg(t, 2.7, 3.5)) : 1;
+      const wipe = inIntro ? eOut(seg(t, 3.0, 3.8)) : eOut(seg(t, 52.0, 52.9));
+      const out = inIntro ? eIn(seg(t, 3.9, 4.35)) : 0;
+      const endIn = inEnd ? eOut(seg(t, 51.6, 52.4)) : 1;
+      $('lmStroke').style.strokeDashoffset = String(markLen * (1 - draw));
+      $('lmStroke').style.opacity = String((1 - fill) * (draw > 0 ? 1 : 0));
+      $('lmFill').style.opacity = String(fill);
+      // word wipe via clip on the word group
+      const clipW = LB.word.w * wipe;
+      $('lw').style.clipPath = `inset(0 ${(1 - wipe) * 100}% 0 0)`;
+      $('lw').style.opacity = String(wipe > 0 ? 1 : 0);
+      // layout: final logo width 1000 centred; before slide, mark centred big
+      const finalScale = 1000 / LB.W;
+      const fx = 960 - (LB.W * finalScale) / 2, fy = (inEnd ? 380 : 540) - (LB.H * finalScale) / 2;
+      const markScale = 2.6;
+      const mx = 960 - (LB.mark.x + LB.mark.w / 2) * markScale, my = 520 - (LB.mark.y + LB.mark.h / 2) * markScale;
+      const sc = lerp(markScale, finalScale, slide) * (inEnd ? lerp(0.85, 1, endIn) : 1);
+      const x = lerp(mx, fx, slide), y = lerp(my, fy, slide);
+      css($('logo'), {
+        transform: `translate(${x}px, ${y}px) scale(${sc * (1 + out * 0.15)})`,
+        opacity: String((1 - out) * (inEnd ? endIn : 1)),
+        filter: `blur(${out * 14 + (inEnd ? (1 - endIn) * 12 : 0)}px) drop-shadow(0 0 ${30 * fill}px rgba(198,242,78,${0.35 * fill}))`,
+      });
+    }
+  }
+
+  /* ===== 4.2 – 11.7 : editor + nodes ===== */
+  headline('h2', t, 4.35, 8.1);
+  headline('h3', t, 8.35, 11.45);
+  {
+    const inP = eOut(seg(t, 4.5, 6.0)), outP = eIn(seg(t, 11.3, 11.75)), zoomP = eInOut(seg(t, 8.2, 10.0));
+    place($('scrA'), { y: lerp(1000, SY, inP), rx: lerp(38, 0, inP), s: lerp(0.86, 1, inP) * (1 + seg(t, 6, 8.2) * 0.03) * (1 - outP * 0.08), o: (t > 4.45 && t < 11.8 ? 1 : 0) * (1 - outP), blur: outP * 14, oy: 30 });
+    $('scrA2').style.opacity = String(eInOut(seg(t, 7.0, 7.6)));
+    innerZoom($('scrA'), lerp(1, 2.35, zoomP) + seg(t, 10, 11.7) * 0.12, 0.447, 0.57);
+  }
+
+  /* ===== 11.6 – 17.6 : brush on iPad ===== */
+  headline('hBrush', t, 11.75, 17.4);
+  headline('hBrushS', t, 12.3, 17.4, 0.02);
+  {
+    const inP = eOut(seg(t, 11.7, 12.9)), outP = eIn(seg(t, 17.2, 17.65));
+    const W = 1180, H = 820, el = $('ipad');
+    const vis = t > 11.65 && t < 17.7;
+    show(el, vis);
+    if (vis) {
+      css(el, {
+        width: W + 'px', height: H + 'px', left: 960 - W / 2 - 24 + 'px', top: 680 - H / 2 - 24 + 'px',
+        transform: `perspective(2400px) rotateX(${lerp(26, 4, inP)}deg) rotateZ(${lerp(-6, 0, inP)}deg) scale(${lerp(0.64, 0.86, inP) * (1 - outP * 0.06)}) translateY(${(1 - inP) * 180}px)`,
+        opacity: String(Math.min(1, inP * 1.6) * (1 - outP)), filter: outP ? `blur(${outP * 14}px)` : 'none',
+      });
+      // 83 real frames played from 12.6s at 18 fps
+      const f = Math.round(clamp((t - 12.6) * 18, 0, BRUSH_N - 1));
+      if (el._f !== f) {
+        if (el._f != null && el._imgs[el._f]) el._imgs[el._f].style.display = 'none';
+        el._imgs[f].style.display = 'block';
+        el._f = f;
+      }
+    }
+    // brush name chips
+    const f = (t - 12.6) * 18;
+    const c0 = vis ? Math.min(eOut(seg(f, 0, 6)), 1 - eIn(seg(f, BRUSH_O - 4, BRUSH_O))) : 0;
+    const c1 = vis ? Math.min(eOut(seg(f, BRUSH_O, BRUSH_O + 6)), 1 - outP) : 0;
+    for (const [id, o, y] of [['bchip0', c0, 0], ['bchip1', c1, 0]]) {
+      show($(id), o > 0.01);
+      css($(id), { left: '1510px', top: '520px', opacity: String(o), transform: `translateY(${(1 - o) * 30}px) scale(${0.85 + 0.15 * o})` });
+    }
+  }
+
+  /* ===== 17.5 – 21.2 : multi glyph ===== */
+  headline('h4', t, 17.7, 21.0);
+  {
+    const inP = eOut(seg(t, 17.55, 18.4)), outP = eIn(seg(t, 20.8, 21.25));
+    place($('scrB'), { s: lerp(1.12, 1, inP) * (1 - outP * 0.06), o: (t > 17.5 && t < 21.3 ? inP : 0) * (1 - outP), blur: (1 - inP) * 20 + outP * 14, ry: lerp(-6, 4, seg(t, 17.5, 21.2)) });
+    innerZoom($('scrB'), lerp(2.6, 1.15, eInOut(seg(t, 17.5, 20.8))), 0.5, 0.42);
+  }
+
+  /* ===== 21.2 – 26.8 : auto family (bold → italic → custom) ===== */
+  headline('hFam', t, 21.35, 26.6);
+  headline('hFamS', t, 21.9, 26.6, 0.02);
+  {
+    const el = $('scrFam');
+    const inP = eOut(seg(t, 21.2, 22.2)), outP = eIn(seg(t, 26.4, 26.85));
+    const vis = t > 21.15 && t < 26.9;
+    place(el, { s: lerp(0.92, 1, inP), o: vis ? inP * (1 - outP) : 0, blur: (1 - inP) * 16 + outP * 14 });
+    // zoom toward the Auto Bold button, click, then zoom out while rows fill
+    const zIn = eInOut(seg(t, 22.0, 22.8)), zOut = eInOut(seg(t, 23.2, 24.0));
+    const z = lerp(1, 1.9, zIn) - (lerp(1, 1.9, zIn) - 1) * zOut;
+    innerZoom(el, z, 0.5, 0.86);
+    // states: 0 empty, 1 bold generating, 2 bold done, 3 italic done, 4 custom slider, 5 custom done
+    const k = 0 + eInOut(seg(t, 23.05, 23.25)) + eInOut(seg(t, 23.45, 23.7)) + eInOut(seg(t, 24.4, 24.7)) + eInOut(seg(t, 25.1, 25.35)) + eInOut(seg(t, 25.8, 26.05));
+    stack(el, k);
+    if (vis && t > 22.2 && t < 23.4) {
+      const [bx, by] = pt(el, 0.5, 0.869);
+      const app = eOut(seg(t, 22.2, 22.75));
+      cur2(lerp(bx + 260, bx, app), lerp(by + 140, by, app), Math.min(app * 2, 1 - seg(t, 23.2, 23.4)), seg(t, 22.85, 22.95) - seg(t, 22.95, 23.1));
+      rip(bx, by, seg(t, 22.9, 23.5));
+    }
+  }
+
+  /* ===== 26.8 – 32.2 : auto kerning (messy → click → tidy) ===== */
+  headline('hKern', t, 26.95, 32.0);
+  headline('hKernS', t, 27.5, 32.0, 0.02);
+  {
+    const el = $('scrKern');
+    const inP = eOut(seg(t, 26.8, 27.7)), outP = eIn(seg(t, 31.8, 32.25));
+    const vis = t > 26.75 && t < 32.3;
+    place(el, { s: lerp(0.92, 1, inP), o: vis ? inP * (1 - outP) : 0, blur: (1 - inP) * 16 + outP * 14 });
+    // 1) close on the messy text  2) pan to the Auto Kerning button  3) zoom out to the tidy result
+    const toText = eInOut(seg(t, 27.4, 28.2)), toBtn = eInOut(seg(t, 28.9, 29.6)), outZ = eInOut(seg(t, 30.4, 31.3));
+    let z = lerp(1, 1.85, toText), fx = 0.22, fy = 0.36;
+    fx = lerp(fx, 0.818, toBtn); fy = lerp(fy, 0.325, toBtn); z = lerp(z, 2.3, toBtn);
+    z = lerp(z, 1.0, outZ); fx = lerp(fx, 0.35, outZ); fy = lerp(fy, 0.45, outZ);
+    innerZoom(el, z, fx, fy);
+    const k = clamp((t - 29.95) / 0.12, 0, 1) + clamp((t - 30.1) / 0.2, 0, 1) + clamp((t - 30.3) / 0.2, 0, 1) + clamp((t - 30.5) / 0.2, 0, 1) + eInOut(seg(t, 30.75, 31.1));
+    stack(el, k);
+    if (vis && t > 29.0 && t < 30.4) {
+      const [bx, by] = pt(el, 0.818, 0.325);
+      const app = eOut(seg(t, 29.0, 29.7));
+      cur2(lerp(bx + 200, bx, app), lerp(by + 180, by, app), Math.min(app * 2, 1 - seg(t, 30.2, 30.4)), seg(t, 29.85, 29.95) - seg(t, 29.95, 30.1));
+      rip(bx, by, seg(t, 29.9, 30.5));
+    }
+  }
+
+  /* ===== 32.2 – 36.4 : feature builder ===== */
+  headline('hFeat', t, 32.35, 36.2);
+  headline('hFeatS', t, 32.9, 36.2, 0.02);
+  {
+    const el = $('scrFeat');
+    const inP = eOut(seg(t, 32.2, 33.1)), outP = eIn(seg(t, 36.0, 36.45));
+    const vis = t > 32.15 && t < 36.5;
+    place(el, { x: lerp(1400, 960, inP), ry: lerp(-28, 0, inP), o: vis ? Math.min(1, inP * 2) * (1 - outP) : 0, blur: outP * 14 });
+    innerZoom(el, lerp(1.0, 1.75, eInOut(seg(t, 33.0, 34.2))), 0.5, 0.42);
+    stack(el, eInOut(seg(t, 34.6, 35.0)));
+  }
+
+  /* ===== 36.4 – 40.4 : multilingual ===== */
+  headline('hMl', t, 36.55, 40.2);
+  headline('hMlS', t, 37.1, 40.2, 0.02);
+  {
+    const el = $('scrMl');
+    const inP = eOut(seg(t, 36.4, 37.3)), outP = eIn(seg(t, 40.0, 40.45));
+    const vis = t > 36.35 && t < 40.5;
+    place(el, { s: lerp(0.92, 1, inP), o: vis ? inP * (1 - outP) : 0, blur: (1 - inP) * 16 + outP * 14 });
+    const zb = eInOut(seg(t, 37.0, 37.7)), zo = eInOut(seg(t, 38.6, 39.4));
+    innerZoom(el, lerp(lerp(1, 2.4, zb), 1.05, zo), lerp(lerp(0.5, 0.075, zb), 0.5, zo), lerp(lerp(0.5, 0.94, zb), 0.45, zo));
+    stack(el, eInOut(seg(t, 38.1, 38.3)) + eInOut(seg(t, 38.7, 39.1)));
+    if (vis && t > 37.2 && t < 38.5) {
+      const [bx, by] = pt(el, 0.075, 0.968);
+      const app = eOut(seg(t, 37.2, 37.8));
+      cur2(lerp(bx + 220, bx, app), lerp(by - 160, by, app), Math.min(app * 2, 1 - seg(t, 38.3, 38.5)), seg(t, 37.9, 38.0) - seg(t, 38.0, 38.15));
+      rip(bx, by, seg(t, 37.95, 38.55));
+    }
+    const mo = vis ? Math.min(eBack(seg(t, 38.5, 39.1)), 1 - outP) : 0;
+    show($('mlchip'), mo > 0.01);
+    css($('mlchip'), { left: '1380px', top: '930px', opacity: String(clamp(mo)), transform: `scale(${0.7 + 0.3 * mo})` });
+  }
+
+  /* ===== 40.4 – 43.6 : test lab ===== */
+  headline('h5', t, 40.55, 43.4);
+  {
+    const inP = eOut(seg(t, 40.4, 41.4)), outP = eIn(seg(t, 43.2, 43.65));
+    place($('scrC'), { x: lerp(1500, 960, inP), ry: lerp(-32, 0, inP), s: 1 - outP * 0.08, o: (t > 40.35 && t < 43.7 ? 1 : 0) * Math.min(1, inP * 2) * (1 - outP), blur: outP * 14 });
+    innerZoom($('scrC'), lerp(1, 1.5, eInOut(seg(t, 41.3, 43.2))), 0.3, 0.42);
+  }
+
+  /* ===== 43.6 – 49.2 : three studios — zoom on the mode tabs, click Design, click Motion, zoom out ===== */
+  headline('h6', t, 43.75, 49.0);
+  {
+    const el = $('scrTab');
+    const inP = eOut(seg(t, 43.6, 44.4));
+    const toCards = eInOut(seg(t, 47.2, 47.9));
+    const vis = t > 43.55 && t < 47.95;
+    place(el, { s: lerp(0.92, 1, inP), o: vis ? inP * (1 - toCards) : 0, blur: (1 - inP) * 16 });
+    const zin = eInOut(seg(t, 44.0, 44.8)), zout = eInOut(seg(t, 46.6, 47.3));
+    innerZoom(el, lerp(lerp(1, 3.4, zin), 1, zout), 0.17, 0.0);
+    const k = eInOut(seg(t, 45.15, 45.35)) + eInOut(seg(t, 46.05, 46.25));
+    stack(el, k);
+    // tab x positions differ a little per mode capture; aim between
+    const tabs = [[0.168, 0.019], [0.183, 0.019], [0.215, 0.019]];
+    if (vis && t > 44.6 && t < 46.6) {
+      const tA = pt(el, 0.15, 0.08), tD = pt(el, 0.178, 0.02), tM = pt(el, 0.232, 0.02);
+      const m1 = eInOut(seg(t, 44.6, 45.0)), m2 = eInOut(seg(t, 45.5, 45.95));
+      const x = lerp(lerp(tA[0], tD[0], m1), tM[0], m2), y = lerp(lerp(tA[1] + 60, tD[1], m1), tM[1], m2);
+      cur2(x, y, Math.min(seg(t, 44.6, 44.8) * 2, 1 - seg(t, 46.4, 46.6)), (seg(t, 45.05, 45.12) - seg(t, 45.12, 45.25)) + (seg(t, 45.98, 46.05) - seg(t, 46.05, 46.18)));
+      if (t < 45.7) rip(tD[0], tD[1], seg(t, 45.1, 45.7)); else rip(tM[0], tM[1], seg(t, 46.0, 46.6));
+    }
+    // then the 3-card carousel
+    const appear = toCards, gone = eIn(seg(t, 48.8, 49.25));
+    const f = 2 - eInOut(seg(t, 47.9, 48.5)) * 1; // ends focused on Design (centre)
+    for (let i = 0; i < 3; i++) {
+      const d = i - f, ad = Math.abs(d);
+      place($('card' + i), { x: 960 + d * 820 * appear, y: 640, w: 1100, tz: -ad * 520, ry: -d * 34, s: (1 - gone * 0.1) * lerp(0.85, 1, appear),
+        o: (t > 47.15 && t < 49.3 ? appear : 0) * (1 - gone) * clamp(1.6 - ad * 0.55) });
+      const lo = (t > 47.15 && t < 49.3 ? appear : 0) * (1 - gone) * clamp(1 - ad * 0.6);
+      show($('lab' + i), lo > 0.01);
+      css($('lab' + i), { left: 960 - 200 + d * 820 + 'px', top: '1000px', opacity: String(lo) });
+    }
+  }
+
+  /* ===== 49.2 – 51.8 : export ===== */
+  headline('h8', t, 49.35, 51.6);
+  {
+    const inP = eOut(seg(t, 49.2, 50.2)), outP = eIn(seg(t, 51.4, 51.85));
+    place($('scrE'), { y: 610, w: 1200, s: lerp(0.9, 1, inP) * (1 - outP * 0.08), o: (t > 49.15 && t < 51.9 ? inP : 0) * (1 - outP), blur: (1 - inP) * 16 + outP * 14 });
+    innerZoom($('scrE'), lerp(1, 1.18, seg(t, 49.2, 51.8)), 0.5, 0.45);
+    CHIPS.forEach((c, i) => {
+      const p = eBack(seg(t, 50.0 + i * 0.13, 50.6 + i * 0.13));
+      const el = $('chip' + i);
+      show(el, t > 49.9 && t < 51.9);
+      css(el, { left: [600, 790, 1000, 1240][i] + 'px', top: '960px', opacity: String(clamp(p) * (1 - outP)), transform: `translateY(${(1 - p) * 60}px) scale(${0.6 + 0.4 * p})`, background: ['#c6f24e', '#d9ff7a', '#9fe870', '#7fd13b'][i] });
+    });
+  }
+
+  /* ===== 51.6 – 55 : end card ===== */
+  {
+    const p3 = eOut(seg(t, 52.5, 53.3)), p4 = eOut(seg(t, 52.9, 53.6));
+    show($('endTag'), t > 52.4); show($('endSub'), t > 52.8);
+    css($('endTag'), { opacity: String(p3), transform: `translateY(${(1 - p3) * 30}px)`, filter: `blur(${(1 - p3) * 10}px)` });
+    css($('endSub'), { opacity: String(p4) });
+  }
+
+  if (!cursorShown) show($('cursor'), false);
+  if (!rippleShown) show($('ripple'), false);
+  $('tc').textContent = t.toFixed(2);
+}
+
+/* ---------------- player / render hooks ---------------- */
+const params = new URLSearchParams(location.search);
+const stage = $('stage');
+if (params.get('render') === '1') document.body.classList.add('render');
+function fit() {
+  if (document.body.classList.contains('render')) { stage.style.transform = 'none'; stage.style.left = '0'; stage.style.top = '0'; return; }
+  const s = Math.min(innerWidth / 1920, (innerHeight - 50) / 1080);
+  stage.style.transform = `scale(${s})`;
+  stage.style.left = (innerWidth - 1920 * s) / 2 + 'px';
+  stage.style.top = (innerHeight - 50 - 1080 * s) / 2 + 'px';
+}
+addEventListener('resize', fit); fit();
+$('ipad')._imgs = [...document.querySelectorAll('#ipadGlass img')];
+window.__ready = Promise.all([...document.images].map((im) => (im.decode ? im.decode().catch(() => {}) : null))).then(() => { initLogo(); window.__glyphReady = true; });
+window.__render = (t) => new Promise((res) => { render(t); requestAnimationFrame(() => requestAnimationFrame(res)); });
+window.__prewarm = async () => { for (let t = 0; t <= DUR; t += 0.25) await window.__render(t); };
+
+let playing = params.get('render') !== '1', t0 = performance.now(), base = 0;
+$('play').onclick = () => { playing = !playing; t0 = performance.now(); base = cur; if (playing) loop(); };
+$('scrub').oninput = (e) => { base = +e.target.value; t0 = performance.now(); render(base); };
+function loop() {
+  if (!playing) return;
+  let t = base + (performance.now() - t0) / 1000;
+  if (t > DUR) { base = 0; t0 = performance.now(); t = 0; }
+  if (logoReady) render(t);
+  $('scrub').value = t;
+  requestAnimationFrame(loop);
+}
+window.__ready.then(() => { render(0); if (playing) loop(); });
+</script>
+</body>
+</html>
