@@ -1,5 +1,6 @@
 import { Type, Clapperboard, PenTool } from "lucide-react";
 import { useAppModeStore, type AppMode } from "@/mode/appModeStore";
+import { PrayerIcon, openPrayerSettings } from "@/prayer/PrayerReminder";
 
 const TABS: { mode: AppMode; label: string; icon: typeof Type }[] = [
   { mode: "font", label: "Font", icon: Type },
@@ -43,6 +44,17 @@ export function ModeTabs() {
           </button>
         );
       })}
+      {/* Pengingat sholat — pengaturan lokasi/jadwal; berlaku untuk semua mode. */}
+      <button
+        type="button"
+        className="fm-mode-tab fm-mode-prayer"
+        onClick={openPrayerSettings}
+        title="Pengingat waktu sholat"
+        aria-label="Pengingat waktu sholat"
+        data-testid="prayer-settings-btn"
+      >
+        <PrayerIcon size={15} />
+      </button>
     </div>
   );
 }

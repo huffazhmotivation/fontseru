@@ -1,3 +1,4 @@
+import { openPrayerSettings } from './PrayerReminder';
 import { useEffect, useState } from 'react';
 import { Type, PenTool, Clapperboard, ChevronDown, Undo2, Redo2, Moon, Sun, History, Printer, Share2, Search, Layers, SlidersHorizontal, PencilLine } from 'lucide-react';
 import { useStore, getS } from '../store/store';
@@ -317,6 +318,7 @@ function MainMenu() {
           {item('Simpan versi', () => saveVersion())}
           {item('Riwayat versi…', () => getS().set({ versionsOpen: true }))}
           {item('Pintasan keyboard…', () => getS().set({ shortcutsOpen: true }))}
+          {item('Pengingat sholat…', openPrayerSettings)}
           {head('Edit')}
           {item('Urungkan', () => smartUndo(), `${MOD}Z`)}
           {item('Ulangi', () => smartRedo(), `${MOD}${SHIFT}Z`)}

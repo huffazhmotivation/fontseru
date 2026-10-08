@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import { UpdatePrompt } from "./components/UpdatePrompt";
+import { PrayerReminder } from "./prayer/PrayerReminder";
 import "./styles/app.css";
 import "./mode/modeTabs.css";
 
@@ -40,6 +41,8 @@ if (framedAtDesign) {
           a "new version available" popup can appear no matter which mode
           the user is in. */}
       <UpdatePrompt />
+      {/* Pengingat sholat: juga di luar <App/> agar aktif di mode Font, Design, dan Motion. */}
+      <PrayerReminder />
     </AuthProvider>
   </StrictMode>
 );

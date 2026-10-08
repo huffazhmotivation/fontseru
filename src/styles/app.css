@@ -3724,11 +3724,11 @@ input[type="number"]::-webkit-outer-spin-button {
 /* Popup pembaruan dipasang DI LUAR .fm-root (lihat main.tsx) supaya muncul
    di mode apa pun, jadi token tema-nya didefinisikan sendiri di sini dari
    atribut data-theme pada <html> (dipasang App.tsx). Default = gelap. */
-.fm-update-backdrop {
+.fm-update-backdrop, .fm-prayer-backdrop {
   --panel: #121212; --panel-2: #191919; --line: #282828;
   --text: #f0f0f0; --text-dim: #8e8e8e; --text-faint: #5e5e5e; --accent: #c6f24e; --accent-2: #b4e03c; --accent-ink: #0c0f08;
 }
-html[data-theme="light"] .fm-update-backdrop {
+html[data-theme="light"] .fm-update-backdrop, html[data-theme="light"] .fm-prayer-backdrop {
   --panel: #ffffff; --panel-2: #f4f4f4; --line: #e6e6e6;
   --text: #181818; --text-dim: #686868; --text-faint: #9a9a9a; --accent: #4a5a68; --accent-2: #3a4855; --accent-ink: #ffffff;
 }
@@ -3777,6 +3777,105 @@ html[data-theme="light"] .fm-update-backdrop {
 @keyframes fm-update-rot { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .fm-update-backdrop, .fm-update-dialog { animation: none; }
+}
+
+
+/* ------------------------------------------------------------------
+   Pengingat sholat (src/prayer/PrayerReminder.tsx): dipasang di luar .fm-root
+   (main.tsx) agar muncul di mode Font, Design, dan Motion; tokennya dibagi
+   dengan popup pembaruan di atas.
+   ------------------------------------------------------------------ */
+.fm-prayer-backdrop {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  position: fixed; inset: 0; z-index: 390;
+  display: grid; place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: rgba(0,0,0,.74); /* gelap polos — tanpa blur (backdrop-filter berat di kanvas besar) */
+  animation: fm-update-fade .18s ease-out;
+}
+.fm-prayer-backdrop-soft { background: rgba(0,0,0,.55); z-index: 389; } /* pengaturan di bawah popup pengingat */
+.fm-prayer-dialog {
+  position: relative;
+  width: min(640px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto;
+  padding: 30px 32px 28px;
+  border: 2px solid color-mix(in srgb, var(--accent) 70%, var(--line));
+  border-radius: 20px;
+  background: var(--panel, #121212); color: var(--text, #f0f0f0);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 14%, transparent), 0 28px 80px rgba(0,0,0,.6);
+  animation: fm-update-pop .22s cubic-bezier(.2,.9,.3,1.2);
+}
+.fm-prayer-close {
+  position: absolute; top: 14px; right: 14px;
+  width: 32px; height: 32px; display: grid; place-items: center;
+  border: 0; border-radius: 8px; background: transparent; color: var(--text-dim); cursor: pointer;
+}
+.fm-prayer-close:hover { background: var(--panel-2); color: var(--text); }
+.fm-prayer-close-inline { position: static; }
+.fm-prayer-head { display: flex; align-items: flex-start; gap: 18px; padding-right: 30px; }
+.fm-prayer-icon {
+  flex: 0 0 auto; width: 62px; height: 62px; display: grid; place-items: center;
+  border-radius: 18px; color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.fm-prayer-headtext { min-width: 0; }
+.fm-prayer-headtext h2 { margin: 0; font-size: 22px; line-height: 1.35; font-weight: 700; letter-spacing: -.01em; color: var(--text); }
+.fm-prayer-time { display: inline-block; margin-top: 8px; font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--accent); }
+.fm-prayer-msg { margin: 22px 0 0; padding-top: 20px; border-top: 1px solid var(--line); font-size: 16px; line-height: 1.65; color: var(--text-dim); }
+
+.fm-prayer-settings { width: min(430px, 100%); display: flex; flex-direction: column; gap: 16px; padding: 18px 20px 18px; }
+.fm-prayer-sethead { display: flex; align-items: center; justify-content: space-between; }
+.fm-prayer-sethead h2 { margin: 0; display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+.fm-prayer-seticon { display: grid; place-items: center; color: var(--accent); }
+.fm-prayer-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.fm-prayer-rowtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fm-prayer-rowtext strong { font-size: 13px; font-weight: 600; color: var(--text); }
+.fm-prayer-rowtext span { font-size: 12px; color: var(--text-dim); }
+.fm-prayer-switch {
+  position: relative; flex: 0 0 auto; width: 38px; height: 22px; border: 0; border-radius: 999px; cursor: pointer;
+  background: var(--line); transition: background .15s ease;
+}
+.fm-prayer-switch span { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); transition: transform .15s ease; }
+.fm-prayer-switch.on { background: var(--accent); }
+.fm-prayer-switch.on span { transform: translateX(16px); }
+.fm-prayer-section { display: flex; flex-direction: column; gap: 7px; }
+.fm-prayer-label { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); }
+.fm-prayer-place { font-size: 13px; color: var(--text); }
+.fm-prayer-place em { font-style: normal; font-size: 12px; color: var(--text-dim); }
+.fm-prayer-hint { font-size: 11.5px; line-height: 1.5; color: var(--text-dim); }
+.fm-prayer-pick { display: flex; gap: 8px; }
+.fm-prayer-pick .fm-prayer-select { flex: 1 1 0; }
+.fm-prayer-select {
+  min-width: 0; flex: 0 0 auto; height: 32px; padding: 0 8px; font: inherit; font-size: 12.5px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); outline: none;
+}
+.fm-prayer-select:focus { border-color: var(--accent); }
+.fm-prayer-btn {
+  flex: 0 0 auto; height: 32px; padding: 0 12px; font: inherit; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); cursor: pointer;
+  transition: background .14s ease, border-color .14s ease;
+}
+.fm-prayer-btn:hover:not(:disabled) { background: var(--panel-2); border-color: var(--text-faint); }
+.fm-prayer-btn:disabled { opacity: .55; cursor: default; }
+.fm-prayer-times { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.fm-prayer-time-cell {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px;
+}
+.fm-prayer-time-cell span { color: var(--text-dim); }
+.fm-prayer-time-cell strong { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--text); }
+.fm-prayer-time-cell.next { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.fm-prayer-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.fm-prayer-foot span { font-size: 11.5px; color: var(--text-faint); }
+@media (max-width: 520px) {
+  .fm-prayer-dialog { padding: 20px 18px 18px; }
+  .fm-prayer-headtext h2 { font-size: 18px; }
+  .fm-prayer-icon { width: 50px; height: 50px; }
+  .fm-prayer-msg { font-size: 14.5px; }
+  .fm-prayer-times { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fm-prayer-backdrop, .fm-prayer-dialog { animation: none; }
 }
 
 .fm-export-backdrop {

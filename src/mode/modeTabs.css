@@ -156,3 +156,7 @@
   color: var(--accent, #b6ff3c);
   border-color: color-mix(in srgb, var(--accent, #b6ff3c) 45%, transparent);
 }
+
+/* Pengingat sholat: chip ikon di ujung segmented control (bukan mode, jadi tidak pernah "aktif") */
+.fm-mode-tab.fm-mode-prayer { padding: 0 8px; gap: 0; margin-left: 2px; border-left: 1px solid var(--mt-chip-border); border-radius: 0 8px 8px 0; }
+.fm-mode-tab.fm-mode-prayer:hover { color: var(--accent); }
