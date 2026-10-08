@@ -14,8 +14,12 @@
  *   - circle    diameter of touching circles laid out on a square lattice
  *   - octagon   flat-to-flat width of the octagon in the 4.8.8 mosaic
  *               (octagons + the small diamonds between them)
+ *   - cross     "Isometrik": square edge; each square also has both
+ *               diagonals drawn, splitting it into 4 triangles
+ *   - diamond   "Belah Ketupat": lattice of 45° lines; each cell is a
+ *               rhombus (square turned 45°) whose diagonals are `size` long
  */
-export type GridShape = "square" | "triangle" | "hexagon" | "octagon" | "circle";
+export type GridShape = "square" | "triangle" | "hexagon" | "octagon" | "circle" | "cross" | "diamond";
 
 export const GRID_SHAPES: ReadonlyArray<{ id: GridShape; label: string }> = [
   { id: "square", label: "Kotak" },
@@ -23,13 +27,15 @@ export const GRID_SHAPES: ReadonlyArray<{ id: GridShape; label: string }> = [
   { id: "hexagon", label: "Hexagon" },
   { id: "octagon", label: "Poligon" },
   { id: "circle", label: "Lingkaran" },
+  { id: "cross", label: "Isometrik" },
+  { id: "diamond", label: "Belah Ketupat" },
 ];
 
 export const GRID_SIZE_MIN = 2;
 export const GRID_SIZE_MAX = 400;
 
 export function normalizeGridShape(v: unknown): GridShape {
-  return v === "triangle" || v === "hexagon" || v === "octagon" || v === "circle" ? v : "square";
+  return v === "triangle" || v === "hexagon" || v === "octagon" || v === "circle" || v === "cross" || v === "diamond" ? v : "square";
 }
 
 const SQRT3 = Math.sqrt(3);
@@ -85,6 +91,18 @@ export function gridPatternSpec(shape: GridShape, size: number): GridPatternSpec
           `M${n(g / 2)} ${n(2 * a)}V${n(h)}`,
       };
     }
+    case "cross":
+      // square outline + both diagonals; the corner-to-corner diagonals
+      // continue across tile borders, so they join into unbroken lines
+      return {
+        width: g,
+        height: g,
+        d: `M0 0H${n(g)}M0 ${n(g)}H${n(g)}M0 0V${n(g)}M${n(g)} 0V${n(g)}M0 0L${n(g)} ${n(g)}M${n(g)} 0L0 ${n(g)}`,
+      };
+    case "diamond":
+      // the two tile diagonals continue through neighbouring tiles as
+      // unbroken 45° lines → a lattice of rhombi
+      return { width: g, height: g, d: `M0 0L${n(g)} ${n(g)}M${n(g)} 0L0 ${n(g)}` };
     case "circle": {
       const r = g / 2;
       return {
@@ -131,6 +149,10 @@ export function gridCellAt(shape: GridShape, size: number, p: Pt): GridCell {
       return octagonCell(size, p);
     case "circle":
       return circleCell(size, p);
+    case "cross":
+      return crossCell(size, p);
+    case "diamond":
+      return diamondCell(size, p);
     default:
       return squareCell(size, Math.floor(p.x / size), Math.floor(p.y / size));
   }
@@ -154,6 +176,46 @@ function circleCell(g: number, p: Pt): GridCell {
     polygon.push({ x: center.x + (g / 2) * Math.cos(a), y: center.y + (g / 2) * Math.sin(a) });
   }
   return { key: `c${cx},${cy}`, center, polygon };
+}
+
+// Square split by both diagonals into 4 triangles (0 bottom, 1 right, 2 top,
+// 3 left in font space, Y-up). The cell centre is the triangle's centroid.
+function crossCell(g: number, p: Pt): GridCell {
+  const cx = Math.floor(p.x / g);
+  const cy = Math.floor(p.y / g);
+  const x0 = cx * g;
+  const y0 = cy * g;
+  const m = { x: x0 + g / 2, y: y0 + g / 2 };
+  const dx = p.x - m.x;
+  const dy = p.y - m.y;
+  const c0 = { x: x0, y: y0 };
+  const c1 = { x: x0 + g, y: y0 };
+  const c2 = { x: x0 + g, y: y0 + g };
+  const c3 = { x: x0, y: y0 + g };
+  let side: number;
+  let tri: Pt[];
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    side = dx >= 0 ? 1 : 3;
+    tri = side === 1 ? [c1, c2, m] : [c3, c0, m];
+  } else {
+    side = dy >= 0 ? 2 : 0;
+    tri = side === 2 ? [c2, c3, m] : [c0, c1, m];
+  }
+  return {
+    key: `x${cx},${cy},${side}`,
+    center: { x: (tri[0].x + tri[1].x + tri[2].x) / 3, y: (tri[0].y + tri[1].y + tri[2].y) / 3 },
+    polygon: tri,
+  };
+}
+
+// Rhombus lattice: lines x+y = k·g and x−y = m·g. A point maps to (u, v) =
+// (x+y, x−y); each unit square in (u, v) is one rhombus in font space.
+function diamondCell(g: number, p: Pt): GridCell {
+  const iu = Math.floor((p.x + p.y) / g);
+  const iv = Math.floor((p.x - p.y) / g);
+  const at = (a: number, b: number): Pt => ({ x: ((a + b) * g) / 2, y: ((a - b) * g) / 2 });
+  const polygon = [at(iu, iv), at(iu + 1, iv), at(iu + 1, iv + 1), at(iu, iv + 1)];
+  return { key: `r${iu},${iv}`, center: at(iu + 0.5, iv + 0.5), polygon };
 }
 
 function squareCell(g: number, cx: number, cy: number): GridCell {

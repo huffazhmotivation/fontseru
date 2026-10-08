@@ -2116,18 +2116,31 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-topbar .fm-fontname { width: 60px; min-width: 50px; flex: 0 1 60px; }
 }
 
-/* The bottom bar lives in the canvas column (window minus both side panels),
-   so its toggles move into the Settings menu up to a wider breakpoint. */
-@media (min-width: 1181px) and (max-width: 1799px) {
-  .fm-bottombar .fm-bottombar-more-hide { display: none !important; }
-  .fm-bottombar .fm-bottombar-more-btn { display: inline-flex; }
+/* ------------------------------------------------------------------
+   Bottom bar (>720px): no "Settings" sub-menu — every toggle stays in the
+   bar. On narrower windows it is tightened and, only if it still doesn't
+   fit, the text labels drop to icon-only; last resort is a hidden-scrollbar
+   sideways scroll (small iPad). Phones (<=720px) keep their own layout.
+   ------------------------------------------------------------------ */
+@media (min-width: 721px) {
+  .fm-bottombar .fm-bottombar-more-hide { display: revert !important; }
+  .fm-bottombar button.fm-bottombar-more-hide { display: inline-flex !important; }
+  .fm-bottombar .fm-bottombar-more-btn { display: none !important; }
+  .fm-bottombar .fm-bottom-divider.fm-bottombar-more-hide { display: block !important; }
+  .fm-bottombar .fm-inline-field.fm-bottombar-more-hide { display: flex !important; flex-wrap: nowrap; }
 }
-
-/* The bottom bar lives in the canvas column (window minus both side panels),
-   so on laptop widths its toggles live in the Settings menu. */
-@media (min-width: 1181px) and (max-width: 1799px) {
-  .fm-bottombar .fm-bottombar-more-hide { display: none !important; }
-  .fm-bottombar .fm-bottombar-more-btn { display: inline-flex; }
+@media (min-width: 721px) and (max-width: 1919px) {
+  .fm-bottombar { gap: 4px; padding: 6px 8px; }
+  .fm-bottombar button { padding: 5px 6px; gap: 4px; font-size: 11px; min-width: 0; min-height: 0; }
+  .fm-bottombar .fm-icon-btn { min-width: 0; padding: 4px !important; }
+  .fm-bottombar .fm-zoom-controls input[type="range"] { width: 64px; }
+}
+@media (min-width: 721px) and (max-width: 1799px) {
+  .fm-bottombar button { font-size: 0; gap: 0; padding: 6px 7px; justify-content: center; }
+  .fm-bottombar button svg { flex: 0 0 auto; }
+  .fm-bottombar .fm-zoom-controls input[type="range"] { width: 56px; }
+  .fm-bottombar .fm-bottom-divider { display: none !important; }
+  .fm-bottombar .fm-grid-shape-select { width: 86px; font-size: 11px; }
 }
 
 /* Inside the "More"/"Settings" dropdowns themselves, labels are always
