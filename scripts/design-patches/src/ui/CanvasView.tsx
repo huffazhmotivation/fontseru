@@ -9,11 +9,13 @@ import { FrameRename } from './FrameRename';
 import { FloatingToolbar } from './Toolbar';
 import { AIDock } from './AIDock';
 import { NodeKindMenu } from './NodeKindMenu';
+import { ChipAvoider } from './ChipAvoider';
 import { GradStopPicker } from './GradStopPicker';
 import { JobFx } from './JobFx';
 import { ReplaceChip } from './ReplaceChip';
 import { ActionChip } from './ActionChip';
 import { isSvgText, classifyClipText } from '../lib/seruBridge';
+import { InsideChip, InsideDrawChip, OutsideChip } from './InsideChip';
 import { DRAG_TYPE, placePayload } from '../lib/drop';
 import { handleFiles } from '../lib/library';
 import { onImageLoaded } from '../engine/images';
@@ -89,6 +91,8 @@ export function CanvasView() {
         s.overlay !== p.overlay ||
         s.hoverId !== p.hoverId ||
         s.theme !== p.theme ||
+        s.pivot !== p.pivot ||
+        s.pivotArmed !== p.pivotArmed ||
         s.selAnchors !== p.selAnchors ||
         s.editPathId !== p.editPathId ||
         s.tool !== p.tool ||
@@ -102,13 +106,20 @@ export function CanvasView() {
         schedule();
     });
     // font dimuat → hitung ulang ukuran teks & render ulang
-    const relayout = () => {
+    // banyak font selesai dimuat beruntun (buka dokumen, pratinjau daftar font): digabung jadi satu tata ulang per frame,
+    // bukan menata ulang seluruh teks + membuang cache tampilan untuk setiap font
+    let relayoutRaf = 0;
+    const relayoutNow = () => {
+      relayoutRaf = 0;
       invalidateViewCache();
       const d = relayoutAll(getS().doc);
       if (d) getS().set({ doc: d });
       schedule();
     };
-    document.fonts?.ready.then(relayout);
+    const relayout = () => {
+      if (!relayoutRaf) relayoutRaf = requestAnimationFrame(relayoutNow);
+    };
+    document.fonts?.ready.then(relayout).catch(() => {});
     const offFont = onFontLoaded(relayout);
     const offImg = onImageLoaded(() => {
       invalidateViewCache();
@@ -122,6 +133,8 @@ export function CanvasView() {
     const paste = (e: ClipboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      // studio modal (mis. Mockup Studio) menangani tempelan sendiri: tanpa ini gambar tempelan masuk ke kanvas di belakang studio
+      if (document.documentElement.classList.contains('modal-open')) return;
       const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf');
       if (files.length) {
         e.preventDefault();
@@ -182,6 +195,7 @@ export function CanvasView() {
     };
     const flushMove = () => {
       if (moveRaf) cancelAnimationFrame(moveRaf);
+      if (relayoutRaf) cancelAnimationFrame(relayoutRaf);
       runMove();
     };
     const rawMove = (e: PointerEvent) => {
@@ -292,6 +306,7 @@ export function CanvasView() {
       offImg();
       offFx();
       if (moveRaf) cancelAnimationFrame(moveRaf);
+      if (relayoutRaf) cancelAnimationFrame(relayoutRaf);
       window.removeEventListener('paste', paste, true);
       registerCanvas(null);
       cancelAnimationFrame(raf);
@@ -342,9 +357,13 @@ export function CanvasView() {
       <GradStopPicker />
       <JobFx />
       <ReplaceChip />
+      <InsideChip />
+      <OutsideChip />
+      <InsideDrawChip />
       <ActionChip />
       <ShapeBuilderChip />
       {tablet && <TabletModifiers />}
+      <ChipAvoider canvasWrap={wrap} />
       {!focus && (
         <>
           <FloatingToolbar />

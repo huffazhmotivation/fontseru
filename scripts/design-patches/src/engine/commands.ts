@@ -1,5 +1,5 @@
 import { getS, useStore } from '../store/store';
-import type { Doc, SceneNode, TextNode } from '../model/types';
+import type { Doc, SceneNode, TextNode, ImageAsset } from '../model/types';
 import { runBoolean, canBoolean, separateCompound, BOOL_LABEL, type BoolOp } from './boolean';
 import { toast, setJob } from '../ui/toast';
 import { instancesOf, detachInstanceIn, makeMask, releaseMask, makeComponent, placeSvgText } from '../lib/place';
@@ -23,11 +23,13 @@ import {
 } from '../model/doc';
 import { isEditable, dropSelected } from './editpts';
 import { unionBox, worldAABB, normalizePath, hasGeometry, mapNodePoints, nodeMatrix, applyM, cmdsToAnchors, shapeCmds } from './geometry';
-import { translateTree, rotateNodes } from './transform';
+import { translateTree, rotateNodes, scaleLeaf, groupsIn } from './transform';
+import { worldPivot, isCustomPivot, makePivot, withPivot } from './pivot';
 import { expandStrokeNode } from './stroke';
 import { insertNode, childrenOf } from '../model/doc';
 import { frameAt } from './hit';
-import type { Pt } from './geometry';
+import type { Pt, Box } from './geometry';
+import { contentAABB } from '../lib/export';
 
 let clipboard: SceneNode[][] = [];
 /** frame asal salinan (posisi dunia): dipakai agar tempel ke frame lain mempertahankan posisi x,y relatif terhadap frame */
@@ -79,12 +81,34 @@ export function deleteAnchors() {
   s.set({ selAnchors: [], editContour: 0, editPathId: still ? id : null, selection: still ? [id] : [] });
 }
 
+/** data gambar yang dipakai objek di clipboard: gambar disimpan per halaman (doc.images), jadi tanpa ini objek gambar yang
+ *  ditempel di halaman lain tampil kosong (node ada di daftar layer, kanvasnya tidak menggambar apa-apa) */
+let clipImages: Record<string, ImageAsset> = {};
+const imageRefs = (n: SceneNode): string[] => {
+  const out: string[] = [];
+  const r = n as { imageId?: string; crop?: { imageId?: string } };
+  if (r.imageId) out.push(r.imageId);
+  if (r.crop?.imageId) out.push(r.crop.imageId);
+  return out;
+};
+/** lengkapi doc.images tujuan dengan gambar dari clipboard yang belum ada */
+function withClipImages(d: Doc, nodes: SceneNode[][]) {
+  let add: Record<string, ImageAsset> | null = null;
+  for (const list of nodes)
+    for (const n of list)
+      for (const id of imageRefs(n))
+        if (!d.images?.[id] && clipImages[id]) (add ??= {})[id] = clipImages[id];
+  if (add) d.images = { ...(d.images ?? {}), ...add };
+}
+
 export function copy() {
   const { doc } = getS();
   clipboard = sel().map((id) => {
     const all = [id, ...descendants(doc, id)];
     return all.map((x) => structuredClone(doc.nodes[x]));
   });
+  clipImages = {};
+  for (const list of clipboard) for (const n of list) for (const id of imageRefs(n)) if (doc.images?.[id]) clipImages[id] = doc.images[id];
   copiedIds = sel();
   const fr = copiedIds.length ? frameOf(doc, copiedIds[0]) : null;
   clipFrame = fr ? { id: fr.id, x: fr.x, y: fr.y } : null;
@@ -167,6 +191,7 @@ export function paste(offset = 16) {
   offerReplace(false);
   let ids: string[] = [];
   s.mutate('Tempel', (d) => {
+    withClipImages(d, src);
     const trees = src.map((nodes) => {
       const rec: Record<string, SceneNode> = {};
       nodes.forEach((n) => (rec[n.id] = n));
@@ -203,6 +228,7 @@ export function pasteAt(at: Pt) {
   offerReplace(false);
   let ids: string[] = [];
   s.mutate('Tempel di sini', (d) => {
+    withClipImages(d, src);
     const trees = src.map((nodes) => {
       const rec: Record<string, SceneNode> = {};
       nodes.forEach((n) => (rec[n.id] = n));
@@ -232,6 +258,7 @@ export function pasteReplace() {
   const sc = { x: srcBox.x + srcBox.w / 2, y: srcBox.y + srcBox.h / 2 };
   const out: string[] = [];
   s.mutate('Tempel untuk mengganti', (d) => {
+    withClipImages(d, src);
     for (const tid of targets) {
       const t = d.nodes[tid];
       if (!t) continue;
@@ -262,8 +289,8 @@ export function pasteReplace() {
 
 /**
  * Duplikat ala Affinity: salinan pertama tepat di atas aslinya (posisi X/Y sama).
- * Bila salinan itu digeser lalu Duplikat dipanggil lagi, salinan berikutnya memakai
- * jarak & arah yang sama dengan pergeseran tadi (transform ulang).
+ * Bila salinan itu digeser/diputar/diskala lalu Duplikat dipanggil lagi, salinan berikutnya
+ * mengulang transform yang sama (transform ulang) — lihat repeatPlan().
  */
 let lastDup: { src: string[]; out: string[] } | null = null;
 
@@ -271,34 +298,133 @@ export function rememberDup(src: string[], out: string[]) {
   lastDup = { src, out };
 }
 
-function repeatOffset(doc: Doc, ids: string[]): { dx: number; dy: number } {
+const normDeg = (v: number) => {
+  let r = v % 360;
+  if (r > 180) r -= 360;
+  if (r <= -180) r += 360;
+  return Math.abs(r) < 1e-6 ? 0 : r;
+};
+
+/** daun transformasi (bukan grup) dari satu akar, urutan DFS — urutan sama untuk akar & salinannya */
+function leafIds(doc: Doc, root: string): string[] {
+  return [root, ...descendants(doc, root)].filter((id) => doc.nodes[id] && doc.nodes[id].type !== 'group');
+}
+
+/** langkah transform satu daun (asli → salinan) yang akan diulang pada salinan berikutnya */
+interface RepeatStep {
+  /** selisih rotasi (derajat) */
+  dRot: number;
+  /** rasio lebar & tinggi lokal */
+  kw: number;
+  kh: number;
+  /** rotasi daun asli (sumbu skala lokal) */
+  th0: number;
+  /** pusat daun asli & pusat salinannya (dunia) */
+  c0: Pt;
+  c1: Pt;
+}
+type RepeatPlan = { kind: 'move'; dx: number; dy: number } | { kind: 'leaf'; steps: RepeatStep[] };
+
+function lastDupMatches(doc: Doc, ids: string[]): boolean {
   const L = lastDup;
-  if (!L || L.out.length !== ids.length || !ids.every((id) => L.out.includes(id))) return { dx: 0, dy: 0 };
-  if (![...L.src, ...L.out].every((id) => doc.nodes[id])) return { dx: 0, dy: 0 };
-  const a = unionBox(L.src.map((id) => worldAABB(doc.nodes[id])));
-  const b = unionBox(L.out.map((id) => worldAABB(doc.nodes[id])));
-  if (!a || !b) return { dx: 0, dy: 0 };
-  const r = (v: number) => Math.round(v * 1000) / 1000;
-  return { dx: r(b.x - a.x), dy: r(b.y - a.y) };
+  if (!L || L.out.length !== ids.length || !ids.every((id) => L.out.includes(id))) return false;
+  return [...L.src, ...L.out].every((id) => doc.nodes[id]);
+}
+
+/**
+ * Transform yang dipakai asli → salinan, dibaca dari objeknya: geser, putar (mengelilingi sumbu mana pun),
+ * dan skala. Salinan berikutnya = salinan terakhir ditransform dengan peta yang sama
+ * (pusat' = pusat + L·(pusat − pusat asli); rotasi & ukuran dikalikan/ditambah sama), sehingga hasilnya
+ * berputar mengelilingi sumbu yang sama, atau terus mengecil/membesar dengan rasio yang sama.
+ */
+function repeatPlan(doc: Doc, id: string): RepeatPlan {
+  const none: RepeatPlan = { kind: 'move', dx: 0, dy: 0 };
+  const L = lastDup;
+  if (!L) return none;
+  const k = L.out.indexOf(id);
+  const srcId = k >= 0 ? L.src[k] : undefined;
+  if (!srcId || !doc.nodes[srcId] || !doc.nodes[id]) return none;
+  const a = leafIds(doc, srcId),
+    b = leafIds(doc, id);
+  const sameShape = a.length === b.length && a.every((x, i) => doc.nodes[x].type === doc.nodes[b[i]].type);
+  if (!sameShape || b.some((x) => doc.nodes[x].type === 'frame')) {
+    // frame / struktur berbeda: ulangi geseran saja
+    const A = worldAABB(doc.nodes[srcId]),
+      B = worldAABB(doc.nodes[id]);
+    const r = (v: number) => Math.round(v * 1000) / 1000;
+    return { kind: 'move', dx: r(B.x - A.x), dy: r(B.y - A.y) };
+  }
+  const near1 = (v: number) => (Math.abs(v - 1) < 1e-9 ? 1 : v);
+  const steps = a.map((x, i): RepeatStep => {
+    const o0 = doc.nodes[x],
+      o1 = doc.nodes[b[i]];
+    return {
+      dRot: normDeg((o1.rotation || 0) - (o0.rotation || 0)),
+      kw: o0.w > 1e-6 ? near1(o1.w / o0.w) : 1,
+      kh: o0.h > 1e-6 ? near1(o1.h / o0.h) : 1,
+      th0: o0.rotation || 0,
+      c0: { x: o0.x + o0.w / 2, y: o0.y + o0.h / 2 },
+      c1: { x: o1.x + o1.w / 2, y: o1.y + o1.h / 2 },
+    };
+  });
+  return { kind: 'leaf', steps };
+}
+
+/** terapkan langkah ulang pada salinan baru (salinan persis dari objek terakhir, belum digeser) */
+function applyRepeat(d: Doc, newRoot: string, plan: Extract<RepeatPlan, { kind: 'leaf' }>) {
+  const leaves = leafIds(d, newRoot);
+  if (leaves.length !== plan.steps.length) return;
+  const rad = Math.PI / 180;
+  leaves.forEach((id, i) => {
+    const st = plan.steps[i];
+    const n0 = d.nodes[id];
+    // L = R(θ0+Δθ) · diag(kw,kh) · R(−θ0)
+    const A = st.th0 * rad,
+      B = (st.th0 + st.dRot) * rad;
+    const ca = Math.cos(A),
+      sa = Math.sin(A),
+      cb = Math.cos(B),
+      sb = Math.sin(B);
+    const L00 = st.kw * cb * ca + st.kh * sb * sa,
+      L01 = st.kw * cb * sa - st.kh * sb * ca,
+      L10 = st.kw * sb * ca - st.kh * cb * sa,
+      L11 = st.kw * sb * sa + st.kh * cb * ca;
+    const vx = st.c1.x - st.c0.x,
+      vy = st.c1.y - st.c0.y;
+    const r4 = (v: number) => Math.round(v * 10000) / 10000;
+    const c2 = { x: r4(st.c1.x + L00 * vx + L01 * vy), y: r4(st.c1.y + L10 * vx + L11 * vy) };
+    let n: SceneNode = st.kw !== 1 || st.kh !== 1 ? scaleLeaf(n0, st.kw, st.kh) : { ...n0 };
+    n = { ...n, rotation: Math.round(normDeg((n0.rotation || 0) + st.dRot) * 100) / 100, x: c2.x - n.w / 2, y: c2.y - n.h / 2 } as SceneNode;
+    d.nodes[id] = n;
+  });
+  // grup di salinan ikut berputar sebesar langkahnya (sama seperti rotateNodes), supaya kotaknya tetap sejajar isinya
+  const dRot = plan.steps[0]?.dRot ?? 0;
+  if (dRot) for (const g of groupsIn(d, [newRoot])) d.nodes[g] = { ...d.nodes[g], rotation: Math.round(normDeg((d.nodes[g].rotation || 0) + dRot) * 100) / 100 };
+  refreshAllGroups(d, leaves);
 }
 
 export function duplicate() {
   const s = getS();
   const ids = sel();
   if (!ids.length) return;
-  const { dx, dy } = repeatOffset(s.doc, ids);
+  const doc0 = s.doc;
+  const repeat = lastDupMatches(doc0, ids);
+  // sumbu kustom tetap di titik dunia yang sama pada salinan (orbit salinan berikutnya mengelilingi sumbu yang sama)
+  const pw = isCustomPivot(doc0, ids, s.pivot) ? worldPivot(doc0, ids, s.pivot) : null;
   const out: string[] = [];
   s.mutate('Duplikat', (d) => {
     for (const id of ids) {
       const n = d.nodes[id];
-      const tree = cloneTree(d.nodes, id, dx, dy);
+      const plan: RepeatPlan = repeat ? repeatPlan(d, id) : { kind: 'move', dx: 0, dy: 0 };
+      const tree = plan.kind === 'move' ? cloneTree(d.nodes, id, plan.dx, plan.dy) : cloneTree(d.nodes, id);
       const [root] = pasteTrees(d, [tree], n.parentId);
+      if (plan.kind === 'leaf') applyRepeat(d, root, plan);
       out.push(root);
     }
     bumpFrameNames(d, out);
   });
   rememberDup(ids, out);
-  s.set({ selection: out });
+  s.set({ selection: out, pivot: pw ? withPivot(getS().pivot, out, makePivot(getS().doc, out, pw)) : getS().pivot });
 }
 
 export function group() {
@@ -685,6 +811,8 @@ export function flip(axis: 'h' | 'v') {
       }
       d.nodes[id] = out;
     }
+    // kerangka grup ikut tercermin: sudutnya dibalik
+    for (const g of groupsIn(orig, top)) d.nodes[g] = { ...d.nodes[g], rotation: normRot(-orig.nodes[g].rotation) };
     refreshAllGroups(d, leaves);
   });
 }
@@ -707,13 +835,24 @@ export function rotateBy(deg: number) {
 export function resetRotation() {
   const s = getS();
   const orig = s.doc;
-  const leaves = leafTargets(orig, sel()).filter((id) => orig.nodes[id].type !== 'frame' && orig.nodes[id].rotation);
-  if (!leaves.length) return;
+  const top = topLevel(orig, sel()).filter((id) => orig.nodes[id] && orig.nodes[id].type !== 'frame');
+  // grup yang miring: diputar balik utuh di pusatnya (susunan isinya ikut tegak), bukan tiap anak diluruskan di tempat
+  const groups = top.filter((id) => orig.nodes[id].type === 'group' && orig.nodes[id].rotation);
+  const others = top.filter((id) => !groups.includes(id));
+  const leaves = leafTargets(orig, others).filter((id) => orig.nodes[id].type !== 'frame' && orig.nodes[id].rotation);
+  if (!leaves.length && !groups.length) return;
   s.mutate('Hapus rotasi', (d) => {
+    for (const g of groups) {
+      const n = orig.nodes[g];
+      const c = applyM(nodeMatrix(n), { x: n.w / 2, y: n.h / 2 });
+      const cur: Doc = { ...d, nodes: { ...d.nodes } };
+      rotateNodes(d, cur, [g], c, -n.rotation);
+    }
     for (const id of leaves) {
       const n = orig.nodes[id];
       d.nodes[id] = { ...n, rotation: 0 } as SceneNode;
     }
+    for (const g of groupsIn(orig, others)) d.nodes[g] = { ...d.nodes[g], rotation: 0 };
     refreshAllGroups(d, leaves);
   });
 }
@@ -754,6 +893,64 @@ export function zoomAt(factor: number, sx?: number, sy?: number) {
 
 export function setZoom(z: number) {
   zoomAt(z / getS().camera.zoom);
+}
+
+/** kotak konten acuan untuk menaruh objek baru: seleksi, atau objek tingkat atas yang sedang terlihat di layar.
+ *  (Dulu frame/palet baru selalu ditaruh di kanan objek PALING kanan di seluruh dokumen: satu objek yang jauh membuat frame
+ *  baru jatuh jauh sekali, kamera ikut melompat ke frame kosong itu → seolah semua objek hilang; palet tidak terlihat.) */
+export function contextBox(): Box | null {
+  const s = getS();
+  // seleksi di dalam frame/grup: acuannya induk teratasnya (objek baru tidak ditaruh menumpuk di frame induknya)
+  const ids = [...new Set(sel().filter((id) => s.doc.nodes[id]).map((id) => {
+    let t = id;
+    while (s.doc.nodes[t]?.parentId && s.doc.nodes[s.doc.nodes[t].parentId!]) t = s.doc.nodes[t].parentId!;
+    return t;
+  }))];
+  if (ids.length) return unionBox(ids.map((id) => contentAABB(s.doc, id)));
+  const { camera: c, viewport: v } = s;
+  const view = { x: -c.x / c.zoom, y: -c.y / c.zoom, w: v.w / c.zoom, h: v.h / c.zoom };
+  const vis = s.doc.root
+    .filter((id) => s.doc.nodes[id] && s.doc.nodes[id].visible !== false)
+    .map((id) => contentAABB(s.doc, id))
+    .filter((b) => b.x < view.x + view.w && b.x + b.w > view.x && b.y < view.y + view.h && b.y + b.h > view.y);
+  return unionBox(vis);
+}
+
+/** pusat untuk objek baru w×h: di kanan konten acuan (sejajar atasnya), atau di tengah layar */
+export function nearbySlot(w: number, h: number, gap = 80): { c: Pt; ref: Box | null } {
+  const s = getS();
+  const ref = contextBox();
+  if (ref) {
+    // geser ke kanan selama menumpuk objek tingkat atas lain (mis. frame berikutnya di deretan)
+    const others = s.doc.root.map((id) => s.doc.nodes[id]).filter((n) => n && n.visible !== false).map(worldAABB);
+    let x = ref.x + ref.w + gap;
+    const y = ref.y;
+    for (let k = 0; k < 200; k++) {
+      const hit = others.find((b) => b.x < x + w && b.x + b.w > x && b.y < y + h && b.y + b.h > y);
+      if (!hit) break;
+      x = hit.x + hit.w + gap;
+    }
+    return { c: { x: x + w / 2, y: y + h / 2 }, ref };
+  }
+  const { camera: cam, viewport: v } = s;
+  return { c: { x: (v.w / 2 - cam.x) / cam.zoom, y: (v.h / 2 - cam.y) / cam.zoom }, ref: null };
+}
+
+/** pastikan kotak terlihat: bila sudah di dalam layar kamera tidak diubah; bila tidak, kamera menampilkan kotak itu
+ *  (beserta konten acuannya bila gabungannya tidak jauh lebih besar) */
+export function revealBox(b: Box, ref?: Box | null) {
+  const s = getS();
+  const { camera: c, viewport: v } = s;
+  const view = { x: -c.x / c.zoom, y: -c.y / c.zoom, w: v.w / c.zoom, h: v.h / c.zoom };
+  if (b.x >= view.x && b.y >= view.y && b.x + b.w <= view.x + view.w && b.y + b.h <= view.y + view.h) return;
+  let t = b;
+  if (ref) {
+    const u = unionBox([b, ref])!;
+    if (u.w * u.h <= b.w * b.h * 6) t = u;
+  }
+  const pad = 80;
+  const z = Math.min(8, Math.max(0.002, Math.min((v.w - pad * 2) / (t.w || 1), (v.h - pad * 2) / (t.h || 1))));
+  s.set({ camera: { zoom: z, x: v.w / 2 - (t.x + t.w / 2) * z, y: v.h / 2 - (t.y + t.h / 2) * z } });
 }
 
 export function zoomToFit(onlySelection = false) {

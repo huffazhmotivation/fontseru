@@ -1,0 +1,732 @@
+Ornamen DesignSeru — semua file berlisensi domain publik atau CC0 (bebas dipakai, diubah & dijual tanpa atribusi).
+id	lisensi	judul asli	sumber
+nu-al-quran-aceh-or2064-hal-10.svg	CC0	13 ornament – Al Quran Aceh Or2064 Hal 17.svg	https://upload.wikimedia.org/wikipedia/commons/0/0f/13_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_17.svg
+nu-al-quran-aceh-or2064-hal-11.svg	CC0	08 ornament – Al Quran Aceh Or2064 Hal 378.svg	https://upload.wikimedia.org/wikipedia/commons/3/3d/08_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_378.svg
+nu-al-quran-aceh-or2064-hal-12.svg	CC0	01 ornament – Al Quran Aceh Or2064 Hal 378.svg	https://upload.wikimedia.org/wikipedia/commons/f/fe/01_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_378.svg
+nu-al-quran-aceh-or2064-hal-13.svg	CC0	09 ornament – Al Quran Aceh Or2064 Hal 17.svg	https://upload.wikimedia.org/wikipedia/commons/f/fe/09_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_17.svg
+nu-al-quran-aceh-or2064-hal-14.svg	CC0	07 ornament – Al Quran Aceh Or2064 Hal 17.svg	https://upload.wikimedia.org/wikipedia/commons/9/97/07_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_17.svg
+nu-al-quran-aceh-or2064-hal-15.svg	CC0	05 ornament – Al Quran Aceh Or2064 Hal 378.svg	https://upload.wikimedia.org/wikipedia/commons/5/54/05_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_378.svg
+nu-al-quran-aceh-or2064-hal-16.svg	CC0	04 ornament – Al Quran Aceh Or2064 Hal 17.svg	https://upload.wikimedia.org/wikipedia/commons/4/4f/04_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_17.svg
+nu-al-quran-aceh-or2064-hal-17.svg	CC0	08 ornament – Al Quran Aceh Or2064 Hal 17.svg	https://upload.wikimedia.org/wikipedia/commons/9/9b/08_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_17.svg
+nu-al-quran-aceh-or2064-hal-18.svg	CC0	03 ornament – Al Quran Aceh Or2064 Hal 17.svg	https://upload.wikimedia.org/wikipedia/commons/1/11/03_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_17.svg
+nu-al-quran-aceh-or2064-hal-19.svg	CC0	11 ornament – Al Quran Aceh Or2064 Hal 17.svg	https://upload.wikimedia.org/wikipedia/commons/5/50/11_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_17.svg
+nu-al-quran-aceh-or2064-hal-2.svg	CC0	13 ornament – Al Quran Aceh Or2064 Hal 378.svg	https://upload.wikimedia.org/wikipedia/commons/2/2f/13_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_378.svg
+nu-al-quran-aceh-or2064-hal-20.svg	CC0	06 ornament – Al Quran Aceh Or2064 Hal 17.svg	https://upload.wikimedia.org/wikipedia/commons/f/f6/06_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_17.svg
+nu-al-quran-aceh-or2064-hal-21.svg	CC0	09 ornament – Al Quran Aceh Or2064 Hal 378.svg	https://upload.wikimedia.org/wikipedia/commons/9/90/09_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_378.svg
+nu-al-quran-aceh-or2064-hal-3.svg	CC0	12 ornament – Al Quran Aceh Or2064 Hal 378.svg	https://upload.wikimedia.org/wikipedia/commons/c/cf/12_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_378.svg
+nu-al-quran-aceh-or2064-hal-378.svg	CC0	16 ornament – Al Quran Aceh Or2064 Hal 378.svg	https://upload.wikimedia.org/wikipedia/commons/a/ae/16_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_378.svg
+nu-al-quran-aceh-or2064-hal-4.svg	CC0	10 ornament – Al Quran Aceh Or2064 Hal 378.svg	https://upload.wikimedia.org/wikipedia/commons/a/ab/10_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_378.svg
+nu-al-quran-aceh-or2064-hal-5.svg	CC0	12 ornament – Al Quran Aceh Or2064 Hal 17.svg	https://upload.wikimedia.org/wikipedia/commons/c/c9/12_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_17.svg
+nu-al-quran-aceh-or2064-hal-6.svg	CC0	17 ornament – Al Quran Aceh Or2064 Hal 17.svg	https://upload.wikimedia.org/wikipedia/commons/0/04/17_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_17.svg
+nu-al-quran-aceh-or2064-hal-7.svg	CC0	07 ornament – Al Quran Aceh Or2064 Hal 378.svg	https://upload.wikimedia.org/wikipedia/commons/f/f5/07_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_378.svg
+nu-al-quran-aceh-or2064-hal-8.svg	CC0	15 ornament – Al Quran Aceh Or2064 Hal 17.svg	https://upload.wikimedia.org/wikipedia/commons/4/48/15_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_17.svg
+nu-al-quran-aceh-or2064-hal-9.svg	CC0	15 ornament – Al Quran Aceh Or2064 Hal 378.svg	https://upload.wikimedia.org/wikipedia/commons/e/e1/15_ornament_%E2%80%93_Al_Quran_Aceh_Or2064_Hal_378.svg
+nu-al-quran-hs-or-15230-hal-10.svg	CC0	05 ornament – Al Quran Hs. Or. 15230 Hal 483.svg	https://upload.wikimedia.org/wikipedia/commons/a/af/05_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_483.svg
+nu-al-quran-hs-or-15230-hal-11.svg	CC0	08 ornament – Al Quran Hs. Or. 15230 Hal 345.svg	https://upload.wikimedia.org/wikipedia/commons/6/6a/08_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_345.svg
+nu-al-quran-hs-or-15230-hal-117.svg	CC0	05 ornament – Al Quran Hs. Or. 15230 Hal 117.svg	https://upload.wikimedia.org/wikipedia/commons/f/fa/05_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_117.svg
+nu-al-quran-hs-or-15230-hal-12.svg	CC0	14 ornament – Al Quran Hs. Or. 15230 Hal 483.svg	https://upload.wikimedia.org/wikipedia/commons/f/f7/14_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_483.svg
+nu-al-quran-hs-or-15230-hal-13.svg	CC0	07 ornament – Al Quran Hs. Or. 15230 Hal 89.svg	https://upload.wikimedia.org/wikipedia/commons/7/7d/07_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_89.svg
+nu-al-quran-hs-or-15230-hal-14.svg	CC0	06 ornament – Al Quran Hs. Or. 15230 Hal 9.svg	https://upload.wikimedia.org/wikipedia/commons/5/50/06_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_9.svg
+nu-al-quran-hs-or-15230-hal-145.svg	CC0	08 ornament – Al Quran Hs. Or. 15230 Hal 145.svg	https://upload.wikimedia.org/wikipedia/commons/9/9b/08_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_145.svg
+nu-al-quran-hs-or-15230-hal-15.svg	CC0	01 ornament – Al Quran Hs. Or. 15230 Hal 15.svg	https://upload.wikimedia.org/wikipedia/commons/3/3a/01_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_15.svg
+nu-al-quran-hs-or-15230-hal-16.svg	CC0	02 ornament – Al Quran Hs. Or. 15230 Hal 171.svg	https://upload.wikimedia.org/wikipedia/commons/a/a0/02_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_171.svg
+nu-al-quran-hs-or-15230-hal-17.svg	CC0	08 ornament – Al Quran Hs. Or. 15230 Hal 255.svg	https://upload.wikimedia.org/wikipedia/commons/d/db/08_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_255.svg
+nu-al-quran-hs-or-15230-hal-171.svg	CC0	09 ornament – Al Quran Hs. Or. 15230 Hal 171.svg	https://upload.wikimedia.org/wikipedia/commons/8/80/09_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_171.svg
+nu-al-quran-hs-or-15230-hal-18.svg	CC0	13 ornament – Al Quran Hs. Or. 15230 Hal 117.svg	https://upload.wikimedia.org/wikipedia/commons/f/fe/13_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_117.svg
+nu-al-quran-hs-or-15230-hal-19.svg	CC0	08 ornament – Al Quran Hs. Or. 15230 Hal 63.svg	https://upload.wikimedia.org/wikipedia/commons/e/e5/08_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_63.svg
+nu-al-quran-hs-or-15230-hal-199.svg	CC0	12 ornament – Al Quran Hs. Or. 15230 Hal 199.svg	https://upload.wikimedia.org/wikipedia/commons/1/1b/12_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_199.svg
+nu-al-quran-hs-or-15230-hal-2.svg	CC0	11 ornament – Al Quran Hs. Or. 15230 Hal 117.svg	https://upload.wikimedia.org/wikipedia/commons/c/c3/11_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_117.svg
+nu-al-quran-hs-or-15230-hal-20.svg	CC0	03 ornament – Al Quran Hs. Or. 15230 Hal 5.svg	https://upload.wikimedia.org/wikipedia/commons/2/22/03_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_5.svg
+nu-al-quran-hs-or-15230-hal-21.svg	CC0	08 ornament – Al Quran Hs. Or. 15230 Hal 5.svg	https://upload.wikimedia.org/wikipedia/commons/2/2c/08_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_5.svg
+nu-al-quran-hs-or-15230-hal-22.svg	CC0	02 ornament – Al Quran Hs. Or. 15230 Hal 9.svg	https://upload.wikimedia.org/wikipedia/commons/9/90/02_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_9.svg
+nu-al-quran-hs-or-15230-hal-227.svg	CC0	01 ornament – Al Quran Hs. Or. 15230 Hal 227.svg	https://upload.wikimedia.org/wikipedia/commons/e/e9/01_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_227.svg
+nu-al-quran-hs-or-15230-hal-23.svg	CC0	04 ornament – Al Quran Hs. Or. 15230 Hal 431.svg	https://upload.wikimedia.org/wikipedia/commons/0/09/04_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_431.svg
+nu-al-quran-hs-or-15230-hal-24.svg	CC0	03 ornament – Al Quran Hs. Or. 15230 Hal 301.svg	https://upload.wikimedia.org/wikipedia/commons/3/33/03_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_301.svg
+nu-al-quran-hs-or-15230-hal-25.svg	CC0	08 ornament – Al Quran Hs. Or. 15230 Hal 535.svg	https://upload.wikimedia.org/wikipedia/commons/e/ea/08_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_535.svg
+nu-al-quran-hs-or-15230-hal-255.svg	CC0	07 ornament – Al Quran Hs. Or. 15230 Hal 255.svg	https://upload.wikimedia.org/wikipedia/commons/8/8d/07_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_255.svg
+nu-al-quran-hs-or-15230-hal-26.svg	CC0	02 ornament – Al Quran Hs. Or. 15230 Hal 5.svg	https://upload.wikimedia.org/wikipedia/commons/8/8c/02_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_5.svg
+nu-al-quran-hs-or-15230-hal-27.svg	CC0	03 ornament – Al Quran Hs. Or. 15230 Hal 431.svg	https://upload.wikimedia.org/wikipedia/commons/5/5c/03_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_431.svg
+nu-al-quran-hs-or-15230-hal-28.svg	CC0	07 ornament – Al Quran Hs. Or. 15230 Hal 649.svg	https://upload.wikimedia.org/wikipedia/commons/3/3e/07_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_649.svg
+nu-al-quran-hs-or-15230-hal-283.svg	CC0	04 ornament – Al Quran Hs. Or. 15230 Hal 283.svg	https://upload.wikimedia.org/wikipedia/commons/f/f1/04_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_283.svg
+nu-al-quran-hs-or-15230-hal-29.svg	CC0	09 ornament – Al Quran Hs. Or. 15230 Hal 199.svg	https://upload.wikimedia.org/wikipedia/commons/0/06/09_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_199.svg
+nu-al-quran-hs-or-15230-hal-3.svg	CC0	14 ornament – Al Quran Hs. Or. 15230 Hal 559.svg	https://upload.wikimedia.org/wikipedia/commons/4/44/14_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_559.svg
+nu-al-quran-hs-or-15230-hal-30.svg	CC0	11 ornament – Al Quran Hs. Or. 15230 Hal 5.svg	https://upload.wikimedia.org/wikipedia/commons/9/9f/11_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_5.svg
+nu-al-quran-hs-or-15230-hal-301.svg	CC0	02 ornament – Al Quran Hs. Or. 15230 Hal 301.svg	https://upload.wikimedia.org/wikipedia/commons/d/d1/02_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_301.svg
+nu-al-quran-hs-or-15230-hal-31.svg	CC0	06 ornament – Al Quran Hs. Or. 15230 Hal 15.svg	https://upload.wikimedia.org/wikipedia/commons/b/b6/06_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_15.svg
+nu-al-quran-hs-or-15230-hal-315.svg	CC0	08 ornament – Al Quran Hs. Or. 15230 Hal 315.svg	https://upload.wikimedia.org/wikipedia/commons/b/b4/08_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_315.svg
+nu-al-quran-hs-or-15230-hal-32.svg	CC0	08 ornament – Al Quran Hs. Or. 15230 Hal 117.svg	https://upload.wikimedia.org/wikipedia/commons/d/d5/08_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_117.svg
+nu-al-quran-hs-or-15230-hal-33.svg	CC0	08 ornament – Al Quran Hs. Or. 15230 Hal 199.svg	https://upload.wikimedia.org/wikipedia/commons/7/7a/08_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_199.svg
+nu-al-quran-hs-or-15230-hal-34.svg	CC0	12 ornament – Al Quran Hs. Or. 15230 Hal 371.svg	https://upload.wikimedia.org/wikipedia/commons/b/b2/12_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_371.svg
+nu-al-quran-hs-or-15230-hal-345.svg	CC0	06 ornament – Al Quran Hs. Or. 15230 Hal 345.svg	https://upload.wikimedia.org/wikipedia/commons/2/28/06_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_345.svg
+nu-al-quran-hs-or-15230-hal-35.svg	CC0	11 ornament – Al Quran Hs. Or. 15230 Hal 509.svg	https://upload.wikimedia.org/wikipedia/commons/0/0c/11_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_509.svg
+nu-al-quran-hs-or-15230-hal-36.svg	CC0	09 ornament – Al Quran Hs. Or. 15230 Hal 649.svg	https://upload.wikimedia.org/wikipedia/commons/2/2d/09_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_649.svg
+nu-al-quran-hs-or-15230-hal-37.svg	CC0	10 ornament – Al Quran Hs. Or. 15230 Hal 63.svg	https://upload.wikimedia.org/wikipedia/commons/3/34/10_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_63.svg
+nu-al-quran-hs-or-15230-hal-371.svg	CC0	05 ornament – Al Quran Hs. Or. 15230 Hal 371.svg	https://upload.wikimedia.org/wikipedia/commons/c/cd/05_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_371.svg
+nu-al-quran-hs-or-15230-hal-38.svg	CC0	11 ornament – Al Quran Hs. Or. 15230 Hal 199.svg	https://upload.wikimedia.org/wikipedia/commons/e/e5/11_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_199.svg
+nu-al-quran-hs-or-15230-hal-39.svg	CC0	09 ornament – Al Quran Hs. Or. 15230 Hal 535.svg	https://upload.wikimedia.org/wikipedia/commons/4/4f/09_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_535.svg
+nu-al-quran-hs-or-15230-hal-4.svg	CC0	09 ornament – Al Quran Hs. Or. 15230 Hal 227.svg	https://upload.wikimedia.org/wikipedia/commons/7/7f/09_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_227.svg
+nu-al-quran-hs-or-15230-hal-40.svg	CC0	07 ornament – Al Quran Hs. Or. 15230 Hal 301.svg	https://upload.wikimedia.org/wikipedia/commons/b/be/07_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_301.svg
+nu-al-quran-hs-or-15230-hal-401.svg	CC0	04 ornament – Al Quran Hs. Or. 15230 Hal 401.svg	https://upload.wikimedia.org/wikipedia/commons/6/6f/04_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_401.svg
+nu-al-quran-hs-or-15230-hal-41.svg	CC0	06 ornament – Al Quran Hs. Or. 15230 Hal 559.svg	https://upload.wikimedia.org/wikipedia/commons/1/10/06_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_559.svg
+nu-al-quran-hs-or-15230-hal-42.svg	CC0	08 ornament – Al Quran Hs. Or. 15230 Hal 483.svg	https://upload.wikimedia.org/wikipedia/commons/c/ce/08_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_483.svg
+nu-al-quran-hs-or-15230-hal-43.svg	CC0	09 ornament – Al Quran Hs. Or. 15230 Hal 5.svg	https://upload.wikimedia.org/wikipedia/commons/4/4b/09_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_5.svg
+nu-al-quran-hs-or-15230-hal-431.svg	CC0	11 ornament – Al Quran Hs. Or. 15230 Hal 431.svg	https://upload.wikimedia.org/wikipedia/commons/b/b3/11_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_431.svg
+nu-al-quran-hs-or-15230-hal-44.svg	CC0	09 ornament – Al Quran Hs. Or. 15230 Hal 619.svg	https://upload.wikimedia.org/wikipedia/commons/0/09/09_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_619.svg
+nu-al-quran-hs-or-15230-hal-45.svg	CC0	02 ornament – Al Quran Hs. Or. 15230 Hal 619.svg	https://upload.wikimedia.org/wikipedia/commons/1/1a/02_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_619.svg
+nu-al-quran-hs-or-15230-hal-457.svg	CC0	14 ornament – Al Quran Hs. Or. 15230 Hal 457.svg	https://upload.wikimedia.org/wikipedia/commons/4/4f/14_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_457.svg
+nu-al-quran-hs-or-15230-hal-46.svg	CC0	04 ornament – Al Quran Hs. Or. 15230 Hal 117.svg	https://upload.wikimedia.org/wikipedia/commons/8/84/04_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_117.svg
+nu-al-quran-hs-or-15230-hal-47.svg	CC0	07 ornament – Al Quran Hs. Or. 15230 Hal 199.svg	https://upload.wikimedia.org/wikipedia/commons/d/d4/07_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_199.svg
+nu-al-quran-hs-or-15230-hal-48.svg	CC0	10 ornament – Al Quran Hs. Or. 15230 Hal 535.svg	https://upload.wikimedia.org/wikipedia/commons/0/01/10_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_535.svg
+nu-al-quran-hs-or-15230-hal-483.svg	CC0	13 ornament – Al Quran Hs. Or. 15230 Hal 483.svg	https://upload.wikimedia.org/wikipedia/commons/a/a5/13_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_483.svg
+nu-al-quran-hs-or-15230-hal-49.svg	CC0	07 ornament – Al Quran Hs. Or. 15230 Hal 431.svg	https://upload.wikimedia.org/wikipedia/commons/3/3b/07_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_431.svg
+nu-al-quran-hs-or-15230-hal-5.svg	CC0	06 ornament – Al Quran Hs. Or. 15230 Hal 5.svg	https://upload.wikimedia.org/wikipedia/commons/e/e6/06_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_5.svg
+nu-al-quran-hs-or-15230-hal-50.svg	CC0	08 ornament – Al Quran Hs. Or. 15230 Hal 301.svg	https://upload.wikimedia.org/wikipedia/commons/b/b0/08_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_301.svg
+nu-al-quran-hs-or-15230-hal-509.svg	CC0	09 ornament – Al Quran Hs. Or. 15230 Hal 509.svg	https://upload.wikimedia.org/wikipedia/commons/9/97/09_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_509.svg
+nu-al-quran-hs-or-15230-hal-51.svg	CC0	06 ornament – Al Quran Hs. Or. 15230 Hal 431.svg	https://upload.wikimedia.org/wikipedia/commons/f/f9/06_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_431.svg
+nu-al-quran-hs-or-15230-hal-52.svg	CC0	03 ornament – Al Quran Hs. Or. 15230 Hal 15.svg	https://upload.wikimedia.org/wikipedia/commons/d/d7/03_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_15.svg
+nu-al-quran-hs-or-15230-hal-53.svg	CC0	02 ornament – Al Quran Hs. Or. 15230 Hal 431.svg	https://upload.wikimedia.org/wikipedia/commons/d/d3/02_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_431.svg
+nu-al-quran-hs-or-15230-hal-535.svg	CC0	07 ornament – Al Quran Hs. Or. 15230 Hal 535.svg	https://upload.wikimedia.org/wikipedia/commons/8/85/07_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_535.svg
+nu-al-quran-hs-or-15230-hal-54.svg	CC0	04 ornament – Al Quran Hs. Or. 15230 Hal 9.svg	https://upload.wikimedia.org/wikipedia/commons/c/c5/04_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_9.svg
+nu-al-quran-hs-or-15230-hal-55.svg	CC0	12 ornament – Al Quran Hs. Or. 15230 Hal 301.svg	https://upload.wikimedia.org/wikipedia/commons/0/03/12_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_301.svg
+nu-al-quran-hs-or-15230-hal-559.svg	CC0	02 ornament – Al Quran Hs. Or. 15230 Hal 559.svg	https://upload.wikimedia.org/wikipedia/commons/e/e1/02_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_559.svg
+nu-al-quran-hs-or-15230-hal-56.svg	CC0	06 ornament – Al Quran Hs. Or. 15230 Hal 283.svg	https://upload.wikimedia.org/wikipedia/commons/f/f0/06_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_283.svg
+nu-al-quran-hs-or-15230-hal-57.svg	CC0	01 ornament – Al Quran Hs. Or. 15230 Hal 371.svg	https://upload.wikimedia.org/wikipedia/commons/1/1c/01_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_371.svg
+nu-al-quran-hs-or-15230-hal-58.svg	CC0	07 ornament – Al Quran Hs. Or. 15230 Hal 171.svg	https://upload.wikimedia.org/wikipedia/commons/1/12/07_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_171.svg
+nu-al-quran-hs-or-15230-hal-589.svg	CC0	03 ornament – Al Quran Hs. Or. 15230 Hal 589.svg	https://upload.wikimedia.org/wikipedia/commons/0/0d/03_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_589.svg
+nu-al-quran-hs-or-15230-hal-6.svg	CC0	01 ornament – Al Quran Hs. Or. 15230 Hal 483.svg	https://upload.wikimedia.org/wikipedia/commons/d/dc/01_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_483.svg
+nu-al-quran-hs-or-15230-hal-619.svg	CC0	11 ornament – Al Quran Hs. Or. 15230 Hal 619.svg	https://upload.wikimedia.org/wikipedia/commons/7/70/11_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_619.svg
+nu-al-quran-hs-or-15230-hal-63.svg	CC0	09 ornament – Al Quran Hs. Or. 15230 Hal 63.svg	https://upload.wikimedia.org/wikipedia/commons/5/51/09_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_63.svg
+nu-al-quran-hs-or-15230-hal-649.svg	CC0	04 ornament – Al Quran Hs. Or. 15230 Hal 649.svg	https://upload.wikimedia.org/wikipedia/commons/3/30/04_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_649.svg
+nu-al-quran-hs-or-15230-hal-7.svg	CC0	04 ornament – Al Quran Hs. Or. 15230 Hal 509.svg	https://upload.wikimedia.org/wikipedia/commons/5/59/04_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_509.svg
+nu-al-quran-hs-or-15230-hal-8.svg	CC0	02 ornament – Al Quran Hs. Or. 15230 Hal 315.svg	https://upload.wikimedia.org/wikipedia/commons/e/e6/02_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_315.svg
+nu-al-quran-hs-or-15230-hal-89.svg	CC0	03 ornament – Al Quran Hs. Or. 15230 Hal 89.svg	https://upload.wikimedia.org/wikipedia/commons/0/0e/03_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_89.svg
+nu-al-quran-hs-or-15230-hal-9.svg	CC0	11 ornament – Al Quran Hs. Or. 15230 Hal 89.svg	https://upload.wikimedia.org/wikipedia/commons/4/48/11_ornament_%E2%80%93_Al_Quran_Hs._Or._15230_Hal_89.svg
+nu-al-quran-hs-or-15528-hal-10.svg	CC0	07 ornament – Al Quran Hs. Or. 15528 Hal 787.svg	https://upload.wikimedia.org/wikipedia/commons/5/5b/07_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_787.svg
+nu-al-quran-hs-or-15528-hal-11.svg	CC0	05 ornament – Al Quran Hs. Or. 15528 Hal 413.svg	https://upload.wikimedia.org/wikipedia/commons/0/06/05_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_413.svg
+nu-al-quran-hs-or-15528-hal-12.svg	CC0	03 ornament – Al Quran Hs. Or. 15528 Hal 787.svg	https://upload.wikimedia.org/wikipedia/commons/1/12/03_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_787.svg
+nu-al-quran-hs-or-15528-hal-13.svg	CC0	04 ornament – Al Quran Hs. Or. 15528 Hal 13.svg	https://upload.wikimedia.org/wikipedia/commons/7/78/04_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_13.svg
+nu-al-quran-hs-or-15528-hal-14.svg	CC0	04 ornament – Al Quran Hs. Or. 15528 Hal 413.svg	https://upload.wikimedia.org/wikipedia/commons/7/7b/04_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_413.svg
+nu-al-quran-hs-or-15528-hal-15.svg	CC0	04 ornament – Al Quran Hs. Or. 15528 Hal 787.svg	https://upload.wikimedia.org/wikipedia/commons/0/0b/04_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_787.svg
+nu-al-quran-hs-or-15528-hal-2.svg	CC0	14 ornament – Al Quran Hs. Or. 15528 Hal 413.svg	https://upload.wikimedia.org/wikipedia/commons/0/0a/14_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_413.svg
+nu-al-quran-hs-or-15528-hal-3.svg	CC0	11 ornament – Al Quran Hs. Or. 15528 Hal 413.svg	https://upload.wikimedia.org/wikipedia/commons/7/76/11_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_413.svg
+nu-al-quran-hs-or-15528-hal-4.svg	CC0	06 ornament – Al Quran Hs. Or. 15528 Hal 413.svg	https://upload.wikimedia.org/wikipedia/commons/c/c9/06_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_413.svg
+nu-al-quran-hs-or-15528-hal-413.svg	CC0	03 ornament – Al Quran Hs. Or. 15528 Hal 413.svg	https://upload.wikimedia.org/wikipedia/commons/7/77/03_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_413.svg
+nu-al-quran-hs-or-15528-hal-5.svg	CC0	16 ornament – Al Quran Hs. Or. 15528 Hal 413.svg	https://upload.wikimedia.org/wikipedia/commons/5/53/16_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_413.svg
+nu-al-quran-hs-or-15528-hal-6.svg	CC0	15 ornament – Al Quran Hs. Or. 15528 Hal 413.svg	https://upload.wikimedia.org/wikipedia/commons/7/7b/15_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_413.svg
+nu-al-quran-hs-or-15528-hal-7.svg	CC0	12 ornament – Al Quran Hs. Or. 15528 Hal 787.svg	https://upload.wikimedia.org/wikipedia/commons/0/05/12_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_787.svg
+nu-al-quran-hs-or-15528-hal-787.svg	CC0	02 ornament – Al Quran Hs. Or. 15528 Hal 787.svg	https://upload.wikimedia.org/wikipedia/commons/1/18/02_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_787.svg
+nu-al-quran-hs-or-15528-hal-8.svg	CC0	01 ornament – Al Quran Hs. Or. 15528 Hal 787.svg	https://upload.wikimedia.org/wikipedia/commons/6/64/01_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_787.svg
+nu-al-quran-hs-or-15528-hal-9.svg	CC0	12 ornament – Al Quran Hs. Or. 15528 Hal 413.svg	https://upload.wikimedia.org/wikipedia/commons/6/69/12_ornament_%E2%80%93_Al_Quran_Hs._Or._15528_Hal_413.svg
+nu-al-quran-melayu-a47-hal-2.svg	CC0	06 ornament – Al Quran Melayu A47 Hal 606.svg	https://upload.wikimedia.org/wikipedia/commons/3/38/06_ornament_%E2%80%93_Al_Quran_Melayu_A47_Hal_606.svg
+nu-al-quran-melayu-a47-hal-3.svg	CC0	08 ornament – Al Quran Melayu A47 Hal 606.svg	https://upload.wikimedia.org/wikipedia/commons/1/17/08_ornament_%E2%80%93_Al_Quran_Melayu_A47_Hal_606.svg
+nu-al-quran-melayu-a47-hal-4.svg	CC0	03 ornament – Al Quran Melayu A47 Hal 606.svg	https://upload.wikimedia.org/wikipedia/commons/1/11/03_ornament_%E2%80%93_Al_Quran_Melayu_A47_Hal_606.svg
+nu-al-quran-melayu-a47-hal-5.svg	CC0	07 ornament – Al Quran Melayu A47 Hal 606.svg	https://upload.wikimedia.org/wikipedia/commons/1/17/07_ornament_%E2%80%93_Al_Quran_Melayu_A47_Hal_606.svg
+nu-al-quran-melayu-a47-hal-606.svg	CC0	05 ornament – Al Quran Melayu A47 Hal 606.svg	https://upload.wikimedia.org/wikipedia/commons/a/a3/05_ornament_%E2%80%93_Al_Quran_Melayu_A47_Hal_606.svg
+nu-al-quran-ternate-a49-hal-10.svg	CC0	20 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/7/7f/20_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-11.svg	CC0	03 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/a/a3/03_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-12.svg	CC0	08 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/3/3a/08_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-13.svg	CC0	17 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/b/b3/17_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-14.svg	CC0	09 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/8/86/09_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-15.svg	CC0	04 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/9/91/04_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-16.svg	CC0	10 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/0/0e/10_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-2.svg	CC0	21 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/5/52/21_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-3.svg	CC0	07 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/7/71/07_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-4.svg	CC0	12 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/8/81/12_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-5.svg	CC0	01 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/5/5c/01_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-6.svg	CC0	18 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/6/6f/18_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-7.svg	CC0	06 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/a/a4/06_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-8.svg	CC0	11 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/1/17/11_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-al-quran-ternate-a49-hal-9.svg	CC0	22 ornament – Al Quran Ternate A49 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/2/2c/22_ornament_%E2%80%93_Al_Quran_Ternate_A49_Hal_8.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-10.svg	CC0	22 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/2/28/22_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-11.svg	CC0	13 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/6/63/13_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-12.svg	CC0	17 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/f/fa/17_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-12288.svg	CC0	06 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/9/9a/06_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-13.svg	CC0	03 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/7/70/03_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-14.svg	CC0	01 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/9/96/01_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-2.svg	CC0	21 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/e/ec/21_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-3.svg	CC0	23 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/b/b0/23_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-4.svg	CC0	12 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/c/c8/12_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-5.svg	CC0	14 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/e/ee/14_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-6.svg	CC0	07 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/1/19/07_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-7.svg	CC0	02 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/b/b5/02_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-8.svg	CC0	10 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/6/6f/10_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-sultanan-utawi-mangkunegaran-add-ms-9.svg	CC0	18 ornament – Babad Sultanan utawi Mangkunegaran Add. MS 12288 Hal 4.svg	https://upload.wikimedia.org/wikipedia/commons/3/37/18_ornament_%E2%80%93_Babad_Sultanan_utawi_Mangkunegaran_Add._MS_12288_Hal_4.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-10.svg	CC0	11 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 803.svg	https://upload.wikimedia.org/wikipedia/commons/6/6e/11_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_803.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-11.svg	CC0	02 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 23.svg	https://upload.wikimedia.org/wikipedia/commons/b/b9/02_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_23.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-12.svg	CC0	04 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 371.svg	https://upload.wikimedia.org/wikipedia/commons/c/c8/04_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_371.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-13.svg	CC0	08 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 498.svg	https://upload.wikimedia.org/wikipedia/commons/0/0e/08_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_498.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-133.svg	CC0	02 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 133.svg	https://upload.wikimedia.org/wikipedia/commons/8/8b/02_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_133.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-14.svg	CC0	16 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 709.svg	https://upload.wikimedia.org/wikipedia/commons/1/18/16_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_709.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-15.svg	CC0	07 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 225.svg	https://upload.wikimedia.org/wikipedia/commons/b/b6/07_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_225.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-16.svg	CC0	03 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 133.svg	https://upload.wikimedia.org/wikipedia/commons/b/b8/03_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_133.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-17.svg	CC0	04 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 417.svg	https://upload.wikimedia.org/wikipedia/commons/5/5c/04_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_417.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-18.svg	CC0	07 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 803.svg	https://upload.wikimedia.org/wikipedia/commons/c/c8/07_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_803.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-19.svg	CC0	15 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 709.svg	https://upload.wikimedia.org/wikipedia/commons/1/10/15_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_709.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-2.svg	CC0	02 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 417.svg	https://upload.wikimedia.org/wikipedia/commons/6/63/02_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_417.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-20.svg	CC0	11 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 709.svg	https://upload.wikimedia.org/wikipedia/commons/a/a7/11_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_709.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-21.svg	CC0	11 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 371.svg	https://upload.wikimedia.org/wikipedia/commons/d/d5/11_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_371.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-22.svg	CC0	08 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 667.svg	https://upload.wikimedia.org/wikipedia/commons/3/34/08_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_667.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-225.svg	CC0	02 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 225.svg	https://upload.wikimedia.org/wikipedia/commons/6/61/02_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_225.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-23.svg	CC0	11 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 23.svg	https://upload.wikimedia.org/wikipedia/commons/8/83/11_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_23.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-24.svg	CC0	05 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 537.svg	https://upload.wikimedia.org/wikipedia/commons/c/c1/05_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_537.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-25.svg	CC0	13 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 498.svg	https://upload.wikimedia.org/wikipedia/commons/2/27/13_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_498.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-26.svg	CC0	05 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 417.svg	https://upload.wikimedia.org/wikipedia/commons/d/d7/05_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_417.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-27.svg	CC0	06 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 225.svg	https://upload.wikimedia.org/wikipedia/commons/5/51/06_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_225.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-28.svg	CC0	12 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 371.svg	https://upload.wikimedia.org/wikipedia/commons/b/b6/12_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_371.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-29.svg	CC0	08 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 225.svg	https://upload.wikimedia.org/wikipedia/commons/d/d2/08_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_225.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-3.svg	CC0	03 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 709.svg	https://upload.wikimedia.org/wikipedia/commons/7/77/03_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_709.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-30.svg	CC0	15 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 371.svg	https://upload.wikimedia.org/wikipedia/commons/0/09/15_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_371.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-31.svg	CC0	06 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 498.svg	https://upload.wikimedia.org/wikipedia/commons/3/3d/06_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_498.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-32.svg	CC0	05 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 709.svg	https://upload.wikimedia.org/wikipedia/commons/2/29/05_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_709.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-33.svg	CC0	09 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 225.svg	https://upload.wikimedia.org/wikipedia/commons/6/6a/09_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_225.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-34.svg	CC0	05 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 849.svg	https://upload.wikimedia.org/wikipedia/commons/6/6c/05_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_849.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-35.svg	CC0	03 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 498.svg	https://upload.wikimedia.org/wikipedia/commons/c/c9/03_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_498.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-36.svg	CC0	07 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 849.svg	https://upload.wikimedia.org/wikipedia/commons/8/83/07_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_849.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-37.svg	CC0	01 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 429.svg	https://upload.wikimedia.org/wikipedia/commons/e/ea/01_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_429.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-371.svg	CC0	14 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 371.svg	https://upload.wikimedia.org/wikipedia/commons/7/7d/14_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_371.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-38.svg	CC0	01 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 225.svg	https://upload.wikimedia.org/wikipedia/commons/6/65/01_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_225.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-39.svg	CC0	12 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 23.svg	https://upload.wikimedia.org/wikipedia/commons/9/99/12_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_23.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-4.svg	CC0	05 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 225.svg	https://upload.wikimedia.org/wikipedia/commons/4/44/05_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_225.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-40.svg	CC0	04 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 498.svg	https://upload.wikimedia.org/wikipedia/commons/a/a5/04_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_498.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-417.svg	CC0	10 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 417.svg	https://upload.wikimedia.org/wikipedia/commons/4/47/10_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_417.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-429.svg	CC0	07 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 429.svg	https://upload.wikimedia.org/wikipedia/commons/2/28/07_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_429.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-498.svg	CC0	01 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 498.svg	https://upload.wikimedia.org/wikipedia/commons/0/0d/01_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_498.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-5.svg	CC0	07 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 417.svg	https://upload.wikimedia.org/wikipedia/commons/6/6a/07_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_417.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-537.svg	CC0	04 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 537.svg	https://upload.wikimedia.org/wikipedia/commons/9/9f/04_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_537.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-6.svg	CC0	15 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 225.svg	https://upload.wikimedia.org/wikipedia/commons/d/d1/15_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_225.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-667.svg	CC0	06 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 667.svg	https://upload.wikimedia.org/wikipedia/commons/b/b5/06_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_667.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-7.svg	CC0	10 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 371.svg	https://upload.wikimedia.org/wikipedia/commons/0/0a/10_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_371.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-709.svg	CC0	06 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 709.svg	https://upload.wikimedia.org/wikipedia/commons/b/bb/06_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_709.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-8.svg	CC0	10 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 498.svg	https://upload.wikimedia.org/wikipedia/commons/7/7c/10_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_498.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-803.svg	CC0	12 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 803.svg	https://upload.wikimedia.org/wikipedia/commons/7/7f/12_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_803.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-849.svg	CC0	12 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 849.svg	https://upload.wikimedia.org/wikipedia/commons/0/0a/12_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_849.svg
+nu-babad-tanah-jawi-ds646-27-b326-us-hal-9.svg	CC0	17 ornament – Babad Tanah Jawi DS646.27 .B326 US Hal 709.svg	https://upload.wikimedia.org/wikipedia/commons/a/a2/17_ornament_%E2%80%93_Babad_Tanah_Jawi_DS646.27_.B326_US_Hal_709.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-10.svg	CC0	13 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 10.svg	https://upload.wikimedia.org/wikipedia/commons/4/45/13_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_10.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-11.svg	CC0	08 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 11.svg	https://upload.wikimedia.org/wikipedia/commons/4/4a/08_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_11.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-12.svg	CC0	05 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 12.svg	https://upload.wikimedia.org/wikipedia/commons/c/c7/05_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_12.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-13.svg	CC0	03 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 9.svg	https://upload.wikimedia.org/wikipedia/commons/2/2a/03_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_9.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-14.svg	CC0	06 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 14.svg	https://upload.wikimedia.org/wikipedia/commons/8/8b/06_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_14.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-15.svg	CC0	07 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 22.svg	https://upload.wikimedia.org/wikipedia/commons/2/2f/07_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_22.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-16.svg	CC0	07 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 16.svg	https://upload.wikimedia.org/wikipedia/commons/6/6f/07_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_16.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-17.svg	CC0	19 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 11.svg	https://upload.wikimedia.org/wikipedia/commons/9/92/19_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_11.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-18.svg	CC0	11 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 18.svg	https://upload.wikimedia.org/wikipedia/commons/e/e1/11_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_18.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-19.svg	CC0	07 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 39.svg	https://upload.wikimedia.org/wikipedia/commons/f/f8/07_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_39.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-2.svg	CC0	13 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 11.svg	https://upload.wikimedia.org/wikipedia/commons/f/fd/13_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_11.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-20.svg	CC0	11 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 20.svg	https://upload.wikimedia.org/wikipedia/commons/6/6d/11_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_20.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-21.svg	CC0	17 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 10.svg	https://upload.wikimedia.org/wikipedia/commons/2/22/17_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_10.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-22.svg	CC0	12 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 22.svg	https://upload.wikimedia.org/wikipedia/commons/8/89/12_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_22.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-23.svg	CC0	19 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 24.svg	https://upload.wikimedia.org/wikipedia/commons/8/87/19_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_24.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-24.svg	CC0	10 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 24.svg	https://upload.wikimedia.org/wikipedia/commons/b/b3/10_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_24.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-25.svg	CC0	17 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 16.svg	https://upload.wikimedia.org/wikipedia/commons/f/f5/17_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_16.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-26.svg	CC0	10 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 37.svg	https://upload.wikimedia.org/wikipedia/commons/0/09/10_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_37.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-27.svg	CC0	09 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 39.svg	https://upload.wikimedia.org/wikipedia/commons/0/01/09_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_39.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-28.svg	CC0	03 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 28.svg	https://upload.wikimedia.org/wikipedia/commons/1/1f/03_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_28.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-29.svg	CC0	15 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 5.svg	https://upload.wikimedia.org/wikipedia/commons/5/56/15_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_5.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-3.svg	CC0	15 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 34.svg	https://upload.wikimedia.org/wikipedia/commons/3/3e/15_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_34.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-30.svg	CC0	01 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 6.svg	https://upload.wikimedia.org/wikipedia/commons/1/1b/01_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_6.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-31.svg	CC0	06 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 39.svg	https://upload.wikimedia.org/wikipedia/commons/0/09/06_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_39.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-32.svg	CC0	18 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 14.svg	https://upload.wikimedia.org/wikipedia/commons/9/92/18_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_14.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-33.svg	CC0	11 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 30.svg	https://upload.wikimedia.org/wikipedia/commons/8/8a/11_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_30.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-34.svg	CC0	19 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 34.svg	https://upload.wikimedia.org/wikipedia/commons/2/29/19_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_34.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-35.svg	CC0	15 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 9.svg	https://upload.wikimedia.org/wikipedia/commons/c/ca/15_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_9.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-36.svg	CC0	09 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 36.svg	https://upload.wikimedia.org/wikipedia/commons/f/f6/09_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_36.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-37.svg	CC0	08 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 37.svg	https://upload.wikimedia.org/wikipedia/commons/b/b6/08_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_37.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-38.svg	CC0	13 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 6.svg	https://upload.wikimedia.org/wikipedia/commons/e/e3/13_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_6.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-39.svg	CC0	10 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 39.svg	https://upload.wikimedia.org/wikipedia/commons/0/0e/10_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_39.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-4.svg	CC0	17 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 11.svg	https://upload.wikimedia.org/wikipedia/commons/8/83/17_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_11.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-40.svg	CC0	08 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 28.svg	https://upload.wikimedia.org/wikipedia/commons/2/2c/08_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_28.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-41.svg	CC0	02 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 24.svg	https://upload.wikimedia.org/wikipedia/commons/9/92/02_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_24.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-42.svg	CC0	09 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 42.svg	https://upload.wikimedia.org/wikipedia/commons/e/e0/09_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_42.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-43.svg	CC0	08 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 12.svg	https://upload.wikimedia.org/wikipedia/commons/c/c8/08_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_12.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-44.svg	CC0	02 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 32.svg	https://upload.wikimedia.org/wikipedia/commons/3/39/02_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_32.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-45.svg	CC0	19 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 45.svg	https://upload.wikimedia.org/wikipedia/commons/0/0a/19_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_45.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-46.svg	CC0	16 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 16.svg	https://upload.wikimedia.org/wikipedia/commons/9/9b/16_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_16.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-47.svg	CC0	19 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 14.svg	https://upload.wikimedia.org/wikipedia/commons/b/be/19_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_14.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-48.svg	CC0	18 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 32.svg	https://upload.wikimedia.org/wikipedia/commons/9/9c/18_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_32.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-49.svg	CC0	09 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 6.svg	https://upload.wikimedia.org/wikipedia/commons/f/f0/09_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_6.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-5.svg	CC0	03 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 7.svg	https://upload.wikimedia.org/wikipedia/commons/3/3e/03_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_7.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-50.svg	CC0	04 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 6.svg	https://upload.wikimedia.org/wikipedia/commons/b/b6/04_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_6.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-51.svg	CC0	16 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 28.svg	https://upload.wikimedia.org/wikipedia/commons/9/9c/16_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_28.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-52.svg	CC0	11 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 28.svg	https://upload.wikimedia.org/wikipedia/commons/4/47/11_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_28.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-53.svg	CC0	02 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 12.svg	https://upload.wikimedia.org/wikipedia/commons/5/55/02_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_12.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-54.svg	CC0	13 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 14.svg	https://upload.wikimedia.org/wikipedia/commons/5/5d/13_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_14.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-55.svg	CC0	09 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 45.svg	https://upload.wikimedia.org/wikipedia/commons/8/8e/09_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_45.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-56.svg	CC0	13 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 42.svg	https://upload.wikimedia.org/wikipedia/commons/8/86/13_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_42.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-57.svg	CC0	03 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 45.svg	https://upload.wikimedia.org/wikipedia/commons/3/3a/03_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_45.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-58.svg	CC0	08 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 14.svg	https://upload.wikimedia.org/wikipedia/commons/2/29/08_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_14.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-59.svg	CC0	13 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 34.svg	https://upload.wikimedia.org/wikipedia/commons/e/e5/13_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_34.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-6.svg	CC0	08 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 6.svg	https://upload.wikimedia.org/wikipedia/commons/9/9a/08_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_6.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-60.svg	CC0	06 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 16.svg	https://upload.wikimedia.org/wikipedia/commons/c/cf/06_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_16.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-61.svg	CC0	17 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 28.svg	https://upload.wikimedia.org/wikipedia/commons/5/5f/17_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_28.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-62.svg	CC0	11 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 36.svg	https://upload.wikimedia.org/wikipedia/commons/0/0a/11_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_36.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-63.svg	CC0	16 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 10.svg	https://upload.wikimedia.org/wikipedia/commons/d/d2/16_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_10.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-64.svg	CC0	10 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 18.svg	https://upload.wikimedia.org/wikipedia/commons/1/1a/10_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_18.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-65.svg	CC0	12 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 28.svg	https://upload.wikimedia.org/wikipedia/commons/f/fe/12_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_28.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-66.svg	CC0	15 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 16.svg	https://upload.wikimedia.org/wikipedia/commons/c/c3/15_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_16.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-67.svg	CC0	01 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 37.svg	https://upload.wikimedia.org/wikipedia/commons/1/14/01_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_37.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-68.svg	CC0	08 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 42.svg	https://upload.wikimedia.org/wikipedia/commons/2/22/08_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_42.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-69.svg	CC0	07 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 34.svg	https://upload.wikimedia.org/wikipedia/commons/0/0d/07_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_34.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-7.svg	CC0	05 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 7.svg	https://upload.wikimedia.org/wikipedia/commons/0/02/05_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_7.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-70.svg	CC0	17 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 34.svg	https://upload.wikimedia.org/wikipedia/commons/c/c3/17_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_34.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-71.svg	CC0	07 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 11.svg	https://upload.wikimedia.org/wikipedia/commons/7/79/07_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_11.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-72.svg	CC0	10 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 32.svg	https://upload.wikimedia.org/wikipedia/commons/8/8d/10_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_32.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-73.svg	CC0	02 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 10.svg	https://upload.wikimedia.org/wikipedia/commons/7/77/02_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_10.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-74.svg	CC0	15 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 28.svg	https://upload.wikimedia.org/wikipedia/commons/a/a2/15_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_28.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-75.svg	CC0	18 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 20.svg	https://upload.wikimedia.org/wikipedia/commons/c/c8/18_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_20.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-76.svg	CC0	06 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 5.svg	https://upload.wikimedia.org/wikipedia/commons/4/41/06_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_5.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-77.svg	CC0	17 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 32.svg	https://upload.wikimedia.org/wikipedia/commons/c/c3/17_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_32.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-78.svg	CC0	22 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 28.svg	https://upload.wikimedia.org/wikipedia/commons/4/44/22_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_28.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-79.svg	CC0	20 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 16.svg	https://upload.wikimedia.org/wikipedia/commons/d/d7/20_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_16.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-8.svg	CC0	07 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 8.svg	https://upload.wikimedia.org/wikipedia/commons/2/2a/07_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_8.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-80.svg	CC0	12 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 6.svg	https://upload.wikimedia.org/wikipedia/commons/0/02/12_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_6.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-81.svg	CC0	16 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 32.svg	https://upload.wikimedia.org/wikipedia/commons/f/fa/16_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_32.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-82.svg	CC0	07 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 6.svg	https://upload.wikimedia.org/wikipedia/commons/8/8f/07_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_6.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-83.svg	CC0	14 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 22.svg	https://upload.wikimedia.org/wikipedia/commons/2/21/14_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_22.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-84.svg	CC0	10 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 11.svg	https://upload.wikimedia.org/wikipedia/commons/5/56/10_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_11.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-85.svg	CC0	10 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 22.svg	https://upload.wikimedia.org/wikipedia/commons/8/8a/10_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_22.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-86.svg	CC0	04 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 22.svg	https://upload.wikimedia.org/wikipedia/commons/a/a5/04_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_22.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-87.svg	CC0	20 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 20.svg	https://upload.wikimedia.org/wikipedia/commons/f/f2/20_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_20.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-88.svg	CC0	08 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 34.svg	https://upload.wikimedia.org/wikipedia/commons/7/72/08_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_34.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-89.svg	CC0	21 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 28.svg	https://upload.wikimedia.org/wikipedia/commons/7/76/21_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_28.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-9.svg	CC0	01 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 45.svg	https://upload.wikimedia.org/wikipedia/commons/a/a7/01_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_45.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-90.svg	CC0	07 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 24.svg	https://upload.wikimedia.org/wikipedia/commons/e/ea/07_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_24.svg
+nu-nukilan-babad-pakualaman-d-or-15-hal-91.svg	CC0	09 ornament – Nukilan Babad Pakualaman D Or. 15 Hal 37.svg	https://upload.wikimedia.org/wikipedia/commons/b/ba/09_ornament_%E2%80%93_Nukilan_Babad_Pakualaman_D_Or._15_Hal_37.svg
+or-16-petal-lotus-circle-w-border.svg	CC0	16 petal lotus circle w border.svg	https://upload.wikimedia.org/wikipedia/commons/9/94/16_petal_lotus_circle_w_border.svg
+or-16-petal-lotus-circle.svg	CC0	16 petal lotus circle.svg	https://upload.wikimedia.org/wikipedia/commons/b/bd/16_petal_lotus_circle.svg
+or-24-petal-lotus-circle.svg	CC0	24 petal lotus circle.svg	https://upload.wikimedia.org/wikipedia/commons/a/ad/24_petal_lotus_circle.svg
+or-a-voz-do-sino-vicente-de-carvalho-1916-fleuron-i.svg	Public domain	A voz do sino (Vicente de Carvalho, 1916)-Fleuron in cover.svg	https://upload.wikimedia.org/wikipedia/commons/9/97/A_voz_do_sino_%28Vicente_de_Carvalho%2C_1916%29-Fleuron_in_cover.svg
+or-abstract-floral-dash-ingall-s.svg	Public domain	Abstract floral dash, Ingall’s.svg	https://upload.wikimedia.org/wikipedia/commons/9/9b/Abstract_floral_dash%2C_Ingall%E2%80%99s.svg
+or-abstract-floral-ornament-1913.svg	Public domain	Abstract floral ornament, 1913.svg	https://upload.wikimedia.org/wikipedia/commons/0/03/Abstract_floral_ornament%2C_1913.svg
+or-abstract-floral-ornament.svg	Public domain	Abstract floral ornament.svg	https://upload.wikimedia.org/wikipedia/commons/b/bd/Abstract_floral_ornament.svg
+or-abstract-floral-tailpiece-1909.svg	Public domain	Abstract floral tailpiece, 1909.svg	https://upload.wikimedia.org/wikipedia/commons/c/c1/Abstract_floral_tailpiece%2C_1909.svg
+or-abstract-vertical-ornament-1912.svg	Public domain	Abstract vertical ornament, 1912.svg	https://upload.wikimedia.org/wikipedia/commons/3/35/Abstract_vertical_ornament%2C_1912.svg
+or-ac-ornament-black.svg	CC0	AC Ornament Black.svg	https://upload.wikimedia.org/wikipedia/commons/1/16/AC_Ornament_Black.svg
+or-actas-congreso-femenino-internacional-fleuron.svg	Public domain	Actas Congreso Femenino Internacional Fleuron.svg	https://upload.wikimedia.org/wikipedia/commons/0/0e/Actas_Congreso_Femenino_Internacional_Fleuron.svg
+or-adam-asnyk-grafika-10.svg	Public domain	Adam Asnyk grafika 10.svg	https://upload.wikimedia.org/wikipedia/commons/f/fd/Adam_Asnyk_grafika_10.svg
+or-adam-asnyk-grafika-3.svg	Public domain	Adam Asnyk grafika 3.svg	https://upload.wikimedia.org/wikipedia/commons/1/1a/Adam_Asnyk_grafika_3.svg
+or-adolf-klesk-czy-mamy-obecnie-s-absze-nerwy-ornam.svg	Public domain	Adolf Klęsk - Czy mamy obecnie słabsze nerwy ornament 022.svg	https://upload.wikimedia.org/wikipedia/commons/4/4e/Adolf_Kl%C4%99sk_-_Czy_mamy_obecnie_s%C5%82absze_nerwy_ornament_022.svg
+or-album-zas-uzonych-polakow-wieku-xix-t-1-p0175.svg	Public domain	Album zasłużonych Polaków wieku XIX t.1 P0175.svg	https://upload.wikimedia.org/wikipedia/commons/6/6f/Album_zas%C5%82u%C5%BConych_Polak%C3%B3w_wieku_XIX_t.1_P0175.svg
+or-album-zas-uzonych-polakow-wieku-xix-t-2-p044.svg	Public domain	Album zasłużonych Polaków wieku XIX t.2 P044.svg	https://upload.wikimedia.org/wikipedia/commons/d/d2/Album_zas%C5%82u%C5%BConych_Polak%C3%B3w_wieku_XIX_t.2_P044.svg
+or-album-zas-uzonych-polakow-wieku-xix-t-2-p076.svg	Public domain	Album zasłużonych Polaków wieku XIX t.2 P076.svg	https://upload.wikimedia.org/wikipedia/commons/8/8f/Album_zas%C5%82u%C5%BConych_Polak%C3%B3w_wieku_XIX_t.2_P076.svg
+or-album-zas-uzonych-polakow-wieku-xix-t-2-p081.svg	Public domain	Album zasłużonych Polaków wieku XIX t.2 P081.svg	https://upload.wikimedia.org/wikipedia/commons/b/bc/Album_zas%C5%82u%C5%BConych_Polak%C3%B3w_wieku_XIX_t.2_P081.svg
+or-album-zas-uzonych-polakow-wieku-xix-t-2-p162.svg	Public domain	Album zasłużonych Polaków wieku XIX t.2 P162.svg	https://upload.wikimedia.org/wikipedia/commons/4/4a/Album_zas%C5%82u%C5%BConych_Polak%C3%B3w_wieku_XIX_t.2_P162.svg
+or-aldine-typographique-zapf.svg	Public domain	Aldine typographique (Zapf).svg	https://upload.wikimedia.org/wikipedia/commons/8/85/Aldine_typographique_%28Zapf%29.svg
+or-aldus-leaf-unicode2619.svg	Public domain	Aldus leaf unicode2619.svg	https://upload.wikimedia.org/wikipedia/commons/7/76/Aldus_leaf_unicode2619.svg
+or-aldus-leaf-unicode2766.svg	Public domain	Aldus leaf unicode2766.svg	https://upload.wikimedia.org/wikipedia/commons/d/de/Aldus_leaf_unicode2766.svg
+or-aldus-leaf-unicode2767.svg	Public domain	Aldus leaf unicode2767.svg	https://upload.wikimedia.org/wikipedia/commons/7/7e/Aldus_leaf_unicode2767.svg
+or-anathomiaamaiscorrecta-tailpiece1.svg	Public domain	AnathomiaAMaisCorrecta Tailpiece1.svg	https://upload.wikimedia.org/wikipedia/commons/f/fb/AnathomiaAMaisCorrecta_Tailpiece1.svg
+or-antoni-ossendowski-nieznanym-szlakiem-1924.svg	Public domain	Antoni Ossendowski - Nieznanym szlakiem (1924).svg	https://upload.wikimedia.org/wikipedia/commons/c/c2/Antoni_Ossendowski_-_Nieznanym_szlakiem_%281924%29.svg
+or-arabesque-tailpiece-from-serlio-1551.svg	Public domain	Arabesque tailpiece from Serlio 1551.svg	https://upload.wikimedia.org/wikipedia/commons/4/42/Arabesque_tailpiece_from_Serlio_1551.svg
+or-art-nouveau-bleeding-heart-frame-seroes-1901.svg	Public domain	Art Nouveau bleeding-heart frame, Serões, 1901.svg	https://upload.wikimedia.org/wikipedia/commons/8/89/Art_Nouveau_bleeding-heart_frame%2C_Ser%C3%B5es%2C_1901.svg
+or-art-nouveau-double-frame-seroes-1901.svg	Public domain	Art Nouveau double frame, Serões, 1901.svg	https://upload.wikimedia.org/wikipedia/commons/3/3b/Art_Nouveau_double_frame%2C_Ser%C3%B5es%2C_1901.svg
+or-art-nouveau-dragonfly-cache-blanc.svg	Public domain	Art Nouveau dragonfly cache-blanc.svg	https://upload.wikimedia.org/wikipedia/commons/8/86/Art_Nouveau_dragonfly_cache-blanc.svg
+or-art-nouveau-fleuron.svg	Public domain	Art Nouveau fleuron.svg	https://upload.wikimedia.org/wikipedia/commons/c/c5/Art_Nouveau_fleuron.svg
+or-art-nouveau-floral-headpiece-seroes-1901-02.svg	Public domain	Art Nouveau floral headpiece, Serões, 1901, 02.svg	https://upload.wikimedia.org/wikipedia/commons/a/a1/Art_Nouveau_floral_headpiece%2C_Ser%C3%B5es%2C_1901%2C_02.svg
+or-art-nouveau-floral-ornament-by-e-m-lilien.svg	Public domain	Art Nouveau floral ornament by E. M. Lilien.svg	https://upload.wikimedia.org/wikipedia/commons/4/41/Art_Nouveau_floral_ornament_by_E._M._Lilien.svg
+or-art-nouveau-floral-tailpiece-seroes-1901-02.svg	Public domain	Art Nouveau floral tailpiece, Serões, 1901, 02.svg	https://upload.wikimedia.org/wikipedia/commons/7/73/Art_Nouveau_floral_tailpiece%2C_Ser%C3%B5es%2C_1901%2C_02.svg
+or-art-nouveau-flourish.svg	Public domain	Art Nouveau flourish.svg	https://upload.wikimedia.org/wikipedia/commons/4/4e/Art_Nouveau_flourish.svg
+or-art-nouveau-foliage-initial.svg	Public domain	Art Nouveau foliage initial.svg	https://upload.wikimedia.org/wikipedia/commons/a/ad/Art_Nouveau_foliage_initial.svg
+or-art-nouveau-foliage-ornament.svg	Public domain	Art Nouveau foliage ornament.svg	https://upload.wikimedia.org/wikipedia/commons/5/52/Art_Nouveau_foliage_ornament.svg
+or-art-nouveau-frame-02.svg	Public domain	Art Nouveau frame 02.svg	https://upload.wikimedia.org/wikipedia/commons/c/c7/Art_Nouveau_frame_02.svg
+or-art-nouveau-frame-seroes-1901-02.svg	Public domain	Art Nouveau frame, Serões, 1901, 02.svg	https://upload.wikimedia.org/wikipedia/commons/3/32/Art_Nouveau_frame%2C_Ser%C3%B5es%2C_1901%2C_02.svg
+or-art-nouveau-frame-seroes-1901-03.svg	Public domain	Art Nouveau frame, Serões, 1901, 03.svg	https://upload.wikimedia.org/wikipedia/commons/7/77/Art_Nouveau_frame%2C_Ser%C3%B5es%2C_1901%2C_03.svg
+or-art-nouveau-frame-seroes-1901-04.svg	Public domain	Art Nouveau frame, Serões, 1901, 04.svg	https://upload.wikimedia.org/wikipedia/commons/e/e6/Art_Nouveau_frame%2C_Ser%C3%B5es%2C_1901%2C_04.svg
+or-art-nouveau-frame-seroes-1901-05.svg	Public domain	Art Nouveau frame, Serões, 1901, 05.svg	https://upload.wikimedia.org/wikipedia/commons/8/80/Art_Nouveau_frame%2C_Ser%C3%B5es%2C_1901%2C_05.svg
+or-art-nouveau-frame-seroes-1901.svg	Public domain	Art Nouveau frame, Serões, 1901.svg	https://upload.wikimedia.org/wikipedia/commons/7/79/Art_Nouveau_frame%2C_Ser%C3%B5es%2C_1901.svg
+or-art-nouveau-frame.svg	Public domain	Art Nouveau frame.svg	https://upload.wikimedia.org/wikipedia/commons/6/6a/Art_Nouveau_frame.svg
+or-art-nouveau-french-floral-headpiece.svg	Public domain	Art Nouveau French floral headpiece.svg	https://upload.wikimedia.org/wikipedia/commons/0/0d/Art_Nouveau_French_floral_headpiece.svg
+or-art-nouveau-frond-ornament.svg	Public domain	Art Nouveau frond ornament.svg	https://upload.wikimedia.org/wikipedia/commons/6/6f/Art_Nouveau_frond_ornament.svg
+or-art-nouveau-frontispice.svg	Public domain	Art Nouveau frontispice.svg	https://upload.wikimedia.org/wikipedia/commons/6/64/Art_Nouveau_frontispice.svg
+or-art-nouveau-headpiece-1904.svg	Public domain	Art Nouveau headpiece, 1904.svg	https://upload.wikimedia.org/wikipedia/commons/3/36/Art_Nouveau_headpiece%2C_1904.svg
+or-art-nouveau-nasturtium-ornament.svg	Public domain	Art Nouveau nasturtium ornament.svg	https://upload.wikimedia.org/wikipedia/commons/f/ff/Art_Nouveau_nasturtium_ornament.svg
+or-art-nouveau-ornament-01.svg	Public domain	Art Nouveau ornament 01.svg	https://upload.wikimedia.org/wikipedia/commons/7/79/Art_Nouveau_ornament_01.svg
+or-art-nouveau-ornament-02.svg	Public domain	Art Nouveau ornament 02.svg	https://upload.wikimedia.org/wikipedia/commons/e/ea/Art_Nouveau_ornament_02.svg
+or-art-nouveau-ornament-03.svg	Public domain	Art Nouveau ornament 03.svg	https://upload.wikimedia.org/wikipedia/commons/1/11/Art_Nouveau_ornament_03.svg
+or-art-nouveau-ornament-04.svg	Public domain	Art Nouveau ornament 04.svg	https://upload.wikimedia.org/wikipedia/commons/1/1d/Art_Nouveau_ornament_04.svg
+or-art-nouveau-pendantif-1.svg	Public domain	Art Nouveau pendantif 1.svg	https://upload.wikimedia.org/wikipedia/commons/1/1d/Art_Nouveau_pendantif_1.svg
+or-art-nouveau-separator-seroes-1901.svg	Public domain	Art Nouveau separator, Serões, 1901.svg	https://upload.wikimedia.org/wikipedia/commons/6/6d/Art_Nouveau_separator%2C_Ser%C3%B5es%2C_1901.svg
+or-art-nouveau-stretching-cat.svg	Public domain	Art Nouveau stretching cat.svg	https://upload.wikimedia.org/wikipedia/commons/6/68/Art_Nouveau_stretching_cat.svg
+or-art-nouveau-tulip-ornament.svg	Public domain	Art Nouveau tulip ornament.svg	https://upload.wikimedia.org/wikipedia/commons/6/6c/Art_Nouveau_tulip_ornament.svg
+or-asterisk-deco.svg	Public domain	Asterisk deco.svg	https://upload.wikimedia.org/wikipedia/commons/5/58/Asterisk_deco.svg
+or-atf-poinsettia-ornament.svg	Public domain	ATF Poinsettia ornament.svg	https://upload.wikimedia.org/wikipedia/commons/2/20/ATF_Poinsettia_ornament.svg
+or-bajki-adam-mickiewicz-grafika-str-007.svg	Public domain	Bajki (Adam Mickiewicz)grafika str 007.svg	https://upload.wikimedia.org/wikipedia/commons/b/b0/Bajki_%28Adam_Mickiewicz%29grafika_str_007.svg
+or-barat-en-passant-par-la-lorraine-separateur.svg	CC0	Barat En passant par la Lorraine separateur.svg	https://upload.wikimedia.org/wikipedia/commons/d/d6/Barat_En_passant_par_la_Lorraine_separateur.svg
+or-beetle-ornament.svg	Public domain	Beetle ornament.svg	https://upload.wikimedia.org/wikipedia/commons/1/1a/Beetle_ornament.svg
+or-behrens-schmuck-10046.svg	Public domain	Behrens-Schmuck 10046.svg	https://upload.wikimedia.org/wikipedia/commons/a/ae/Behrens-Schmuck_10046.svg
+or-behrens-schmuck-10048.svg	Public domain	Behrens-Schmuck 10048.svg	https://upload.wikimedia.org/wikipedia/commons/5/5f/Behrens-Schmuck_10048.svg
+or-behrens-schmuck-10051.svg	Public domain	Behrens-Schmuck 10051.svg	https://upload.wikimedia.org/wikipedia/commons/f/f1/Behrens-Schmuck_10051.svg
+or-behrens-schmuck-10054.svg	Public domain	Behrens-Schmuck 10054.svg	https://upload.wikimedia.org/wikipedia/commons/f/f9/Behrens-Schmuck_10054.svg
+or-behrens-schmuck-10056.svg	Public domain	Behrens-Schmuck 10056.svg	https://upload.wikimedia.org/wikipedia/commons/4/49/Behrens-Schmuck_10056.svg
+or-behrens-schmuck-15221.svg	Public domain	Behrens-Schmuck 15221.svg	https://upload.wikimedia.org/wikipedia/commons/8/83/Behrens-Schmuck_15221.svg
+or-behrens-schmuck-15237.svg	Public domain	Behrens-Schmuck 15237.svg	https://upload.wikimedia.org/wikipedia/commons/7/74/Behrens-Schmuck_15237.svg
+or-behrens-schmuck-15243.svg	Public domain	Behrens-Schmuck 15243.svg	https://upload.wikimedia.org/wikipedia/commons/2/29/Behrens-Schmuck_15243.svg
+or-behrens-schmuck-15245.svg	Public domain	Behrens-Schmuck 15245.svg	https://upload.wikimedia.org/wikipedia/commons/a/af/Behrens-Schmuck_15245.svg
+or-behrens-schmuck-15246.svg	Public domain	Behrens-Schmuck 15246.svg	https://upload.wikimedia.org/wikipedia/commons/7/7d/Behrens-Schmuck_15246.svg
+or-behrens-schmuck-15255.svg	Public domain	Behrens-Schmuck 15255.svg	https://upload.wikimedia.org/wikipedia/commons/6/6c/Behrens-Schmuck_15255.svg
+or-boles-aw-i-jozefa-anc-z-lat-nadziei-i-walki-p183.svg	Public domain	Bolesław i Józefa Anc-Z lat nadziei i walki P183.svg	https://upload.wikimedia.org/wikipedia/commons/3/34/Boles%C5%82aw_i_J%C3%B3zefa_Anc-Z_lat_nadziei_i_walki_P183.svg
+or-book-decoration-bppix.svg	Public domain	Book decoration BPPix.svg	https://upload.wikimedia.org/wikipedia/commons/4/4e/Book_decoration_BPPix.svg
+or-book-decoration-bppvii.svg	Public domain	Book decoration BPPvii.svg	https://upload.wikimedia.org/wikipedia/commons/8/83/Book_decoration_BPPvii.svg
+or-book-decoration-bppxi.svg	Public domain	Book decoration BPPxi.svg	https://upload.wikimedia.org/wikipedia/commons/2/28/Book_decoration_BPPxi.svg
+or-book-decoration-bppxii.svg	Public domain	Book decoration BPPxii.svg	https://upload.wikimedia.org/wikipedia/commons/5/54/Book_decoration_BPPxii.svg
+or-bookman-ornament-12044-printing-press.svg	Public domain	Bookman Ornament 12044 (printing press).svg	https://upload.wikimedia.org/wikipedia/commons/a/a0/Bookman_Ornament_12044_%28printing_press%29.svg
+or-bookman-ornament-4858-bookshelf.svg	Public domain	Bookman Ornament 4858 (bookshelf).svg	https://upload.wikimedia.org/wikipedia/commons/5/5e/Bookman_Ornament_4858_%28bookshelf%29.svg
+or-bookman-ornament-7242-bookshelf.svg	Public domain	Bookman Ornament 7242 (bookshelf).svg	https://upload.wikimedia.org/wikipedia/commons/5/5d/Bookman_Ornament_7242_%28bookshelf%29.svg
+or-bookman-ornament-8401-hourglass-and-book.svg	Public domain	Bookman Ornament 8401 (hourglass and book).svg	https://upload.wikimedia.org/wikipedia/commons/c/cf/Bookman_Ornament_8401_%28hourglass_and_book%29.svg
+or-bookman-ornament-9649-caduceus-and-book.svg	Public domain	Bookman Ornament 9649 (caduceus and book).svg	https://upload.wikimedia.org/wikipedia/commons/f/f8/Bookman_Ornament_9649_%28caduceus_and_book%29.svg
+or-bourges-cul-de-lampe-a.svg	Public domain	Bourges - cul-de-lampe A.svg	https://upload.wikimedia.org/wikipedia/commons/3/32/Bourges_-_cul-de-lampe_A.svg
+or-bourges-separateur-a.svg	Public domain	Bourges - séparateur A.svg	https://upload.wikimedia.org/wikipedia/commons/8/83/Bourges_-_s%C3%A9parateur_A.svg
+or-bourges-separateur-b.svg	Public domain	Bourges - séparateur B.svg	https://upload.wikimedia.org/wikipedia/commons/7/76/Bourges_-_s%C3%A9parateur_B.svg
+or-bourges-separateur-c.svg	Public domain	Bourges - séparateur C.svg	https://upload.wikimedia.org/wikipedia/commons/1/14/Bourges_-_s%C3%A9parateur_C.svg
+or-broken-rose-tailpiece-1909.svg	Public domain	Broken-rose tailpiece, 1909.svg	https://upload.wikimedia.org/wikipedia/commons/1/1b/Broken-rose_tailpiece%2C_1909.svg
+or-cameo-tailpiece-velhagen-klasings-monatshefte-19.svg	Public domain	Cameo tailpiece, Velhagen & Klasings Monatshefte, 1911–1912, 01.svg	https://upload.wikimedia.org/wikipedia/commons/c/c3/Cameo_tailpiece%2C_Velhagen_%26_Klasings_Monatshefte%2C_1911%E2%80%931912%2C_01.svg
+or-celticknotwork-trianglesimple-01.svg	Public domain	celticknotwork trianglesimple 01.svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/celticknotwork_trianglesimple_01.svg)
+or-chappell-co-fleuron.svg	Public domain	Chappell & Co fleuron.svg	https://upload.wikimedia.org/wikipedia/commons/4/48/Chappell_%26_Co_fleuron.svg
+or-child-own-book-of-verse-title-a-vector.svg	Public domain	Child Own Book of Verse - title a vector.svg	https://upload.wikimedia.org/wikipedia/commons/6/6a/Child_Own_Book_of_Verse_-_title_a_vector.svg
+or-ciemne-si-y-ornament-11.svg	Public domain	Ciemne siły ornament 11.svg	https://upload.wikimedia.org/wikipedia/commons/4/4e/Ciemne_si%C5%82y_ornament_11.svg
+or-cleland-ornament-10818-oak-wreath.svg	Public domain	Cleland ornament 10818 (oak wreath).svg	https://upload.wikimedia.org/wikipedia/commons/9/9b/Cleland_ornament_10818_%28oak_wreath%29.svg
+or-cleland-ornament-4810-lyre.svg	Public domain	Cleland ornament 4810 (lyre).svg	https://upload.wikimedia.org/wikipedia/commons/b/b6/Cleland_ornament_4810_%28lyre%29.svg
+or-cleland-ornament-7203-musical-instruments.svg	Public domain	Cleland ornament 7203 (musical instruments).svg	https://upload.wikimedia.org/wikipedia/commons/d/d6/Cleland_ornament_7203_%28musical_instruments%29.svg
+or-cleland-ornament-7215-double-cornucopia.svg	Public domain	Cleland ornament 7215 (double cornucopia).svg	https://upload.wikimedia.org/wikipedia/commons/c/c4/Cleland_ornament_7215_%28double_cornucopia%29.svg
+or-columbine-border-corner-by-paul-burck.svg	Public domain	Columbine border corner by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/0/03/Columbine_border_corner_by_Paul_B%C3%BCrck.svg
+or-columbine-border-element-by-paul-burck.svg	Public domain	Columbine border element by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/d/d3/Columbine_border_element_by_Paul_B%C3%BCrck.svg
+or-cross-to1.svg	Public domain	Cross-TO1.svg	https://upload.wikimedia.org/wikipedia/commons/4/44/Cross-TO1.svg
+or-crown-tailpiece-velhagen-klasings-monatshefte-19.svg	Public domain	Crown tailpiece, Velhagen & Klasings Monatshefte, 1911–1912, 01.svg	https://upload.wikimedia.org/wikipedia/commons/7/7b/Crown_tailpiece%2C_Velhagen_%26_Klasings_Monatshefte%2C_1911%E2%80%931912%2C_01.svg
+or-cul-de-lampe-a-la-pomme-de-pin.svg	CC0	Cul-de-lampe à la pomme de pin.svg	https://upload.wikimedia.org/wikipedia/commons/7/73/Cul-de-lampe_%C3%A0_la_pomme_de_pin.svg
+or-culdelampe-fleuron.svg	CC0	CulDeLampe Fleuron.svg	https://upload.wikimedia.org/wikipedia/commons/e/e4/CulDeLampe_Fleuron.svg
+or-czech-art-nouveau-floral-title.svg	Public domain	Czech Art Nouveau floral title.svg	https://upload.wikimedia.org/wikipedia/commons/4/46/Czech_Art_Nouveau_floral_title.svg
+or-daffodil-ornament.svg	Public domain	Daffodil ornament.svg	https://upload.wikimedia.org/wikipedia/commons/d/dc/Daffodil_ornament.svg
+or-deco-pag5.svg	Public domain	Deco pag5.svg	https://upload.wikimedia.org/wikipedia/commons/d/de/Deco_pag5.svg
+or-decoration-150346.svg	CC0	Decoration-150346.svg	https://upload.wikimedia.org/wikipedia/commons/1/1c/Decoration-150346.svg
+or-decorative-text-divider-central-flare.svg	Public domain	Decorative text divider - central flare.svg	https://upload.wikimedia.org/wikipedia/commons/7/7c/Decorative_text_divider_-_central_flare.svg
+or-decorative-text-divider.svg	Public domain	Decorative text divider.svg	https://upload.wikimedia.org/wikipedia/commons/6/63/Decorative_text_divider.svg
+or-decorazione-architetto-f-01.svg	Public domain	decorazione architetto f 01.svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/decorazione_architetto_f_01.svg)
+or-der-bunte-vogel-von-1899-01.svg	Public domain	Der Bunte Vogel von 1899 01.svg	https://upload.wikimedia.org/wikipedia/commons/c/c1/Der_Bunte_Vogel_von_1899_01.svg
+or-der-bunte-vogel-von-1899-02.svg	Public domain	Der Bunte Vogel von 1899 02.svg	https://upload.wikimedia.org/wikipedia/commons/b/bb/Der_Bunte_Vogel_von_1899_02.svg
+or-der-bunte-vogel-von-1899-03.svg	Public domain	Der Bunte Vogel von 1899 03.svg	https://upload.wikimedia.org/wikipedia/commons/4/42/Der_Bunte_Vogel_von_1899_03.svg
+or-der-bunte-vogel-von-1899-04.svg	Public domain	Der Bunte Vogel von 1899 04.svg	https://upload.wikimedia.org/wikipedia/commons/1/17/Der_Bunte_Vogel_von_1899_04.svg
+or-der-bunte-vogel-von-1899-05.svg	Public domain	Der Bunte Vogel von 1899 05.svg	https://upload.wikimedia.org/wikipedia/commons/3/38/Der_Bunte_Vogel_von_1899_05.svg
+or-der-bunte-vogel-von-1899-06.svg	Public domain	Der Bunte Vogel von 1899 06.svg	https://upload.wikimedia.org/wikipedia/commons/6/6e/Der_Bunte_Vogel_von_1899_06.svg
+or-der-bunte-vogel-von-1899-07.svg	Public domain	Der Bunte Vogel von 1899 07.svg	https://upload.wikimedia.org/wikipedia/commons/2/2f/Der_Bunte_Vogel_von_1899_07.svg
+or-der-bunte-vogel-von-1899-08.svg	Public domain	Der Bunte Vogel von 1899 08.svg	https://upload.wikimedia.org/wikipedia/commons/e/e1/Der_Bunte_Vogel_von_1899_08.svg
+or-der-bunte-vogel-von-1899-09.svg	Public domain	Der Bunte Vogel von 1899 09.svg	https://upload.wikimedia.org/wikipedia/commons/2/27/Der_Bunte_Vogel_von_1899_09.svg
+or-der-bunte-vogel-von-1899-10.svg	Public domain	Der Bunte Vogel von 1899 10.svg	https://upload.wikimedia.org/wikipedia/commons/d/d8/Der_Bunte_Vogel_von_1899_10.svg
+or-der-bunte-vogel-von-1899-11.svg	Public domain	Der Bunte Vogel von 1899 11.svg	https://upload.wikimedia.org/wikipedia/commons/2/24/Der_Bunte_Vogel_von_1899_11.svg
+or-der-bunte-vogel-von-1899-12.svg	Public domain	Der Bunte Vogel von 1899 12.svg	https://upload.wikimedia.org/wikipedia/commons/9/91/Der_Bunte_Vogel_von_1899_12.svg
+or-der-bunte-vogel-von-1899-13.svg	Public domain	Der Bunte Vogel von 1899 13.svg	https://upload.wikimedia.org/wikipedia/commons/8/8f/Der_Bunte_Vogel_von_1899_13.svg
+or-der-bunte-vogel-von-1899-14.svg	Public domain	Der Bunte Vogel von 1899 14.svg	https://upload.wikimedia.org/wikipedia/commons/f/fd/Der_Bunte_Vogel_von_1899_14.svg
+or-dewey-ornament-1-scallop.svg	Public domain	Dewey Ornament 1 - Scallop.svg	https://upload.wikimedia.org/wikipedia/commons/6/69/Dewey_Ornament_1_-_Scallop.svg
+or-dewey-ornament-10-dolphin.svg	Public domain	Dewey Ornament 10 - Dolphin.svg	https://upload.wikimedia.org/wikipedia/commons/8/80/Dewey_Ornament_10_-_Dolphin.svg
+or-dewey-ornament-2-anchor-with-dolphin.svg	Public domain	Dewey Ornament 2 - Anchor with Dolphin.svg	https://upload.wikimedia.org/wikipedia/commons/0/0c/Dewey_Ornament_2_-_Anchor_with_Dolphin.svg
+or-dewey-ornament-22-crab.svg	Public domain	Dewey Ornament 22 - Crab.svg	https://upload.wikimedia.org/wikipedia/commons/d/d8/Dewey_Ornament_22_-_Crab.svg
+or-dewey-ornament-23-scallop.svg	Public domain	Dewey Ornament 23 -Scallop.svg	https://upload.wikimedia.org/wikipedia/commons/1/15/Dewey_Ornament_23_-Scallop.svg
+or-dewey-ornament-24-conch.svg	Public domain	Dewey Ornament 24 - Conch.svg	https://upload.wikimedia.org/wikipedia/commons/2/27/Dewey_Ornament_24_-_Conch.svg
+or-dewey-ornament-27-dolphin-facing-right.svg	Public domain	Dewey Ornament 27 - Dolphin Facing Right.svg	https://upload.wikimedia.org/wikipedia/commons/4/46/Dewey_Ornament_27_-_Dolphin_Facing_Right.svg
+or-dewey-ornament-28-dolphin-facing-right.svg	Public domain	Dewey Ornament 28 - Dolphin Facing Right.svg	https://upload.wikimedia.org/wikipedia/commons/3/31/Dewey_Ornament_28_-_Dolphin_Facing_Right.svg
+or-dewey-ornament-29-dolphin-facing-left.svg	Public domain	Dewey Ornament 29 - Dolphin Facing Left.svg	https://upload.wikimedia.org/wikipedia/commons/3/39/Dewey_Ornament_29_-_Dolphin_Facing_Left.svg
+or-dewey-ornament-3-trident.svg	Public domain	Dewey Ornament 3 - Trident.svg	https://upload.wikimedia.org/wikipedia/commons/a/a0/Dewey_Ornament_3_-_Trident.svg
+or-dewey-ornament-30-dolphin-facing-left.svg	Public domain	Dewey Ornament 30 - Dolphin Facing Left.svg	https://upload.wikimedia.org/wikipedia/commons/b/b1/Dewey_Ornament_30_-_Dolphin_Facing_Left.svg
+or-dewey-ornament-31-dolphin-with-trident-facing-ri.svg	Public domain	Dewey Ornament 31 - Dolphin with Trident Facing Right.svg	https://upload.wikimedia.org/wikipedia/commons/7/7d/Dewey_Ornament_31_-_Dolphin_with_Trident_Facing_Right.svg
+or-dewey-ornament-32-dolphin-with-trident-facing-le.svg	Public domain	Dewey Ornament 32 - Dolphin with Trident Facing Left.svg	https://upload.wikimedia.org/wikipedia/commons/b/bf/Dewey_Ornament_32_-_Dolphin_with_Trident_Facing_Left.svg
+or-dewey-ornament-4-three-masted-ship.svg	Public domain	Dewey Ornament 4 - Three-Masted Ship.svg	https://upload.wikimedia.org/wikipedia/commons/c/c9/Dewey_Ornament_4_-_Three-Masted_Ship.svg
+or-dewey-ornament-5-anchor-with-rope.svg	Public domain	Dewey Ornament 5 - Anchor with Rope.svg	https://upload.wikimedia.org/wikipedia/commons/a/ac/Dewey_Ornament_5_-_Anchor_with_Rope.svg
+or-dewey-ornament-6-scallop-with-rope.svg	Public domain	Dewey Ornament 6 - Scallop with Rope.svg	https://upload.wikimedia.org/wikipedia/commons/b/b8/Dewey_Ornament_6_-_Scallop_with_Rope.svg
+or-dewey-ornament-7-dolphin-facing-right.svg	Public domain	Dewey Ornament 7 - Dolphin Facing Right.svg	https://upload.wikimedia.org/wikipedia/commons/3/35/Dewey_Ornament_7_-_Dolphin_Facing_Right.svg
+or-dewey-ornament-8-dolphin-facing-left.svg	Public domain	Dewey Ornament 8 - Dolphin Facing Left.svg	https://upload.wikimedia.org/wikipedia/commons/6/66/Dewey_Ornament_8_-_Dolphin_Facing_Left.svg
+or-dewey-ornament-9-seahorse.svg	Public domain	Dewey Ornament 9 - Seahorse.svg	https://upload.wikimedia.org/wikipedia/commons/8/85/Dewey_Ornament_9_-_Seahorse.svg
+or-diamante-illuminati-ingo.svg	Public domain	diamante illuminati ingo .svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/diamante_illuminati_ingo_.svg)
+or-dogmoj-de-hilelismo-01.svg	Public domain	Dogmoj-de-hilelismo-01.svg	https://upload.wikimedia.org/wikipedia/commons/8/83/Dogmoj-de-hilelismo-01.svg
+or-dogmoj-de-hilelismo-02.svg	Public domain	Dogmoj-de-hilelismo-02.svg	https://upload.wikimedia.org/wikipedia/commons/7/77/Dogmoj-de-hilelismo-02.svg
+or-dogmoj-de-hilelismo-03.svg	Public domain	Dogmoj-de-hilelismo-03.svg	https://upload.wikimedia.org/wikipedia/commons/4/4d/Dogmoj-de-hilelismo-03.svg
+or-dr-esperanto-jezyk-miedzynarodowy-page-01.svg	Public domain	Dr Esperanto - Język międzynarodowy page 01.svg	https://upload.wikimedia.org/wikipedia/commons/a/a1/Dr_Esperanto_-_J%C4%99zyk_mi%C4%99dzynarodowy_page_01.svg
+or-edgar-allan-poe-nowelle-t-um-beaupre-page-003.svg	Public domain	Edgar Allan Poe - Nowelle (tłum. Beaupré) page 003.svg	https://upload.wikimedia.org/wikipedia/commons/6/6d/Edgar_Allan_Poe_-_Nowelle_%28t%C5%82um._Beaupr%C3%A9%29_page_003.svg
+or-eighteenth-century-dancers.svg	Public domain	Eighteenth-century dancers.svg	https://upload.wikimedia.org/wikipedia/commons/c/c2/Eighteenth-century_dancers.svg
+or-el-la-konstituciaj-tagoj01.svg	Public domain	El la konstituciaj tagoj01.svg	https://upload.wikimedia.org/wikipedia/commons/c/cb/El_la_konstituciaj_tagoj01.svg
+or-el-la-konstituciaj-tagoj02.svg	Public domain	El la konstituciaj tagoj02.svg	https://upload.wikimedia.org/wikipedia/commons/4/4c/El_la_konstituciaj_tagoj02.svg
+or-englische-linie.svg	Public domain	Englische Linie.svg	https://upload.wikimedia.org/wikipedia/commons/d/d6/Englische_Linie.svg
+or-eo-ivan-turgenev-kanto-de-triumfanta-amo-05.svg	Public domain	EO Ivan Turgenev - Kanto de triumfanta amo 05.svg	https://upload.wikimedia.org/wikipedia/commons/9/9f/EO_Ivan_Turgenev_-_Kanto_de_triumfanta_amo_05.svg
+or-eo-jack-london-la-forto-de-la-fortaj-3.svg	Public domain	EO Jack London - La forto de la fortaj 3.svg	https://upload.wikimedia.org/wikipedia/commons/2/2f/EO_Jack_London_-_La_forto_de_la_fortaj_3.svg
+or-eo-stanislav-schulhof-bohemaj-grenatoj-1.svg	Public domain	EO Stanislav Schulhof - Bohemaj Grenatoj 1.svg	https://upload.wikimedia.org/wikipedia/commons/1/18/EO_Stanislav_Schulhof_-_Bohemaj_Grenatoj_1.svg
+or-eo-stanislav-schulhof-bohemaj-grenatoj-2.svg	Public domain	EO Stanislav Schulhof - Bohemaj Grenatoj 2.svg	https://upload.wikimedia.org/wikipedia/commons/8/83/EO_Stanislav_Schulhof_-_Bohemaj_Grenatoj_2.svg
+or-everybody-s-floral-ornament.svg	Public domain	Everybody’s floral ornament.svg	https://upload.wikimedia.org/wikipedia/commons/e/e3/Everybody%E2%80%99s_floral_ornament.svg
+or-feste-des-lebens-und-der-kunst-page-frame.svg	Public domain	Feste des Lebens und der Kunst page frame.svg	https://upload.wikimedia.org/wikipedia/commons/c/c1/Feste_des_Lebens_und_der_Kunst_page_frame.svg
+or-feste-des-lebens-und-der-kunst-title-frame.svg	Public domain	Feste des Lebens und der Kunst title frame.svg	https://upload.wikimedia.org/wikipedia/commons/7/7b/Feste_des_Lebens_und_der_Kunst_title_frame.svg
+or-feuille-aldine-du-xvie-siecle.svg	Public domain	Feuille aldine du XVIe siècle.svg	https://upload.wikimedia.org/wikipedia/commons/3/34/Feuille_aldine_du_XVIe_si%C3%A8cle.svg
+or-filigrana.svg	Public domain	Filigrana.svg	https://upload.wikimedia.org/wikipedia/commons/8/81/Filigrana.svg
+or-finis-by-paul-burck.svg	Public domain	Finis by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/c/c7/Finis_by_Paul_B%C3%BCrck.svg
+or-finis-from-pantographia.svg	Public domain	Finis from Pantographia.svg	https://upload.wikimedia.org/wikipedia/commons/8/8b/Finis_from_Pantographia.svg
+or-finnisch-ugrische-forschungen-1-ornament-titelse.svg	CC0	Finnisch-Ugrische Forschungen 1 - Ornament Titelseite.svg	https://upload.wikimedia.org/wikipedia/commons/9/94/Finnisch-Ugrische_Forschungen_1_-_Ornament_Titelseite.svg
+or-fisaga-jons-olafssonar-s-2.svg	CC0	Æfisaga Jóns Ólafssonar s.2.svg	https://upload.wikimedia.org/wikipedia/commons/f/f3/%C3%86fisaga_J%C3%B3ns_%C3%93lafssonar_s.2.svg
+or-fleur.svg	CC0	Fleur.svg	https://upload.wikimedia.org/wikipedia/commons/3/36/Fleur.svg
+or-fleuron-pre-raphaelitism.svg	CC0	Fleuron (Pre-Raphaelitism).svg	https://upload.wikimedia.org/wikipedia/commons/f/fc/Fleuron_%28Pre-Raphaelitism%29.svg
+or-floral-border-01-corner-by-paul-burck.svg	Public domain	Floral border 01 corner by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/1/1c/Floral_border_01_corner_by_Paul_B%C3%BCrck.svg
+or-floral-border-01-element-by-paul-burck.svg	Public domain	Floral border 01 element by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/2/2e/Floral_border_01_element_by_Paul_B%C3%BCrck.svg
+or-floral-border-02-corner-by-paul-burck.svg	Public domain	Floral border 02 corner by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/8/8c/Floral_border_02_corner_by_Paul_B%C3%BCrck.svg
+or-floral-border-02-element-by-paul-burck.svg	Public domain	Floral border 02 element by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/7/76/Floral_border_02_element_by_Paul_B%C3%BCrck.svg
+or-floral-border-03-corner-by-paul-burck.svg	Public domain	Floral border 03 corner by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/f/fe/Floral_border_03_corner_by_Paul_B%C3%BCrck.svg
+or-floral-border-03-element-by-paul-burck.svg	Public domain	Floral border 03 element by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/d/dc/Floral_border_03_element_by_Paul_B%C3%BCrck.svg
+or-floral-border-04-corner-by-paul-burck.svg	Public domain	Floral border 04 corner by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/3/32/Floral_border_04_corner_by_Paul_B%C3%BCrck.svg
+or-floral-border-04-element-by-paul-burck.svg	Public domain	Floral border 04 element by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/d/d6/Floral_border_04_element_by_Paul_B%C3%BCrck.svg
+or-floral-headpiece-by-paul-burck.svg	Public domain	Floral headpiece by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/0/0a/Floral_headpiece_by_Paul_B%C3%BCrck.svg
+or-floral-heart.svg	Public domain	Floral heart.svg	https://upload.wikimedia.org/wikipedia/commons/4/40/Floral_heart.svg
+or-flourish-1348158.svg	CC0	Flourish-1348158.svg	https://upload.wikimedia.org/wikipedia/commons/f/ff/Flourish-1348158.svg
+or-flourish-one-horizontal-01.svg	Public domain	flourish one horizontal 01.svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/flourish_one_horizontal_01.svg)
+or-flourish-one-vertical-01.svg	Public domain	flourish one vertical 01.svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/flourish_one_vertical_01.svg)
+or-flourish-three-corner-01.svg	Public domain	flourish three corner 01.svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/flourish_three_corner_01.svg)
+or-flourish-three-lower-left-corner-01.svg	Public domain	flourish three lower left corner 01.svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/flourish_three_lower_left_corner_01.svg)
+or-flourish-three-lower-right-corner-01.svg	Public domain	flourish three lower right corner 01.svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/flourish_three_lower_right_corner_01.svg)
+or-flourish-three-upper-right-corner-01.svg	Public domain	flourish three upper right corner 01.svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/flourish_three_upper_right_corner_01.svg)
+or-flourish-two-horizontal-01.svg	Public domain	flourish two horizontal 01.svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/flourish_two_horizontal_01.svg)
+or-flourish-two-vertical-01.svg	Public domain	flourish two vertical 01.svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/flourish_two_vertical_01.svg)
+or-flowerpot-ornament-from-s-i-m.svg	Public domain	Flowerpot ornament from S. I. M.svg	https://upload.wikimedia.org/wikipedia/commons/5/53/Flowerpot_ornament_from_S._I._M.svg
+or-foliage-ornament-for-repeating-border.svg	Public domain	Foliage ornament for repeating border.svg	https://upload.wikimedia.org/wikipedia/commons/a/a6/Foliage_ornament_for_repeating_border.svg
+or-foliage-ornament-le-courrier-cinematographique-1.svg	Public domain	Foliage ornament, Le Courrier cinématographique, 1911.svg	https://upload.wikimedia.org/wikipedia/commons/e/e5/Foliage_ornament%2C_Le_Courrier_cin%C3%A9matographique%2C_1911.svg
+or-foliage-separator-1904.svg	Public domain	Foliage separator, 1904.svg	https://upload.wikimedia.org/wikipedia/commons/4/48/Foliage_separator%2C_1904.svg
+or-foliage-space-filler-1904-02.svg	Public domain	Foliage space-filler, 1904, 02.svg	https://upload.wikimedia.org/wikipedia/commons/b/b1/Foliage_space-filler%2C_1904%2C_02.svg
+or-foliage-space-filler-1904.svg	Public domain	Foliage space-filler, 1904.svg	https://upload.wikimedia.org/wikipedia/commons/5/5a/Foliage_space-filler%2C_1904.svg
+or-frame-for-initial-for-klein-s-liebermann-01-e-r.svg	Public domain	Frame for initial for Klein’s Liebermann 01 - E. R. Weiss.svg	https://upload.wikimedia.org/wikipedia/commons/6/69/Frame_for_initial_for_Klein%E2%80%99s_Liebermann_01_-_E._R._Weiss.svg
+or-frame-for-initial-for-klein-s-liebermann-02-e-r.svg	Public domain	Frame for initial for Klein’s Liebermann 02 - E. R. Weiss.svg	https://upload.wikimedia.org/wikipedia/commons/5/5e/Frame_for_initial_for_Klein%E2%80%99s_Liebermann_02_-_E._R._Weiss.svg
+or-frame-for-initial-for-klein-s-liebermann-03-e-r.svg	Public domain	Frame for initial for Klein’s Liebermann 03 - E. R. Weiss.svg	https://upload.wikimedia.org/wikipedia/commons/0/01/Frame_for_initial_for_Klein%E2%80%99s_Liebermann_03_-_E._R._Weiss.svg
+or-gabryela-zapolska-corka-tuski-ornament-007a.svg	Public domain	Gabryela Zapolska - Córka Tuśki ornament 007a.svg	https://upload.wikimedia.org/wikipedia/commons/3/30/Gabryela_Zapolska_-_C%C3%B3rka_Tu%C5%9Bki_ornament_007a.svg
+or-german-empire-element-01.svg	Public domain	German Empire element 01.svg	https://upload.wikimedia.org/wikipedia/commons/a/a7/German_Empire_element_01.svg
+or-german-empire-element-02.svg	Public domain	German Empire element 02.svg	https://upload.wikimedia.org/wikipedia/commons/2/2a/German_Empire_element_02.svg
+or-german-empire-element-03.svg	Public domain	German Empire element 03.svg	https://upload.wikimedia.org/wikipedia/commons/8/88/German_Empire_element_03.svg
+or-german-empire-element-04.svg	Public domain	German Empire element 04.svg	https://upload.wikimedia.org/wikipedia/commons/c/cd/German_Empire_element_04.svg
+or-german-empire-element-05.svg	Public domain	German Empire element 05.svg	https://upload.wikimedia.org/wikipedia/commons/8/8e/German_Empire_element_05.svg
+or-german-empire-element-06.svg	Public domain	German Empire element 06.svg	https://upload.wikimedia.org/wikipedia/commons/1/12/German_Empire_element_06.svg
+or-german-empire-element-07.svg	Public domain	German Empire element 07.svg	https://upload.wikimedia.org/wikipedia/commons/2/29/German_Empire_element_07.svg
+or-german-empire-element-08.svg	Public domain	German Empire element 08.svg	https://upload.wikimedia.org/wikipedia/commons/9/90/German_Empire_element_08.svg
+or-german-empire-element-09.svg	Public domain	German Empire element 09.svg	https://upload.wikimedia.org/wikipedia/commons/5/52/German_Empire_element_09.svg
+or-graffa-orizzontale.svg	Public domain	Graffa orizzontale.svg	https://upload.wikimedia.org/wikipedia/commons/e/e0/Graffa_orizzontale.svg
+or-harpel-s-flourish-5.svg	Public domain	Harpel’s flourish 5.svg	https://upload.wikimedia.org/wikipedia/commons/8/8e/Harpel%E2%80%99s_flourish_5.svg
+or-haus-peter-behrens-01.svg	Public domain	Haus Peter Behrens 01.svg	https://upload.wikimedia.org/wikipedia/commons/e/e7/Haus_Peter_Behrens_01.svg
+or-haus-peter-behrens-02.svg	Public domain	Haus Peter Behrens 02.svg	https://upload.wikimedia.org/wikipedia/commons/2/25/Haus_Peter_Behrens_02.svg
+or-haus-peter-behrens-03.svg	Public domain	Haus Peter Behrens 03.svg	https://upload.wikimedia.org/wikipedia/commons/0/09/Haus_Peter_Behrens_03.svg
+or-haus-peter-behrens-04.svg	Public domain	Haus Peter Behrens 04.svg	https://upload.wikimedia.org/wikipedia/commons/e/ea/Haus_Peter_Behrens_04.svg
+or-haus-peter-behrens-05.svg	Public domain	Haus Peter Behrens 05.svg	https://upload.wikimedia.org/wikipedia/commons/9/98/Haus_Peter_Behrens_05.svg
+or-haus-peter-behrens-06.svg	Public domain	Haus Peter Behrens 06.svg	https://upload.wikimedia.org/wikipedia/commons/3/32/Haus_Peter_Behrens_06.svg
+or-haus-peter-behrens-07.svg	Public domain	Haus Peter Behrens 07.svg	https://upload.wikimedia.org/wikipedia/commons/6/63/Haus_Peter_Behrens_07.svg
+or-haus-peter-behrens-08.svg	Public domain	Haus Peter Behrens 08.svg	https://upload.wikimedia.org/wikipedia/commons/2/28/Haus_Peter_Behrens_08.svg
+or-haus-peter-behrens-09.svg	Public domain	Haus Peter Behrens 09.svg	https://upload.wikimedia.org/wikipedia/commons/7/7a/Haus_Peter_Behrens_09.svg
+or-haus-peter-behrens-10.svg	Public domain	Haus Peter Behrens 10.svg	https://upload.wikimedia.org/wikipedia/commons/2/2d/Haus_Peter_Behrens_10.svg
+or-haus-peter-behrens-11.svg	Public domain	Haus Peter Behrens 11.svg	https://upload.wikimedia.org/wikipedia/commons/0/01/Haus_Peter_Behrens_11.svg
+or-haus-peter-behrens-12.svg	Public domain	Haus Peter Behrens 12.svg	https://upload.wikimedia.org/wikipedia/commons/a/a2/Haus_Peter_Behrens_12.svg
+or-haus-peter-behrens-13.svg	Public domain	Haus Peter Behrens 13.svg	https://upload.wikimedia.org/wikipedia/commons/3/39/Haus_Peter_Behrens_13.svg
+or-haus-peter-behrens-14.svg	Public domain	Haus Peter Behrens 14.svg	https://upload.wikimedia.org/wikipedia/commons/9/9d/Haus_Peter_Behrens_14.svg
+or-haus-peter-behrens-15.svg	Public domain	Haus Peter Behrens 15.svg	https://upload.wikimedia.org/wikipedia/commons/d/d6/Haus_Peter_Behrens_15.svg
+or-haus-peter-behrens-16.svg	Public domain	Haus Peter Behrens 16.svg	https://upload.wikimedia.org/wikipedia/commons/7/7a/Haus_Peter_Behrens_16.svg
+or-haus-peter-behrens-17.svg	Public domain	Haus Peter Behrens 17.svg	https://upload.wikimedia.org/wikipedia/commons/6/62/Haus_Peter_Behrens_17.svg
+or-headpiece-deutsche-kunst-und-dekoration-1902.svg	Public domain	Headpiece, Deutsche Kunst und Dekoration, 1902.svg	https://upload.wikimedia.org/wikipedia/commons/2/27/Headpiece%2C_Deutsche_Kunst_und_Dekoration%2C_1902.svg
+or-headpiece-from-broadway-brevities-august-1922.svg	Public domain	Headpiece from Broadway Brevities, August 1922.svg	https://upload.wikimedia.org/wikipedia/commons/7/7f/Headpiece_from_Broadway_Brevities%2C_August_1922.svg
+or-herbert-george-wells-wizye-przysz-osci-grafika-0.svg	Public domain	Herbert George Wells Wizye przyszłości grafika 02.svg	https://upload.wikimedia.org/wikipedia/commons/c/cc/Herbert_George_Wells_Wizye_przysz%C5%82o%C5%9Bci_grafika_02.svg
+or-histoire-socialiste-jean-jaures-illustration-fin-2.svg	Public domain	Histoire socialiste-Jean Jaures-Illustration-Fin.svg	https://upload.wikimedia.org/wikipedia/commons/f/fe/Histoire_socialiste-Jean_Jaures-Illustration-Fin.svg
+or-histoire-socialiste-jean-jaures-illustration-fin.svg	Public domain	Histoire socialiste-Jean Jaures-Illustration-Fin-Tome I.svg	https://upload.wikimedia.org/wikipedia/commons/a/aa/Histoire_socialiste-Jean_Jaures-Illustration-Fin-Tome_I.svg
+or-homaranismo-hilelismo-01.svg	Public domain	Homaranismo-hilelismo-01.svg	https://upload.wikimedia.org/wikipedia/commons/b/b1/Homaranismo-hilelismo-01.svg
+or-homaranismo-hilelismo-02.svg	Public domain	Homaranismo-hilelismo-02.svg	https://upload.wikimedia.org/wikipedia/commons/d/da/Homaranismo-hilelismo-02.svg
+or-hp1924p462-fleuron.svg	Public domain	HP1924p462 Fleuron.svg	https://upload.wikimedia.org/wikipedia/commons/1/14/HP1924p462_Fleuron.svg
+or-introduction-page-end-fleuron.svg	Public domain	Introduction page-end fleuron.svg	https://upload.wikimedia.org/wikipedia/commons/2/2f/Introduction_page-end_fleuron.svg
+or-j-howe-co-postscript-1830.svg	Public domain	J. Howe & Co. “Postscript,” 1830.svg	https://upload.wikimedia.org/wikipedia/commons/8/87/J._Howe_%26_Co._%E2%80%9CPostscript%2C%E2%80%9D_1830.svg
+or-j-howe-co-postscript-cherub-1830.svg	Public domain	J. Howe & Co. “Postscript” cherub, 1830.svg	https://upload.wikimedia.org/wikipedia/commons/8/81/J._Howe_%26_Co._%E2%80%9CPostscript%E2%80%9D_cherub%2C_1830.svg
+or-jachowicz-kraszewski-bajki-i-powiastki-separator-2.svg	CC0	Jachowicz,Kraszewski-Bajki i powiastki-separator90.svg	https://upload.wikimedia.org/wikipedia/commons/e/e3/Jachowicz%2CKraszewski-Bajki_i_powiastki-separator90.svg
+or-jachowicz-kraszewski-bajki-i-powiastki-separator.svg	CC0	Jachowicz,Kraszewski-Bajki i powiastki-separator9.svg	https://upload.wikimedia.org/wikipedia/commons/2/2e/Jachowicz%2CKraszewski-Bajki_i_powiastki-separator9.svg
+or-jan-bilinski-nauczanie-jezyka-polskiego-p003.svg	Public domain	Jan Biliński-Nauczanie języka polskiego p003.svg	https://upload.wikimedia.org/wikipedia/commons/4/44/Jan_Bili%C5%84ski-Nauczanie_j%C4%99zyka_polskiego_p003.svg
+or-jeneralidades-de-chile-i-sus-ferrocarriles-en-19.svg	Public domain	Jeneralidades de Chile i sus ferrocarriles en 1910 - ornamento 1.svg	https://upload.wikimedia.org/wikipedia/commons/a/a6/Jeneralidades_de_Chile_i_sus_ferrocarriles_en_1910_-_ornamento_1.svg
+or-jeneralidades-de-chile-i-sus-ferrocarriles-en-2.svg	Public domain	Jeneralidades de Chile i sus ferrocarriles en 1910 - ornamento 2.svg	https://upload.wikimedia.org/wikipedia/commons/d/d9/Jeneralidades_de_Chile_i_sus_ferrocarriles_en_1910_-_ornamento_2.svg
+or-jugendstil-architectural-headpiece-by-peter-behr.svg	Public domain	Jugendstil architectural headpiece by Peter Behrens.svg	https://upload.wikimedia.org/wikipedia/commons/7/7d/Jugendstil_architectural_headpiece_by_Peter_Behrens.svg
+or-jugendstil-frame-by-peter-behrens.svg	Public domain	Jugendstil frame by Peter Behrens.svg	https://upload.wikimedia.org/wikipedia/commons/a/a2/Jugendstil_frame_by_Peter_Behrens.svg
+or-jugendstil-headpiece-by-peter-behrens-02.svg	Public domain	Jugendstil headpiece by Peter Behrens, 02.svg	https://upload.wikimedia.org/wikipedia/commons/e/e2/Jugendstil_headpiece_by_Peter_Behrens%2C_02.svg
+or-jugendstil-headpiece-by-peter-behrens-03.svg	Public domain	Jugendstil headpiece by Peter Behrens, 03.svg	https://upload.wikimedia.org/wikipedia/commons/5/51/Jugendstil_headpiece_by_Peter_Behrens%2C_03.svg
+or-jugendstil-headpiece-deutsche-kunst-und-dekorati.svg	Public domain	Jugendstil headpiece, Deutsche Kunst und Dekoration, 1902.svg	https://upload.wikimedia.org/wikipedia/commons/7/71/Jugendstil_headpiece%2C_Deutsche_Kunst_und_Dekoration%2C_1902.svg
+or-jugendstil-ornament-by-peter-behrens-02.svg	Public domain	Jugendstil ornament by Peter Behrens, 02.svg	https://upload.wikimedia.org/wikipedia/commons/e/e7/Jugendstil_ornament_by_Peter_Behrens%2C_02.svg
+or-jugendstil-ornament-by-peter-behrens-03.svg	Public domain	Jugendstil ornament by Peter Behrens, 03.svg	https://upload.wikimedia.org/wikipedia/commons/a/a9/Jugendstil_ornament_by_Peter_Behrens%2C_03.svg
+or-jugendstil-ornament-by-peter-behrens.svg	Public domain	Jugendstil ornament by Peter Behrens.svg	https://upload.wikimedia.org/wikipedia/commons/0/02/Jugendstil_ornament_by_Peter_Behrens.svg
+or-jugendstil-ornament-die-kunstlerische-entwicklun-2.svg	Public domain	Jugendstil ornament, Die künstlerische Entwicklung und das Lebenswerk das Landschaftsmalers Karl Rettich, 02.svg	https://upload.wikimedia.org/wikipedia/commons/5/57/Jugendstil_ornament%2C_Die_k%C3%BCnstlerische_Entwicklung_und_das_Lebenswerk_das_Landschaftsmalers_Karl_Rettich%2C_02.svg
+or-jugendstil-ornament-die-kunstlerische-entwicklun-3.svg	Public domain	Jugendstil ornament, Die künstlerische Entwicklung und das Lebenswerk das Landschaftsmalers Karl Rettich, 03.svg	https://upload.wikimedia.org/wikipedia/commons/a/a8/Jugendstil_ornament%2C_Die_k%C3%BCnstlerische_Entwicklung_und_das_Lebenswerk_das_Landschaftsmalers_Karl_Rettich%2C_03.svg
+or-jugendstil-ornament-die-kunstlerische-entwicklun.svg	Public domain	Jugendstil ornament, Die künstlerische Entwicklung und das Lebenswerk das Landschaftsmalers Karl Rettich, 01.svg	https://upload.wikimedia.org/wikipedia/commons/6/6e/Jugendstil_ornament%2C_Die_k%C3%BCnstlerische_Entwicklung_und_das_Lebenswerk_das_Landschaftsmalers_Karl_Rettich%2C_01.svg
+or-jugendstil-separator-by-peter-behrens.svg	Public domain	Jugendstil separator by Peter Behrens.svg	https://upload.wikimedia.org/wikipedia/commons/d/d3/Jugendstil_separator_by_Peter_Behrens.svg
+or-jugendstil-title-frame-1902.svg	Public domain	Jugendstil title frame, 1902.svg	https://upload.wikimedia.org/wikipedia/commons/3/36/Jugendstil_title_frame%2C_1902.svg
+or-karol-matyas-oryla-micha-a-haliniaka-wspomnienia.svg	Public domain	Karol Mátyás - Oryla Michała Haliniaka wspomnienia ornament 024.svg	https://upload.wikimedia.org/wikipedia/commons/5/5d/Karol_M%C3%A1ty%C3%A1s_-_Oryla_Micha%C5%82a_Haliniaka_wspomnienia_ornament_024.svg
+or-kiermasy-na-warmji-grafika.svg	Public domain	Kiermasy na Warmji grafika.svg	https://upload.wikimedia.org/wikipedia/commons/8/86/Kiermasy_na_Warmji_grafika.svg
+or-l-armee-de-volupte-bandeau-ch5-13.svg	CC0	L Armée de volupté Bandeau ch5-13.svg	https://upload.wikimedia.org/wikipedia/commons/6/68/L_Arm%C3%A9e_de_volupt%C3%A9_Bandeau_ch5-13.svg
+or-la-cuestion-catalana-nuestro-tiempo-mayo-de-1903.svg	Public domain	La cuestión catalana, Nuestro Tiempo (mayo de 1903) p. 719.svg	https://upload.wikimedia.org/wikipedia/commons/0/09/La_cuesti%C3%B3n_catalana%2C_Nuestro_Tiempo_%28mayo_de_1903%29_p._719.svg
+or-la-jugo-de-oziris-03.svg	Public domain	La juĝo de Oziris 03.svg	https://upload.wikimedia.org/wikipedia/commons/3/3c/La_ju%C4%9Do_de_Oziris_03.svg
+or-la-matinee-libertine-ou-les-momens-bien-employes.svg	Public domain	La Matinée libertine , ou les Momens bien employés, 1787-separateur.svg	https://upload.wikimedia.org/wikipedia/commons/f/f1/La_Matin%C3%A9e_libertine_%2C_ou_les_Momens_bien_employ%C3%A9s%2C_1787-separateur.svg
+or-left-bottom-corner-trib.svg	Public domain	left bottom corner trib .svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/left_bottom_corner_trib_.svg)
+or-left-top-corner-tribal-b.svg	Public domain	left top corner tribal b .svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/left_top_corner_tribal_b_.svg)
+or-lf-ornament-black-left-down.svg	CC0	LF Ornament Black Left Down.svg	https://upload.wikimedia.org/wikipedia/commons/a/a1/LF_Ornament_Black_Left_Down.svg
+or-lf-ornament-black-left-up.svg	CC0	LF Ornament Black Left Up.svg	https://upload.wikimedia.org/wikipedia/commons/8/81/LF_Ornament_Black_Left_Up.svg
+or-lf-ornament-black-right-down.svg	CC0	LF Ornament Black Right Down.svg	https://upload.wikimedia.org/wikipedia/commons/3/3e/LF_Ornament_Black_Right_Down.svg
+or-lf-ornament-black-right-up.svg	CC0	LF Ornament Black Right Up.svg	https://upload.wikimedia.org/wikipedia/commons/e/ef/LF_Ornament_Black_Right_Up.svg
+or-little-red-riding-hood-pg-11.svg	Public domain	Little Red Riding Hood pg 11.svg	https://upload.wikimedia.org/wikipedia/commons/c/cc/Little_Red_Riding_Hood_pg_11.svg
+or-loop-ornament-black-h.svg	CC0	Loop Ornament Black H.svg	https://upload.wikimedia.org/wikipedia/commons/1/1a/Loop_Ornament_Black_H.svg
+or-loop-ornament-black-v.svg	CC0	Loop Ornament Black V.svg	https://upload.wikimedia.org/wikipedia/commons/c/c7/Loop_Ornament_Black_V.svg
+or-lotus-buddha.svg	Public domain	Lotus-buddha.svg	https://upload.wikimedia.org/wikipedia/commons/b/b3/Lotus-buddha.svg
+or-max-toeppen-wierzenia-mazurskie-ornament-008.svg	Public domain	Max Toeppen - Wierzenia mazurskie ornament 008.svg	https://upload.wikimedia.org/wikipedia/commons/0/08/Max_Toeppen_-_Wierzenia_mazurskie_ornament_008.svg
+or-moderner-buch-schmuck-iii-350-a-paul-burck.svg	Public domain	Moderner Buch-Schmuck III 350 A - Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/6/66/Moderner_Buch-Schmuck_III_350_A_-_Paul_B%C3%BCrck.svg
+or-motivo-geometrico-archit-01.svg	Public domain	motivo geometrico archit 01.svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/motivo_geometrico_archit_01.svg)
+or-mowy-sejmowe-nr-2-separator.svg	Public domain	Mowy Sejmowe. Nr 2 separator.svg	https://upload.wikimedia.org/wikipedia/commons/f/f9/Mowy_Sejmowe._Nr_2_separator.svg
+or-musset-gamiani-ou-deux-nuits-d-exces-p23.svg	Public domain	Musset - Gamiani ou Deux nuits d'excès p23.svg	https://upload.wikimedia.org/wikipedia/commons/7/74/Musset_-_Gamiani_ou_Deux_nuits_d%27exc%C3%A8s_p23.svg
+or-musset-gamiani-ou-deux-nuits-d-exces-p7.svg	Public domain	Musset - Gamiani ou Deux nuits d'excès p7.svg	https://upload.wikimedia.org/wikipedia/commons/5/56/Musset_-_Gamiani_ou_Deux_nuits_d%27exc%C3%A8s_p7.svg
+or-mythologie-illustree-1841-133918263-fleuron.svg	Public domain	Mythologie illustree 1841 (133918263) fleuron.svg	https://upload.wikimedia.org/wikipedia/commons/a/a4/Mythologie_illustree_1841_%28133918263%29_fleuron.svg
+or-narcissus-ornament.svg	Public domain	Narcissus ornament.svg	https://upload.wikimedia.org/wikipedia/commons/4/49/Narcissus_ornament.svg
+or-nerwowy-bolek-p03.svg	Public domain	Nerwowy Bolek p03.svg	https://upload.wikimedia.org/wikipedia/commons/4/46/Nerwowy_Bolek_p03.svg
+or-no-mans-land-sign.svg	Public domain	No mans land sign.svg	https://upload.wikimedia.org/wikipedia/commons/4/43/No_mans_land_sign.svg
+or-nougaret-lucette-ou-les-progres-du-libertinage-1.svg	Public domain	Nougaret - Lucette, ou les Progrès du libertinage, 1765-1766 - Vignette-01.svg	https://upload.wikimedia.org/wikipedia/commons/7/71/Nougaret_-_Lucette%2C_ou_les_Progr%C3%A8s_du_libertinage%2C_1765-1766_-_Vignette-01.svg
+or-oak-leaf-and-acorn-ornament.svg	Public domain	Oak-leaf and acorn ornament.svg	https://upload.wikimedia.org/wikipedia/commons/5/56/Oak-leaf_and_acorn_ornament.svg
+or-oc-ornament-green.svg	CC0	OC Ornament Green.svg	https://upload.wikimedia.org/wikipedia/commons/3/3f/OC_Ornament_Green.svg
+or-orain-adolphe-chansons-de-la-haute-bretagne-page.svg	Public domain	Orain, Adolphe - Chansons de la Haute Bretagne (page 433 crop).svg	https://upload.wikimedia.org/wikipedia/commons/2/2b/Orain%2C_Adolphe_-_Chansons_de_la_Haute_Bretagne_%28page_433_crop%29.svg
+or-ornament.svg	Public domain	Ornament.svg	https://upload.wikimedia.org/wikipedia/commons/6/67/Ornament.svg
+or-ornament4-black.svg	CC0	Ornament4 Black.svg	https://upload.wikimedia.org/wikipedia/commons/0/08/Ornament4_Black.svg
+or-ornamento-003.svg	CC0	Ornamento 003.svg	https://upload.wikimedia.org/wikipedia/commons/5/5c/Ornamento_003.svg
+or-ornamento-1.svg	Public domain	Ornamento 1.svg	https://upload.wikimedia.org/wikipedia/commons/9/96/Ornamento_1.svg
+or-ornamento-2.svg	Public domain	Ornamento 2.svg	https://upload.wikimedia.org/wikipedia/commons/6/62/Ornamento_2.svg
+or-ornamento-4.svg	Public domain	Ornamento 4.svg	https://upload.wikimedia.org/wikipedia/commons/1/1f/Ornamento_4.svg
+or-ornement-typographique-en-coree-librairie-charle.svg	CC0	Ornement typographique, En Corée, Librairie Charles Delagrave.svg	https://upload.wikimedia.org/wikipedia/commons/1/18/Ornement_typographique%2C_En_Cor%C3%A9e%2C_Librairie_Charles_Delagrave.svg
+or-osmanl-ca-matbu-ayrac-1.svg	CC0	Osmanlıca matbu ayraç 1.svg	https://upload.wikimedia.org/wikipedia/commons/1/13/Osmanl%C4%B1ca_matbu_ayra%C3%A7_1.svg
+or-osmanl-ca-matbu-ayrac-3.svg	CC0	Osmanlıca matbu ayraç 3.svg	https://upload.wikimedia.org/wikipedia/commons/6/6b/Osmanl%C4%B1ca_matbu_ayra%C3%A7_3.svg
+or-osmanl-ca-matbu-ayrac-4.svg	CC0	Osmanlıca matbu ayraç 4.svg	https://upload.wikimedia.org/wikipedia/commons/3/3b/Osmanl%C4%B1ca_matbu_ayra%C3%A7_4.svg
+or-osmanl-ca-matbu-ayrac-5.svg	CC0	Osmanlıca matbu ayraç 5.svg	https://upload.wikimedia.org/wikipedia/commons/b/b0/Osmanl%C4%B1ca_matbu_ayra%C3%A7_5.svg
+or-page-frame-by-paul-burck-1899-01.svg	Public domain	Page frame by Paul Bürck, 1899, 01.svg	https://upload.wikimedia.org/wikipedia/commons/a/a0/Page_frame_by_Paul_B%C3%BCrck%2C_1899%2C_01.svg
+or-page-frame-by-paul-burck-1899-04.svg	Public domain	Page frame by Paul Bürck, 1899, 04.svg	https://upload.wikimedia.org/wikipedia/commons/0/02/Page_frame_by_Paul_B%C3%BCrck%2C_1899%2C_04.svg
+or-page-xxiii-illustration-from-the-fables-of-sop-j.svg	Public domain	Page xxiii illustration from The Fables of Æsop (Jacobs).svg	https://upload.wikimedia.org/wikipedia/commons/c/cb/Page_xxiii_illustration_from_The_Fables_of_%C3%86sop_%28Jacobs%29.svg
+or-page12-prefazione-del-dialetto-napoletano.svg	Public domain	Page12 prefazione del dialetto napoletano.svg	https://upload.wikimedia.org/wikipedia/commons/1/18/Page12_prefazione_del_dialetto_napoletano.svg
+or-pani-anielska-page06a.svg	Public domain	Pani Anielska page06a.svg	https://upload.wikimedia.org/wikipedia/commons/2/20/Pani_Anielska_page06a.svg
+or-papyrus-ornament.svg	Public domain	Papyrus ornament.svg	https://upload.wikimedia.org/wikipedia/commons/3/3b/Papyrus_ornament.svg
+or-pastorale-18-agosto-1871-ghilardi-cross.svg	Public domain	Pastorale 18 agosto 1871 (Ghilardi) - Cross.svg	https://upload.wikimedia.org/wikipedia/commons/3/38/Pastorale_18_agosto_1871_%28Ghilardi%29_-_Cross.svg
+or-pl-artur-oppman-monologi-s12.svg	Public domain	PL Artur Oppman - Monologi s12.svg	https://upload.wikimedia.org/wikipedia/commons/5/54/PL_Artur_Oppman_-_Monologi_s12.svg
+or-poemes-en-prose-louis-de-lyvron-page-52-crop.svg	Public domain	Poèmes en prose, Louis de Lyvron (page 52 crop).svg	https://upload.wikimedia.org/wikipedia/commons/b/b7/Po%C3%A8mes_en_prose%2C_Louis_de_Lyvron_%28page_52_crop%29.svg
+or-poemes-en-prose-louis-de-lyvron-page-63-crop.svg	Public domain	Poèmes en prose, Louis de Lyvron (page 63 crop).svg	https://upload.wikimedia.org/wikipedia/commons/d/df/Po%C3%A8mes_en_prose%2C_Louis_de_Lyvron_%28page_63_crop%29.svg
+or-powiesc-o-pogromie01.svg	Public domain	Powieść o pogromie01.svg	https://upload.wikimedia.org/wikipedia/commons/3/37/Powie%C5%9B%C4%87_o_pogromie01.svg
+or-powiesc-o-pogromie02.svg	Public domain	Powieść o pogromie02.svg	https://upload.wikimedia.org/wikipedia/commons/f/f5/Powie%C5%9B%C4%87_o_pogromie02.svg
+or-procedes-d-art-flower-and-foliage-endpiece-02.svg	Public domain	Procédés d’art flower and foliage endpiece 02.svg	https://upload.wikimedia.org/wikipedia/commons/0/0a/Proc%C3%A9d%C3%A9s_d%E2%80%99art_flower_and_foliage_endpiece_02.svg
+or-procedes-d-art-flower-and-foliage-endpiece-03.svg	Public domain	Procédés d’art flower and foliage endpiece 03.svg	https://upload.wikimedia.org/wikipedia/commons/7/70/Proc%C3%A9d%C3%A9s_d%E2%80%99art_flower_and_foliage_endpiece_03.svg
+or-procedes-d-art-flower-and-foliage-endpiece-04.svg	Public domain	Procédés d’art flower and foliage endpiece 04.svg	https://upload.wikimedia.org/wikipedia/commons/a/a9/Proc%C3%A9d%C3%A9s_d%E2%80%99art_flower_and_foliage_endpiece_04.svg
+or-procedes-d-art-flower-and-foliage-endpiece-05.svg	Public domain	Procédés d’art flower and foliage endpiece 05.svg	https://upload.wikimedia.org/wikipedia/commons/f/f5/Proc%C3%A9d%C3%A9s_d%E2%80%99art_flower_and_foliage_endpiece_05.svg
+or-procedes-d-art-flower-and-foliage-endpiece.svg	Public domain	Procédés d’art flower and foliage endpiece.svg	https://upload.wikimedia.org/wikipedia/commons/2/2b/Proc%C3%A9d%C3%A9s_d%E2%80%99art_flower_and_foliage_endpiece.svg
+or-procedes-d-art-foliage-endpiece.svg	Public domain	Procédés d’art foliage endpiece.svg	https://upload.wikimedia.org/wikipedia/commons/5/54/Proc%C3%A9d%C3%A9s_d%E2%80%99art_foliage_endpiece.svg
+or-przechadzki-po-miescie-marceli-motty-cz-2-detal.svg	Public domain	Przechadzki po mieście, Marceli Motty, cz.2, detal 2.svg	https://upload.wikimedia.org/wikipedia/commons/e/ed/Przechadzki_po_mie%C5%9Bcie%2C_Marceli_Motty%2C_cz.2%2C_detal_2.svg
+or-quill-and-inkpot-headpiece.svg	Public domain	Quill and inkpot headpiece.svg	https://upload.wikimedia.org/wikipedia/commons/2/28/Quill_and_inkpot_headpiece.svg
+or-quill-and-inkwell-macgregor-cutler.svg	Public domain	Quill and inkwell, MacGregor-Cutler.svg	https://upload.wikimedia.org/wikipedia/commons/c/c6/Quill_and_inkwell%2C_MacGregor-Cutler.svg
+or-revue-de-photographie-floral-tailpiece-01.svg	Public domain	Revue de photographie floral tailpiece 01.svg	https://upload.wikimedia.org/wikipedia/commons/1/17/Revue_de_photographie_floral_tailpiece_01.svg
+or-revue-de-photographie-floral-title.svg	Public domain	Revue de photographie floral title.svg	https://upload.wikimedia.org/wikipedia/commons/9/96/Revue_de_photographie_floral_title.svg
+or-rhombus-100x6.svg	Public domain	Rhombus 100x6.svg	https://upload.wikimedia.org/wikipedia/commons/7/7d/Rhombus_100x6.svg
+or-rhombus-200x6.svg	Public domain	Rhombus 200x6.svg	https://upload.wikimedia.org/wikipedia/commons/a/a5/Rhombus_200x6.svg
+or-ribbon-leafs-ornament-black.svg	CC0	Ribbon Leafs Ornament Black.svg	https://upload.wikimedia.org/wikipedia/commons/d/d9/Ribbon_Leafs_Ornament_Black.svg
+or-ribbon-ornament-black-left-down.svg	CC0	Ribbon Ornament Black Left Down.svg	https://upload.wikimedia.org/wikipedia/commons/b/b0/Ribbon_Ornament_Black_Left_Down.svg
+or-ribbon-ornament-black-left-up.svg	CC0	Ribbon Ornament Black Left Up.svg	https://upload.wikimedia.org/wikipedia/commons/c/c3/Ribbon_Ornament_Black_Left_Up.svg
+or-ribbon-ornament-black-right-down.svg	CC0	Ribbon Ornament Black Right Down.svg	https://upload.wikimedia.org/wikipedia/commons/0/05/Ribbon_Ornament_Black_Right_Down.svg
+or-ribbon-ornament-black-right-up.svg	CC0	Ribbon Ornament Black Right Up.svg	https://upload.wikimedia.org/wikipedia/commons/5/56/Ribbon_Ornament_Black_Right_Up.svg
+or-ridel-ma-captivite-dans-les-prisons-de-seoul-190.svg	Public domain	Ridel - Ma captivité dans les prisons de Séoul, 1901, fleurs.svg	https://upload.wikimedia.org/wikipedia/commons/5/50/Ridel_-_Ma_captivit%C3%A9_dans_les_prisons_de_S%C3%A9oul%2C_1901%2C_fleurs.svg
+or-right-bottom-corner-tri.svg	Public domain	right bottom corner tri .svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/right_bottom_corner_tri_.svg)
+or-right-top-corner-tribal.svg	Public domain	right top corner tribal .svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/right_top_corner_tribal_.svg)
+or-riom-les-femmes-poetes-bretonnes-1892-page-26-cr.svg	Public domain	Riom - Les Femmes poètes bretonnes, 1892 (page 26 crop).svg	https://upload.wikimedia.org/wikipedia/commons/7/75/Riom_-_Les_Femmes_po%C3%A8tes_bretonnes%2C_1892_%28page_26_crop%29.svg
+or-riversdale-vers-l-amour-1903-ornement-p-23.svg	Public domain	Riversdale - Vers l’amour, 1903, ornement p 23.svg	https://upload.wikimedia.org/wikipedia/commons/e/eb/Riversdale_-_Vers_l%E2%80%99amour%2C_1903%2C_ornement_p_23.svg
+or-riversdale-vers-l-amour-1903-ornement-p-43-simpl.svg	Public domain	Riversdale - Vers l’amour, 1903, ornement p 43 - simple.svg	https://upload.wikimedia.org/wikipedia/commons/3/33/Riversdale_-_Vers_l%E2%80%99amour%2C_1903%2C_ornement_p_43_-_simple.svg
+or-riversdale-vers-l-amour-1903-ornement-p-43.svg	Public domain	Riversdale - Vers l’amour, 1903, ornement p 43.svg	https://upload.wikimedia.org/wikipedia/commons/7/79/Riversdale_-_Vers_l%E2%80%99amour%2C_1903%2C_ornement_p_43.svg
+or-riversdale-vers-l-amour-1903-ornement-p-51.svg	Public domain	Riversdale - Vers l’amour, 1903, ornement p 51.svg	https://upload.wikimedia.org/wikipedia/commons/5/5b/Riversdale_-_Vers_l%E2%80%99amour%2C_1903%2C_ornement_p_51.svg
+or-riversdale-vers-l-amour-1903-ornement-p-6-simple.svg	Public domain	Riversdale - Vers l’amour, 1903, ornement p 6 - simple.svg	https://upload.wikimedia.org/wikipedia/commons/6/69/Riversdale_-_Vers_l%E2%80%99amour%2C_1903%2C_ornement_p_6_-_simple.svg
+or-riversdale-vers-l-amour-1903-ornement-p-6.svg	Public domain	Riversdale - Vers l’amour, 1903, ornement p 6.svg	https://upload.wikimedia.org/wikipedia/commons/f/f1/Riversdale_-_Vers_l%E2%80%99amour%2C_1903%2C_ornement_p_6.svg
+or-riversdale-vers-l-amour-1903-ornement-p-8-simple.svg	Public domain	Riversdale - Vers l’amour, 1903, ornement p 8 - simple.svg	https://upload.wikimedia.org/wikipedia/commons/b/b7/Riversdale_-_Vers_l%E2%80%99amour%2C_1903%2C_ornement_p_8_-_simple.svg
+or-riversdale-vers-l-amour-1903-ornement-p-8.svg	Public domain	Riversdale - Vers l’amour, 1903, ornement p 8.svg	https://upload.wikimedia.org/wikipedia/commons/0/0a/Riversdale_-_Vers_l%E2%80%99amour%2C_1903%2C_ornement_p_8.svg
+or-riversdale-vers-l-amour-1903-ornement-p-95.svg	Public domain	Riversdale - Vers l’amour, 1903, ornement p 95.svg	https://upload.wikimedia.org/wikipedia/commons/0/04/Riversdale_-_Vers_l%E2%80%99amour%2C_1903%2C_ornement_p_95.svg
+or-riversdale-vers-l-amour-1903-ornement-simple-p-5.svg	Public domain	Riversdale - Vers l’amour, 1903, ornement simple p 52.svg	https://upload.wikimedia.org/wikipedia/commons/2/23/Riversdale_-_Vers_l%E2%80%99amour%2C_1903%2C_ornement_simple_p_52.svg
+or-rollinat-ornament-vectorised-plain.svg	Public domain	Rollinat ornament vectorised plain.svg	https://upload.wikimedia.org/wikipedia/commons/f/fd/Rollinat_ornament_vectorised_plain.svg
+or-romain-rolland-al-la-forbucataj-popoloj-03.svg	Public domain	Romain Rolland - Al la forbuĉataj popoloj 03.svg	https://upload.wikimedia.org/wikipedia/commons/3/32/Romain_Rolland_-_Al_la_forbu%C4%89ataj_popoloj_03.svg
+or-rose-ornament-1905.svg	Public domain	Rose ornament, 1905.svg	https://upload.wikimedia.org/wikipedia/commons/5/5d/Rose_ornament%2C_1905.svg
+or-roycroft-frame-1905-02.svg	Public domain	Roycroft Frame (1905) 02.svg	https://upload.wikimedia.org/wikipedia/commons/a/ad/Roycroft_Frame_%281905%29_02.svg
+or-roycroft-frame-1905-05.svg	Public domain	Roycroft Frame (1905) 05.svg	https://upload.wikimedia.org/wikipedia/commons/9/90/Roycroft_Frame_%281905%29_05.svg
+or-roycroft-frame-1906-04.svg	Public domain	Roycroft Frame (1906) 04.svg	https://upload.wikimedia.org/wikipedia/commons/3/39/Roycroft_Frame_%281906%29_04.svg
+or-roycroft-message-to-garcia-knot-tailpiece.svg	Public domain	Roycroft “Message to Garcia” knot tailpiece.svg	https://upload.wikimedia.org/wikipedia/commons/5/50/Roycroft_%E2%80%9CMessage_to_Garcia%E2%80%9D_knot_tailpiece.svg
+or-roycroft-message-to-garcia-tailpiece-02.svg	Public domain	Roycroft “Message to Garcia” tailpiece 02.svg	https://upload.wikimedia.org/wikipedia/commons/9/97/Roycroft_%E2%80%9CMessage_to_Garcia%E2%80%9D_tailpiece_02.svg
+or-roycroft-message-to-garcia-tailpiece-03.svg	Public domain	Roycroft “Message to Garcia” tailpiece 03.svg	https://upload.wikimedia.org/wikipedia/commons/6/63/Roycroft_%E2%80%9CMessage_to_Garcia%E2%80%9D_tailpiece_03.svg
+or-roycroft-message-to-garcia-tailpiece-04.svg	Public domain	Roycroft “Message to Garcia” tailpiece 04.svg	https://upload.wikimedia.org/wikipedia/commons/e/eb/Roycroft_%E2%80%9CMessage_to_Garcia%E2%80%9D_tailpiece_04.svg
+or-roycroft-message-to-garcia-tailpiece-05.svg	Public domain	Roycroft “Message to Garcia” tailpiece 05.svg	https://upload.wikimedia.org/wikipedia/commons/4/43/Roycroft_%E2%80%9CMessage_to_Garcia%E2%80%9D_tailpiece_05.svg
+or-roycroft-rose-frame-two-colors-02.svg	Public domain	Roycroft rose frame, two colors, 02.svg	https://upload.wikimedia.org/wikipedia/commons/f/f8/Roycroft_rose_frame%2C_two_colors%2C_02.svg
+or-roycroft-rose-frame-two-colors.svg	Public domain	Roycroft rose frame, two colors.svg	https://upload.wikimedia.org/wikipedia/commons/9/9c/Roycroft_rose_frame%2C_two_colors.svg
+or-roycroft-rose-initial-two-colors-02.svg	Public domain	Roycroft rose initial, two colors, 02.svg	https://upload.wikimedia.org/wikipedia/commons/0/04/Roycroft_rose_initial%2C_two_colors%2C_02.svg
+or-roycroft-rose-initial-two-colors.svg	Public domain	Roycroft rose initial, two colors.svg	https://upload.wikimedia.org/wikipedia/commons/5/55/Roycroft_rose_initial%2C_two_colors.svg
+or-roycroft-squared-rose-frame.svg	Public domain	Roycroft squared rose frame.svg	https://upload.wikimedia.org/wikipedia/commons/7/7c/Roycroft_squared_rose_frame.svg
+or-roycroft-tailpiece-1909-black-version.svg	Public domain	Roycroft Tailpiece (1909), black version.svg	https://upload.wikimedia.org/wikipedia/commons/7/7a/Roycroft_Tailpiece_%281909%29%2C_black_version.svg
+or-roycroft-tailpiece-1909-green-version.svg	Public domain	Roycroft Tailpiece (1909), green version.svg	https://upload.wikimedia.org/wikipedia/commons/5/56/Roycroft_Tailpiece_%281909%29%2C_green_version.svg
+or-sarawak-gazette-1919-text-divider-type-1.svg	Public domain	Sarawak Gazette (1919) text divider type 1.svg	https://upload.wikimedia.org/wikipedia/commons/e/eb/Sarawak_Gazette_%281919%29_text_divider_type_1.svg
+or-sarawak-gazette-1919-text-divider-type-2.svg	Public domain	Sarawak Gazette (1919) text divider type 2.svg	https://upload.wikimedia.org/wikipedia/commons/c/c6/Sarawak_Gazette_%281919%29_text_divider_type_2.svg
+or-sarawak-gazette-1919-text-divider-type-3.svg	Public domain	Sarawak Gazette (1919) text divider type 3.svg	https://upload.wikimedia.org/wikipedia/commons/d/d5/Sarawak_Gazette_%281919%29_text_divider_type_3.svg
+or-sarawak-gazette-1919-text-divider-type-4.svg	Public domain	Sarawak Gazette (1919) text divider type 4.svg	https://upload.wikimedia.org/wikipedia/commons/a/a3/Sarawak_Gazette_%281919%29_text_divider_type_4.svg
+or-sarawak-gazette-1919-text-divider-type-5.svg	Public domain	Sarawak Gazette (1919) text divider type 5.svg	https://upload.wikimedia.org/wikipedia/commons/2/2b/Sarawak_Gazette_%281919%29_text_divider_type_5.svg
+or-scarab-ornament-niagara-paper-mills-1905.svg	Public domain	Scarab ornament, Niagara Paper Mills, 1905.svg	https://upload.wikimedia.org/wikipedia/commons/b/b2/Scarab_ornament%2C_Niagara_Paper_Mills%2C_1905.svg
+or-sciam-wavy-text-divider.svg	Public domain	SciAm Wavy Text Divider.svg	https://upload.wikimedia.org/wikipedia/commons/3/30/SciAm_Wavy_Text_Divider.svg
+or-scroll-ribbon.svg	CC0	Scroll-Ribbon.svg	https://upload.wikimedia.org/wikipedia/commons/a/af/Scroll-Ribbon.svg
+or-secessionistische-zeitung-floral-ornament-1899.svg	Public domain	Secessionistische Zeitung floral ornament, 1899.svg	https://upload.wikimedia.org/wikipedia/commons/a/af/Secessionistische_Zeitung_floral_ornament%2C_1899.svg
+or-sep4.svg	CC0	Sep4.svg	https://upload.wikimedia.org/wikipedia/commons/7/74/Sep4.svg
+or-separateur-croix-ideal.svg	CC0	Séparateur Croix idéal.svg	https://upload.wikimedia.org/wikipedia/commons/c/c7/S%C3%A9parateur_Croix_id%C3%A9al.svg
+or-separateur-vague.svg	CC0	Séparateur Vague.svg	https://upload.wikimedia.org/wikipedia/commons/2/2f/S%C3%A9parateur_Vague.svg
+or-separateurlesrecreationsdelacartomancie.svg	CC0	SéparateurLesRécréationsDeLaCartomancie.svg	https://upload.wikimedia.org/wikipedia/commons/7/74/S%C3%A9parateurLesR%C3%A9cr%C3%A9ationsDeLaCartomancie.svg
+or-separator-seroes-1901.svg	Public domain	Separator, Serões, 1901.svg	https://upload.wikimedia.org/wikipedia/commons/b/b3/Separator%2C_Ser%C3%B5es%2C_1901.svg
+or-separatore.svg	CC0	Separatore.svg	https://upload.wikimedia.org/wikipedia/commons/9/92/Separatore.svg
+or-shadowland-foliage-tailpiece.svg	Public domain	Shadowland foliage tailpiece.svg	https://upload.wikimedia.org/wikipedia/commons/e/e1/Shadowland_foliage_tailpiece.svg
+or-shadowland-spiderweb-tailpiece-by-ks.svg	Public domain	Shadowland spiderweb tailpiece by KS.svg	https://upload.wikimedia.org/wikipedia/commons/7/73/Shadowland_spiderweb_tailpiece_by_KS.svg
+or-ship-and-rainbow-headpiece.svg	Public domain	Ship and rainbow headpiece.svg	https://upload.wikimedia.org/wikipedia/commons/7/7e/Ship_and_rainbow_headpiece.svg
+or-sidono-1.svg	Public domain	Sidono-1.svg	https://upload.wikimedia.org/wikipedia/commons/c/c5/Sidono-1.svg
+or-sidono-2.svg	Public domain	Sidono-2.svg	https://upload.wikimedia.org/wikipedia/commons/9/9a/Sidono-2.svg
+or-simple-lotus-roundles-outline.svg	CC0	Simple lotus roundles outline.svg	https://upload.wikimedia.org/wikipedia/commons/f/ff/Simple_lotus_roundles_outline.svg
+or-sirjaev-forta-impreso-1914-page-7-crop.svg	Public domain	Ŝirjaev - Forta impreso, 1914 (page 7 crop).svg	https://upload.wikimedia.org/wikipedia/commons/9/9a/%C5%9Cirjaev_-_Forta_impreso%2C_1914_%28page_7_crop%29.svg
+or-small-roycroft-acorn-endpiece.svg	Public domain	Small Roycroft acorn endpiece.svg	https://upload.wikimedia.org/wikipedia/commons/a/a3/Small_Roycroft_acorn_endpiece.svg
+or-small-roycroft-floral-endpiece.svg	Public domain	Small Roycroft floral endpiece.svg	https://upload.wikimedia.org/wikipedia/commons/f/fa/Small_Roycroft_floral_endpiece.svg
+or-small-roycroft-foliage-endpiece.svg	Public domain	Small Roycroft foliage endpiece.svg	https://upload.wikimedia.org/wikipedia/commons/7/7b/Small_Roycroft_foliage_endpiece.svg
+or-staal-antichambres-et-salons-1890-ornement.svg	Public domain	Staal - Antichambres et salons, 1890 - ornement.svg	https://upload.wikimedia.org/wikipedia/commons/7/76/Staal_-_Antichambres_et_salons%2C_1890_-_ornement.svg
+or-stanis-aw-antoni-wotowski-tajemnice-masonerji-i-2.svg	Public domain	Stanisław Antoni Wotowski - Tajemnice masonerji i masonów shape 024b.svg	https://upload.wikimedia.org/wikipedia/commons/4/41/Stanis%C5%82aw_Antoni_Wotowski_-_Tajemnice_masonerji_i_mason%C3%B3w_shape_024b.svg
+or-stanis-aw-antoni-wotowski-tajemnice-masonerji-i.svg	Public domain	Stanisław Antoni Wotowski - Tajemnice masonerji i masonów shape 024a.svg	https://upload.wikimedia.org/wikipedia/commons/9/9f/Stanis%C5%82aw_Antoni_Wotowski_-_Tajemnice_masonerji_i_mason%C3%B3w_shape_024a.svg
+or-star-trail-fairy-tale.svg	Public domain	Star trail fairy tale.svg	https://upload.wikimedia.org/wikipedia/commons/1/12/Star_trail_fairy_tale.svg
+or-stella-zecca-di-scio.svg	Public domain	Stella zecca di Scio.svg	https://upload.wikimedia.org/wikipedia/commons/c/c2/Stella_zecca_di_Scio.svg
+or-svg-typographic-ornament-87.svg	CC0	SVG Typographic ornament-87.svg	https://upload.wikimedia.org/wikipedia/commons/e/e4/SVG_Typographic_ornament-87.svg
+or-tadeusz-micinski-nietota-ornament-207.svg	Public domain	Tadeusz Miciński - Nietota ornament 207.svg	https://upload.wikimedia.org/wikipedia/commons/b/be/Tadeusz_Mici%C5%84ski_-_Nietota_ornament_207.svg
+or-tadeusz-micinski-nietota-ornament-208.svg	Public domain	Tadeusz Miciński - Nietota ornament 208.svg	https://upload.wikimedia.org/wikipedia/commons/4/4b/Tadeusz_Mici%C5%84ski_-_Nietota_ornament_208.svg
+or-tadeusz-micinski-nietota-ornament-210a.svg	Public domain	Tadeusz Miciński - Nietota ornament 210a.svg	https://upload.wikimedia.org/wikipedia/commons/1/1f/Tadeusz_Mici%C5%84ski_-_Nietota_ornament_210a.svg
+or-tadeusz-micinski-nietota-ornament-210b.svg	Public domain	Tadeusz Miciński - Nietota ornament 210b.svg	https://upload.wikimedia.org/wikipedia/commons/3/39/Tadeusz_Mici%C5%84ski_-_Nietota_ornament_210b.svg
+or-tailpiece-by-peter-behrens-1902.svg	Public domain	Tailpiece by Peter Behrens, 1902.svg	https://upload.wikimedia.org/wikipedia/commons/b/bd/Tailpiece_by_Peter_Behrens%2C_1902.svg
+or-tailpiece-for-klein-s-liebermann-01-e-r-weiss.svg	Public domain	Tailpiece for Klein’s Liebermann 01 - E. R. Weiss.svg	https://upload.wikimedia.org/wikipedia/commons/f/f7/Tailpiece_for_Klein%E2%80%99s_Liebermann_01_-_E._R._Weiss.svg
+or-tailpiece-for-klein-s-liebermann-02-e-r-weiss.svg	Public domain	Tailpiece for Klein’s Liebermann 02 - E. R. Weiss.svg	https://upload.wikimedia.org/wikipedia/commons/3/3c/Tailpiece_for_Klein%E2%80%99s_Liebermann_02_-_E._R._Weiss.svg
+or-tailpiece-for-klein-s-liebermann-03-e-r-weiss.svg	Public domain	Tailpiece for Klein’s Liebermann 03 - E. R. Weiss.svg	https://upload.wikimedia.org/wikipedia/commons/f/f0/Tailpiece_for_Klein%E2%80%99s_Liebermann_03_-_E._R._Weiss.svg
+or-tailpiece-for-klein-s-liebermann-04-e-r-weiss.svg	Public domain	Tailpiece for Klein’s Liebermann 04 - E. R. Weiss.svg	https://upload.wikimedia.org/wikipedia/commons/5/54/Tailpiece_for_Klein%E2%80%99s_Liebermann_04_-_E._R._Weiss.svg
+or-tattoo-30588.svg	CC0	Tattoo-30588.svg	https://upload.wikimedia.org/wikipedia/commons/6/6c/Tattoo-30588.svg
+or-the-librarian-s-copyright-companion-chapter-divs.svg	Public domain	The librarian's copyright companion chapter divsor.svg	https://upload.wikimedia.org/wikipedia/commons/d/d1/The_librarian%27s_copyright_companion_chapter_divsor.svg
+or-the-star-page-end-fleuron.svg	Public domain	The Star page-end fleuron.svg	https://upload.wikimedia.org/wikipedia/commons/7/7b/The_Star_page-end_fleuron.svg
+or-the-wish-page-end-fleuron.svg	Public domain	The Wish page-end fleuron.svg	https://upload.wikimedia.org/wikipedia/commons/d/d0/The_Wish_page-end_fleuron.svg
+or-three-lines-ornament-black-down-left.svg	CC0	Three Lines Ornament Black Down Left.svg	https://upload.wikimedia.org/wikipedia/commons/2/2b/Three_Lines_Ornament_Black_Down_Left.svg
+or-three-lines-ornament-black-down-right.svg	CC0	Three Lines Ornament Black Down Right.svg	https://upload.wikimedia.org/wikipedia/commons/8/8f/Three_Lines_Ornament_Black_Down_Right.svg
+or-three-lines-ornament-black-up-left.svg	CC0	Three Lines Ornament Black Up Left.svg	https://upload.wikimedia.org/wikipedia/commons/b/b6/Three_Lines_Ornament_Black_Up_Left.svg
+or-three-lines-ornament-black-up-right.svg	CC0	Three Lines Ornament Black Up Right.svg	https://upload.wikimedia.org/wikipedia/commons/3/33/Three_Lines_Ornament_Black_Up_Right.svg
+or-tibetan-border-design-02.svg	CC0	Tibetan border design 02.svg	https://upload.wikimedia.org/wikipedia/commons/2/2d/Tibetan_border_design_02.svg
+or-title-page-frame-by-peter-behrens-1902.svg	Public domain	Title-page frame by Peter Behrens, 1902.svg	https://upload.wikimedia.org/wikipedia/commons/4/4c/Title-page_frame_by_Peter_Behrens%2C_1902.svg
+or-triskel-kilian-valkhof.svg	Public domain	triskel kilian valkhof .svg	https://openclipart.org (Open Clip Art Library 0.18, paket Debian openclipart-svg: decorations/triskel_kilian_valkhof_.svg)
+or-tugsc-ornament-green.svg	CC0	TugsC Ornament Green.svg	https://upload.wikimedia.org/wikipedia/commons/3/32/TugsC_Ornament_Green.svg
+or-twentieth-century-ornament-1-flame.svg	Public domain	Twentieth Century Ornament 1 (flame).svg	https://upload.wikimedia.org/wikipedia/commons/0/02/Twentieth_Century_Ornament_1_%28flame%29.svg
+or-twentieth-century-ornament-11-caryatid-with-scro.svg	Public domain	Twentieth Century Ornament 11 (Caryatid with scroll).svg	https://upload.wikimedia.org/wikipedia/commons/0/08/Twentieth_Century_Ornament_11_%28Caryatid_with_scroll%29.svg
+or-twentieth-century-ornament-21-lyre-with-laurels.svg	Public domain	Twentieth Century Ornament 21 (lyre with laurels).svg	https://upload.wikimedia.org/wikipedia/commons/2/24/Twentieth_Century_Ornament_21_%28lyre_with_laurels%29.svg
+or-twentieth-century-ornament-26-lion-facing-right.svg	Public domain	Twentieth Century Ornament 26 (lion facing right).svg	https://upload.wikimedia.org/wikipedia/commons/a/a7/Twentieth_Century_Ornament_26_%28lion_facing_right%29.svg
+or-twentieth-century-ornament-27-eagle-with-sphere.svg	Public domain	Twentieth Century Ornament 27 (eagle with sphere).svg	https://upload.wikimedia.org/wikipedia/commons/9/9f/Twentieth_Century_Ornament_27_%28eagle_with_sphere%29.svg
+or-twentieth-century-ornament-41-light-bulbs-and-fo.svg	Public domain	Twentieth Century Ornament 41 (light bulbs and foliage).svg	https://upload.wikimedia.org/wikipedia/commons/b/b0/Twentieth_Century_Ornament_41_%28light_bulbs_and_foliage%29.svg
+or-twentieth-century-ornament-45-lion-facing-left.svg	Public domain	Twentieth Century Ornament 45 (lion facing left).svg	https://upload.wikimedia.org/wikipedia/commons/b/b6/Twentieth_Century_Ornament_45_%28lion_facing_left%29.svg
+or-twentieth-century-ornament-78-endpiece-with-wing.svg	Public domain	Twentieth Century Ornament 78 (endpiece with winged wheel).svg	https://upload.wikimedia.org/wikipedia/commons/f/f7/Twentieth_Century_Ornament_78_%28endpiece_with_winged_wheel%29.svg
+or-twentieth-century-ornament-80-fasces-with-ribbon.svg	Public domain	Twentieth Century Ornament 80 (fasces with ribbons).svg	https://upload.wikimedia.org/wikipedia/commons/4/47/Twentieth_Century_Ornament_80_%28fasces_with_ribbons%29.svg
+or-twin-candlesticks-ornament.svg	Public domain	Twin candlesticks ornament.svg	https://upload.wikimedia.org/wikipedia/commons/1/1a/Twin_candlesticks_ornament.svg
+or-two-color-headpiece-by-paul-burck.svg	Public domain	Two-color headpiece by Paul Bürck.svg	https://upload.wikimedia.org/wikipedia/commons/5/5f/Two-color_headpiece_by_Paul_B%C3%BCrck.svg
+or-typographic-ornament-01.svg	Public domain	Typographic ornament 01.svg	https://upload.wikimedia.org/wikipedia/commons/0/04/Typographic_ornament_01.svg
+or-universo-1910-ornamo-renv.svg	Public domain	Universo 1910 ornamo renv.svg	https://upload.wikimedia.org/wikipedia/commons/5/5e/Universo_1910_ornamo_renv.svg
+or-universo-1910-ornamo.svg	Public domain	Universo 1910 ornamo.svg	https://upload.wikimedia.org/wikipedia/commons/5/5d/Universo_1910_ornamo.svg
+or-uvres-de-froissart-de-lettenhove-separateur-1.svg	CC0	Œuvres de Froissart (de Lettenhove) Séparateur 1.svg	https://upload.wikimedia.org/wikipedia/commons/6/6c/%C5%92uvres_de_Froissart_%28de_Lettenhove%29_S%C3%A9parateur_1.svg
+or-uvres-de-froissart-de-lettenhove-separateur-2.svg	CC0	Œuvres de Froissart (de Lettenhove) Séparateur 2.svg	https://upload.wikimedia.org/wikipedia/commons/9/9d/%C5%92uvres_de_Froissart_%28de_Lettenhove%29_S%C3%A9parateur_2.svg
+or-uvres-de-froissart-de-lettenhove-separateur-3.svg	CC0	Œuvres de Froissart (de Lettenhove) Séparateur 3.svg	https://upload.wikimedia.org/wikipedia/commons/1/1c/%C5%92uvres_de_Froissart_%28de_Lettenhove%29_S%C3%A9parateur_3.svg
+or-vertical-ornament-by-peter-behrens-1902.svg	Public domain	Vertical ornament by Peter Behrens, 1902.svg	https://upload.wikimedia.org/wikipedia/commons/6/68/Vertical_ornament_by_Peter_Behrens%2C_1902.svg
+or-vine-and-rod-separator-seroes-1901.svg	Public domain	Vine and rod separator, Serões, 1901.svg	https://upload.wikimedia.org/wikipedia/commons/3/3b/Vine_and_rod_separator%2C_Ser%C3%B5es%2C_1901.svg
+or-vine-leaf-ornament.svg	Public domain	Vine leaf ornament.svg	https://upload.wikimedia.org/wikipedia/commons/6/65/Vine_leaf_ornament.svg
+or-w-adys-aw-orkan-nad-urwiskiem-ornament-007.svg	Public domain	Władysław Orkan - Nad urwiskiem ornament 007.svg	https://upload.wikimedia.org/wikipedia/commons/c/c4/W%C5%82adys%C5%82aw_Orkan_-_Nad_urwiskiem_ornament_007.svg
+or-w-adys-aw-orkan-nad-urwiskiem-ornament-009.svg	Public domain	Władysław Orkan - Nad urwiskiem ornament 009.svg	https://upload.wikimedia.org/wikipedia/commons/6/67/W%C5%82adys%C5%82aw_Orkan_-_Nad_urwiskiem_ornament_009.svg
+or-w-adys-aw-orkan-nad-urwiskiem-ornament-035.svg	Public domain	Władysław Orkan - Nad urwiskiem ornament 035.svg	https://upload.wikimedia.org/wikipedia/commons/7/7f/W%C5%82adys%C5%82aw_Orkan_-_Nad_urwiskiem_ornament_035.svg
+or-w-adys-aw-orkan-nad-urwiskiem-ornament-057.svg	Public domain	Władysław Orkan - Nad urwiskiem ornament 057.svg	https://upload.wikimedia.org/wikipedia/commons/f/fa/W%C5%82adys%C5%82aw_Orkan_-_Nad_urwiskiem_ornament_057.svg
+or-w-adys-aw-orkan-nad-urwiskiem-ornament-093.svg	Public domain	Władysław Orkan - Nad urwiskiem ornament 093.svg	https://upload.wikimedia.org/wikipedia/commons/7/74/W%C5%82adys%C5%82aw_Orkan_-_Nad_urwiskiem_ornament_093.svg
+or-w-adys-aw-orkan-nad-urwiskiem-ornament-105.svg	Public domain	Władysław Orkan - Nad urwiskiem ornament 105.svg	https://upload.wikimedia.org/wikipedia/commons/5/5f/W%C5%82adys%C5%82aw_Orkan_-_Nad_urwiskiem_ornament_105.svg
+or-w-adys-aw-orkan-nad-urwiskiem-ornament-199.svg	Public domain	Władysław Orkan - Nad urwiskiem ornament 199.svg	https://upload.wikimedia.org/wikipedia/commons/7/7e/W%C5%82adys%C5%82aw_Orkan_-_Nad_urwiskiem_ornament_199.svg
+or-w-adys-aw-orkan-nad-urwiskiem-ornament-215.svg	Public domain	Władysław Orkan - Nad urwiskiem ornament 215.svg	https://upload.wikimedia.org/wikipedia/commons/6/6e/W%C5%82adys%C5%82aw_Orkan_-_Nad_urwiskiem_ornament_215.svg
+or-walery-eljasz-radzikowski-szkice-z-podrozy-w-tat-2.svg	Public domain	Walery Eljasz-Radzikowski - Szkice z podróży w Tatry ornament 056.svg	https://upload.wikimedia.org/wikipedia/commons/1/1c/Walery_Eljasz-Radzikowski_-_Szkice_z_podr%C3%B3%C5%BCy_w_Tatry_ornament_056.svg
+or-walery-eljasz-radzikowski-szkice-z-podrozy-w-tat.svg	Public domain	Walery Eljasz-Radzikowski - Szkice z podróży w Tatry ornament 009.svg	https://upload.wikimedia.org/wikipedia/commons/1/12/Walery_Eljasz-Radzikowski_-_Szkice_z_podr%C3%B3%C5%BCy_w_Tatry_ornament_009.svg
+or-yirmi-bes-sene-siper-kavgas-ayrac.svg	CC0	Yirmi beş sene siper kavgası ayraç.svg	https://upload.wikimedia.org/wikipedia/commons/5/5e/Yirmi_be%C5%9F_sene_siper_kavgas%C4%B1_ayra%C3%A7.svg

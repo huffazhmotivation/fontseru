@@ -4,7 +4,8 @@ import { useStore, getS } from '../store/store';
 import { usePopover, Kbd, MOD, SHIFT, Tip } from './primitives';
 import { saveVersion, importFilesViaPicker } from '../lib/library';
 import * as C from '../engine/commands';
-import { newProject, openProject, saveProject, openRecentProject } from '../lib/actions';
+import { newProject, openProject, saveProject, saveProjectAs, openRecentProject } from '../lib/actions';
+import { canLinkFiles, setAutoFile } from '../lib/filelink';
 import { listRecent, removeRecent, type RecentItem } from '../lib/persist';
 import { TopMenus } from './TopMenus';
 import { smartUndo, smartRedo } from '../tools/interaction';
@@ -175,18 +176,41 @@ export function TopBar() {
   );
 }
 
+/** tanggal & jam build (waktu lokal) di bawah menu logo: berubah tiap rilis, jadi mudah dicek apakah versi terbaru sudah terbuka */
+const BUILD_LABEL = (() => {
+  const d = new Date(__APP_BUILD__);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return isNaN(+d) ? '' : `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}.${p(d.getMinutes())}`;
+})();
+
 function SavedBadge({ savedAt, tablet }: { savedAt: number | null; tablet?: boolean }) {
   const [, tick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => tick((x) => x + 1), 30000);
     return () => clearInterval(t);
   }, []);
+  const fileLink = useStore((s) => s.fileLink);
+  const dirty = useStore((s) => s.fileDirty);
+  const auto = useStore((s) => s.fileAuto);
+  const cls = `shrink-0 items-center gap-1.5 text-xs text-faint ${tablet ? 'flex' : 'hidden md:flex'}`;
+  // proyek tertaut ke berkas: tampilkan status berkasnya (bukan hanya draf di browser)
+  if (fileLink) {
+    return (
+      <span
+        className={cls}
+        title={dirty ? `Ada perubahan yang belum ditulis ke "${fileLink}". Tekan ${MOD}S untuk menyimpan.` : `Berkas "${fileLink}" sudah yang terbaru${auto ? ' (ditulis otomatis tiap ada perubahan)' : ''}.`}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${dirty ? 'bg-warn' : 'bg-ok'}`} />
+        <span className="max-w-[160px] truncate">{dirty ? `Belum tersimpan · ${fileLink}` : `Tersimpan · ${fileLink}`}</span>
+      </span>
+    );
+  }
   if (!savedAt) return null;
   const sec = Math.round((Date.now() - savedAt) / 1000);
-  const label = sec < 45 ? 'Tersimpan' : sec < 3600 ? `Tersimpan · ${Math.round(sec / 60)} mnt` : 'Tersimpan';
+  const label = sec < 45 ? 'Draf tersimpan' : sec < 3600 ? `Draf tersimpan · ${Math.round(sec / 60)} mnt` : 'Draf tersimpan';
   return (
-    <span className={`shrink-0 items-center gap-1.5 text-xs text-faint ${tablet ? 'flex' : 'hidden md:flex'}`} title="Tersimpan otomatis di browser ini">
-      <span className="h-1.5 w-1.5 rounded-full bg-ok" />
+    <span className={cls} title={`Draf otomatis tersimpan di browser ini, belum ke file. Tekan ${MOD}S untuk menyimpan ke file .seru.`}>
+      <span className="h-1.5 w-1.5 rounded-full bg-warn" />
       {label}
     </span>
   );
@@ -247,6 +271,7 @@ function MainMenu() {
   );
   const head = (t: string) => <div className="px-2 pb-1 pt-2 text-2xs font-semibold uppercase tracking-[0.08em] text-faint">{t}</div>;
   const sel = useStore((s) => s.selection.length);
+  const fileAuto = useStore((s) => s.fileAuto);
   const tablet = useTablet((s) => s.tablet);
   const palm = useTablet((s) => s.palm);
   return (
@@ -274,7 +299,19 @@ function MainMenu() {
           />
           {head('Berkas')}
           {item('Impor file… (SVG, gambar, PDF)', importFilesViaPicker)}
-          {item('Simpan proyek (.seru)', saveProject, `${MOD}S`)}
+          {item(canLinkFiles() ? 'Simpan (timpa file)' : 'Unduh proyek (.seru)', () => void saveProject(), `${MOD}S`)}
+          {canLinkFiles() && item('Simpan sebagai…', () => void saveProjectAs(), `${MOD}${SHIFT}S`)}
+          {canLinkFiles() && (
+            <button
+              className="menu-item"
+              role="menuitemcheckbox"
+              aria-checked={fileAuto}
+              onClick={() => setAutoFile(!fileAuto)}
+            >
+              <span className="w-4 shrink-0 text-ok">{fileAuto ? '✓' : ''}</span>
+              <span className="flex-1 text-left">Simpan otomatis ke file</span>
+            </button>
+          )}
           {item('Cetak…', () => getS().set({ printOpen: true }), `${MOD}P`)}
           {item('Ekspor…', () => getS().set({ exportOpen: true }), `${MOD}${SHIFT}E`)}
           {item('Simpan versi', () => saveVersion())}
@@ -298,6 +335,9 @@ function MainMenu() {
           {head('Tablet')}
           {item(`Mode tablet: ${tablet ? 'aktif' : 'mati'}`, () => setTabletPref(!tablet))}
           {tablet && item(`Tolak telapak tangan: ${palm ? 'aktif' : 'mati'}`, () => setPalm(!palm))}
+          <div className="mx-2 mt-2 border-t border-line pt-2 text-2xs text-faint" title={`Build ${BUILD_LABEL}`}>
+            DesignSeru v{__APP_VERSION__} · {BUILD_LABEL}
+          </div>
         </div>
       )}
     </div>
@@ -375,7 +415,7 @@ function ShareMenu() {
             className="btn-ink mt-3 w-full justify-center"
             onClick={() => {
               setOpen(false);
-              saveProject();
+              void saveProject();
             }}
           >
             Simpan file .seru

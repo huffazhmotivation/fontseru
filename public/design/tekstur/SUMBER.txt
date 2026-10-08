@@ -1,0 +1,58 @@
+Tekstur & Batik DesignSeru — semua file CC0 / domain publik / tanpa batasan (bebas dipakai, diubah & dijual tanpa atribusi).
+id	lisensi	judul asli	sumber
+bt-ceplok-1.webp	Public domain	Collectie NMvWereldculturen, RV-847-106, Batikpatroon, 'Selobog', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/c/c1/Collectie_NMvWereldculturen%2C_RV-847-106%2C_Batikpatroon%2C_%27Selobog%27%2C_voor_1891.jpg
+bt-ceplok-10.webp	Public domain	Collectie NMvWereldculturen, RV-847-50, Batikpatroon, 'Puspa kerna', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/c/c8/Collectie_NMvWereldculturen%2C_RV-847-50%2C_Batikpatroon%2C_%27Puspa_kerna%27%2C_voor_1891.jpg
+bt-ceplok-11.webp	Public domain	Collectie NMvWereldculturen, RV-847-49, Batikpatroon, 'Salak ing tegal', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/b/b6/Collectie_NMvWereldculturen%2C_RV-847-49%2C_Batikpatroon%2C_%27Salak_ing_tegal%27%2C_voor_1891.jpg
+bt-ceplok-12.webp	Public domain	Collectie NMvWereldculturen, RV-847-102, Batikpatroon, 'Belah ketupat', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/4/45/Collectie_NMvWereldculturen%2C_RV-847-102%2C_Batikpatroon%2C_%27Belah_ketupat%27%2C_voor_1891.jpg
+bt-ceplok-2.webp	Public domain	Collectie NMvWereldculturen, RV-847-28, Batikpatroon, 'Ganggong sapit', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/3/3f/Collectie_NMvWereldculturen%2C_RV-847-28%2C_Batikpatroon%2C_%27Ganggong_sapit%27%2C_voor_1891.jpg
+bt-ceplok-3.webp	Public domain	Collectie NMvWereldculturen, RV-847-42, Batikpatroon, 'Lung adas', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/4/4e/Collectie_NMvWereldculturen%2C_RV-847-42%2C_Batikpatroon%2C_%27Lung_adas%27%2C_voor_1891.jpg
+bt-ceplok-4.webp	Public domain	Collectie NMvWereldculturen, RV-847-11, Batikpatroon, 'Jamblang', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/2/2b/Collectie_NMvWereldculturen%2C_RV-847-11%2C_Batikpatroon%2C_%27Jamblang%27%2C_voor_1891.jpg
+bt-ceplok-5.webp	Public domain	Collectie NMvWereldculturen, RV-847-82, Batikpatroon, 'Parang rusak klitik', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/3/3f/Collectie_NMvWereldculturen%2C_RV-847-82%2C_Batikpatroon%2C_%27Parang_rusak_klitik%27%2C_voor_1891.jpg
+bt-ceplok-6.webp	Public domain	Collectie NMvWereldculturen, RV-847-9, Batikpatroon, 'Semen rama', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/8/8b/Collectie_NMvWereldculturen%2C_RV-847-9%2C_Batikpatroon%2C_%27Semen_rama%27%2C_voor_1891.jpg
+bt-ceplok-7.webp	Public domain	Collectie NMvWereldculturen, RV-847-31, Batikpatroon, 'Semen sinom sawat garuda', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/6/68/Collectie_NMvWereldculturen%2C_RV-847-31%2C_Batikpatroon%2C_%27Semen_sinom_sawat_garuda%27%2C_voor_1891.jpg
+bt-ceplok-8.webp	Public domain	Collectie NMvWereldculturen, RV-847-97, Batikpatroon, 'Stofstaal met Peksi kurung patroon', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/c/cd/Collectie_NMvWereldculturen%2C_RV-847-97%2C_Batikpatroon%2C_%27Stofstaal_met_Peksi_kurung_patroon%27%2C_voor_1891.jpg
+bt-ceplok-9.webp	Public domain	Collectie NMvWereldculturen, RV-847-84, Batikpatroon, 'Kawung kemplang', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/7/7a/Collectie_NMvWereldculturen%2C_RV-847-84%2C_Batikpatroon%2C_%27Kawung_kemplang%27%2C_voor_1891.jpg
+bt-fauna-1.webp	Public domain	Collectie NMvWereldculturen, RV-847-101, Batikpatroon, 'Alas-alasan', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/d/d3/Collectie_NMvWereldculturen%2C_RV-847-101%2C_Batikpatroon%2C_%27Alas-alasan%27%2C_voor_1891.jpg
+bt-fauna-2.webp	Public domain	Collectie NMvWereldculturen, RV-847-100, Batikpatroon, 'Alas-alasan', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/4/49/Collectie_NMvWereldculturen%2C_RV-847-100%2C_Batikpatroon%2C_%27Alas-alasan%27%2C_voor_1891.jpg
+bt-flora-1.webp	Public domain	Collectie NMvWereldculturen, RV-847-15, Batikpatroon, 'Teluki cendol', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/4/49/Collectie_NMvWereldculturen%2C_RV-847-15%2C_Batikpatroon%2C_%27Teluki_cendol%27%2C_voor_1891.jpg
+bt-flora-10.webp	Public domain	Collectie NMvWereldculturen, RV-847-64, Batikpatroon, 'Terang wulan', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/2/22/Collectie_NMvWereldculturen%2C_RV-847-64%2C_Batikpatroon%2C_%27Terang_wulan%27%2C_voor_1891.jpg
+bt-flora-2.webp	Public domain	Collectie NMvWereldculturen, RV-847-71, Batikpatroon, 'Peksi kepet', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/6/60/Collectie_NMvWereldculturen%2C_RV-847-71%2C_Batikpatroon%2C_%27Peksi_kepet%27%2C_voor_1891.jpg
+bt-flora-3.webp	Public domain	Collectie NMvWereldculturen, RV-847-99, Batikpatroon, 'Peksi barlin', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/3/39/Collectie_NMvWereldculturen%2C_RV-847-99%2C_Batikpatroon%2C_%27Peksi_barlin%27%2C_voor_1891.jpg
+bt-flora-4.webp	Public domain	Collectie NMvWereldculturen, RV-847-4, Batikpatroon, 'Rujak sente', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/6/6e/Collectie_NMvWereldculturen%2C_RV-847-4%2C_Batikpatroon%2C_%27Rujak_sente%27%2C_voor_1891.jpg
+bt-flora-5.webp	Public domain	Collectie NMvWereldculturen, RV-847-108, Batikpatroon, 'Ripi kuning', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/3/33/Collectie_NMvWereldculturen%2C_RV-847-108%2C_Batikpatroon%2C_%27Ripi_kuning%27%2C_voor_1891.jpg
+bt-flora-6.webp	Public domain	Collectie NMvWereldculturen, RV-847-37, Batikpatroon, 'Semen cilik', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/4/4b/Collectie_NMvWereldculturen%2C_RV-847-37%2C_Batikpatroon%2C_%27Semen_cilik%27%2C_voor_1891.jpg
+bt-flora-7.webp	Public domain	Collectie NMvWereldculturen, RV-847-76, Batikpatroon, 'Kawung kemplung', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/3/32/Collectie_NMvWereldculturen%2C_RV-847-76%2C_Batikpatroon%2C_%27Kawung_kemplung%27%2C_voor_1891.jpg
+bt-flora-8.webp	Public domain	Collectie NMvWereldculturen, RV-847-109, Batikpatroon, 'Kembang jeruk', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/3/35/Collectie_NMvWereldculturen%2C_RV-847-109%2C_Batikpatroon%2C_%27Kembang_jeruk%27%2C_voor_1891.jpg
+bt-flora-9.webp	Public domain	Collectie NMvWereldculturen, RV-847-22, Batikpatroon, 'Terang wulan', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/b/b7/Collectie_NMvWereldculturen%2C_RV-847-22%2C_Batikpatroon%2C_%27Terang_wulan%27%2C_voor_1891.jpg
+bt-kawung-1.webp	Public domain	Collectie NMvWereldculturen, RV-847-24, Batikpatroon, 'Gondasuli', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/7/7c/Collectie_NMvWereldculturen%2C_RV-847-24%2C_Batikpatroon%2C_%27Gondasuli%27%2C_voor_1891.jpg
+bt-kawung-2.webp	Public domain	Collectie NMvWereldculturen, RV-847-85, Batikpatroon, 'Kawung picis', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/b/bd/Collectie_NMvWereldculturen%2C_RV-847-85%2C_Batikpatroon%2C_%27Kawung_picis%27%2C_voor_1891.jpg
+bt-kawung-3.webp	Public domain	Collectie NMvWereldculturen, RV-847-18, Batikpatroon, 'Trenggiling mentik', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/b/b8/Collectie_NMvWereldculturen%2C_RV-847-18%2C_Batikpatroon%2C_%27Trenggiling_mentik%27%2C_voor_1891.jpg
+bt-parang-1.webp	Public domain	Collectie NMvWereldculturen, RV-847-5, Batikpatroon, 'Teluki', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/a/a2/Collectie_NMvWereldculturen%2C_RV-847-5%2C_Batikpatroon%2C_%27Teluki%27%2C_voor_1891.jpg
+bt-parang-2.webp	Public domain	Collectie NMvWereldculturen, RV-847-21, Batikpatroon, 'Grenjilin', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/d/d8/Collectie_NMvWereldculturen%2C_RV-847-21%2C_Batikpatroon%2C_%27Grenjilin%27%2C_voor_1891.jpg
+bt-parang-3.webp	Public domain	Collectie NMvWereldculturen, RV-847-94, Batikpatroon, 'Semen candra', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/3/32/Collectie_NMvWereldculturen%2C_RV-847-94%2C_Batikpatroon%2C_%27Semen_candra%27%2C_voor_1891.jpg
+bt-parang-4.webp	Public domain	Collectie NMvWereldculturen, RV-847-53, Batikpatroon, 'Semen jalengut', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/0/06/Collectie_NMvWereldculturen%2C_RV-847-53%2C_Batikpatroon%2C_%27Semen_jalengut%27%2C_voor_1891.jpg
+bt-parang-5.webp	Public domain	Collectie NMvWereldculturen, RV-847-17, Batikpatroon, 'Campur bawur', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/5/5a/Collectie_NMvWereldculturen%2C_RV-847-17%2C_Batikpatroon%2C_%27Campur_bawur%27%2C_voor_1891.jpg
+bt-parang-6.webp	Public domain	Collectie NMvWereldculturen, RV-847-57, Batikpatroon, 'Limaran', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/d/dc/Collectie_NMvWereldculturen%2C_RV-847-57%2C_Batikpatroon%2C_%27Limaran%27%2C_voor_1891.jpg
+bt-parang-7.webp	Public domain	Collectie NMvWereldculturen, RV-847-118, Batikpatroon, 'Sembagen huk', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/6/6e/Collectie_NMvWereldculturen%2C_RV-847-118%2C_Batikpatroon%2C_%27Sembagen_huk%27%2C_voor_1891.jpg
+bt-parang-8.webp	Public domain	Collectie NMvWereldculturen, RV-847-48, Batikpatroon, 'Ceplok liring', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/5/5b/Collectie_NMvWereldculturen%2C_RV-847-48%2C_Batikpatroon%2C_%27Ceplok_liring%27%2C_voor_1891.jpg
+bt-parang-9.webp	Public domain	Collectie NMvWereldculturen, RV-847-67, Batikpatroon, 'Endol-endol', voor 1891.jpg	https://upload.wikimedia.org/wikipedia/commons/c/c2/Collectie_NMvWereldculturen%2C_RV-847-67%2C_Batikpatroon%2C_%27Endol-endol%27%2C_voor_1891.jpg
+tx-cardboard002.webp	CC0	Cardboard002	https://ambientcg.com/view?id=Cardboard002
+tx-carpet016.webp	CC0	Carpet016	https://ambientcg.com/view?id=Carpet016
+tx-concrete034.webp	CC0	Concrete034	https://ambientcg.com/view?id=Concrete034
+tx-concrete046.webp	CC0	Concrete046	https://ambientcg.com/view?id=Concrete046
+tx-corrugatedsteel007a.webp	CC0	CorrugatedSteel007A	https://ambientcg.com/view?id=CorrugatedSteel007A
+tx-fabric061.webp	CC0	Fabric061	https://ambientcg.com/view?id=Fabric061
+tx-fabric081c.webp	CC0	Fabric081C	https://ambientcg.com/view?id=Fabric081C
+tx-leather037.webp	CC0	Leather037	https://ambientcg.com/view?id=Leather037
+tx-marble012.webp	CC0	Marble012	https://ambientcg.com/view?id=Marble012
+tx-marble016.webp	CC0	Marble016	https://ambientcg.com/view?id=Marble016
+tx-metal063.webp	CC0	Metal063	https://ambientcg.com/view?id=Metal063
+tx-onyx015.webp	CC0	Onyx015	https://ambientcg.com/view?id=Onyx015
+tx-paintedplaster017.webp	CC0	PaintedPlaster017	https://ambientcg.com/view?id=PaintedPlaster017
+tx-paper003.webp	CC0	Paper003	https://ambientcg.com/view?id=Paper003
+tx-paper005.webp	CC0	Paper005	https://ambientcg.com/view?id=Paper005
+tx-paper006.webp	CC0	Paper006	https://ambientcg.com/view?id=Paper006
+tx-plaster001.webp	CC0	Plaster001	https://ambientcg.com/view?id=Plaster001
+tx-travertine009.webp	CC0	Travertine009	https://ambientcg.com/view?id=Travertine009
+tx-wood094.webp	CC0	Wood094	https://ambientcg.com/view?id=Wood094
+tx-wood096.webp	CC0	Wood096	https://ambientcg.com/view?id=Wood096

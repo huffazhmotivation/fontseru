@@ -77,6 +77,7 @@ export function TabletModifiers() {
 
   return (
     <div
+      data-hud
       className="ink-bar ds-pad pointer-events-auto absolute z-20 grid grid-cols-3 gap-0.5 p-[3px]"
       style={{ left: rulers ? 30 : 10, bottom, touchAction: 'none', WebkitTouchCallout: 'none' }}
       role="toolbar"
