@@ -1,5 +1,5 @@
 import { getS, useStore } from '../store/store';
-import type { Doc, SceneNode, TextNode, ImageAsset } from '../model/types';
+import type { Doc, Fill, SceneNode, TextNode, ImageAsset } from '../model/types';
 import { runBoolean, canBoolean, separateCompound, BOOL_LABEL, type BoolOp } from './boolean';
 import { toast, setJob } from '../ui/toast';
 import { instancesOf, detachInstanceIn, makeMask, releaseMask, makeComponent, placeSvgText } from '../lib/place';
@@ -754,6 +754,19 @@ const normRot = (r: number) => {
   return Math.round(v * 100) / 100;
 };
 
+/** cerminkan titik awal/akhir gradasi (koordinat 0..1 terhadap kotak objek) pada sumbu lokal */
+function mirrorFill<F extends Fill | undefined>(f: F, axis: 'h' | 'v'): F {
+  if (!f || f.type === 'solid' || !f.stops?.length) return f;
+  const m = (p: { x: number; y: number }) => (axis === 'h' ? { x: 1 - p.x, y: p.y } : { x: p.x, y: 1 - p.y });
+  return { ...f, from: m(f.from), to: m(f.to) };
+}
+function mirrorGradients(n: SceneNode, axis: 'h' | 'v'): SceneNode {
+  let out = n as SceneNode;
+  if (out.fill) out = { ...out, fill: mirrorFill(out.fill, axis) } as SceneNode;
+  if (out.stroke?.gradient) out = { ...out, stroke: { ...out.stroke, gradient: mirrorFill(out.stroke.gradient, axis) } } as SceneNode;
+  return out;
+}
+
 /**
  * Balik (cermin) seleksi sebagai satu kesatuan, seperti Affinity:
  * posisi dicerminkan terhadap pusat seleksi, geometri tiap objek dicerminkan,
@@ -809,6 +822,10 @@ export function flip(axis: 'h' | 'v') {
         // teks, elips, instance: posisi & rotasi dicerminkan (isi tetap terbaca)
         out = { ...out, rotation: rot } as SceneNode;
       }
+      // gradasi (isi & garis tepi) ikut tercermin pada sumbu lokal yang sama dengan isi objek
+      // (bentuk simetris yang hanya diputar 180° — poligon/bintang — selalu tercermin pada sumbu x lokalnya)
+      const ax: 'h' | 'v' = (n.type === 'polygon' || n.type === 'star') ? 'h' : axis;
+      out = mirrorGradients(out, ax);
       d.nodes[id] = out;
     }
     // kerangka grup ikut tercermin: sudutnya dibalik
