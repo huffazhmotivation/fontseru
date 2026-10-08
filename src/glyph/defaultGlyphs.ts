@@ -101,7 +101,43 @@ export const GLYPH_GROUPS: GlyphGroup[] = [
  * search-query filter, so Prev/Next glyph navigation always agrees with
  * what's shown in the glyph list.
  */
+// Ordering depends only on the key set + each glyph's category/unicode, which
+// almost never change during editing. Every stroke commit produces a new map
+// though, so cache by identity and, failing that, reuse the previous order
+// when an O(n) check shows nothing order-relevant changed (avoids re-sorting
+// thousands of keys several times per commit).
+const orderByMap = new WeakMap<GlyphMap, string[]>();
+let lastOrderMap: GlyphMap | null = null;
+let lastOrder: string[] = [];
+
+function sameOrderInputs(prev: GlyphMap, next: GlyphMap, prevCount: number): boolean {
+  let count = 0;
+  for (const ch in next) {
+    count++;
+    const a = prev[ch];
+    const b = next[ch];
+    if (!a) return false;
+    if (a !== b && (a.category !== b.category || a.unicode !== b.unicode)) return false;
+  }
+  return count === prevCount;
+}
+
 export function getOrderedChars(glyphs: GlyphMap): string[] {
+  const hit = orderByMap.get(glyphs);
+  if (hit) return hit;
+  if (lastOrderMap && sameOrderInputs(lastOrderMap, glyphs, lastOrder.length)) {
+    orderByMap.set(glyphs, lastOrder);
+    lastOrderMap = glyphs;
+    return lastOrder;
+  }
+  const ordered = computeOrderedChars(glyphs);
+  orderByMap.set(glyphs, ordered);
+  lastOrderMap = glyphs;
+  lastOrder = ordered;
+  return ordered;
+}
+
+function computeOrderedChars(glyphs: GlyphMap): string[] {
   const baseChars = new Set(GLYPH_GROUPS.flatMap((g) => g.chars));
   const extrasByCategory = new Map<string, string[]>();
   for (const [ch, glyph] of Object.entries(glyphs)) {

@@ -8,7 +8,7 @@ import type { BrushSettings, BrushType } from "@/types/brush";
 import { buildDefaultGlyphs, ensureSpaceGlyph, ensureDefaultGlyphSlots } from "./defaultGlyphs";
 import { DRAW_CHAR, emptyDrawGlyph, makeDrawGlyph, withoutDrawGlyph } from "./drawMode";
 import { GRID_SIZE_MAX, GRID_SIZE_MIN, normalizeGridShape, type GridShape } from "@/editor/gridGeometry";
-import { cloneGlyphMap, familyFromRegular, newCustomFamilyGlyphs } from "./family";
+import { cloneGlyphMap, emptyStyleGlyphsFrom, familyFromRegular, newCustomFamilyGlyphs } from "./family";
 import { generateBoldFromRegular, generateItalicFromRegular, generateCustomFromRegular, type FamilyGenerationResult } from "./autoGenerate";
 import { DEFAULT_METRICS, defaultFontInfo, type ExportInfoDraft, type FontInfo, type FontMetrics } from "@/types/font";
 import { BRUSH_PRESETS } from "@/brushes/presets";
@@ -557,6 +557,10 @@ interface AppState {
   setAutoSpacingEnabled: (enabled: boolean) => void;
   commitOutline: (char: string, outline: GlyphOutline, opts?: { skipAutoSpacing?: boolean }) => void;
   setLiveOutline: (outline: GlyphOutline | null) => void;
+  /** Bracket a continuous edit (slider drag, held arrow key, numeric typing):
+   *  every glyph commit until endGlyphEdit() collapses into ONE undo step. */
+  beginGlyphEdit: () => void;
+  endGlyphEdit: () => void;
   updateSelectedObject: (patch: Partial<Omit<VectorObject, "brushSettings">> & { brushSettings?: Partial<BrushSettings> }) => void;
 
   // multi-glyph selection (GlyphNav) — synced live into the Brush panel:
@@ -799,6 +803,8 @@ export const useAppStore = create<AppState>()((set, get) => {
   // `commitFontNameEdit` (called on blur) flushes a single entry instead.
   let fontNameEditSnapshot: string | null = null;
   let metricDragSnapshot: FontMetrics | null = null;
+  let glyphEditBracket: { pushed: boolean; style: FontStyle } | null = null;
+  let pendingAllGlyphMetric: Partial<Pick<Glyph, GlyphMetricKey>> | null = null;
   let wordSpacingEditSnapshot: {
     metrics: FontMetrics;
     wordSpacingOverridesByStyle: WordSpacingOverridesByStyle;
@@ -858,8 +864,18 @@ export const useAppStore = create<AppState>()((set, get) => {
     }
     return touched ? next : null;
   }
-  function commit(nextGlyphs: GlyphMap) {
+  function commit(nextGlyphs: GlyphMap, extra?: Partial<AppState>) {
     const { glyphs, glyphsByStyle, fontStyle, metrics, past, kerningPairs, kerningManual } = get();
+    // Inside a bracketed edit (slider drag, held arrow key, numeric field
+    // typing) only the first change pushes an undo step; the rest update in place.
+    if (glyphEditBracket) {
+      if (glyphEditBracket.pushed && glyphEditBracket.style === fontStyle) {
+        set({ ...extra, glyphs: nextGlyphs, glyphsByStyle: { ...glyphsByStyle, [fontStyle]: nextGlyphs }, future: [] });
+        return;
+      }
+      glyphEditBracket.pushed = true;
+      glyphEditBracket.style = fontStyle;
+    }
     // Efficiently append to history without creating intermediate arrays:
     // directly build the final capped array to avoid [spread].slice() cost.
     const nextPast = past.length >= HISTORY_LIMIT
@@ -867,6 +883,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         : [...past, { glyphs, metrics, kerningPairs, kerningManual }])
       : [...past, { glyphs, metrics, kerningPairs, kerningManual }];
     set({
+      ...extra,
       glyphs: nextGlyphs,
       glyphsByStyle: { ...glyphsByStyle, [fontStyle]: nextGlyphs },
       past: nextPast,
@@ -913,6 +930,52 @@ export const useAppStore = create<AppState>()((set, get) => {
       future: [],
     } as Partial<AppState>);
   }
+
+  /**
+   * Long async passes (auto-space / auto-kern on thousands of glyphs) yield to
+   * the UI for seconds. Applying their result wholesale would discard edits
+   * the user made meanwhile, and `commit()` would write into whichever style
+   * is active *now*. These merge a result computed from `base` onto the
+   * current state, keeping anything that changed since the pass started.
+   */
+  function commitGlyphPassResult(style: FontStyle, base: GlyphMap, result: GlyphMap) {
+    const cur = get().glyphsByStyle[style];
+    if (!cur) return;
+    let changed = false;
+    const merged: GlyphMap = { ...cur };
+    for (const ch in result) {
+      if (result[ch] === base[ch] || cur[ch] !== base[ch]) continue;
+      merged[ch] = result[ch];
+      changed = true;
+    }
+    if (!changed) return;
+    if (get().fontStyle === style) commit(merged);
+    else commitStyleGlyphs(style, merged);
+  }
+  function commitKerningPassResult(
+    basePairs: KerningPairs,
+    baseManual: KerningManualFlags,
+    result: { pairs: KerningPairs; manual: KerningManualFlags }
+  ) {
+    const { kerningPairs, kerningManual } = get();
+    if (kerningPairs === basePairs && kerningManual === baseManual) {
+      commitKerning(result.pairs, result.manual);
+      return;
+    }
+    const pairs: KerningPairs = { ...kerningPairs };
+    const manual: KerningManualFlags = { ...kerningManual };
+    const keys = new Set([...Object.keys(result.pairs), ...Object.keys(basePairs)]);
+    for (const key of keys) {
+      // the user touched this pair while the pass ran → keep their value
+      if (kerningPairs[key] !== basePairs[key] || kerningManual[key] !== baseManual[key]) continue;
+      if (key in result.pairs) pairs[key] = result.pairs[key];
+      else delete pairs[key];
+      if (key in result.manual) manual[key] = result.manual[key];
+      else delete manual[key];
+    }
+    commitKerning(pairs, manual);
+  }
+  let autoSpaceRunId = 0;
 
   /** Same history stack as `commit`, for edits that touch kerning instead of glyph geometry. */
   function commitKerning(nextPairs: KerningPairs, nextManual: KerningManualFlags) {
@@ -1069,8 +1132,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     if (!liveOutline) return;
     const glyph = glyphs[activeChar];
     if (!glyph) return set({ liveOutline: null });
-    commit({ ...glyphs, [activeChar]: { ...glyph, outline: liveOutline } });
-    set({ liveOutline: null });
+    commit({ ...glyphs, [activeChar]: { ...glyph, outline: liveOutline } }, { liveOutline: null });
   }
 
   function activeGlyph(): Glyph | undefined {
@@ -1921,7 +1983,16 @@ export const useAppStore = create<AppState>()((set, get) => {
       // immediately overwritten the next time ANY glyph's outline commits.
       // (Advance-width-only drags don't move ink margins, so they don't
       // touch the switch.)
-      const nextGlyphs = applyGlyphMetricToMap(glyphs, char, { [key]: value }, scope ?? glyphMetricScope);
+      const effectiveScope = scope ?? glyphMetricScope;
+      // Scope "all" during a drag: rebuilding every glyph (thousands) on each
+      // pointer frame stalled the UI. Preview on the dragged glyph only and
+      // apply font-wide once when the drag ends (endGlyphMetricDrag).
+      let liveScope = effectiveScope;
+      if (effectiveScope === "all" && glyphMetricDragSnapshot) {
+        pendingAllGlyphMetric = { ...(pendingAllGlyphMetric ?? {}), [key]: value };
+        liveScope = "current";
+      }
+      const nextGlyphs = applyGlyphMetricToMap(glyphs, char, { [key]: value }, liveScope);
       set({
         glyphs: nextGlyphs,
         glyphsByStyle: { ...glyphsByStyle, [fontStyle]: nextGlyphs },
@@ -1942,6 +2013,13 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (!glyphMetricDragSnapshot) return;
       const before = glyphMetricDragSnapshot;
       glyphMetricDragSnapshot = null;
+      if (pendingAllGlyphMetric) {
+        const patch = pendingAllGlyphMetric;
+        pendingAllGlyphMetric = null;
+        const st = get();
+        const all = applyGlyphMetricToMap(st.glyphs, st.activeChar, patch, "all");
+        set({ glyphs: all, glyphsByStyle: { ...st.glyphsByStyle, [st.fontStyle]: all } });
+      }
       const { glyphs, metrics, past, kerningPairs, kerningManual } = get();
       if (before === glyphs) return;
       const snapshot = { glyphs: before, metrics, kerningPairs, kerningManual };
@@ -1996,11 +2074,17 @@ export const useAppStore = create<AppState>()((set, get) => {
         if (suggestion) nextGlyph = applyOpticalSidebearings(nextGlyph, suggestion);
       }
       const nextGlyphs = { ...glyphs, [char]: nextGlyph };
-      commit(nextGlyphs);
-      set({ liveOutline: null });
+      commit(nextGlyphs, { liveOutline: null });
     },
 
     setLiveOutline: (outline) => set({ liveOutline: outline }),
+
+    beginGlyphEdit: () => {
+      if (!glyphEditBracket) glyphEditBracket = { pushed: false, style: get().fontStyle };
+    },
+    endGlyphEdit: () => {
+      glyphEditBracket = null;
+    },
 
     updateSelectedObject: (patch) => {
       const { glyphs, activeChar, selectedObjectIds } = get();
@@ -2395,6 +2479,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     setDrawingContourId: (id) => set({ drawingContourId: id }),
 
     undo: () => {
+      glyphEditBracket = null;
       // Pen, Shape and Node editing keep their latest geometry in
       // `liveOutline` until the gesture/tool is finalized. Undo must finalize
       // that pending edit itself; otherwise the first undo appears to do
@@ -2455,6 +2540,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       });
     },
     redo: () => {
+      glyphEditBracket = null;
       // Keep redo consistent if a user presses it while a live gesture is
       // still present. Finalizing first makes the history stack represent
       // the visible canvas rather than a stale pre-gesture snapshot.
@@ -2515,8 +2601,15 @@ export const useAppStore = create<AppState>()((set, get) => {
       if (get().editorMode === "draw") get().setEditorMode("single");
       set((s) => {
         const incomingRegular = patch.glyphsByStyle?.regular ?? patch.glyphs;
-        const fallbackFamily = incomingRegular ? familyFromRegular(incomingRegular) : s.glyphsByStyle;
         const explicitStyles = patch.glyphsByStyle ?? {};
+        // Only synthesize empty Bold/Italic when the incoming project lacks them.
+        const fallbackFamily: GlyphFamily = incomingRegular
+          ? {
+              regular: incomingRegular,
+              bold: explicitStyles.bold ?? emptyStyleGlyphsFrom(incomingRegular),
+              italic: explicitStyles.italic ?? emptyStyleGlyphsFrom(incomingRegular),
+            }
+          : s.glyphsByStyle;
         // Spread explicitStyles last so any custom-family keys it carries
         // (ids beyond regular/bold/italic) come through untouched, exactly
         // like the three built-ins already did.
@@ -2634,12 +2727,12 @@ export const useAppStore = create<AppState>()((set, get) => {
     autoKernAllPairs: async (onProgress) => {
       const { glyphs, metrics, kerningPairs, kerningManual } = get();
       const result = await autoKernAllAvailablePairs(glyphs, metrics, kerningPairs, kerningManual, undefined, onProgress);
-      commitKerning(result.pairs, result.manual);
+      commitKerningPassResult(kerningPairs, kerningManual, result);
       set({ autoKernLastRun: { processed: result.processed, updated: result.updated, preservedManual: result.preservedManual } });
     },
 
     resetAllKerningToAuto: async (onProgress) => {
-      const { glyphs, metrics, kerningPairs } = get();
+      const { glyphs, metrics, kerningPairs, kerningManual: manualAtStart } = get();
       // Same call as autoKernAllPairs, but with an EMPTY manual-flags map
       // instead of the real one: autoKernAllAvailablePairs only ever skips
       // a pair when it's flagged manual (see its own doc comment), so
@@ -2648,7 +2741,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       // in one pass, instead of clearing each pair's manual flag one
       // letter at a time via the per-pair Reset button first.
       const result = await autoKernAllAvailablePairs(glyphs, metrics, kerningPairs, {}, undefined, onProgress);
-      commitKerning(result.pairs, result.manual);
+      commitKerningPassResult(kerningPairs, manualAtStart, result);
       set({ autoKernLastRun: { processed: result.processed, updated: result.updated, preservedManual: result.preservedManual } });
     },
 
@@ -2661,7 +2754,8 @@ export const useAppStore = create<AppState>()((set, get) => {
     autoSpaceAllGlyphs: async (options, onProgress) => {
       const excludeManuallyKerned = options?.excludeManuallyKerned ?? true;
       const reKernAfter = options?.reKernAfter ?? true;
-      const { glyphs, metrics, kerningPairs, kerningManual } = get();
+      const runId = ++autoSpaceRunId;
+      const { glyphs, metrics, kerningPairs, kerningManual, fontStyle: runStyle } = get();
 
       // Glyphs that already have a hand-tuned kerning pair are left out of
       // the re-spacing pass by default: moving their LSB/RSB out from under
@@ -2685,7 +2779,9 @@ export const useAppStore = create<AppState>()((set, get) => {
       const { first: spacingProgress, second: kernProgress } = splitProgress(onProgress, reKernAfter);
 
       const result = await computeAutoSpaceAllGlyphs(glyphs, metrics, applyOpticalSidebearings, excludeChars, spacingProgress);
-      if (result.updated > 0) commit(result.glyphs);
+      // A newer pass (e.g. another italic-angle tweak) supersedes this one.
+      if (runId !== autoSpaceRunId) return result;
+      if (result.updated > 0) commitGlyphPassResult(runStyle, glyphs, result.glyphs);
       set({ autoSpaceLastRun: { updated: result.updated, skipped: result.skipped, skippedManual: result.skippedManual } });
 
       // Re-run auto-kerning against the new spacing so non-manual pairs stay
@@ -2702,7 +2798,8 @@ export const useAppStore = create<AppState>()((set, get) => {
           undefined,
           kernProgress
         );
-        commitKerning(kernResult.pairs, kernResult.manual);
+        if (runId !== autoSpaceRunId) return result;
+        commitKerningPassResult(after.kerningPairs, after.kerningManual, kernResult);
         set({
           autoKernLastRun: {
             processed: kernResult.processed,
@@ -2849,6 +2946,9 @@ export const useAppStore = create<AppState>()((set, get) => {
     setKerningPairLive: (left, right, value) => {
       const { kerningPairs, kerningManual } = get();
       const key = kerningKey(left, right);
+      // Sub-unit pointer moves round to the same value: skip the map copies
+      // and the re-render they trigger.
+      if (kerningPairs[key] === Math.round(value) && kerningManual[key]) return;
       set({
         kerningPairs: { ...kerningPairs, [key]: Math.round(value) },
         kerningManual: { ...kerningManual, [key]: true },
@@ -2989,13 +3089,16 @@ export const useAppStore = create<AppState>()((set, get) => {
     setFamilyKerningPairLive: (context, left, right, value) => {
       const key = kerningKey(left, right);
       const rounded = Math.round(value);
+      const st = get();
       if (context === "shared") {
+        if (st.kerningPairs[key] === rounded && st.kerningManual[key]) return;
         set((state) => ({
           kerningPairs: { ...state.kerningPairs, [key]: rounded },
           kerningManual: { ...state.kerningManual, [key]: true },
         }));
         return;
       }
+      if (st.kerningOverridesByStyle[context]?.[key] === rounded && st.kerningOverrideManualByStyle[context]?.[key]) return;
       set((state) => ({
         kerningOverridesByStyle: {
           ...state.kerningOverridesByStyle,

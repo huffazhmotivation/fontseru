@@ -50,7 +50,7 @@ export function TopBar() {
   // TopBar reconcile on every glyph commit.
   const canUndo = useAppStore((s) => s.past.length > 0);
   const canRedo = useAppStore((s) => s.future.length > 0);
-  const liveOutline = useAppStore((s) => s.liveOutline);
+  const liveOutline = useAppStore((s) => s.liveOutline !== null);
   const undo = useAppStore((s) => s.undo);
   const redo = useAppStore((s) => s.redo);
   const openTestLab = useAppStore((s) => s.openTestLab);

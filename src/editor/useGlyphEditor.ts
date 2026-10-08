@@ -6,7 +6,7 @@ import { hitTestOutline } from "./hitTest";
 import { hitTestSegments } from "./segmentHitTest";
 import { add, reflect, reflectDirection, snapAngle, subtract, length, dot } from "@/utils/geometry";
 import {
-  cloneOutline,
+  cloneOutlineTouching,
   findNode,
   findContour,
   retypeNode,
@@ -92,6 +92,10 @@ function pointInRect(p: Point, r: Rect): boolean {
   return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 }
 
+/** Shared empty outline so a glyph without one doesn't hand out a fresh
+ *  object (and bust every memo keyed on `outline`) on each render. */
+const EMPTY_OUTLINE: GlyphOutline = { objects: [] };
+
 /** hitScale = font units per screen pixel. */
 export function useGlyphEditor(hitScale: number) {
   const tool = useAppStore((s) => s.tool);
@@ -146,7 +150,7 @@ export function useGlyphEditor(hitScale: number) {
    * neither). Cleared as soon as the drag ends. */
   const [handleSnapGuide, setHandleSnapGuide] = useState<{ point: Point; x: number | null; y: number | null } | null>(null);
 
-  const outline: GlyphOutline = liveOutline ?? glyph?.outline ?? { objects: [] };
+  const outline: GlyphOutline = liveOutline ?? glyph?.outline ?? EMPTY_OUTLINE;
   const hitRadius = 12 * hitScale;
   const closeRadius = 16 * hitScale;
   const segmentRadius = 10 * hitScale;
@@ -173,7 +177,8 @@ export function useGlyphEditor(hitScale: number) {
   // the common single-object case.
   const nodeableOutline: GlyphOutline = useMemo(() => {
     if (selectedObjectIds.length === 0) return outline;
-    return { objects: outline.objects.filter((o) => selectedObjectIds.includes(o.id)) };
+    const selected = new Set(selectedObjectIds);
+    return { objects: outline.objects.filter((o) => selected.has(o.id)) };
   }, [outline, selectedObjectIds]);
   const gridSize = 10; // snap increment — intentionally independent of the visual grid's display spacing (store.gridSize)
 
@@ -185,10 +190,13 @@ export function useGlyphEditor(hitScale: number) {
   /* ------------------------------------------------------------ PEN */
   const penPointerDown = useCallback(
     (p: Point) => {
-      const working = cloneOutline(outline);
       const snapped = maybeSnap(p);
 
-      if (drawingContourId) {
+      // Structural sharing: only the contour actually being edited is
+      // copied (see cloneOutlineTouching) — every other object keeps its
+      // identity so memoized renders/brush-outline caches stay warm.
+      if (drawingContourId && findContour(outline, drawingContourId)) {
+        const working = cloneOutlineTouching(outline, [drawingContourId]);
         const contour = findContour(working, drawingContourId);
         if (contour && contour.nodes.length > 0) {
           const first = contour.nodes[0];
@@ -221,7 +229,9 @@ export function useGlyphEditor(hitScale: number) {
 
           const node: PathNode = { id: shortId("node"), point: snapped, handleIn: null, handleOut: null, type: "corner" };
           contour.nodes.push(node);
-          baseOutlineRef.current = cloneOutline(working);
+          // `working` is never mutated after this point (pointer-move edits
+          // copy the touched contour again), so it can serve as the base.
+          baseOutlineRef.current = working;
           dragRef.current = { mode: "pen-place", contourId: contour.id, nodeId: node.id };
           setLiveOutline(working);
           return;
@@ -230,9 +240,15 @@ export function useGlyphEditor(hitScale: number) {
 
       // Clicking an endpoint of an existing open path converts it to Corner
       // without starting a new path or adding a duplicate point.
-      for (const obj of working.objects) {
-        for (const contour of obj.contours) {
-          if (contour.closed || contour.nodes.length === 0) continue;
+      for (const sourceObj of outline.objects) {
+        for (const sourceContour of sourceObj.contours) {
+          if (sourceContour.closed || sourceContour.nodes.length === 0) continue;
+          const sourceFirst = sourceContour.nodes[0];
+          const sourceLast = sourceContour.nodes[sourceContour.nodes.length - 1];
+          const sourceEndpoints = sourceContour.nodes.length === 1 ? [sourceFirst] : [sourceFirst, sourceLast];
+          if (!sourceEndpoints.some((node) => length(subtract(node.point, p)) <= hitRadius)) continue;
+          const working = cloneOutlineTouching(outline, [sourceContour.id]);
+          const contour = findContour(working, sourceContour.id)!;
           const contourFirst = contour.nodes[0];
           const contourLast = contour.nodes[contour.nodes.length - 1];
           const endpoints = contour.nodes.length === 1 ? [contourFirst] : [contourFirst, contourLast];
@@ -261,8 +277,8 @@ export function useGlyphEditor(hitScale: number) {
         penMode === "shape"
           ? { id: shortId("obj"), kind: "shape", contours: [contour] }
           : { id: shortId("obj"), kind: "line", contours: [contour], strokeWidth: lineWidth, cap: lineCap, join: "round" };
-      working.objects.push(obj);
-      baseOutlineRef.current = cloneOutline(working);
+      const working: GlyphOutline = { ...outline, objects: [...outline.objects, obj] };
+      baseOutlineRef.current = working;
       dragRef.current = { mode: "pen-place", contourId: contour.id, nodeId: node.id };
       setDrawingContourId(contour.id);
       setLiveOutline(working);
@@ -275,7 +291,7 @@ export function useGlyphEditor(hitScale: number) {
       const drag = dragRef.current;
       const base = baseOutlineRef.current;
       if (!drag || drag.mode !== "pen-place" || !base) return;
-      const working = cloneOutline(base);
+      const working = cloneOutlineTouching(base, [drag.contourId]);
       const node = findNode(working, drag.contourId, drag.nodeId);
       if (!node) return;
       const handlePoint = shiftKey ? snapAngle(node.point, p, 45) : p;
@@ -300,7 +316,9 @@ export function useGlyphEditor(hitScale: number) {
   const shapePointerDown = useCallback(
     (p: Point) => {
       const snapped = maybeSnap(p);
-      baseOutlineRef.current = cloneOutline(outline);
+      // Edits never mutate their base (see cloneOutlineTouching / nodeOps),
+      // so the current outline can be referenced directly.
+      baseOutlineRef.current = outline;
       dragRef.current = { mode: "shape-draw", start: snapped, objectId: shortId("obj") };
       setLiveOutline(outline);
     },
@@ -314,11 +332,9 @@ export function useGlyphEditor(hitScale: number) {
       if (!drag || drag.mode !== "shape-draw" || !base) return;
       const snapped = maybeSnap(p);
       const contour = buildShapeContour(shapeKind, drag.start, snapped, shiftKey);
-      const working = cloneOutline(base);
-      if (contour) {
-        const obj: VectorObject = { id: drag.objectId, kind: "shape", contours: [contour] };
-        working.objects.push(obj);
-      }
+      const working: GlyphOutline = contour
+        ? { ...base, objects: [...base.objects, { id: drag.objectId, kind: "shape", contours: [contour] } as VectorObject] }
+        : base;
       setLiveOutline(working);
     },
     [shapeKind, maybeSnap, setLiveOutline]
@@ -339,7 +355,7 @@ export function useGlyphEditor(hitScale: number) {
           if (cornerNode) {
             const dir = cornerHandleDirection(outline, { contourId: handleHit.contourId, nodeId: handleHit.nodeId });
             if (dir) {
-              baseOutlineRef.current = cloneOutline(outline);
+              baseOutlineRef.current = outline;
               dragRef.current = { mode: "round-corner", contourId: handleHit.contourId, nodeId: handleHit.nodeId, cornerPoint: { ...cornerNode.point }, dir };
               return;
             }
@@ -380,7 +396,7 @@ export function useGlyphEditor(hitScale: number) {
         if (cmdKey && hitNode && !hitNode.handleIn && !hitNode.handleOut) {
           const dir = cornerHandleDirection(outline, { contourId: hit.contourId, nodeId: hit.nodeId });
           if (dir) {
-            baseOutlineRef.current = cloneOutline(outline);
+            baseOutlineRef.current = outline;
             dragRef.current = { mode: "round-corner", contourId: hit.contourId, nodeId: hit.nodeId, cornerPoint: { ...hitNode.point }, dir };
             return;
           }
@@ -422,7 +438,7 @@ export function useGlyphEditor(hitScale: number) {
           nextSelection = [ref];
           selectNodes(nextSelection);
         }
-        baseOutlineRef.current = cloneOutline(outline);
+        baseOutlineRef.current = outline;
         nodeMovedRef.current = false;
         dragRef.current = { mode: "move-selection", refs: nextSelection, origin: p, clickRef: shiftKey ? undefined : ref };
         return;
@@ -432,7 +448,7 @@ export function useGlyphEditor(hitScale: number) {
         const node = findNode(outline, hit.contourId, hit.nodeId);
         if (!node) return;
         setSelectedHandle({ contourId: hit.contourId, nodeId: hit.nodeId, part: hit.part } as HandleRef);
-        baseOutlineRef.current = cloneOutline(outline);
+        baseOutlineRef.current = outline;
         const xTargets: number[] = [node.point.x];
         const yTargets: number[] = [node.point.y];
         for (const obj of nodeableOutline.objects) {
@@ -459,7 +475,7 @@ export function useGlyphEditor(hitScale: number) {
       // Cmd/Ctrl + drag on a segment -> bend into a Bézier curve.
       const segHit = hitTestSegments(nodeableOutline, p, segmentRadius * 1.6);
       if (cmdKey && segHit) {
-        baseOutlineRef.current = cloneOutline(outline);
+        baseOutlineRef.current = outline;
         dragRef.current = { mode: "curve", contourId: segHit.contourId, fromIndex: segHit.fromIndex, t: segHit.t };
         return;
       }
@@ -520,7 +536,7 @@ export function useGlyphEditor(hitScale: number) {
         return;
       }
       if (drag.mode === "move-handle") {
-        const working = cloneOutline(base);
+        const working = cloneOutlineTouching(base, [drag.contourId]);
         const node = findNode(working, drag.contourId, drag.nodeId);
         if (!node) return;
         let draggedPoint = shiftKey ? snapAngle(node.point, p, 45) : p;
@@ -629,6 +645,12 @@ export function useGlyphEditor(hitScale: number) {
   const pointerUp = useCallback(() => {
     const drag = dragRef.current;
     if (!drag) return;
+    // Read the live outline straight from the store, never from this
+    // render's closure: GlyphCanvas flushes the last coalesced pointer-move
+    // synchronously right before calling pointerUp, and that final
+    // setLiveOutline hasn't been re-rendered into `liveOutline` yet — using
+    // the closure value silently dropped the last drag frame on release.
+    const liveOutline = useAppStore.getState().liveOutline;
     setRoundCornerLabel(null);
     setHandleSnapGuide(null);
     if (drag.mode === "marquee") {
@@ -686,13 +708,42 @@ export function useGlyphEditor(hitScale: number) {
     // it can no longer be grabbed to fine-tune the radius further.
     if (liveOutline) commitOutline(activeChar, liveOutline, { skipAutoSpacing: true });
     baseOutlineRef.current = null;
-  }, [liveOutline, activeChar, commitOutline, finishMarquee, setLiveOutline]);
+  }, [activeChar, commitOutline, finishMarquee, setLiveOutline]);
+
+  /** Abandons whatever gesture is in progress WITHOUT committing it (the
+   *  pointercancel path): live edits are discarded so the canvas falls back
+   *  to the last committed outline. */
+  const cancel = useCallback(() => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    baseOutlineRef.current = null;
+    nodeMovedRef.current = false;
+    marqueeRectRef.current = null;
+    setMarqueeRect(null);
+    setRoundCornerLabel(null);
+    setHandleSnapGuide(null);
+    if (drag && drag.mode !== "marquee" && useAppStore.getState().liveOutline) setLiveOutline(null);
+  }, [setLiveOutline]);
+
+  /** Drops gesture bookkeeping only (no store writes) — used when the active
+   *  tool changes mid-gesture. The store's setTool already finalizes any
+   *  pending liveOutline itself, so this just makes sure a stale drag can't
+   *  keep reacting to pointer moves under the next tool. */
+  const reset = useCallback(() => {
+    dragRef.current = null;
+    baseOutlineRef.current = null;
+    nodeMovedRef.current = false;
+    marqueeRectRef.current = null;
+    setMarqueeRect(null);
+    setRoundCornerLabel(null);
+    setHandleSnapGuide(null);
+  }, []);
 
   const finishOpenContour = useCallback(() => {
     if (!drawingContourId) return;
     const hadLiveEdit = useAppStore.getState().liveOutline !== null;
     const latest = useAppStore.getState().liveOutline ?? outline;
-    const working = cloneOutline(latest);
+    const working = cloneOutlineTouching(latest, [drawingContourId]);
     // Auto Close Shape (Pen tool, Shape mode only — a "line" object is an
     // intentional open centerline per architecture and must never be
     // force-closed). Only points/handles already drawn are used; nothing is
@@ -729,10 +780,18 @@ export function useGlyphEditor(hitScale: number) {
     return length(subtract(last.point, p)) <= hitRadius;
   }, [drawingContourId, outline, hitRadius]);
 
-  return {
+  const findObjectOfContourInOutline = useCallback((cid: string) => findObjectOfContour(outline, cid), [outline]);
+
+  // Stable identity unless something in it actually changed, so consumers
+  // (GlyphCanvas callbacks, window listeners) aren't recreated every render.
+  return useMemo(() => ({
     outline, nodeableOutline, selectedNodes, selectedHandle, drawingContourId, marqueeRect, roundCornerLabel, handleSnapGuide,
-    pointerDown, pointerMove, pointerUp, cycleNodeType, insertNodeAt, nodeClick, clearNodeClick,
+    pointerDown, pointerMove, pointerUp, cancel, reset, cycleNodeType, insertNodeAt, nodeClick, clearNodeClick,
     deleteSelectedNodes, nudgeNodes, finishOpenContour, isCurrentEndpoint,
-    findObjectOfContour: (cid: string) => findObjectOfContour(outline, cid),
-  };
+    findObjectOfContour: findObjectOfContourInOutline,
+  }), [
+    outline, nodeableOutline, selectedNodes, selectedHandle, drawingContourId, marqueeRect, roundCornerLabel, handleSnapGuide,
+    pointerDown, pointerMove, pointerUp, cancel, reset, cycleNodeType, insertNodeAt, nodeClick, clearNodeClick,
+    deleteSelectedNodes, nudgeNodes, finishOpenContour, isCurrentEndpoint, findObjectOfContourInOutline,
+  ]);
 }

@@ -89,11 +89,34 @@ export function glyphMatchesFilter(
  * GlyphStepper and Prev/Next glyph navigation use), narrowed by `filter`
  * and, when `query` is non-empty, by a simple char/name/unicode search.
  */
+// Single-entry memo: several components (overview canvas, view bar, …) call
+// this with the same arguments on every commit; when the resulting list is
+// unchanged the previous array is returned so downstream memos keep identity.
+let lastFilterArgs: { glyphs: GlyphMap; filter: GlyphFilterId; selected: ReadonlyArray<string>; query: string } | null = null;
+let lastFilterResult: string[] = [];
+
 export function filterGlyphChars(
   glyphs: GlyphMap,
   filter: GlyphFilterId,
   selectedGlyphChars: ReadonlyArray<string>,
   query = ""
+): string[] {
+  const prev = lastFilterArgs;
+  if (prev && prev.glyphs === glyphs && prev.filter === filter && prev.selected === selectedGlyphChars && prev.query === query) {
+    return lastFilterResult;
+  }
+  const out = computeFilteredChars(glyphs, filter, selectedGlyphChars, query);
+  lastFilterArgs = { glyphs, filter, selected: selectedGlyphChars, query };
+  if (out.length === lastFilterResult.length && out.every((ch, i) => ch === lastFilterResult[i])) return lastFilterResult;
+  lastFilterResult = out;
+  return out;
+}
+
+function computeFilteredChars(
+  glyphs: GlyphMap,
+  filter: GlyphFilterId,
+  selectedGlyphChars: ReadonlyArray<string>,
+  query: string
 ): string[] {
   const selected = new Set(selectedGlyphChars);
   const ordered = getOrderedChars(glyphs);

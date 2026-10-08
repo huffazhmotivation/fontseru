@@ -289,8 +289,8 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 6px;
+  padding: 8px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   min-width: 0;
@@ -342,13 +342,13 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
 .fm-divider { width: 1px; height: 26px; background: var(--line); }
 .fm-fontname {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 12px;
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 7px 10px;
+  padding: 6px 9px;
   color: var(--text);
-  width: clamp(110px, 18vw, 200px);
+  width: clamp(100px, 12vw, 170px);
   min-width: 0;
   outline: none;
   transition: border-color 0.15s ease, background 0.15s ease;
@@ -357,10 +357,10 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
 .fm-fontname:focus { border-color: var(--accent); }
 .fm-topbtn-group { display: flex; gap: 2px; }
 .fm-topbtn {
-  display: flex; align-items: center; gap: 5px;
+  display: flex; align-items: center; gap: 4px;
   border: none; background: transparent; color: var(--text-dim);
-  padding: 7px 9px; border-radius: 8px; cursor: pointer;
-  font-size: 12.5px; font-weight: 600;
+  padding: 6px 7px; border-radius: 8px; cursor: pointer;
+  font-size: 12px; font-weight: 600;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .fm-topbtn:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
@@ -1044,7 +1044,7 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 
 /* ------------------------------------------------------------------ GLYPH NAV */
 .fm-glyphnav {
-  width: 244px; flex: 0 0 auto;
+  width: 212px; flex: 0 0 auto;
   background: var(--panel); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; min-height: 0;
   overflow-x: hidden;
@@ -1247,7 +1247,17 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 .fm-search input:focus { border-color: var(--accent); }
 .fm-search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-faint); }
 
-.fm-glyphlist { flex: 1; overflow-y: auto; padding: 0 12px 16px; }
+.fm-glyphlist { flex: 1; overflow-y: auto; padding: 0 12px 16px; overflow-anchor: none; }
+/* Virtualized glyph list (see GlyphNav "Virtualized list"): rows are
+   absolutely positioned inside a spacer sized to the full list height.
+   Header rows use flow-root so the label row's own margins are part of
+   the measured row height, exactly like the old in-flow layout. */
+.fm-glyphlist-inner { position: relative; }
+.fm-glyphlist-header { position: absolute; left: 0; right: 0; display: flow-root; }
+.fm-grid.fm-grid-row { position: absolute; left: 0; right: 0; content-visibility: visible; contain-intrinsic-size: none; }
+.fm-glyphlist-probe { position: absolute; left: 0; right: 0; top: 0; visibility: hidden; pointer-events: none; }
+.fm-glyphlist-probe .fm-glyphlist-header,
+.fm-glyphlist-probe .fm-grid.fm-grid-row { position: static; }
 .fm-glyphnav-foot { flex: 0 0 auto; padding: 10px 12px 12px; border-top: 1px solid var(--line-soft); }
 .fm-glyphnav-foot .fm-action-btn { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .fm-group-label {
@@ -1374,8 +1384,8 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 .fm-bottombar {
   min-height: 44px; flex: 0 0 auto;
   border-top: 1px solid var(--line); background: var(--panel);
-  display: flex; align-items: center; gap: 12px; padding: 6px 16px;
-  font-size: 12px; color: var(--text-dim);
+  display: flex; align-items: center; gap: 10px; padding: 6px 14px;
+  font-size: 11.5px; color: var(--text-dim);
   /* Single row, never wraps and never scrolls sideways — see the matching
      note on .fm-topbar above. Below 1180px the display-toggle buttons are
      hidden via `.fm-bottombar-more-hide` and moved into the "Settings"
@@ -1390,8 +1400,8 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 .fm-bottombar button {
   display: flex; align-items: center; gap: 6px;
   background: transparent; border: none; color: var(--text-dim);
-  cursor: pointer; font-size: 12px; font-weight: 600;
-  padding: 5px 9px; border-radius: 8px; transition: background 0.14s ease, color 0.14s ease;
+  cursor: pointer; font-size: 11.5px; font-weight: 600;
+  padding: 5px 8px; border-radius: 8px; transition: background 0.14s ease, color 0.14s ease;
 }
 .fm-bottombar button:hover { background: var(--panel-2); color: var(--text); }
 .fm-bottombar button.on { color: var(--accent); background: var(--accent-soft); }
@@ -1573,7 +1583,7 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 
 /* ------------------------------------------------------------------ RIGHT PANEL */
 .fm-rightpanel {
-  width: 288px; flex: 0 0 auto; background: var(--panel); border-left: 1px solid var(--line);
+  width: 252px; flex: 0 0 auto; background: var(--panel); border-left: 1px solid var(--line);
   overflow-y: auto;
   /* Safety net for tablet-landscape widths (900-1180px) where this panel
      shrinks to 250/205px: if any row inside is a touch wider than that,
@@ -2043,6 +2053,30 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-bottombar-more-btn { display: inline-flex; }
   .fm-bottombar-more-btn > button { font-size: 0; gap: 0; padding: 8px; min-width: 36px; min-height: 36px; justify-content: center; }
   .fm-bottombar-more-btn > button svg { flex: 0 0 auto; }
+}
+
+/* Laptop / small-desktop widths (1181px up to full HD): the full labeled top
+   bar is wider than the window, which used to push the trailing buttons
+   (account, theme, fullscreen) off the right edge. Collapse the secondary
+   nav labels to icons first (tooltips stay), and on narrower laptops move
+   the align/boolean/object groups into the "More" menu as tablets do. */
+@media (min-width: 1181px) and (max-width: 1919px) {
+  .fm-topbar .fm-testlab-nav,
+  .fm-topbar .fm-export-nav { font-size: 0; gap: 0; padding: 7px; min-width: 32px; justify-content: center; }
+  .fm-topbar .fm-testlab-nav svg,
+  .fm-topbar .fm-export-nav svg { flex: 0 0 auto; }
+}
+@media (min-width: 1181px) and (max-width: 1599px) {
+  .fm-topbar .fm-topbar-more-hide { display: none !important; }
+  .fm-topbar .fm-topbar-more-btn { display: inline-flex; }
+  .fm-topbar-more-btn > .fm-topbtn { font-size: 0; gap: 0; padding: 7px; min-width: 32px; justify-content: center; }
+  .fm-topbar-more-btn > .fm-topbtn svg { flex: 0 0 auto; }
+}
+/* The bottom bar lives in the canvas column (window minus both side panels),
+   so its toggles move into the Settings menu up to a wider breakpoint. */
+@media (min-width: 1181px) and (max-width: 1799px) {
+  .fm-bottombar .fm-bottombar-more-hide { display: none !important; }
+  .fm-bottombar .fm-bottombar-more-btn { display: inline-flex; }
 }
 
 /* Inside the "More"/"Settings" dropdowns themselves, labels are always

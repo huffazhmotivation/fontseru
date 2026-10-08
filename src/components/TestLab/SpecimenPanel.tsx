@@ -71,6 +71,19 @@ const PARAGRAPH_LINES = [
   "using the same glyph geometry the canvas editor works with.",
 ];
 
+/** Colour callback that paints only glyph `target` in the accent colour.
+ *  Cached per index so a dragged row keeps the same function identity
+ *  across frames while the dragged glyph doesn't change. */
+const accentAtCache = new Map<number, (index: number) => string | undefined>();
+function accentAt(target: number): (index: number) => string | undefined {
+  let fn = accentAtCache.get(target);
+  if (!fn) {
+    fn = (index) => (index === target ? "var(--accent)" : undefined);
+    accentAtCache.set(target, fn);
+  }
+  return fn;
+}
+
 function EditableStage({
   text,
   onTextChange,
@@ -157,7 +170,10 @@ function EditableStage({
     caretPxFor,
     pxPerUnit,
     totalH,
-  } = useTypingCaret(visualLines, fontSize, tracking, sourceLineStarts);
+    // Same glyph map + kerning the lines are wrapped and rendered with, so
+    // with a family context (e.g. Bold) caret hit-testing measures the
+    // Bold advances it is actually drawn with, not the store's active map.
+  } = useTypingCaret(visualLines, fontSize, tracking, sourceLineStarts, glyphs, kerningPairs);
   const caretPx = caretPxFor(caret);
 
   const [isDragging, setIsDragging] = useState(false);
@@ -360,10 +376,13 @@ function EditableStage({
                 text={wrappedLine.text || " "}
                 fontSizePx={fontSize}
                 trackingUnits={tracking}
+                glyphsOverride={glyphs}
+                kerningPairsOverride={kerningPairs}
                 ghostEmpty
-                colorForIndex={(index) =>
-                  isDragging && rowActive === index ? "var(--accent)" : undefined
-                }
+                // Only the row being dragged gets a (fresh) colour callback;
+                // every other row passes `undefined`, so GlyphRun's memo
+                // holds and untouched lines don't re-render per drag frame.
+                colorForIndex={isDragging && rowActive >= 0 ? accentAt(rowActive) : undefined}
               />
 
               {selectionSpan && (
@@ -979,9 +998,7 @@ function FamilyStylePreview({
                     glyphsOverride={glyphs}
                     kerningPairsOverride={kerningPairs}
                     ghostEmpty
-                    colorForIndex={(index) =>
-                      isDragging && activeIndex === index ? "var(--accent)" : undefined
-                    }
+                    colorForIndex={isDragging && activeIndex >= 0 ? accentAt(activeIndex) : undefined}
                   />
 
                   {selectionSpan && (

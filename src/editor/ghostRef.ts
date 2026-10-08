@@ -32,6 +32,37 @@ export function familyGhostOrder(style: FontStyle): readonly [FontStyle, FontSty
   return FAMILY_GHOST_ORDER[style] ?? ["regular", "bold"];
 }
 
+/** Lookup index over one family map, built once per map identity. Each key
+ * remembers the FIRST position (in `Object.values` order) where it occurs,
+ * so picking the smallest position across a glyph's keys reproduces exactly
+ * what the old linear `Object.values(map).find(...)` scan returned — just
+ * in O(codes) instead of O(map size). Multi Mode calls this per visible
+ * cell per render; with thousands of glyphs the scan was the hot spot. */
+interface FamilyIndex {
+  values: Glyph[];
+  byCode: Map<number, number>;
+  byChar: Map<string, number>;
+}
+
+const familyIndexCache = new WeakMap<GlyphMap, FamilyIndex>();
+
+function familyIndex(map: GlyphMap): FamilyIndex {
+  const cached = familyIndexCache.get(map);
+  if (cached) return cached;
+  const values = Object.values(map);
+  const byCode = new Map<number, number>();
+  const byChar = new Map<string, number>();
+  for (let i = 0; i < values.length; i++) {
+    const g = values[i];
+    if (!byCode.has(g.unicode)) byCode.set(g.unicode, i);
+    if (g.unicodes) for (const code of g.unicodes) if (!byCode.has(code)) byCode.set(code, i);
+    if (!byChar.has(g.char)) byChar.set(g.char, i);
+  }
+  const index = { values, byCode, byChar };
+  familyIndexCache.set(map, index);
+  return index;
+}
+
 /** The same character in another family style — matched by name first,
  *  then by any shared code point, then by the character itself. */
 export function matchingFamilyGlyph(
@@ -43,12 +74,17 @@ export function matchingFamilyGlyph(
   const exact = map[activeChar];
   if (exact) return exact;
 
-  const activeCodes = new Set([activeGlyph.unicode, ...(activeGlyph.unicodes ?? [])]);
-  return Object.values(map).find((candidate) => {
-    if (activeCodes.has(candidate.unicode)) return true;
-    if (candidate.unicodes?.some((code) => activeCodes.has(code))) return true;
-    return candidate.char === activeGlyph.char;
-  });
+  const { values, byCode, byChar } = familyIndex(map);
+  let best = byChar.get(activeGlyph.char) ?? Infinity;
+  const first = byCode.get(activeGlyph.unicode);
+  if (first !== undefined && first < best) best = first;
+  if (activeGlyph.unicodes) {
+    for (const code of activeGlyph.unicodes) {
+      const at = byCode.get(code);
+      if (at !== undefined && at < best) best = at;
+    }
+  }
+  return best === Infinity ? undefined : values[best];
 }
 
 /**

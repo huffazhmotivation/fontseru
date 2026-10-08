@@ -757,6 +757,39 @@ function normalizeMotionProject(project) {
   };
 }
 
+// blob: URL tidak bertahan setelah reload — sebelumnya tiap elemen media
+// gagal dulu, lalu membaca SELURUH File cadangannya jadi data URL (lambat &
+// boros memori untuk video besar). Saat proyek dipulihkan, buatkan blob: URL
+// baru langsung dari File/Blob yang tersimpan. Satu URL per File, supaya
+// aset library & klip yang berbagi file tetap memakai src yang sama.
+function reviveMediaObjectUrls(project) {
+  if (!project || typeof URL === "undefined" || typeof URL.createObjectURL !== "function" || typeof Blob === "undefined") return project;
+  const urlByFile = new Map();
+  const urlBySrc = new Map();
+  const revive = (item) => {
+    if (!item || item.isSvg || !(item.file instanceof Blob)) return item;
+    if (typeof item.src === "string" && item.src.startsWith("data:")) return item;
+    let url = urlByFile.get(item.file) || (item.src && urlBySrc.get(item.src));
+    if (!url) {
+      try { url = URL.createObjectURL(item.file); } catch (e) { return item; }
+      urlByFile.set(item.file, url);
+      if (item.src) urlBySrc.set(item.src, url);
+    }
+    return { ...item, src: url };
+  };
+  const lib = project.library;
+  return {
+    ...project,
+    clips: Array.isArray(project.clips) ? project.clips.map((c) => (c && (c.type === "image" || c.type === "video" || c.type === "audio") ? revive(c) : c)) : project.clips,
+    library: lib ? {
+      ...lib,
+      images: (lib.images || []).map(revive),
+      videos: (lib.videos || []).map(revive),
+      audios: (lib.audios || []).map(revive),
+    } : lib,
+  };
+}
+
 // opts (opsional): { animateIn, animateOut, easing }
 //  - animateIn=false  → tidak ada animasi MASUK (objek langsung di pose diam).
 //  - animateOut=false → tidak ada animasi KELUAR (objek diam sampai habis).
@@ -1128,6 +1161,10 @@ function makeMediaClip(kind, asset, start, trackId = null) {
   return {
     id: uid("clip"), assetId: asset.id, type: kind, name: asset.name, src: asset.src, start, trackId,
     duration: isAudio ? 3000 : kind === "video" ? 3200 : 2400,
+    // true = durasi masih placeholder; disinkronkan SEKALI ke durasi asli
+    // file begitu metadata termuat (lihat SYNC_MEDIA_DURATION), lalu dimatikan
+    // — supaya klip yang sudah dipotong/di-resize tidak ditimpa tiap reload.
+    durationAuto: kind === "video" || isAudio,
     // Gambar/video sekarang juga bisa diberi preset animasi lewat panel
     // Preset (tab "Gambar & Video") — defaultnya "none" (statis) supaya
     // klip yang baru diimpor tidak tiba-tiba bergerak tanpa diminta.
@@ -1303,9 +1340,11 @@ function normalizePersistedMediaClips(rawClips, rawTracks, library) {
     if (normalizedType === "image" && isAudioish) return false;
     if (clip.type === "audio" && trackType && trackType !== "audio") return false;
 
-    const identity = clip.assetId || `${normalizedType}|${sourceKey}`;
-    if (seen.has(identity)) return false;
-    seen.add(identity);
+    // Dedupe per id KLIP (bukan per assetId) — beberapa klip boleh memakai
+    // aset yang sama (hasil salin/tempel), dan sebelumnya klip-klip itu
+    // ikut terhapus setiap kali proyek dimuat ulang.
+    if (seen.has(clip.id)) return false;
+    seen.add(clip.id);
     return true;
   });
 
@@ -1398,6 +1437,25 @@ function projectReducer(state, action) {
       // memilih track caption yang sudah ada.
       const { segments, audioStart, sourceClipId } = action;
       if (!segments || segments.length === 0) return state;
+      if (action.replace && sourceClipId) {
+        // Buat ulang caption: buang caption lama dari audio ini (beserta
+        // track caption yang jadi kosong) dalam SATU langkah undo — dulu
+        // aksi ini idempoten sehingga "buat ulang" tidak melakukan apa-apa.
+        const oldCaps = state.clips.filter((c) => c.captionSourceClipId === sourceClipId);
+        if (oldCaps.length > 0) {
+          const oldIds = new Set(oldCaps.map((c) => c.id));
+          const oldTrackIds = new Set(oldCaps.map((c) => c.trackId).filter(Boolean));
+          const keptClips = state.clips.filter((c) => !oldIds.has(c.id));
+          state = {
+            ...state,
+            clips: keptClips,
+            tracks: state.tracks.filter((t) => !oldTrackIds.has(t.id) || keptClips.some((c) => c.trackId === t.id)),
+            transitions: (state.transitions || []).filter((t) => !oldIds.has(t.leftClipId) && !oldIds.has(t.rightClipId)),
+            selectedClipIds: (state.selectedClipIds || []).filter((id) => !oldIds.has(id)),
+            selectedClipId: oldIds.has(state.selectedClipId) ? null : state.selectedClipId,
+          };
+        }
+      }
       const existingForSource = sourceClipId
         ? state.clips.filter((c) => c.captionSourceClipId === sourceClipId)
         : [];
@@ -1528,13 +1586,25 @@ function projectReducer(state, action) {
       return { ...state, clips };
     }
     case "UPDATE_CLIP": {
-      const clips = state.clips.map((c) => (c.id === action.id ? { ...c, ...action.patch } : c));
+      // Durasi diubah manual → jangan pernah lagi ditimpa sinkronisasi
+      // durasi otomatis dari metadata media.
+      const manualDur = action.patch && "duration" in action.patch;
+      const clips = state.clips.map((c) => (c.id === action.id ? { ...c, ...action.patch, ...(manualDur && c.durationAuto ? { durationAuto: false } : null) } : c));
       return { ...state, clips };
     }
     case "UPDATE_CLIPS": {
       const ids = new Set((action.ids || []).filter(Boolean));
       if (ids.size === 0) return state;
-      const clips = state.clips.map((c) => (ids.has(c.id) ? { ...c, ...action.patch } : c));
+      const manualDur = action.patch && "duration" in action.patch;
+      const clips = state.clips.map((c) => (ids.has(c.id) ? { ...c, ...action.patch, ...(manualDur && c.durationAuto ? { durationAuto: false } : null) } : c));
+      return { ...state, clips };
+    }
+    case "SYNC_MEDIA_DURATION": {
+      // Sinkronisasi durasi klip media ke durasi asli file — HANYA sekali,
+      // selama klip masih memakai durasi placeholder (durationAuto).
+      const target = state.clips.find((c) => c.id === action.id);
+      if (!target || target.durationAuto !== true) return state;
+      const clips = state.clips.map((c) => (c.id === action.id ? { ...c, duration: action.duration, durationAuto: false } : c));
       return { ...state, clips };
     }
     case "SET_OFFSET": {
@@ -1711,7 +1781,9 @@ const COALESCE_MS = 500;
 // Aksi yang murni soal "apa yang sedang dipilih/di-hover", bukan
 // perubahan data proyek yang sesungguhnya — tidak pernah masuk ke
 // riwayat undo/redo sendiri.
-const NON_HISTORY_ACTIONS = new Set(["SELECT_CLIP", "SELECT_ALL_CLIPS"]);
+// SYNC_MEDIA_DURATION juga bukan aksi pengguna (otomatis dari metadata
+// file), jadi tidak boleh memunculkan langkah undo "siluman".
+const NON_HISTORY_ACTIONS = new Set(["SELECT_CLIP", "SELECT_ALL_CLIPS", "SYNC_MEDIA_DURATION"]);
 
 function actionCoalesceKey(action) {
   switch (action.type) {
@@ -2538,7 +2610,7 @@ function getGL(w, h) {
       gl.enableVertexAttribArray(S.aD); gl.vertexAttribPointer(S.aD, 1, gl.FLOAT, false, stride, 24);
       gl.useProgram(prog);
       gl.uniform1i(S.uTex, 0);
-      canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); glState = null; });
+      canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); if (glState === S) glState = null; });
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
       gl.enable(gl.SCISSOR_TEST);
@@ -2546,6 +2618,17 @@ function getGL(w, h) {
     } catch (e) { glState = false; return null; }
   }
   return glState;
+}
+
+// Lepas konteks WebGL (dipanggil saat Motion Studio di-unmount) supaya
+// memori GPU-nya langsung dibebaskan, bukan menunggu GC. getGL() akan
+// membuatnya ulang saat dibutuhkan lagi.
+function disposeGL() {
+  const S = glState;
+  glState = null;
+  if (!S || !S.gl) return;
+  try { const ext = S.gl.getExtension("WEBGL_lose_context"); if (ext) ext.loseContext(); } catch (e) {}
+  try { S.canvas.width = 1; S.canvas.height = 1; } catch (e) {}
 }
 
 // Mengunggah sumber (canvas/video/gambar) sebagai tekstur. Gambar statis
@@ -3458,7 +3541,10 @@ function useMediaElements(clips, onReady, onMediaDuration) {
       const bucket = mapRef.current[c.type];
       const existing = bucket[c.id];
       if (!existing || existing.src !== c.src) {
-        if (existing) { try { existing.el.pause && existing.el.pause(); existing.el.remove && existing.el.remove(); } catch (e) {} }
+        if (existing) {
+          try { existing.el.pause && existing.el.pause(); existing.el.remove && existing.el.remove(); } catch (e) {}
+          try { existing.srcNode && existing.srcNode.disconnect(); } catch (e) {}
+        }
         let el;
         // __mfsReady menandai elemen media ini SUDAH BENAR-BENAR SIAP untuk
         // digambar/diputar. Sebelumnya kode ini menandakan "siap" hanya
@@ -3520,6 +3606,10 @@ function useMediaElements(clips, onReady, onMediaDuration) {
           el.onloadeddata = markReady;
           el.onloadedmetadata = () => { markReady(); syncDuration(); };
           el.oncanplay = () => { markReady(); syncDuration(); };
+          // Saat dijeda, seek video bersifat asinkron — frame baru baru siap
+          // setelah "seeked". Gambar ulang kanvas saat itu supaya pratinjau
+          // tidak tertinggal satu frame (onReady → redraw bila tidak memutar).
+          el.onseeked = () => { if (el.__mfsReady) onReady && onReady(); };
           // MediaError.code memberi tahu ALASAN SESUNGGUHNYA kenapa video
           // gagal (bukan cuma "gagal" generik) — ini sangat menentukan:
           // code 4 (SRC_NOT_SUPPORTED) hampir selalu berarti kontainer/codec
@@ -3605,6 +3695,7 @@ function useMediaElements(clips, onReady, onMediaDuration) {
       Object.keys(bucket).forEach((id) => {
         if (!wantIds[kind].has(id)) {
           try { if (bucket[id].el.pause) bucket[id].el.pause(); if (bucket[id].el.remove) bucket[id].el.remove(); } catch (e) {}
+          try { if (bucket[id].srcNode) bucket[id].srcNode.disconnect(); } catch (e) {}
           delete bucket[id];
         }
       });
@@ -3634,7 +3725,10 @@ function primeMediaElements(mediaMapRef) {
 }
 
 function syncMediaPlayback(clips, mediaMapRef, timeMs, playing, slotTransitions) {
-  const SEEK_TOLERANCE_S = 0.08;
+  // Toleransi drift sebelum seek paksa saat memutar. 0.08dtk terlalu ketat:
+  // jitter normal antara jam rAF & jam media sudah melampauinya, sehingga
+  // video terus di-seek (tersendat). 0.25dtk masih tak terasa untuk sinkron.
+  const SEEK_TOLERANCE_S = 0.25;
   clips.forEach((c) => {
     if (c.type !== "video" && c.type !== "audio") return;
     const entry = mediaMapRef.current[c.type][c.id];
@@ -3659,7 +3753,12 @@ function syncMediaPlayback(clips, mediaMapRef, timeMs, playing, slotTransitions)
         if (el.paused) el.play().catch(() => {});
       } else {
         if (!el.paused) el.pause();
-        try { el.currentTime = Math.max(0, local / 1000); } catch (e) {}
+        // Seek hanya bila posisinya benar-benar beda (> 1 frame) — dulu tiap
+        // perubahan proyek apa pun (mis. geser slider) men-seek SEMUA media.
+        const targetTime = Math.max(0, local / 1000);
+        try {
+          if (!Number.isFinite(el.currentTime) || Math.abs(el.currentTime - targetTime) > 1 / 60) el.currentTime = targetTime;
+        } catch (e) {}
       }
     } else if (!el.paused) {
       el.pause();
@@ -4419,6 +4518,34 @@ function LibraryThumbnail({ asset }) {
   return <img className="mfs-asset-thumb" src={src} alt="" onError={handleError} />;
 }
 
+// Dulu didefinisikan DI DALAM LibraryPanel — tiap render membuat tipe
+// komponen baru sehingga seluruh bagian (termasuk <input> & thumbnail)
+// di-unmount/mount ulang. Sekarang komponen tingkat atas yang stabil.
+function LibrarySection({ kind, label, accept, icon: Icon, assets, inputRef, hint, onUpload, dispatch }) {
+  return (
+    <div>
+      <div className="mfs-subhead"><Icon size={12} />{label}</div>
+      <div className="mfs-upload-zone" onClick={() => inputRef.current?.click()}>
+        <Upload size={14} style={{ marginBottom: 4 }} />
+        <div>Seret {hint}</div>
+        <div style={{ fontSize: 10, marginTop: 2, color: "var(--text-dim)" }}>atau klik untuk memilih</div>
+        <input ref={inputRef} type="file" multiple hidden accept={accept} onChange={(e) => e.target.files.length && onUpload(e.target.files, kind)} />
+      </div>
+      {assets.length === 0 && <div className="mfs-empty" style={{ padding: "8px 4px 16px" }}>Belum ada {label.toLowerCase()} diunggah.</div>}
+      {assets.map((a) => (
+        <div key={a.id} className="mfs-list-item">
+          {kind === "image"
+            ? <LibraryThumbnail asset={a} />
+            : <div className="mfs-asset-icon"><Icon size={14} color={trackColor(kind)} /></div>}
+          <span className="name">{a.name}</span>
+          <button className="mfs-add-btn" title="Tambah ke frame" onClick={() => dispatch({ type: "ADD_MEDIA_CLIP", kind, asset: a })}><Plus size={13} /></button>
+          <Trash2 size={13} className="del" onClick={() => dispatch({ type: "DELETE_LIBRARY_ASSET", kind, id: a.id })} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function LibraryPanel({ library, dispatch }) {
   const imgRef = useRef(null), vidRef = useRef(null), audRef = useRef(null);
 
@@ -4445,34 +4572,11 @@ function LibraryPanel({ library, dispatch }) {
     });
   };
 
-  const Section = ({ kind, label, accept, icon: Icon, assets, inputRef, hint }) => (
-    <div>
-      <div className="mfs-subhead"><Icon size={12} />{label}</div>
-      <div className="mfs-upload-zone" onClick={() => inputRef.current?.click()}>
-        <Upload size={14} style={{ marginBottom: 4 }} />
-        <div>Seret {hint}</div>
-        <div style={{ fontSize: 10, marginTop: 2, color: "var(--text-dim)" }}>atau klik untuk memilih</div>
-        <input ref={inputRef} type="file" multiple hidden accept={accept} onChange={(e) => e.target.files.length && handleUpload(e.target.files, kind)} />
-      </div>
-      {assets.length === 0 && <div className="mfs-empty" style={{ padding: "8px 4px 16px" }}>Belum ada {label.toLowerCase()} diunggah.</div>}
-      {assets.map((a) => (
-        <div key={a.id} className="mfs-list-item">
-          {kind === "image"
-            ? <LibraryThumbnail asset={a} />
-            : <div className="mfs-asset-icon"><Icon size={14} color={trackColor(kind)} /></div>}
-          <span className="name">{a.name}</span>
-          <button className="mfs-add-btn" title="Tambah ke frame" onClick={() => dispatch({ type: "ADD_MEDIA_CLIP", kind, asset: a })}><Plus size={13} /></button>
-          <Trash2 size={13} className="del" onClick={() => dispatch({ type: "DELETE_LIBRARY_ASSET", kind, id: a.id })} />
-        </div>
-      ))}
-    </div>
-  );
-
   return (
     <div className="mfs-panel-body">
-      <Section kind="image" label="Gambar" accept="image/*,.svg" icon={ImageIcon} assets={library.images} inputRef={imgRef} hint=".svg / .png / .jpg" />
-      <Section kind="video" label="Video" accept="video/*" icon={Film} assets={library.videos} inputRef={vidRef} hint="file video" />
-      <Section kind="audio" label="Audio" accept="audio/*" icon={Music} assets={library.audios} inputRef={audRef} hint="file audio" />
+      <LibrarySection kind="image" label="Gambar" accept="image/*,.svg" icon={ImageIcon} assets={library.images} inputRef={imgRef} hint=".svg / .png / .jpg" onUpload={handleUpload} dispatch={dispatch} />
+      <LibrarySection kind="video" label="Video" accept="video/*" icon={Film} assets={library.videos} inputRef={vidRef} hint="file video" onUpload={handleUpload} dispatch={dispatch} />
+      <LibrarySection kind="audio" label="Audio" accept="audio/*" icon={Music} assets={library.audios} inputRef={audRef} hint="file audio" onUpload={handleUpload} dispatch={dispatch} />
     </div>
   );
 }
@@ -4544,6 +4648,14 @@ const LeftPanel = React.memo(function LeftPanel({ project, dispatch }) {
       {tab === "library" && <LibraryPanel library={project.library} dispatch={dispatch} />}
     </div>
   );
+}, (prev, next) => {
+  // Panel kiri hanya membaca klip terpilih, daftar seleksi, dan library —
+  // jangan re-render tiap kali klip LAIN berubah (mis. saat drag di kanvas).
+  if (prev.dispatch !== next.dispatch) return false;
+  const a = prev.project, b = next.project;
+  if (a === b) return true;
+  if (a.library !== b.library || a.selectedClipId !== b.selectedClipId || a.selectedClipIds !== b.selectedClipIds) return false;
+  return a.clips.find((c) => c.id === a.selectedClipId) === b.clips.find((c) => c.id === b.selectedClipId);
 });
 
 /* ============================================================
@@ -4578,8 +4690,31 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
   const bgImgRef = useRef(null);
   const exporting = exportState.exporting;
   const exportProgress = exportState.progress;
-  const setExporting = useCallback((v) => setExportState((s) => ({ ...s, exporting: v })), [setExportState]);
-  const setExportProgress = useCallback((v) => setExportState((s) => ({ ...s, progress: v })), [setExportState]);
+  const setExporting = useCallback((v) => setExportState((s) => (s.exporting === v ? s : { ...s, exporting: v })), [setExportState]);
+  // Progres ekspor dipanggil tiap frame (30-60x/detik). Hanya perbarui state
+  // (→ re-render App) bila angka persennya benar-benar berubah.
+  const lastExportProgressRef = useRef(0);
+  const setExportProgress = useCallback((v) => {
+    if (lastExportProgressRef.current === v) return;
+    lastExportProgressRef.current = v;
+    setExportState((s) => (s.progress === v ? s : { ...s, progress: v }));
+  }, [setExportState]);
+  // AudioContext jangka panjang untuk ekspor. createMediaElementSource hanya
+  // boleh dipanggil SEKALI per elemen dan mengalihkan audionya ke konteks
+  // itu selamanya — jadi konteksnya tidak boleh ditutup tiap selesai ekspor
+  // (dulu audio media mati total setelah ekspor pertama).
+  const audioCtxRef = useRef(null);
+  const getAudioCtx = useCallback(() => {
+    if (audioCtxRef.current) return audioCtxRef.current;
+    try {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) return null;
+      audioCtxRef.current = new Ctor();
+    } catch (e) { audioCtxRef.current = null; }
+    return audioCtxRef.current;
+  }, []);
+  // true setelah unmount → loop ekspor yang masih berjalan berhenti.
+  const exportAbortRef = useRef(false);
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
@@ -4617,7 +4752,9 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
   // Sinkronkan klip media dengan durasi intrinsik setelah metadata file tersedia.
   const onMediaDuration = useCallback((clipId, durationMs) => {
     if (!Number.isFinite(durationMs) || durationMs <= 0) return;
-    dispatchProject({ type: "UPDATE_CLIP", id: clipId, patch: { duration: Math.max(150, Math.round(durationMs)) } });
+    // Reducer mengabaikan aksi ini bila durasi klip sudah pernah disinkronkan
+    // / diubah manual (durationAuto false) — jadi reload tak menimpa trim.
+    dispatchProject({ type: "SYNC_MEDIA_DURATION", id: clipId, duration: Math.max(150, Math.round(durationMs)) });
   }, [dispatchProject]);
   const mediaMapRef = useMediaElements(project.clips, notifyReady, onMediaDuration);
 
@@ -4708,7 +4845,22 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     }
   }, [mediaMapRef]);
 
-  useEffect(() => { redrawRef.current = () => { if (!playingRef.current) drawFrame(playheadRef.current); }; }, [drawFrame]);
+  useEffect(() => { redrawRef.current = () => { if (!playingRef.current && !exportingRef.current) drawFrame(playheadRef.current); }; }, [drawFrame]);
+
+  // Bersihkan sumber daya berat saat Motion Studio ditutup (ganti mode):
+  // hentikan ekspor yang berjalan, tutup AudioContext, kosongkan cache layer
+  // & lepas konteks WebGL supaya memori GPU tidak tertahan.
+  useEffect(() => {
+    exportAbortRef.current = false;
+    return () => {
+      exportAbortRef.current = true;
+      const ac = audioCtxRef.current;
+      audioCtxRef.current = null;
+      if (ac) { try { ac.close(); } catch (e) {} }
+      clearLayerCache();
+      disposeGL();
+    };
+  }, []);
 
   const resizeRef = useRef(() => {});
   useEffect(() => {
@@ -4836,9 +4988,12 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     // tiap frame. Menjalankan ulang blok ini tiap tick hanya menambah beban
     // (dan dulu ikut bikin patah-patah), jadi cukup update ref lalu keluar.
     if (playback.playing) return;
+    // Selama ekspor, loop ekspor yang memegang kendali media & kanvas —
+    // blok ini dulu bisa menjeda media di tengah rekaman.
+    if (exportingRef.current) return;
     syncMediaPlayback(project.clips, mediaMapRef, playback.playhead, false, transitionsRef.current);
     drawFrame(playback.playhead);
-  }, [playback.playhead, playback.playing, project.clips, project.selectedClipId, project.background, drawFrame, mediaMapRef]);
+  }, [playback.playhead, playback.playing, project.clips, project.selectedClipId, project.background, drawFrame, mediaMapRef, exporting]);
 
   useEffect(() => {
     if (!playback.playing) return;
@@ -4855,8 +5010,13 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     let frameBudget = [];
     clearLayerCache(); // mulai bersih (mis. glyph font baru saja diedit di mode lain)
     const loop = (ts) => {
+      // Ekspor mengambil alih playheadRef — jangan sampai dua loop
+      // menggerakkannya bersamaan.
+      if (exportingRef.current) return;
       if (lastTs == null) lastTs = ts;
-      const dt = ts - lastTs; lastTs = ts;
+      // Batasi dt: setelah tab tersembunyi / jank panjang, playhead tidak
+      // boleh melompat jauh sekaligus.
+      const dt = Math.min(ts - lastTs, 100); lastTs = ts;
       let next = playheadRef.current + dt;
       let stop = false;
       const duration = durationRef.current;
@@ -4880,7 +5040,6 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       // dispatch → tanpa re-render React), supaya animasi kanvas mulus dan
       // tidak lagi patah-patah saat diputar.
       if (playClock) playClock.notify(next);
-      else notifyPlayhead(next);
       if (timeTextRef.current) timeTextRef.current.textContent = fmtTime(next);
       if (fsTimeTextRef.current) fsTimeTextRef.current.textContent = fmtTime(next);
       if (stop) {
@@ -4954,7 +5113,22 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     dragRef.current = { mode, clipId: sel.id, ...init };
     try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (err) {}
 
+    // pointermove bisa datang >60x/detik (mouse gaming, pena) — tiap event
+    // dulu langsung dispatch → seluruh App re-render. Gabungkan jadi maksimal
+    // satu dispatch per frame layar (event terakhir yang menang).
+    let pendingMoveEv = null, moveRaf = 0;
     const onMove = (ev) => {
+      pendingMoveEv = ev;
+      if (moveRaf) return;
+      moveRaf = requestAnimationFrame(() => {
+        moveRaf = 0;
+        const pe = pendingMoveEv;
+        pendingMoveEv = null;
+        if (pe) applyMove(pe);
+      });
+    };
+    const applyMove = (ev) => {
+      if (!canvasRef.current) return;
       const r = canvasRef.current.getBoundingClientRect();
       const sX = dimsRef.current.w / r.width, sY = dimsRef.current.h / r.height;
       const cx2 = (ev.clientX - r.left) * sX, cy2 = (ev.clientY - r.top) * sY;
@@ -4977,6 +5151,8 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       }
     };
     const onUp = () => {
+      if (moveRaf) { cancelAnimationFrame(moveRaf); moveRaf = 0; }
+      if (pendingMoveEv) { const pe = pendingMoveEv; pendingMoveEv = null; applyMove(pe); }
       dragRef.current = null;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
@@ -4988,7 +5164,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
   };
 
   const exportVideo = async () => {
-    if (exporting) return;
+    if (exporting || exportingRef.current) return;
     if (typeof canvasRef.current.captureStream !== "function" || typeof window.MediaRecorder === "undefined") {
       reportError("Browser ini tidak mendukung ekspor video (captureStream/MediaRecorder tidak tersedia). Coba pakai Chrome atau Edge versi terbaru.");
       return;
@@ -4999,8 +5175,17 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     }
 
     // Suppress editing chrome for the entire export, including the initial
-    // readiness wait before the first frame is recorded.
+    // readiness wait before the first frame is recorded. exportingRef juga
+    // langsung menghentikan loop rAF playback pratinjau (lihat loop di atas)
+    // supaya tidak ada dua loop yang menggerakkan playheadRef bersamaan.
     exportingRef.current = true;
+    exportAbortRef.current = false;
+    const prevLoop = playback.loop;
+    if (playingRef.current) {
+      playingRef.current = false;
+      dispatchPlayback({ type: "SET_PLAYING", value: false });
+    }
+    let audioCtx = null, audioDest = null, connectedNodes = [];
     try {
     // Prime every media element with a play()+pause() *synchronously* inside
     // this click handler. Browsers only allow programmatic el.play() without
@@ -5017,6 +5202,11 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     allMediaEntries.forEach((entry) => {
       try { entry.el.currentTime = 0; } catch (e) {}
     });
+    // Buat/lanjutkan AudioContext selagi masih di dalam gestur klik.
+    if (allMediaEntries.length > 0) {
+      const ac = getAudioCtx();
+      if (ac && ac.state === "suspended") ac.resume().catch(() => {});
+    }
 
     setExporting(true);
     clearLayerCache();
@@ -5039,29 +5229,37 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
 
     const canvas = canvasRef.current;
     const hasMedia = allMediaEntries.length > 0;
+    if (exportAbortRef.current || !canvas) return;
 
     // Setup audio HANYA kalau ada klip video/audio. Sebelumnya track audio
     // (silent) selalu ditambahkan walau proyek cuma teks — di sebagian
     // browser track audio yang tak pernah mengeluarkan sample bisa membuat
     // MediaRecorder menahan/menggagalkan seluruh rekaman ("tidak ada data
     // terekam"). Untuk proyek teks-saja, rekam video-only saja.
-    let audioCtx = null, audioDest = null;
+    // AudioContext dipakai ulang antar-ekspor (lihat audioCtxRef). Tiap
+    // elemen media disambungkan PERMANEN ke speaker (destination) sekali saja;
+    // per ekspor cukup buat MediaStreamDestination baru lalu sambung/putus.
     if (hasMedia) {
       try {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === "suspended") await audioCtx.resume();
-        audioDest = audioCtx.createMediaStreamDestination();
-        const seen = new Set();
-        allMediaEntries.forEach((entry) => {
-          if (seen.has(entry.el)) return;
-          seen.add(entry.el);
-          try {
-            if (!entry.srcNode) entry.srcNode = audioCtx.createMediaElementSource(entry.el);
-            entry.srcNode.connect(audioDest);
-            entry.srcNode.connect(audioCtx.destination);
-          } catch (e) { /* elemen mungkin belum siap */ }
-        });
-      } catch (e) { audioCtx = null; audioDest = null; }
+        audioCtx = getAudioCtx();
+        if (audioCtx) {
+          if (audioCtx.state === "suspended") { try { await audioCtx.resume(); } catch (e) {} }
+          audioDest = audioCtx.createMediaStreamDestination();
+          const seen = new Set();
+          allMediaEntries.forEach((entry) => {
+            if (seen.has(entry.el)) return;
+            seen.add(entry.el);
+            try {
+              if (!entry.srcNode) {
+                entry.srcNode = audioCtx.createMediaElementSource(entry.el);
+                entry.srcNode.connect(audioCtx.destination);
+              }
+              entry.srcNode.connect(audioDest);
+              connectedNodes.push(entry.srcNode);
+            } catch (e) { /* elemen mungkin belum siap */ }
+          });
+        }
+      } catch (e) { audioDest = null; }
     }
 
     // Untuk proyek TANPA media, pakai mode frame manual: captureStream(0) +
@@ -5115,8 +5313,6 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       try { recorder = new window.MediaRecorder(combinedStream); }
       catch (e2) {
         reportError("Ekspor gagal: browser menolak MediaRecorder. Coba Chrome/Edge terbaru.");
-        setExporting(false); setExportProgress(0);
-        if (audioCtx) { try { await audioCtx.close(); } catch (x) {} }
         return;
       }
     }
@@ -5142,6 +5338,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       // titik wall-clock absolutnya supaya durasi rekaman = durasi timeline.
       const captureStart = performance.now();
       for (let t = 0; t <= duration; t += frameMs) {
+        if (exportAbortRef.current) break;
         drawFrame(t);
         try { videoTrack.requestFrame(); } catch (e) {}
         setExportProgress(Math.min(99, Math.round((t / duration) * 100)));
@@ -5156,6 +5353,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       await new Promise((resolve) => {
         let last = performance.now();
         const stepLoop = () => {
+          if (exportAbortRef.current) { resolve(); return; }
           const now = performance.now(); const dt = now - last; last = now;
           let next = playheadRef.current + dt;
           if (next >= duration) next = duration;
@@ -5177,13 +5375,11 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     await new Promise((r) => setTimeout(r, 150));
     if (recorder.state !== "inactive") recorder.stop();
     await stopped;
-    if (audioCtx) { try { await audioCtx.close(); } catch (e) {} }
+    if (exportAbortRef.current) return; // komponen sudah ditutup — buang hasil
     setExportProgress(100);
 
     if (chunks.length === 0) {
       reportError("Ekspor gagal: tidak ada data video yang terekam. Coba lagi, atau kurangi durasi/ukuran frame.");
-      setExporting(false);
-      setExportProgress(0);
       return;
     }
 
@@ -5201,18 +5397,38 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       reportError("Browser ini belum bisa merekam MP4 (H.264), jadi hasilnya .webm — tetap bisa diputar & diunggah. Untuk hasil .mp4 langsung, pakai Chrome/Edge terbaru (di HP/desktop Android/Windows/Mac).");
     }
 
-    setExporting(false);
-    setExportProgress(0);
+    } catch (err) {
+      reportError("Ekspor gagal: " + (err?.message || err));
     } finally {
+      // Putuskan sambungan ke perekam ekspor ini (sambungan ke speaker tetap).
+      if (audioDest) connectedNodes.forEach((n) => { try { n.disconnect(audioDest); } catch (e) {} });
       exportingRef.current = false;
+      if (!exportAbortRef.current) {
+        // Kembalikan pengaturan loop pengguna (dulu terkunci jadi "off").
+        dispatchPlayback({ type: "SET_LOOP", value: prevLoop });
+        setExporting(false);
+        setExportProgress(0);
+      }
     }
   };
 
   // Tombol play di bawah frame: cuma memutar animasi inline di kanvas
   // utama (seperti sebelumnya), TIDAK membuka panel preview full-frame.
+  // Mulai memutar: kalau playhead sudah di ujung (loop mati), mulai lagi
+  // dari 0 — dulu menekan Play di ujung tidak melakukan apa-apa.
+  const rewindIfAtEnd = useCallback(() => {
+    const ac = audioCtxRef.current;
+    if (ac && ac.state === "suspended") ac.resume().catch(() => {});
+    if (playheadRef.current >= durationRef.current - 1) {
+      playheadRef.current = 0;
+      dispatchPlayback({ type: "SET_PLAYHEAD", value: 0 });
+    }
+  }, [dispatchPlayback]);
+
   const togglePlayback = useCallback(() => {
-    if (exporting) return;
+    if (exporting || exportingRef.current) return;
     if (!playback.playing) {
+      rewindIfAtEnd();
       primeMediaElements(mediaMapRef);
       syncMediaPlayback(clipsRef.current, mediaMapRef, playheadRef.current, false, transitionsRef.current);
       dispatchPlayback({ type: "SET_PLAYING", value: true });
@@ -5222,14 +5438,14 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       dispatchPlayback({ type: "SET_PLAYING", value: false });
       dispatchPlayback({ type: "SET_PLAYHEAD", value: playheadRef.current });
     }
-  }, [exporting, playback.playing, dispatchPlayback]);
+  }, [exporting, playback.playing, dispatchPlayback, rewindIfAtEnd]);
 
   // Tombol "Preview" di topbar kanan atas: satu-satunya pemicu panel
   // preview full-frame (blur backdrop menutupi viewport).
   const togglePreviewPanel = useCallback(() => {
-    if (exporting) return;
+    if (exporting || exportingRef.current) return;
     if (!playback.previewOpen) {
-      if (!playback.playing) primeMediaElements(mediaMapRef);
+      if (!playback.playing) { rewindIfAtEnd(); primeMediaElements(mediaMapRef); }
       dispatchPlayback({ type: "SET_PLAYING", value: true });
       dispatchPlayback({ type: "SET_PREVIEW_OPEN", value: true });
     } else {
@@ -5237,7 +5453,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       dispatchPlayback({ type: "SET_PLAYHEAD", value: playheadRef.current });
       dispatchPlayback({ type: "SET_PREVIEW_OPEN", value: false });
     }
-  }, [exporting, playback.playing, playback.previewOpen, dispatchPlayback]);
+  }, [exporting, playback.playing, playback.previewOpen, dispatchPlayback, rewindIfAtEnd]);
 
   // Ratakan objek terpilih terhadap kanvas. Memakai bbox terakhir yang
   // digambar (halfW/halfH dalam piksel frame) untuk menghitung offset baru,
@@ -5738,7 +5954,7 @@ function AutoCaptionControl({ clip, dispatch }) {
         setError("Tidak ada ucapan yang terdeteksi di audio ini.");
         return;
       }
-      dispatch({ type: "ADD_CAPTION_CLIPS", segments, audioStart: clip.start, sourceClipId: clip.id });
+      dispatch({ type: "ADD_CAPTION_CLIPS", segments, audioStart: clip.start, sourceClipId: clip.id, replace: true });
       setStatus(`${segments.length} caption dibuat`);
       setProgress(1);
     } catch (err) {
@@ -6176,7 +6392,12 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const [marquee, setMarquee] = useState(null);
   const MIN_TL_H = 120;
   const MAX_TL_H = Math.max(320, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) * 0.65));
-  const timelineDuration = useMemo(() => computeTimelineDuration(project.clips), [project.clips]);
+  const liveTimelineDuration = useMemo(() => computeTimelineDuration(project.clips), [project.clips]);
+  // Selama klip diseret/di-resize, skala linimasa dibekukan. Dulu, menyeret
+  // klip terakhir ke kanan memperpanjang durasi linimasa → skala px/ms
+  // berubah di tengah drag → klip "melorot" menjauh dari kursor.
+  const [frozenTimelineDuration, setFrozenTimelineDuration] = useState(null);
+  const timelineDuration = frozenTimelineDuration ?? liveTimelineDuration;
 
   useEffect(() => {
     const el = trackRef.current;
@@ -6275,23 +6496,42 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     return { rect, width };
   }, []);
 
-  const setPlayheadPosition = useCallback((value) => {
+  // Lebar konten linimasa di-cache (diukur ulang lewat ResizeObserver dan
+  // saat zoom/durasi berubah) — dulu getBoundingClientRect + scrollWidth
+  // dibaca TIAP frame playback, memaksa layout sinkron 60x/detik.
+  const tlWidthRef = useRef(0);
+  const lastPlayheadValRef = useRef(playback.playhead);
+  const measureTimelineWidth = useCallback(() => {
     const metrics = getTimelineMetrics();
-    if (!metrics) return;
-    const x = clamp(value / (tlDurRef.current || 1), 0, 1) * metrics.width;
+    tlWidthRef.current = metrics ? metrics.width : 0;
+    return tlWidthRef.current;
+  }, [getTimelineMetrics]);
+
+  const setPlayheadPosition = useCallback((value) => {
+    lastPlayheadValRef.current = value;
+    const width = tlWidthRef.current || measureTimelineWidth();
+    if (!width) return;
+    const x = clamp(value / (tlDurRef.current || 1), 0, 1) * width;
     const line = playheadElRef.current;
     const marker = playheadMarkerRef.current;
     if (line) line.style.left = `${x}px`;
     if (marker) marker.style.left = `${x}px`;
-  }, [getTimelineMetrics]);
-
-  const notifyPlayhead = useCallback((v) => {
-    setPlayheadPosition(v);
-  }, [setPlayheadPosition]);
+  }, [measureTimelineWidth]);
 
   useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      measureTimelineWidth();
+      setPlayheadPosition(lastPlayheadValRef.current);
+    });
+    [timelineViewportRef.current, rulerContentRef.current, trackContentRef.current].forEach((el) => { if (el) ro.observe(el); });
+    return () => ro.disconnect();
+  }, [measureTimelineWidth, setPlayheadPosition]);
+
+  useEffect(() => {
+    measureTimelineWidth();
     setPlayheadPosition(playback.playhead);
-  }, [playback.playhead, timelineDuration, timelineZoom, horizontalScroll, setPlayheadPosition]);
+  }, [playback.playhead, timelineDuration, timelineZoom, horizontalScroll, project.clips, measureTimelineWidth, setPlayheadPosition]);
 
   useEffect(() => () => {
     scrubCleanupRef.current?.();
@@ -6463,6 +6703,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     const width = Math.max(trackRef.current.clientWidth, trackRef.current.scrollWidth);
     const startMx = e.clientX, startMy = e.clientY;
     const startStart = clip.start, startDuration = clip.duration;
+    setFrozenTimelineDuration(timelineDuration);
     // Jangan langsung menampilkan zona ghost "+ track baru" saat klip baru
     // di-mousedown (klik). Zona ghost (dan segala kemungkinan bikin track
     // baru) baru "aktif" setelah kursor benar-benar bergeser melewati
@@ -6501,6 +6742,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
+      setFrozenTimelineDuration(null);
       if (mode === "move" && hasStartedDrag) {
         if (lastHover?.kind === "track" && lastHover.trackId !== clip.trackId) {
           dispatchProject({ type: "MOVE_CLIP_TO_TRACK", clipId: clip.id, trackId: lastHover.trackId, start: lastStart });
@@ -6894,7 +7136,8 @@ const TopBar = React.memo(function TopBar({ project, dispatch, canUndo, canRedo,
     <div className="mfs-top">
       <div className="mfs-top-left">
         <div className="mfs-brand" aria-label="MotionSeru"><img className="mfs-logo-image" src={theme === "light" ? motionLogoLight : motionLogoDark} alt="MotionSeru" draggable={false} /></div>
-        <ModeTabs />
+        {/* Ganti mode dikunci selama ekspor (unmount akan membatalkan rekaman). */}
+        <div style={{ display: "contents", pointerEvents: exporting ? "none" : undefined }} aria-disabled={exporting || undefined}><ModeTabs /></div>
         <FrameSizeControl frameSize={project.frameSize} dispatch={dispatch} />
         <ProjectMenu project={project} dispatch={dispatch} />
       </div>
@@ -6918,8 +7161,8 @@ const TopBar = React.memo(function TopBar({ project, dispatch, canUndo, canRedo,
           {theme === "light" ? <MoonStar size={14} /> : <Sun size={14} />}
         </button>
         <div className="mfs-top-sep" />
-        <button className="mfs-icon-btn" disabled={!canUndo} onClick={() => dispatch({ type: "UNDO" })} title="Undo (Ctrl+Z)"><Undo2 size={15} /></button>
-        <button className="mfs-icon-btn" disabled={!canRedo} onClick={() => dispatch({ type: "REDO" })} title="Redo (Ctrl+Shift+Z)"><Redo2 size={15} /></button>
+        <button className="mfs-icon-btn" disabled={!canUndo || exporting} onClick={() => dispatch({ type: "UNDO" })} title="Undo (Ctrl+Z)"><Undo2 size={15} /></button>
+        <button className="mfs-icon-btn" disabled={!canRedo || exporting} onClick={() => dispatch({ type: "REDO" })} title="Redo (Ctrl+Shift+Z)"><Redo2 size={15} /></button>
         <div className="mfs-top-sep" />
         <button className={`mfs-preview-btn ${playback.previewOpen ? "active" : ""}`} disabled={exporting} onClick={onPreview} title="Pratinjau hasil di kanvas">
           {playback.previewOpen ? <Pause size={13} /> : <Eye size={13} />} {playback.previewOpen ? "Jeda" : "Preview"}
@@ -7029,7 +7272,7 @@ export default function App() {
               } catch (e) {}
             }
           });
-          dispatchProject({ type: "HYDRATE_PROJECT", project: normalizeMotionProject(saved) });
+          dispatchProject({ type: "HYDRATE_PROJECT", project: reviveMediaObjectUrls(normalizeMotionProject(saved)) });
         }
         mfsHydratedRef.current = true;
       })
@@ -7039,24 +7282,32 @@ export default function App() {
 
   // Simpan (debounce) tiap kali proyek berubah — tapi hanya setelah proses
   // pemulihan awal selesai, supaya tidak menimpa simpanan dengan state kosong.
+  const latestProjectRef = useRef(project);
+  latestProjectRef.current = project;
   useEffect(() => {
     if (!mfsHydratedRef.current) return;
     if (mfsSaveTimer.current) clearTimeout(mfsSaveTimer.current);
-    mfsSaveTimer.current = setTimeout(() => { saveMotionProject(project); }, 400);
+    mfsSaveTimer.current = setTimeout(() => { mfsSaveTimer.current = null; saveMotionProject(project); }, 400);
   }, [project]);
 
-  // Flush simpanan saat tab disembunyikan/ditutup agar reload cepat tak
-  // kehilangan perubahan terakhir.
+  // Flush simpanan saat tab disembunyikan/ditutup — dan saat Motion Studio
+  // di-unmount (ganti mode) supaya simpanan yang masih tertunda tidak hilang.
+  // Listener dipasang sekali saja; proyek terbaru dibaca lewat ref.
   useEffect(() => {
-    const flush = () => { if (mfsHydratedRef.current) saveMotionProject(project); };
+    const flush = () => {
+      if (!mfsHydratedRef.current) return;
+      if (mfsSaveTimer.current) { clearTimeout(mfsSaveTimer.current); mfsSaveTimer.current = null; }
+      saveMotionProject(latestProjectRef.current);
+    };
     const onHide = () => { if (document.visibilityState === "hidden") flush(); };
     document.addEventListener("visibilitychange", onHide);
     window.addEventListener("pagehide", flush);
     return () => {
       document.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("pagehide", flush);
+      if (mfsSaveTimer.current) flush();
     };
-  }, [project]);
+  }, []);
 
   // Panel aktif di mode HP/tablet kecil (bottom sheet). null = kanvas penuh.
   const [mobilePane, setMobilePane] = useState(null);
@@ -7088,11 +7339,25 @@ export default function App() {
   }, [project]);
   // Ctrl+Y) untuk redo — dilewati kalau fokus sedang di input/textarea,
   // supaya tidak menabrak undo bawaan browser saat mengetik teks.
+  // Handler keyboard global dipasang SEKALI; nilai terbaru (proyek,
+  // clipboard, status ekspor) dibaca lewat ref — dulu dilepas & dipasang
+  // ulang tiap kali proyek berubah.
+  const keyHandlerRef = useRef(null);
+  const exportingNowRef = useRef(false);
+  exportingNowRef.current = exportState.exporting;
   useEffect(() => {
-    const onKeyDown = (e) => {
+    const onKeyDown = (e) => keyHandlerRef.current && keyHandlerRef.current(e);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+  useEffect(() => {
+    keyHandlerRef.current = (e) => {
       const tag = e.target?.tagName;
       const isEditable = tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable;
       if (isEditable) return;
+      // Selama ekspor, proyek dikunci: hapus/undo/tempel di tengah rekaman
+      // akan merusak hasil video.
+      if (exportingNowRef.current) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
         e.preventDefault();
         dispatchProject({ type: "SELECT_ALL_CLIPS" });
@@ -7115,8 +7380,6 @@ export default function App() {
       else if (e.key.toLowerCase() === "z") { e.preventDefault(); dispatchProject({ type: "UNDO" }); }
       else if (e.key.toLowerCase() === "y") { e.preventDefault(); dispatchProject({ type: "REDO" }); }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
   }, [project, dispatchProject, copyMotionClips, cutMotionClips, pasteMotionClips]);
 
   // --- Gestur sentuh khusus HP/tablet: ketuk 2 jari = undo, 3 jari = redo -
@@ -7152,7 +7415,8 @@ export default function App() {
       if (e.touches.length === 0) {
         const elapsed = Date.now() - gesture.startTime;
         const count = gesture.maxCount;
-        if (!gesture.cancelled && elapsed <= TAP_MAX_MS && count === 2) {
+        if (exportingNowRef.current) { /* proyek dikunci selama ekspor */ }
+        else if (!gesture.cancelled && elapsed <= TAP_MAX_MS && count === 2) {
           dispatchProject({ type: "UNDO" });
         } else if (!gesture.cancelled && elapsed <= TAP_MAX_MS && count === 3) {
           dispatchProject({ type: "REDO" });
@@ -7172,6 +7436,12 @@ export default function App() {
     };
   }, [dispatchProject]);
 
+  // Callback stabil supaya React.memo pada TopBar benar-benar bekerja (dulu
+  // fungsi inline baru tiap render membuat pembandingnya selalu gagal).
+  const onPreview = useCallback(() => centerStageRef.current?.togglePreview(), []);
+  const onExport = useCallback(() => centerStageRef.current?.exportVideo(), []);
+  const onAlign = useCallback((axis, where) => centerStageRef.current?.alignSelected(axis, where), []);
+
   return (
     <ErrorBoundary>
       <div className="mfs-root" data-theme={theme} data-mpane={mobilePane || "none"} style={{ gridTemplateRows: `48px 1fr ${timelineHeight}px` }}>
@@ -7183,9 +7453,9 @@ export default function App() {
           canRedo={canRedo}
           playback={playback}
           exportState={exportState}
-          onPreview={() => centerStageRef.current?.togglePreview()}
-          onExport={() => centerStageRef.current?.exportVideo()}
-          onAlign={(axis, where) => centerStageRef.current?.alignSelected(axis, where)}
+          onPreview={onPreview}
+          onExport={onExport}
+          onAlign={onAlign}
           theme={theme}
           onToggleTheme={toggleTheme}
         />

@@ -1,10 +1,9 @@
 import { useAppStore } from "@/glyph/store";
 import { memo } from "react";
 import type { Glyph } from "@/types/glyph";
-import { objectFillPath, objectStrokePath, contourToPath } from "@/editor/pathBuilder";
 import { outlineBounds } from "@/editor/objectOps";
-import { brushOutlineContours } from "@/brushes/strokeToOutline";
-import { hasOutline } from "@/types/glyph";
+import { useGlyphPaths } from "@/editor/useGlyphPaths";
+import { hasOutlineCached } from "@/editor/outlineCache";
 
 const boundsCache = new WeakMap<object, ReturnType<typeof outlineBounds>>();
 
@@ -19,9 +18,19 @@ function cachedOutlineBounds(outline: NonNullable<Glyph["outline"]>) {
 /**
  * Miniature preview of a glyph's ACTUAL vector data. Falls back to the plain
  * character (sans) when the glyph has not been drawn yet.
+ *
+ * The ink comes from the shared, cached path builder (editor/glyphPaths via
+ * useGlyphPaths) — the same geometry Multi Mode's passive cells and the
+ * Test Lab draw — so a thumbnail looks exactly like the canvas (merged
+ * Outline Brush strokes, resolved textured brushes) and a glyph's brush
+ * envelopes are computed once for the whole app instead of once per
+ * thumbnail mount. While the paths are still being built in the
+ * background the character placeholder is shown.
  */
 function GlyphThumbnailImpl({ glyph, className = "" }: { glyph: Glyph; className?: string }) {
   const ascender = useAppStore((s) => s.metrics.ascender);
+  const drawn = hasOutlineCached(glyph);
+  const paths = useGlyphPaths(glyph, ascender, drawn);
   // Feature Builder glyphs (ligatures, alternates, swashes) haven't been
   // drawn yet fall back to their multi-character rule name (e.g. "A.alt1",
   // "C.swash") instead of a single letter. Flag that here so the CSS can
@@ -30,7 +39,7 @@ function GlyphThumbnailImpl({ glyph, className = "" }: { glyph: Glyph; className
   const multiChar = Array.from(glyph.char).length > 1;
   const charClassName = `fm-thumb-char ${multiChar ? "fm-thumb-char-multi " : ""}${className}`;
 
-  if (!hasOutline(glyph)) {
+  if (!drawn) {
     // " " renders as nothing at all in a plain <span> — unlike every other
     // undrawn glyph, that leaves the tile looking empty/broken rather than
     // "not drawn yet". Space never needs an outline (see hasSpace check in
@@ -40,7 +49,7 @@ function GlyphThumbnailImpl({ glyph, className = "" }: { glyph: Glyph; className
   }
 
   const b = cachedOutlineBounds(glyph.outline);
-  if (!b) return <span className={charClassName}>{glyph.char}</span>;
+  if (!b || !paths) return <span className={charClassName}>{glyph.char === " " ? "␣" : glyph.char}</span>;
 
   const w = b.maxX - b.minX;
   const h = b.maxY - b.minY;
@@ -52,14 +61,19 @@ function GlyphThumbnailImpl({ glyph, className = "" }: { glyph: Glyph; className
 
   return (
     <svg className={`fm-thumb-svg ${className}`} viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-      {glyph.outline.objects.map((obj) =>
-        obj.kind === "shape" || obj.kind === "expanded" ? (
-          <path key={obj.id} d={objectFillPath(obj, ascender)} fill="currentColor" fillRule="nonzero" />
-        ) : obj.kind === "brush" && obj.brushType !== "monoline" ? (
-          <path key={obj.id} d={brushOutlineContours(obj).map((c) => contourToPath(c, ascender)).join(" ")} fill="currentColor" fillRule="nonzero" />
+      {paths.map((entry) =>
+        entry.kind === "stroke" ? (
+          <path
+            key={entry.id}
+            d={entry.d}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={entry.strokeWidth}
+            strokeLinecap={entry.cap as "round" | "butt" | "square"}
+            strokeLinejoin={entry.join as "round" | "miter" | "bevel"}
+          />
         ) : (
-          <path key={obj.id} d={objectStrokePath(obj, ascender)} fill="none" stroke="currentColor"
-            strokeWidth={obj.strokeWidth ?? 20} strokeLinecap={obj.cap ?? "round"} strokeLinejoin={obj.join ?? "round"} />
+          <path key={entry.id} d={entry.d} fill="currentColor" fillRule="nonzero" />
         )
       )}
     </svg>

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Contour, Point, VectorObject } from "@/types/geometry";
 import { useAppStore } from "@/glyph/store";
 import { shortId } from "@/utils/id";
@@ -6,6 +6,14 @@ import { simplifyPolyline } from "@/utils/simplify";
 import { smoothStroke } from "@/brushes/strokeSmoothing";
 import { centerlineToContour } from "@/brushes/strokeToOutline";
 import { detectQuickShape, quickShapePolyline, QUICK_SHAPE_HOLD_MS, type QuickShapeResult } from "./quickShape";
+import { createPreviewStore, type PreviewStore } from "./previewStore";
+
+export interface PencilToolOptions {
+  /** Publish the live preview through `previewStore` instead of React state
+   *  (see useBrushTool's option of the same name). When set, the returned
+   *  `previewContour` stays null. */
+  externalPreview?: boolean;
+}
 
 /** Below this many captured points, a gesture is a stray tap/jitter, not a
  * real path — nothing is committed (mirrors the Shape tool's "drag too
@@ -34,7 +42,8 @@ export function smoothPencilPoints(rawPoints: Point[], smoothing: number, hitSca
   return smoothStroke(rawPoints, smoothing, hitScale);
 }
 
-export function usePencilTool(hitScale: number) {
+export function usePencilTool(hitScale: number, options?: PencilToolOptions) {
+  const externalPreview = options?.externalPreview === true;
   const activeChar = useAppStore((s) => s.activeChar);
   const glyph = useAppStore((s) => s.glyphs[s.activeChar]);
   const commitOutline = useAppStore((s) => s.commitOutline);
@@ -42,8 +51,30 @@ export function usePencilTool(hitScale: number) {
   const pencilPostSmoothing = useAppStore((s) => s.pencilPostSmoothing);
 
   const rawPointsRef = useRef<Point[]>([]);
-  const [previewContour, setPreviewContour] = useState<Contour | null>(null);
+  const [previewContourState, setPreviewContourState] = useState<Contour | null>(null);
+  const previewStoreRef = useRef<PreviewStore<Contour | null> | null>(null);
+  if (!previewStoreRef.current) previewStoreRef.current = createPreviewStore<Contour | null>(null);
+  const previewStore = previewStoreRef.current;
+  const setPreviewContour = useCallback((next: Contour | null) => {
+    if (externalPreview) previewStore.set(next);
+    else setPreviewContourState(next);
+  }, [externalPreview, previewStore]);
+  const previewContour = externalPreview ? null : previewContourState;
   const [isDrawing, setIsDrawing] = useState(false);
+  // Synchronous mirror of isDrawing (coalesced samples can arrive before the
+  // re-render that follows pointerDown/pointerUp).
+  const isDrawingRef = useRef(false);
+  // The live preview (smoothing + curve fit over the WHOLE stroke so far) is
+  // rebuilt at most once per animation frame, no matter how many pointer
+  // samples arrived in between — every sample is still recorded.
+  const previewRafRef = useRef<number | null>(null);
+  const cancelScheduledPreview = useCallback(() => {
+    if (previewRafRef.current !== null) {
+      cancelAnimationFrame(previewRafRef.current);
+      previewRafRef.current = null;
+    }
+  }, []);
+  useEffect(() => cancelScheduledPreview, [cancelScheduledPreview]);
 
   // QuickShape (Procreate-style "hold at the end to snap") state — see
   // quickShape.ts. `holdTimerRef` fires once the pointer has been still
@@ -64,14 +95,24 @@ export function usePencilTool(hitScale: number) {
 
   const pointerDown = useCallback((p: Point) => {
     rawPointsRef.current = [p];
+    isDrawingRef.current = true;
     setIsDrawing(true);
+    cancelScheduledPreview();
     setPreviewContour(null);
     clearQuickShapeHold();
-  }, [clearQuickShapeHold]);
+  }, [clearQuickShapeHold, cancelScheduledPreview, setPreviewContour]);
+
+  const flushPreview = useCallback(() => {
+    previewRafRef.current = null;
+    const pts = rawPointsRef.current;
+    if (!isDrawingRef.current || pts.length < 2 || quickShapeRef.current) return;
+    const smoothed = smoothPencilPoints(pts, pencilSmoothing, hitScale);
+    setPreviewContour(centerlineToContour(smoothed, true, true));
+  }, [pencilSmoothing, hitScale, setPreviewContour]);
 
   const pointerMove = useCallback(
     (p: Point) => {
-      if (!isDrawing) return;
+      if (!isDrawingRef.current) return;
       // Guard against a stray non-finite pointer sample (seen occasionally
       // on Safari during fast/jittery input) ever entering the point
       // stream that gets curve-fit below — one bad sample there can
@@ -88,24 +129,27 @@ export function usePencilTool(hitScale: number) {
       quickShapeRef.current = null;
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
       holdTimerRef.current = setTimeout(() => {
+        if (!isDrawingRef.current) return;
         const shape = detectQuickShape(rawPointsRef.current, hitScale, false);
         if (!shape) return;
         quickShapeRef.current = shape;
+        cancelScheduledPreview();
         setPreviewContour(centerlineToContour(quickShapePolyline(shape), true, true));
       }, QUICK_SHAPE_HOLD_MS);
       if (pts.length < 2) return;
-      const smoothed = smoothPencilPoints(pts, pencilSmoothing, hitScale);
-      setPreviewContour(centerlineToContour(smoothed, true, true));
+      if (previewRafRef.current === null) previewRafRef.current = requestAnimationFrame(flushPreview);
     },
-    [isDrawing, pencilSmoothing, hitScale]
+    [hitScale, flushPreview, cancelScheduledPreview, setPreviewContour]
   );
 
   const pointerUp = useCallback(() => {
-    if (!isDrawing) return;
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
     setIsDrawing(false);
     const raw = rawPointsRef.current;
     const heldShape = quickShapeRef.current;
     rawPointsRef.current = [];
+    cancelScheduledPreview();
     setPreviewContour(null);
     clearQuickShapeHold();
     if (raw.length < MIN_RAW_POINTS || !glyph) return;
@@ -153,14 +197,19 @@ export function usePencilTool(hitScale: number) {
     // Deliberately stays on the Pencil tool (matching Brush) rather than
     // hopping to Select — freehand sketching is almost always several
     // strokes in a row (e.g. an outer contour, then an inner counter).
-  }, [isDrawing, glyph, activeChar, commitOutline, pencilSmoothing, pencilPostSmoothing, hitScale, clearQuickShapeHold]);
+  }, [glyph, activeChar, commitOutline, pencilPostSmoothing, hitScale, clearQuickShapeHold, cancelScheduledPreview, setPreviewContour]);
 
   const cancel = useCallback(() => {
     rawPointsRef.current = [];
+    isDrawingRef.current = false;
     setIsDrawing(false);
+    cancelScheduledPreview();
     setPreviewContour(null);
     clearQuickShapeHold();
-  }, [clearQuickShapeHold]);
+  }, [clearQuickShapeHold, cancelScheduledPreview, setPreviewContour]);
 
-  return { pointerDown, pointerMove, pointerUp, cancel, previewContour, isDrawing };
+  return useMemo(
+    () => ({ pointerDown, pointerMove, pointerUp, cancel, previewContour, previewStore, isDrawing }),
+    [pointerDown, pointerMove, pointerUp, cancel, previewContour, previewStore, isDrawing]
+  );
 }

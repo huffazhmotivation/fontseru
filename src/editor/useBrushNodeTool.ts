@@ -125,8 +125,9 @@ export function useBrushNodeTool(hitScale: number) {
         // (drop its outgoing handle) instead of adding a coincident node —
         // this is how you end a curved run with a straight segment next.
         if (length(subtract(last.point, p)) <= hitRadius) {
-          last.type = "corner";
-          last.handleOut = null;
+          // Replace (never mutate) the node: the canvas' memoized handle /
+          // node renderers compare node identity to decide what to redraw.
+          nodes[nodes.length - 1] = { ...last, type: "corner", handleOut: null };
           draggingIndexRef.current = null;
           setLiveNodes([...nodes]);
           return;
@@ -159,10 +160,9 @@ export function useBrushNodeTool(hitScale: number) {
         const first = nodes[0];
         if (!first) return;
         if (length(subtract(p, first.point)) < dragThreshold) {
-          first.handleIn = null;
+          nodes[0] = { ...first, handleIn: null };
         } else {
-          first.handleIn = p;
-          if (!first.handleOut) first.handleOut = reflect(p, first.point);
+          nodes[0] = { ...first, handleIn: p, handleOut: first.handleOut ?? reflect(p, first.point) };
         }
         setLiveNodes([...nodes]);
         return;
@@ -174,15 +174,10 @@ export function useBrushNodeTool(hitScale: number) {
       // Dragging far enough from the anchor pulls out a symmetric curve
       // handle (reflected on the opposite side, Illustrator/Pen-tool
       // style); staying within the threshold keeps/returns it to a corner.
-      if (length(subtract(p, node.point)) < dragThreshold) {
-        node.handleIn = null;
-        node.handleOut = null;
-        node.type = "corner";
-      } else {
-        node.handleOut = p;
-        node.handleIn = reflect(p, node.point);
-        node.type = "symmetric";
-      }
+      nodes[idx] =
+        length(subtract(p, node.point)) < dragThreshold
+          ? { ...node, handleIn: null, handleOut: null, type: "corner" }
+          : { ...node, handleOut: p, handleIn: reflect(p, node.point), type: "symmetric" };
       setLiveNodes([...nodes]);
     },
     [dragThreshold]
@@ -213,6 +208,16 @@ export function useBrushNodeTool(hitScale: number) {
   }, [finish, reset]);
 
   const cancel = useCallback(() => reset(), [reset]);
+
+  /** Ends only the current press/drag (pointercancel) — already placed
+   *  anchors are kept and nothing is committed. */
+  const endDrag = useCallback(() => {
+    draggingIndexRef.current = null;
+    if (closingRef.current) {
+      closingRef.current = false;
+      setIsClosing(false);
+    }
+  }, []);
 
   /** Live silhouette for the VARIABLE-width brushes: the path drawn so far,
    * handed straight to `brushOutlineContours` — the exact function every
@@ -245,16 +250,20 @@ export function useBrushNodeTool(hitScale: number) {
     return buildObject(liveNodes, isClosing, "brush-node-preview");
   }, [liveNodes, buildObject, brush.type, isClosing]);
 
-  return {
-    pointerDown,
-    pointerMove,
-    pointerUp,
-    finishOpen,
-    escape,
-    cancel,
-    isDrawing,
-    liveNodes,
-    previewOutline,
-    previewStrokeObject,
-  };
+  return useMemo(
+    () => ({
+      pointerDown,
+      pointerMove,
+      pointerUp,
+      finishOpen,
+      escape,
+      cancel,
+      endDrag,
+      isDrawing,
+      liveNodes,
+      previewOutline,
+      previewStrokeObject,
+    }),
+    [pointerDown, pointerMove, pointerUp, finishOpen, escape, cancel, endDrag, isDrawing, liveNodes, previewOutline, previewStrokeObject]
+  );
 }

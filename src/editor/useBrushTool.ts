@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { Contour, Point, StrokeSample, VectorObject } from "@/types/geometry";
 import { useAppStore } from "@/glyph/store";
 import { samplesToCenterline, centerlineToContour, centerlineToOutlineContours, type SpraySpeckCache } from "@/brushes/strokeToOutline";
@@ -6,6 +6,22 @@ import { StrokeStabilizer } from "@/brushes/strokeStabilizer";
 import { shortId } from "@/utils/id";
 import { gridCellCenter, type GridShape } from "./gridGeometry";
 import { detectQuickShape, quickShapePolyline, QUICK_SHAPE_HOLD_MS, type QuickShapeResult } from "./quickShape";
+import { createPreviewStore, type PreviewStore } from "./previewStore";
+
+export interface BrushPreview {
+  outline: Contour[];
+  centerline: Contour | null;
+}
+
+const EMPTY_BRUSH_PREVIEW: BrushPreview = { outline: [], centerline: null };
+
+export interface BrushToolOptions {
+  /** Publish the live stroke preview through `previewStore` instead of
+   *  React state, so only a small subscribed preview component re-renders
+   *  per frame (see GlyphCanvas' BrushStrokePreview). When set, the
+   *  returned `previewOutline`/`previewCenterline` stay empty. */
+  externalPreview?: boolean;
+}
 
 interface PointerLike { pressure?: number; pointerType?: string; timeStamp?: number; }
 
@@ -62,7 +78,8 @@ function isPixelCellCore(p: Point, size: number): boolean {
  * still runs once on top (live and on commit alike) as the final cleanup.
  * `hitScale` (font units per screen px) keeps the feel zoom-independent.
  */
-export function useBrushTool(hitScale: number) {
+export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
+  const externalPreview = options?.externalPreview === true;
   const brush = useAppStore((s) => s.brush);
   const brushCap = useAppStore((s) => s.brushCap);
   const gridSize = useAppStore((s) => s.gridSize);
@@ -95,7 +112,22 @@ export function useBrushTool(hitScale: number) {
   // uniform for the renderer (see GlyphCanvas.tsx).
   const [previewOutline, setPreviewOutline] = useState<Contour[]>([]);
   const [previewCenterline, setPreviewCenterline] = useState<Contour | null>(null);
+  const previewStoreRef = useRef<PreviewStore<BrushPreview> | null>(null);
+  if (!previewStoreRef.current) previewStoreRef.current = createPreviewStore<BrushPreview>(EMPTY_BRUSH_PREVIEW);
+  const previewStore = previewStoreRef.current;
+  const publishPreview = useCallback((next: BrushPreview) => {
+    if (externalPreview) {
+      previewStore.set(next.outline.length === 0 && !next.centerline ? EMPTY_BRUSH_PREVIEW : next);
+      return;
+    }
+    setPreviewCenterline(next.centerline);
+    setPreviewOutline(next.outline);
+  }, [externalPreview, previewStore]);
   const [isDrawing, setIsDrawing] = useState(false);
+  // Synchronous mirror of isDrawing: coalesced pointer samples can arrive
+  // before React re-renders after pointerDown/pointerUp, and the render
+  // closure's `isDrawing` would drop (or double-handle) them.
+  const isDrawingRef = useRef(false);
   const pixelSnap = brush.type === "pixel" && brush.gridSnap === true;
 
   // QuickShape (Procreate-style "hold at the end to snap") state — see
@@ -174,10 +206,9 @@ export function useBrushTool(hitScale: number) {
   const rafIdRef = useRef<number | null>(null);
   const flushPreview = useCallback(() => {
     rafIdRef.current = null;
-    const preview = buildPreview();
-    setPreviewCenterline(preview.centerline);
-    setPreviewOutline(preview.outline);
-  }, [buildPreview]);
+    if (!isDrawingRef.current) return;
+    publishPreview(buildPreview());
+  }, [buildPreview, publishPreview]);
   const schedulePreviewUpdate = useCallback(() => {
     if (rafIdRef.current != null) return;
     rafIdRef.current = requestAnimationFrame(flushPreview);
@@ -201,16 +232,16 @@ export function useBrushTool(hitScale: number) {
     // Fresh gesture: start this stroke's spray dust field over from empty
     // rather than carrying over the previous stroke's accumulated specks.
     sprayCacheRef.current = null;
+    isDrawingRef.current = true;
     setIsDrawing(true);
-    setPreviewOutline([]);
-    setPreviewCenterline(null);
+    publishPreview(EMPTY_BRUSH_PREVIEW);
     clearQuickShapeHold();
     cancelScheduledPreview();
-  }, [pressureFor, pixelSnap, gridSize, gridShape, clearQuickShapeHold, cancelScheduledPreview, brush.stabilizer, hitScale]);
+  }, [pressureFor, pixelSnap, gridSize, gridShape, clearQuickShapeHold, cancelScheduledPreview, brush.stabilizer, hitScale, publishPreview]);
 
   const pointerMove = useCallback(
     (p: Point, e: PointerLike) => {
-      if (!isDrawing) return;
+      if (!isDrawingRef.current) return;
       const snapped = pixelSnap ? snapToGridCell(p, gridSize, gridShape) : p;
       if (pixelSnap) {
         // Pixel Brush stays on its own grid-snapped path, unaffected by
@@ -284,7 +315,7 @@ export function useBrushTool(hitScale: number) {
           hitScale,
           true
         );
-        if (!shape) return;
+        if (!shape || !isDrawingRef.current) return;
         quickShapeRef.current = shape;
         let sumP = 0;
         for (const s of rawSamplesRef.current) sumP += s.pressure;
@@ -295,11 +326,12 @@ export function useBrushTool(hitScale: number) {
       if (!quickShapeRef.current && stabilizerRef.current) samplesRef.current = stabilizerRef.current.samples;
       schedulePreviewUpdate();
     },
-    [isDrawing, brush, schedulePreviewUpdate, pressureFor, gridSize, gridShape, pixelSnap, hitScale]
+    [brush, schedulePreviewUpdate, pressureFor, gridSize, gridShape, pixelSnap, hitScale]
   );
 
   const pointerUp = useCallback(() => {
-    if (!isDrawing) return;
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
     setIsDrawing(false);
     const heldShape = quickShapeRef.current;
     // Held still at the end and it read as a clean line/circle — use that
@@ -333,8 +365,7 @@ export function useBrushTool(hitScale: number) {
     stabilizerRef.current = null;
     pixelCoreRef.current = [];
     sprayCacheRef.current = null;
-    setPreviewOutline([]);
-    setPreviewCenterline(null);
+    publishPreview(EMPTY_BRUSH_PREVIEW);
     clearQuickShapeHold();
     cancelScheduledPreview();
     if (!centerline || !glyph) return;
@@ -353,7 +384,7 @@ export function useBrushTool(hitScale: number) {
       samples: rawSamples,
     };
     commitOutline(activeChar, { objects: [...glyph.outline.objects, obj] });
-  }, [isDrawing, brush, brushCap, glyph, activeChar, commitOutline, gridSize, gridShape, pixelSnap, hitScale, clearQuickShapeHold]);
+  }, [brush, brushCap, glyph, activeChar, commitOutline, gridSize, gridShape, pixelSnap, hitScale, clearQuickShapeHold, cancelScheduledPreview, publishPreview]);
 
   const cancel = useCallback(() => {
     rawSamplesRef.current = [];
@@ -361,11 +392,17 @@ export function useBrushTool(hitScale: number) {
     stabilizerRef.current = null;
     pixelCoreRef.current = [];
     sprayCacheRef.current = null;
+    isDrawingRef.current = false;
     setIsDrawing(false);
-    setPreviewOutline([]);
-    setPreviewCenterline(null);
+    publishPreview(EMPTY_BRUSH_PREVIEW);
     clearQuickShapeHold();
-  }, [clearQuickShapeHold]);
+    // A preview frame still queued from the last move would otherwise
+    // repaint the abandoned stroke right after it was cleared.
+    cancelScheduledPreview();
+  }, [clearQuickShapeHold, cancelScheduledPreview, publishPreview]);
 
-  return { pointerDown, pointerMove, pointerUp, cancel, previewOutline, previewCenterline, isDrawing };
+  return useMemo(
+    () => ({ pointerDown, pointerMove, pointerUp, cancel, previewOutline, previewCenterline, previewStore, isDrawing }),
+    [pointerDown, pointerMove, pointerUp, cancel, previewOutline, previewCenterline, previewStore, isDrawing]
+  );
 }

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { GlyphOutline, Point, VectorObject } from "@/types/geometry";
 import { useAppStore } from "@/glyph/store";
-import { cloneOutline } from "./nodeOps";
+import type { Affine, TransformPreview } from "./transformPreview";
 import {
   objectsBounds,
   pointHitsObject,
@@ -152,8 +152,9 @@ function expandGroupsInSelection(outline: GlyphOutline, ids: string[]): string[]
  */
 function duplicateObjects(objects: VectorObject[], ids: string[]): VectorObject[] {
   const groupMap = new Map<string, string>();
+  const wanted = new Set(ids);
   return objects
-    .filter((o) => ids.includes(o.id))
+    .filter((o) => wanted.has(o.id))
     .map((o) => {
       const clone = cloneObjectWithNewIds(o);
       if (o.groupId) {
@@ -169,6 +170,8 @@ function duplicateObjects(objects: VectorObject[], ids: string[]): VectorObject[
       return clone;
     });
 }
+
+const EMPTY_OUTLINE: GlyphOutline = { objects: [] };
 
 /** hitScale = font units per screen pixel (1/scale); used for hit tolerances. */
 export function useSelectTool(hitScale: number) {
@@ -195,6 +198,17 @@ export function useSelectTool(hitScale: number) {
   // stamps a second copy.
   const dupStampedRef = useRef(false);
   const [marqueeRect, setMarqueeRect] = useState<Rect | null>(null);
+  // Mirror of marqueeRect for pointerUp: the last pointer-move is flushed
+  // synchronously right before pointerUp, so the state value in pointerUp's
+  // closure would still be one frame behind.
+  const marqueeRectRef = useRef<Rect | null>(null);
+  const setMarquee = useCallback((rect: Rect | null) => {
+    marqueeRectRef.current = rect;
+    setMarqueeRect(rect);
+  }, []);
+  // See transformPreview.ts — lets the canvas render dragged objects from
+  // their stable base identity plus an SVG transform.
+  const [dragPreview, setDragPreview] = useState<TransformPreview | null>(null);
   const [hoverHandle, setHoverHandle] = useState<HandleId | null>(null);
   const hoverHandleRef = useRef<HandleId | null>(null);
 
@@ -207,8 +221,12 @@ export function useSelectTool(hitScale: number) {
     setHoverHandle(next);
   }, []);
 
-  const outline: GlyphOutline = liveOutline ?? glyph?.outline ?? { objects: [] };
-  const bounds = objectsBounds(outline, selectedObjectIds);
+  const outline: GlyphOutline = liveOutline ?? glyph?.outline ?? EMPTY_OUTLINE;
+  // Flattening every selected object is not free — only redo it when the
+  // outline or selection actually changed (also keeps `bounds` identity
+  // stable so findHandle/pointerDown aren't recreated every render).
+  const bounds = useMemo(() => objectsBounds(outline, selectedObjectIds), [outline, selectedObjectIds]);
+  const selectedSet = useMemo(() => new Set(selectedObjectIds), [selectedObjectIds]);
   const handleTol = 9 * hitScale;
   const rotateOffset = 26 * hitScale;
   const skewOffset = 14 * hitScale;
@@ -250,7 +268,9 @@ export function useSelectTool(hitScale: number) {
       // 1. handle on the current selection?
       const handle = findHandle(p);
       if (handle && bounds) {
-        baseRef.current = cloneOutline(outline);
+        // Transforms below are pure (translateObject/scaleObject/... return
+        // new objects), so the base can be referenced instead of deep-cloned.
+        baseRef.current = outline;
         if (handle === "rotate") {
           const center = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
           dragRef.current = { mode: "rotate", center, startAngle: Math.atan2(p.y - center.y, p.x - center.x) };
@@ -296,7 +316,7 @@ export function useSelectTool(hitScale: number) {
             : unitIds;
           const duplicates = duplicateObjects(outline.objects, sourceIds);
           const withDuplicates: GlyphOutline = { objects: [...outline.objects, ...duplicates] };
-          baseRef.current = cloneOutline(withDuplicates);
+          baseRef.current = withDuplicates;
           setLiveOutline(withDuplicates);
           const dupIds = duplicates.map((d) => d.id);
           selectObjects(dupIds);
@@ -306,18 +326,20 @@ export function useSelectTool(hitScale: number) {
         }
 
         let dragIds = unitIds;
+        const selectedSet = new Set(selectedObjectIds);
         if (shiftKey) {
-          const allSelected = unitIds.every((id) => selectedObjectIds.includes(id));
+          const allSelected = unitIds.every((id) => selectedSet.has(id));
           selectObjects(unitIds, true);
+          const unitSet = new Set(unitIds);
           dragIds = allSelected
-            ? selectedObjectIds.filter((id) => !unitIds.includes(id))
+            ? selectedObjectIds.filter((id) => !unitSet.has(id))
             : [...new Set([...selectedObjectIds, ...unitIds])];
-        } else if (!unitIds.every((id) => selectedObjectIds.includes(id))) {
+        } else if (!unitIds.every((id) => selectedSet.has(id))) {
           selectObjects(unitIds);
         } else {
           dragIds = selectedObjectIds;
         }
-        baseRef.current = cloneOutline(outline);
+        baseRef.current = outline;
         if (dragIds.length > 0) dragRef.current = { mode: "move", origin: p, ids: dragIds };
         return;
       }
@@ -325,9 +347,9 @@ export function useSelectTool(hitScale: number) {
       // 3. empty space -> marquee
       if (!shiftKey) clearObjectSelection();
       dragRef.current = { mode: "marquee", origin: p, additive: shiftKey };
-      setMarqueeRect({ x: p.x, y: p.y, w: 0, h: 0 });
+      setMarquee({ x: p.x, y: p.y, w: 0, h: 0 });
     },
-    [findHandle, bounds, outline, hitScale, selectedObjectIds, selectObjects, clearObjectSelection, setSelectionSkewState, selectionSkewAngle, selectionSkewHandle]
+    [findHandle, bounds, outline, hitScale, selectedObjectIds, selectObjects, clearObjectSelection, setSelectionSkewState, selectionSkewAngle, selectionSkewHandle, setLiveOutline, setMarquee]
   );
 
   const pointerMove = useCallback(
@@ -338,7 +360,7 @@ export function useSelectTool(hitScale: number) {
         return;
       }
       if (drag.mode === "marquee") {
-        setMarqueeRect(rectFrom(drag.origin, p));
+        setMarquee(rectFrom(drag.origin, p));
         return;
       }
       let base = baseRef.current;
@@ -355,7 +377,7 @@ export function useSelectTool(hitScale: number) {
           dupStampedRef.current = true;
           const duplicates = duplicateObjects(base.objects, moveIds);
           const withDuplicates: GlyphOutline = { objects: [...base.objects, ...duplicates] };
-          baseRef.current = cloneOutline(withDuplicates);
+          baseRef.current = withDuplicates;
           base = baseRef.current;
           moveIds = duplicates.map((dp) => dp.id);
           selectObjects(moveIds);
@@ -372,10 +394,12 @@ export function useSelectTool(hitScale: number) {
             };
           }
         }
+        const moveSet = new Set(moveIds);
         const objects = base.objects.map((o) =>
-          moveIds.includes(o.id) ? translateObject(o, d.x, d.y) : o
+          moveSet.has(o.id) ? translateObject(o, d.x, d.y) : o
         );
         setLiveOutline({ objects });
+        setDragPreview({ kind: "move", baseObjects: base.objects, ids: moveSet, matrix: [1, 0, 0, 1, d.x, d.y] });
         return;
       }
 
@@ -402,9 +426,15 @@ export function useSelectTool(hitScale: number) {
         sx = clampScale(sx);
         sy = clampScale(sy);
         const objects = base.objects.map((o) =>
-          selectedObjectIds.includes(o.id) ? scaleObject(o, anchor, sx, sy, strokeWidthLocked) : o
+          selectedSet.has(o.id) ? scaleObject(o, anchor, sx, sy, strokeWidthLocked) : o
         );
         setLiveOutline({ objects });
+        setDragPreview({
+          kind: "resize",
+          baseObjects: base.objects,
+          ids: selectedSet,
+          matrix: [sx, 0, 0, sy, anchor.x * (1 - sx), anchor.y * (1 - sy)],
+        });
         return;
       }
 
@@ -420,12 +450,20 @@ export function useSelectTool(hitScale: number) {
         amount = Math.max(-3, Math.min(3, amount));
         const totalShear = drag.baseShear + amount;
         setSelectionSkewState((Math.atan(totalShear) * 180) / Math.PI, drag.handle);
+        const shX = horizontal ? amount : 0;
+        const shY = horizontal ? 0 : amount;
         const objects = base.objects.map((o) =>
-          selectedObjectIds.includes(o.id)
-            ? skewObject(o, drag.anchor, horizontal ? amount : 0, horizontal ? 0 : amount)
+          selectedSet.has(o.id)
+            ? skewObject(o, drag.anchor, shX, shY)
             : o
         );
         setLiveOutline({ objects });
+        setDragPreview({
+          kind: "skew",
+          baseObjects: base.objects,
+          ids: selectedSet,
+          matrix: [1, shY, shX, 1, -shX * drag.anchor.y, -shY * drag.anchor.x],
+        });
         return;
       }
 
@@ -433,12 +471,17 @@ export function useSelectTool(hitScale: number) {
         let angle = Math.atan2(p.y - drag.center.y, p.x - drag.center.x) - drag.startAngle;
         if (shiftKey) angle = Math.round(angle / (Math.PI / 12)) * (Math.PI / 12);
         const objects = base.objects.map((o) =>
-          selectedObjectIds.includes(o.id) ? rotateObject(o, drag.center, angle) : o
+          selectedSet.has(o.id) ? rotateObject(o, drag.center, angle) : o
         );
         setLiveOutline({ objects });
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const { x: cx, y: cy } = drag.center;
+        const matrix: Affine = [cos, sin, -sin, cos, cx - cx * cos + cy * sin, cy - cx * sin - cy * cos];
+        setDragPreview({ kind: "rotate", baseObjects: base.objects, ids: selectedSet, matrix });
       }
     },
-    [findHandle, selectedObjectIds, selectObjects, setLiveOutline, setSelectionSkewState, strokeWidthLocked, sketchMode, horizontalSnapTargets, verticalSnapTargets, snapTolerance, updateHoverHandle]
+    [findHandle, selectedSet, selectObjects, setLiveOutline, setSelectionSkewState, strokeWidthLocked, sketchMode, horizontalSnapTargets, verticalSnapTargets, snapTolerance, updateHoverHandle, setMarquee]
   );
 
   const pointerUp = useCallback(() => {
@@ -446,16 +489,18 @@ export function useSelectTool(hitScale: number) {
     dragRef.current = null;
     dupStampedRef.current = false;
     if (!drag) return;
+    setDragPreview(null);
 
     if (drag.mode === "marquee") {
-      if (marqueeRect && (marqueeRect.w > 2 || marqueeRect.h > 2)) {
+      const rect = marqueeRectRef.current;
+      if (rect && (rect.w > 2 || rect.h > 2)) {
         const found: string[] = [];
         for (const o of outline.objects) {
-          if (boundsIntersectRect(objectBounds(o), marqueeRect.x, marqueeRect.y, marqueeRect.w, marqueeRect.h)) found.push(o.id);
+          if (boundsIntersectRect(objectBounds(o), rect.x, rect.y, rect.w, rect.h)) found.push(o.id);
         }
         selectObjects(expandGroupsInSelection(outline, found), drag.additive);
       }
-      setMarqueeRect(null);
+      setMarquee(null);
       return;
     }
     // Reached for move, resize, rotate, and skew drags of an already-
@@ -470,11 +515,39 @@ export function useSelectTool(hitScale: number) {
     // trying to make. Cmd/Ctrl+drag-to-duplicate also lands in "move" mode;
     // treated the same way, since the duplicate is existing ink being
     // repositioned, not a freshly hand-drawn stroke.
-    if (liveOutline) commitOutline(activeChar, liveOutline, { skipAutoSpacing: true });
+    // Read from the store, not this render's closure: the final coalesced
+    // pointer-move is flushed synchronously right before pointerUp, and its
+    // setLiveOutline hasn't re-rendered into `liveOutline` yet.
+    const latest = useAppStore.getState().liveOutline;
+    if (latest) commitOutline(activeChar, latest, { skipAutoSpacing: true });
     baseRef.current = null;
-  }, [marqueeRect, outline, selectObjects, liveOutline, activeChar, commitOutline]);
+  }, [outline, selectObjects, activeChar, commitOutline, setMarquee]);
 
-  return { pointerDown, pointerMove, pointerUp, bounds, marqueeRect, hoverHandle, rotateOffset, skewOffset };
+  /** Abandons the in-progress gesture without committing it (pointercancel). */
+  const cancel = useCallback(() => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    dupStampedRef.current = false;
+    baseRef.current = null;
+    setDragPreview(null);
+    setMarquee(null);
+    if (drag && drag.mode !== "marquee" && useAppStore.getState().liveOutline) setLiveOutline(null);
+  }, [setLiveOutline, setMarquee]);
+
+  /** Drops gesture bookkeeping only (no store writes) — for a tool switch
+   *  mid-gesture, where the store's setTool already finalizes liveOutline. */
+  const reset = useCallback(() => {
+    dragRef.current = null;
+    dupStampedRef.current = false;
+    baseRef.current = null;
+    setDragPreview(null);
+    setMarquee(null);
+  }, [setMarquee]);
+
+  return useMemo(
+    () => ({ pointerDown, pointerMove, pointerUp, cancel, reset, bounds, marqueeRect, hoverHandle, rotateOffset, skewOffset, dragPreview }),
+    [pointerDown, pointerMove, pointerUp, cancel, reset, bounds, marqueeRect, hoverHandle, rotateOffset, skewOffset, dragPreview]
+  );
 }
 
 function handleSign(h: ResizeHandleId, axis: "x" | "y"): number {

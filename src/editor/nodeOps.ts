@@ -27,6 +27,30 @@ export function cloneOutline(outline: GlyphOutline): GlyphOutline {
   return { objects: outline.objects.map(cloneObject) };
 }
 
+/**
+ * Structural-sharing copy for edits that only touch a few contours: every
+ * object that owns one of `contourIds` gets a fresh object whose touched
+ * contours are deep-cloned (safe to mutate); every other object AND every
+ * untouched contour is returned as the very same reference.
+ *
+ * This is what keeps live node/pen/handle drags cheap: identity-keyed caches
+ * downstream (ObjectShape's React.memo, brushOutlineContours' WeakMap) only
+ * see the one edited object change, instead of every brush stroke in the
+ * glyph being re-expanded on every pointer frame. Callers must only mutate
+ * the contours they named here — everything else is shared with the input.
+ */
+export function cloneOutlineTouching(outline: GlyphOutline, contourIds: Iterable<string>): GlyphOutline {
+  const ids = contourIds instanceof Set ? (contourIds as Set<string>) : new Set(contourIds);
+  return {
+    ...outline,
+    objects: outline.objects.map((o) =>
+      o.contours.some((c) => ids.has(c.id))
+        ? { ...o, contours: o.contours.map((c) => (ids.has(c.id) ? cloneContour(c) : c)) }
+        : o
+    ),
+  };
+}
+
 export function findObject(outline: GlyphOutline, objectId: string): VectorObject | null {
   return outline.objects.find((o) => o.id === objectId) ?? null;
 }
@@ -89,13 +113,17 @@ function ensureSymmetricHandles(contour: Contour, node: PathNode): void {
   node.handleIn = subtract(node.point, offset);
 }
 
-/** Drops any object whose contours are all gone / too small to render. */
+/** Drops any object whose contours are all gone / too small to render.
+ * Never mutates: objects may be shared with the caller's input outline (see
+ * cloneOutlineTouching), so a pruned object is replaced, not edited. */
 function pruneObjects(outline: GlyphOutline): GlyphOutline {
+  const objects: VectorObject[] = [];
   for (const obj of outline.objects) {
-    obj.contours = obj.contours.filter((c) => c.nodes.length >= 2);
+    const contours = obj.contours.filter((c) => c.nodes.length >= 2);
+    if (contours.length === 0) continue;
+    objects.push(contours.length === obj.contours.length ? obj : { ...obj, contours });
   }
-  outline.objects = outline.objects.filter((o) => o.contours.length > 0);
-  return outline;
+  return { ...outline, objects };
 }
 
 export function retypeNode(
@@ -104,7 +132,7 @@ export function retypeNode(
   nodeId: string,
   nextType: NodeType
 ): GlyphOutline {
-  const working = cloneOutline(outline);
+  const working = cloneOutlineTouching(outline, [contourId]);
   const node = findNode(working, contourId, nodeId);
   if (!node) return working;
   node.type = nextType;
@@ -138,7 +166,7 @@ export function retypeNodes(
   refs: { contourId: string; nodeId: string }[],
   nextType: NodeType
 ): GlyphOutline {
-  const working = cloneOutline(outline);
+  const working = cloneOutlineTouching(outline, refs.map((r) => r.contourId));
   for (const ref of refs) {
     const node = findNode(working, ref.contourId, ref.nodeId);
     if (!node) continue;
@@ -305,7 +333,7 @@ function deleteNodesFromContour(contour: Contour, idsToDelete: Set<string>): voi
 
 /** Removes several nodes (possibly across multiple contours/objects) in one pass. */
 export function deleteNodes(outline: GlyphOutline, refs: { contourId: string; nodeId: string }[]): GlyphOutline {
-  const working = cloneOutline(outline);
+  const working = cloneOutlineTouching(outline, refs.map((r) => r.contourId));
   const byContour = new Map<string, Set<string>>();
   for (const r of refs) {
     if (!byContour.has(r.contourId)) byContour.set(r.contourId, new Set());
@@ -325,10 +353,13 @@ export function moveNodesBy(
   refs: { contourId: string; nodeId: string }[],
   delta: Point
 ): GlyphOutline {
-  const working = cloneOutline(outline);
+  const contourIds = new Set(refs.map((r) => r.contourId));
+  const working = cloneOutlineTouching(outline, contourIds);
   const wanted = new Set(refs.map((r) => `${r.contourId}:${r.nodeId}`));
   for (const obj of working.objects) {
     for (const contour of obj.contours) {
+      // Untouched contours are shared with `outline` — never mutate them.
+      if (!contourIds.has(contour.id)) continue;
       for (const node of contour.nodes) {
         if (!wanted.has(`${contour.id}:${node.id}`)) continue;
         node.point = add(node.point, delta);
@@ -357,7 +388,7 @@ export function setHandlePoint(
   point: Point,
   nodeType: NodeType
 ): GlyphOutline {
-  const working = cloneOutline(outline);
+  const working = cloneOutlineTouching(outline, [contourId]);
   const node = findNode(working, contourId, nodeId);
   if (!node) return working;
   if (part === "handleOut") {
@@ -383,7 +414,7 @@ export interface SegmentRef {
  * De Casteljau subdivision on curves so the visible shape is preserved.
  */
 export function insertNodeOnSegment(outline: GlyphOutline, ref: SegmentRef, t: number): GlyphOutline {
-  const working = cloneOutline(outline);
+  const working = cloneOutlineTouching(outline, [ref.contourId]);
   const contour = findContour(working, ref.contourId);
   if (!contour) return working;
   const n = contour.nodes.length;
@@ -422,7 +453,7 @@ export function insertNodeOnSegment(outline: GlyphOutline, ref: SegmentRef, t: n
  * to smooth so the curvature is retained on further editing.
  */
 export function bendSegment(outline: GlyphOutline, ref: SegmentRef, t: number, target: Point): GlyphOutline {
-  const working = cloneOutline(outline);
+  const working = cloneOutlineTouching(outline, [ref.contourId]);
   const contour = findContour(working, ref.contourId);
   if (!contour) return working;
   const n = contour.nodes.length;
@@ -479,7 +510,7 @@ export function roundCorner(
   radius: number,
   minRadius = 0.5
 ): GlyphOutline {
-  const working = cloneOutline(outline);
+  const working = cloneOutlineTouching(outline, [ref.contourId]);
   const contour = findContour(working, ref.contourId);
   if (!contour) return working;
   const n = contour.nodes.length;
@@ -667,7 +698,7 @@ export function unroundCorner(
   const result = reconstructCorner(outline, ref);
   if (!result) return null;
   const { pair, corner } = result;
-  const working = cloneOutline(outline);
+  const working = cloneOutlineTouching(outline, [pair.contourId]);
   const contour = findContour(working, pair.contourId);
   if (!contour) return null;
   const n = contour.nodes.length;

@@ -1,9 +1,10 @@
-import { memo, useMemo } from "react";
+import { memo, useDeferredValue, useMemo } from "react";
 import { LayoutGrid, Square, Minus, Plus, X, Maximize2, PenLine, Eraser, Wand2, GripHorizontal } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_FILTERS, MULTI_COLUMNS_MAX, MULTI_ZOOM_MAX, MULTI_ZOOM_MIN, OVERVIEW_SPACING_MAX, OVERVIEW_SPACING_MIN } from "@/types/glyphView";
 import type { GlyphFilterId } from "@/types/glyphView";
-import { countDrawnGlyphs, filterGlyphChars } from "@/editor/glyphFilter";
+import { filterGlyphChars } from "@/editor/glyphFilter";
+import { countDrawnGlyphsCached } from "@/editor/outlineCache";
 import { DRAW_CHAR } from "@/glyph/drawMode";
 import { GlyphThumbnail } from "./GlyphThumbnail";
 import { DRAWING_DRAG_TYPE } from "./drawingDrag";
@@ -83,11 +84,18 @@ function GlyphViewBarInner() {
   // Counts shown in the bar. Both are derived on the fly from the live
   // glyph map — nothing is cached or mirrored into state, so the "n jadi"
   // readout can never fall out of sync with what has actually been drawn.
+  //
+  // The count uses the SAME deferred query the multi canvas filters with,
+  // so both calls hit filterGlyphChars' single-entry memo with identical
+  // arguments instead of thrashing it (one call with the raw keystroke,
+  // one with the deferred value). The drawn count reuses per-outline
+  // cached answers, so a commit only re-checks the glyph that changed.
+  const deferredQuery = useDeferredValue(query);
   const shownCount = useMemo(
-    () => (multi ? filterGlyphChars(glyphs, filter, selectedGlyphChars, query).length : 0),
-    [multi, glyphs, filter, selectedGlyphChars, query]
+    () => (multi ? filterGlyphChars(glyphs, filter, selectedGlyphChars, deferredQuery).length : 0),
+    [multi, glyphs, filter, selectedGlyphChars, deferredQuery]
   );
-  const drawnCount = useMemo(() => (multi ? countDrawnGlyphs(glyphs) : 0), [multi, glyphs]);
+  const drawnCount = useMemo(() => (multi ? countDrawnGlyphsCached(glyphs) : 0), [multi, glyphs]);
 
   return (
     <>

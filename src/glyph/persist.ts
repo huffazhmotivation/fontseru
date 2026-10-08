@@ -109,7 +109,7 @@ export async function loadProject(): Promise<ProjectSnapshot | null> {
   let legacyLoaded = false;
   try {
     const db = await openDB();
-    const loaded = await new Promise<ProjectSnapshot | null>((resolve) => {
+    const loaded = await new Promise<ProjectSnapshot | null>((resolve, reject) => {
       const tx = db.transaction(STORE, "readonly");
       const store = tx.objectStore(STORE);
       const metaReq = store.get(KEY);
@@ -149,13 +149,17 @@ export async function loadProject(): Promise<ProjectSnapshot | null> {
         void _split; void _index;
         resolve({ ...rest, glyphs: byStyle.regular ?? {}, glyphsByStyle: byStyle as unknown as GlyphFamily });
       };
-      tx.onerror = () => resolve(null);
-      tx.onabort = () => resolve(null);
+      tx.onerror = () => reject(tx.error ?? new Error("IndexedDB read failed"));
+      tx.onabort = () => reject(tx.error ?? new Error("IndexedDB read aborted"));
     });
     if (loaded && !legacyLoaded) rememberSaved((loaded.glyphsByStyle ?? { regular: loaded.glyphs }) as Record<string, GlyphMap>);
     return loaded;
-  } catch {
-    return null;
+  } catch (err) {
+    // Storage that simply doesn't exist (private mode, no IndexedDB) means
+    // "nothing saved". A read that FAILED must not look like an empty
+    // project: the caller would then autosave defaults over the real one.
+    if (typeof indexedDB === "undefined") return null;
+    throw err;
   }
 }
 

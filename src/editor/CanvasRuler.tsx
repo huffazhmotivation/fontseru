@@ -11,7 +11,7 @@
  * Double-click guide line on canvas → delete it
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore, type RulerGuide } from "@/glyph/store";
 import { shortId } from "@/utils/id";
 
@@ -42,7 +42,9 @@ interface Props {
 }
 
 // ─── CanvasRuler ─────────────────────────────────────────────────────────────
-export function CanvasRuler({ scale, vbX, vbY, vbW, vbH, ascender, canvasRect }: Props) {
+// Memoized: GlyphCanvas re-renders for many reasons unrelated to the view
+// (selection, live edits…); the rulers only depend on their numeric props.
+export const CanvasRuler = memo(function CanvasRuler({ scale, vbX, vbY, vbW, vbH, ascender, canvasRect }: Props) {
   const addGuide    = useAppStore((s) => s.addRulerGuide);
   const updateGuide = useAppStore((s) => s.updateRulerGuide);
   const removeGuide = useAppStore((s) => s.removeRulerGuide);
@@ -54,22 +56,39 @@ export function CanvasRuler({ scale, vbX, vbY, vbW, vbH, ascender, canvasRect }:
   const draggingRef = useRef<DragState>(null);
   draggingRef.current = dragging;
 
-  // Global pointermove/up during drag (ruler pointer capture is per-element)
+  // Global pointermove/up during drag (ruler pointer capture is per-element).
+  // Moves are coalesced to one store update per animation frame — a raw
+  // pointermove stream (120-240 Hz on some devices) would otherwise update
+  // the store, and re-render everything subscribed to rulerGuides, several
+  // times per painted frame.
   useEffect(() => {
     if (!dragging) return;
-    const onMove = (e: PointerEvent) => {
+    let raf: number | null = null;
+    let pending: { clientX: number; clientY: number } | null = null;
+    const apply = () => {
+      raf = null;
       const d = draggingRef.current;
-      if (!d) return;
+      const p = pending;
+      pending = null;
+      if (!d || !p) return;
       if (d.axis === "h") {
-        const svgY = vbY + (e.clientY - d.rect.top) / scale;
+        const svgY = vbY + (p.clientY - d.rect.top) / scale;
         updateGuide(d.id, ascender - svgY);
       } else {
-        updateGuide(d.id, vbX + (e.clientX - d.rect.left) / scale);
+        updateGuide(d.id, vbX + (p.clientX - d.rect.left) / scale);
       }
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!draggingRef.current) return;
+      pending = { clientX: e.clientX, clientY: e.clientY };
+      if (raf === null) raf = requestAnimationFrame(apply);
     };
     const onUp = (e: PointerEvent) => {
       const d = draggingRef.current;
       if (!d) return;
+      // Land the guide at the release position before deciding anything.
+      if (raf !== null) cancelAnimationFrame(raf);
+      apply();
       setDragging(null);
       draggingRef.current = null;
       // Dragged back into the ruler strip → delete
@@ -82,6 +101,7 @@ export function CanvasRuler({ scale, vbX, vbY, vbW, vbH, ascender, canvasRect }:
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     return () => {
+      if (raf !== null) cancelAnimationFrame(raf);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
@@ -234,11 +254,11 @@ export function CanvasRuler({ scale, vbX, vbY, vbW, vbH, ascender, canvasRect }:
       </svg>
     </>
   );
-}
+});
 
 // ─── RulerGuideLines ─────────────────────────────────────────────────────────
 /** Rendered inside the canvas SVG — draws the dashed guide lines. */
-export function RulerGuideLines({
+export const RulerGuideLines = memo(function RulerGuideLines({
   rulerGuides, sc, vbX, vbY, vbW, vbH, ascender, onRemove,
 }: {
   rulerGuides: RulerGuide[];
@@ -291,4 +311,4 @@ export function RulerGuideLines({
       })}
     </>
   );
-}
+});

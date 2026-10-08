@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, PenLine, Minus, Highlighter, Feather, Pencil, Zap, Scissors, Trash2, Flame, Grid3x3, Lock, Unlock, ImagePlus, CircleDashed, Droplet, Triangle, Circle, Square, Sparkles, Bandage } from "lucide-react";
 import type { ShapeKind } from "@/editor/shapeBuilder";
 import { useAppStore, type NodeRef, type GlyphMetricKey } from "@/glyph/store";
@@ -24,6 +24,43 @@ const BRUSH_ICON: Record<BrushType, typeof PenLine> = {
   rough: CircleDashed, grunge: Flame, oilBrush: Droplet, pixel: Grid3x3,
   strong: Triangle, outline: Circle, sprayBrush: Sparkles, tape: Bandage,
 };
+
+/**
+ * Collapses a continuous edit from one control — a slider drag, a stepper
+ * drag, typing digits into a number field — into a single undo step, via the
+ * store's beginGlyphEdit/endGlyphEdit bracket. `wrap(fn)` opens the bracket
+ * lazily on the first actual change; it closes on the next pointerup (end
+ * of the drag/click), pointerdown, or focusout (leaving the field), and on
+ * unmount.
+ */
+function useGlyphEditBracket() {
+  const openRef = useRef(false);
+  const end = useCallback(() => {
+    if (!openRef.current) return;
+    openRef.current = false;
+    window.removeEventListener("pointerdown", end, true);
+    window.removeEventListener("pointerup", end, true);
+    window.removeEventListener("pointercancel", end, true);
+    window.removeEventListener("focusout", end, true);
+    useAppStore.getState().endGlyphEdit();
+  }, []);
+  const begin = useCallback(() => {
+    if (openRef.current) return;
+    openRef.current = true;
+    useAppStore.getState().beginGlyphEdit();
+    // Any new pointer press (e.g. a canvas click while this field keeps
+    // focus) also ends it, so an unrelated edit never merges into this step.
+    window.addEventListener("pointerdown", end, true);
+    window.addEventListener("pointerup", end, true);
+    window.addEventListener("pointercancel", end, true);
+    window.addEventListener("focusout", end, true);
+  }, [end]);
+  useEffect(() => end, [end]);
+  return useCallback(<A extends unknown[]>(fn: (...args: A) => void) => (...args: A) => {
+    begin();
+    fn(...args);
+  }, [begin]);
+}
 
 export function RightPanel() {
   const activeChar = useAppStore((s) => s.activeChar);
@@ -120,8 +157,10 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
   const ungroupSelectedObjects = useAppStore((s) => s.ungroupSelectedObjects);
   const strokeWidthLocked = useAppStore((s) => s.strokeWidthLocked);
   const toggleStrokeWidthLock = useAppStore((s) => s.toggleStrokeWidthLock);
+  const bracketed = useGlyphEditBracket();
 
-  const objs = glyph.outline.objects.filter((o) => selectedObjectIds.includes(o.id));
+  const selectedSet = new Set(selectedObjectIds);
+  const objs = glyph.outline.objects.filter((o) => selectedSet.has(o.id));
   const strokeObjs = objs.filter((o) => o.kind === "line" || o.kind === "brush");
   const capObjs = objs.filter((o) => o.kind === "line" || (o.kind === "brush" && o.brushType === "monoline"));
   const brushObjs = objs.filter((o) => o.kind === "brush");
@@ -190,7 +229,7 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
       )}
       {strokeObjs.length > 0 && (
         <Slider label="Stroke Width" value={strokeObjs[0].strokeWidth ?? 20} min={1} max={200} directInput
-          onChange={(v) => updateSelectedObject({ strokeWidth: v })}
+          onChange={bracketed((v: number) => updateSelectedObject({ strokeWidth: v }))}
           labelAdornment={
             <button
               type="button"
@@ -338,6 +377,7 @@ function TransformPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedOb
   const setSelectionSkewState = useAppStore((s) => s.setSelectionSkewState);
   const commitOutline = useAppStore((s) => s.commitOutline);
   const activeChar = useAppStore((s) => s.activeChar);
+  const bracketed = useGlyphEditBracket();
 
   const applySkewAngle = (rawAngle: number) => {
     if (!Number.isFinite(rawAngle) || selectedObjectIds.length === 0) return;
@@ -359,12 +399,15 @@ function TransformPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedOb
       ? { x: 0, y: topOrRight ? bounds.minY : bounds.maxY }
       : { x: topOrRight ? bounds.minX : bounds.maxX, y: 0 };
 
+    const selectedSet = new Set(selectedObjectIds);
     const objects = glyph.outline.objects.map((obj) =>
-      selectedObjectIds.includes(obj.id)
+      selectedSet.has(obj.id)
         ? skewObject(obj, anchor, horizontal ? delta : 0, horizontal ? 0 : delta)
         : obj
     );
-    commitOutline(activeChar, { objects });
+    // Same as a skew-handle drag (useSelectTool): reshaping existing ink
+    // must not re-trigger Auto Spacing's re-centering of the whole glyph.
+    commitOutline(activeChar, { objects }, { skipAutoSpacing: true });
     setSelectionSkewState(angle, handle);
   };
 
@@ -379,7 +422,7 @@ function TransformPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedOb
             min={-89}
             max={89}
             step={1}
-            onChange={applySkewAngle}
+            onChange={bracketed(applySkewAngle)}
             aria-label="Skew angle"
             data-testid="transform-skew"
           />
@@ -683,6 +726,7 @@ function FontMetricsSection() {
 function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph; selectedNodes: NodeRef[] }) {
   const commitOutline = useAppStore((s) => s.commitOutline);
   const clearSelection = useAppStore((s) => s.clearSelection);
+  const bracketed = useGlyphEditBracket();
 
   if (selectedNodes.length === 0) {
     const outlined = hasOutline(glyph);
@@ -779,13 +823,13 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
         <div className="fm-node-xy-row">
           <NumericInput
             value={Math.round(node.point.x)}
-            onChange={(x) => moveNodeTo(x, node.point.y)}
+            onChange={bracketed((x: number) => moveNodeTo(x, node.point.y))}
             data-testid="node-pos-x"
             aria-label="Node X position"
           />
           <NumericInput
             value={Math.round(node.point.y)}
-            onChange={(y) => moveNodeTo(node.point.x, y)}
+            onChange={bracketed((y: number) => moveNodeTo(node.point.x, y))}
             data-testid="node-pos-y"
             aria-label="Node Y position"
           />
@@ -810,13 +854,13 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
               <span className="fm-node-handle-label">In</span>
               <NumericInput
                 value={Math.round(handleIn.len)}
-                onChange={(len) => setHandleLengthAngle("handleIn", len, handleIn.angleDeg)}
+                onChange={bracketed((len: number) => setHandleLengthAngle("handleIn", len, handleIn.angleDeg))}
                 data-testid="node-handlein-len"
                 aria-label="Handle In length"
               />
               <NumericInput
                 value={Math.round(handleIn.angleDeg)}
-                onChange={(deg) => setHandleLengthAngle("handleIn", handleIn.len, deg)}
+                onChange={bracketed((deg: number) => setHandleLengthAngle("handleIn", handleIn.len, deg))}
                 data-testid="node-handlein-angle"
                 aria-label="Handle In angle"
               />
@@ -828,13 +872,13 @@ function NodePanel({ char, glyph, selectedNodes }: { char: string; glyph: Glyph;
               <span className="fm-node-handle-label">Out</span>
               <NumericInput
                 value={Math.round(handleOut.len)}
-                onChange={(len) => setHandleLengthAngle("handleOut", len, handleOut.angleDeg)}
+                onChange={bracketed((len: number) => setHandleLengthAngle("handleOut", len, handleOut.angleDeg))}
                 data-testid="node-handleout-len"
                 aria-label="Handle Out length"
               />
               <NumericInput
                 value={Math.round(handleOut.angleDeg)}
-                onChange={(deg) => setHandleLengthAngle("handleOut", handleOut.len, deg)}
+                onChange={bracketed((deg: number) => setHandleLengthAngle("handleOut", handleOut.len, deg))}
                 data-testid="node-handleout-angle"
                 aria-label="Handle Out angle"
               />

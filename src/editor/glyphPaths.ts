@@ -304,7 +304,18 @@ interface WarmTask {
   callbacks: Set<() => void>;
 }
 
-const warmQueue: WarmTask[] = [];
+// FIFO with a moving head index — `Array#shift()` is O(n) per item, which
+// turned a big first-time warm-up (thousands of glyphs) quadratic. The
+// consumed prefix is dropped in one splice once it dominates the array.
+//
+// "Newest (visible) first" falls out of cancellation rather than ordering:
+// every requester is a mounted, on-screen cell (the glyph list and Multi
+// Mode are both virtualised), and a cell that scrolls away or whose glyph
+// object is replaced by an edit cancels its callback, so its queued task is
+// skipped for free when reached. What remains in the queue is only work
+// that something on screen is still waiting for.
+let warmQueue: WarmTask[] = [];
+let warmHead = 0;
 const warmTasks = new WeakMap<Glyph, Map<number, WarmTask>>();
 let warmScheduled = false;
 const WARM_SLICE_MS = 10;
@@ -312,8 +323,8 @@ const WARM_SLICE_MS = 10;
 function runWarmSlice(): void {
   warmScheduled = false;
   const start = performance.now();
-  while (warmQueue.length > 0 && performance.now() - start < WARM_SLICE_MS) {
-    const task = warmQueue.shift()!;
+  while (warmHead < warmQueue.length && performance.now() - start < WARM_SLICE_MS) {
+    const task = warmQueue[warmHead++];
     warmTasks.get(task.glyph)?.delete(task.ascender);
     if (task.callbacks.size === 0) continue; // every cell that wanted it went away
     try {
@@ -324,7 +335,50 @@ function runWarmSlice(): void {
     }
     for (const cb of task.callbacks) cb();
   }
-  if (warmQueue.length > 0) scheduleWarm();
+  if (warmHead >= warmQueue.length) {
+    warmQueue = [];
+    warmHead = 0;
+  } else {
+    if (warmHead > 512 && warmHead * 2 > warmQueue.length) {
+      warmQueue = warmQueue.slice(warmHead);
+      warmHead = 0;
+    }
+    scheduleWarm();
+  }
+}
+
+/* Synchronous budget. A cell that just lost focus (its glyph object was
+ * replaced by the edit you made in it) or a handful of newly scrolled-in
+ * tiles used to blink to a placeholder for one async slice. Building a
+ * few glyphs inline during render is cheaper than that flash, so each
+ * ~frame gets a small time budget for inline builds; anything beyond it
+ * falls back to the background queue. */
+const SYNC_BUDGET_MS = 6;
+const SYNC_WINDOW_MS = 32;
+let syncWindowStart = -Infinity;
+let syncSpent = 0;
+/** Glyphs whose geometry threw once — never retried inline every render. */
+const syncFailed = new WeakSet<Glyph>();
+
+/** Builds `glyph`'s paths right now if this frame's inline budget allows,
+ * else returns null (caller should fall back to `warmGlyphPaths`). */
+export function buildGlyphPathsWithinBudget(glyph: Glyph, ascender: number): GlyphPathEntry[] | null {
+  const cached = peekGlyphPaths(glyph, ascender);
+  if (cached) return cached;
+  const now = performance.now();
+  if (now - syncWindowStart > SYNC_WINDOW_MS) {
+    syncWindowStart = now;
+    syncSpent = 0;
+  }
+  if (syncSpent >= SYNC_BUDGET_MS || syncFailed.has(glyph)) return null;
+  try {
+    return getGlyphPaths(glyph, ascender);
+  } catch {
+    syncFailed.add(glyph);
+    return null;
+  } finally {
+    syncSpent += performance.now() - now;
+  }
 }
 
 function scheduleWarm(): void {

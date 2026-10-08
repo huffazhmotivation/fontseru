@@ -1,8 +1,9 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useAppStore } from "@/glyph/store";
-import { hasOutline, type Glyph } from "@/types/glyph";
+import type { Glyph } from "@/types/glyph";
+import { hasOutlineCached } from "./outlineCache";
 import { clampMultiZoom, MULTI_BASE_CELL_PX } from "@/types/glyphView";
 import type { Point, VectorObject } from "@/types/geometry";
 import { useGlyphPaths } from "./useGlyphPaths";
@@ -15,7 +16,7 @@ import { useSelectTool, handlePositions, type HandleId, type SkewHandleId } from
 import { contourToPath, toSvgPoint } from "./pathBuilder";
 import { pointHitsObject } from "./objectOps";
 import { hitTestSegments } from "./segmentHitTest";
-import { editorCanvasCss } from "./editorCanvasCss";
+import { EDITOR_CANVAS_CSS_SCALED_BY_VAR } from "./editorCanvasCss";
 import { GhostGlyph } from "./GhostGlyph";
 import { ghostSampleAvailable, useGhostFont } from "./ghostFont";
 import { familyGhostOrder, ghostCenterX, matchingFamilyGlyph } from "./ghostRef";
@@ -138,6 +139,13 @@ function detailForCellPx(px: number): CellDetail {
   if (px >= 105) return "lite";
   return "none";
 }
+
+/** Below this on-screen cell height (CSS px) passive cells drop to the
+ *  cheap tier: box + ink (or placeholder) only — no ghost reference, no
+ *  guides, no label. At that size a zoomed-out grid shows a thousand or
+ *  more cells, and the ghost/guide layers are both unreadable there and
+ *  the bulk of the per-cell cost. */
+const CHEAP_CELL_PX = 40;
 
 interface PassiveCellProps {
   glyph: Glyph;
@@ -500,10 +508,228 @@ const CellGuides = memo(function CellGuides({
   );
 });
 
+/** Ghost settings a passive cell needs, flattened to primitives so the
+ *  memoized cell below can compare them cheaply. `mode` null = ghost off. */
+interface PassiveGridCellProps {
+  char: string;
+  glyph: Glyph;
+  x: number;
+  y: number;
+  cellW: number;
+  cellH: number;
+  labelH: number;
+  selected: boolean;
+  /** Screen scale, passed only while the cell needs it (its selection
+   *  ring is sized in screen px) and 0 otherwise — so zooming doesn't
+   *  re-render every unselected cell. */
+  ringSc: number;
+  detail: CellDetail;
+  cheap: boolean;
+  showLabels: boolean;
+  ghostMode: "sample" | "family" | "image" | null;
+  ghostOpacity: number;
+  ghostScale: number;
+  ghostOffsetX: number;
+  ghostOffsetY: number;
+  ghostImageSrc: string | null | undefined;
+  ghostImageAspect: number | undefined;
+  leftGhostMap: GlyphMap | undefined;
+  rightGhostMap: GlyphMap | undefined;
+  /** Identity of the loaded reference font; changes once it finishes
+   *  loading so ghostRendersFor() is re-evaluated. */
+  ghostFont: unknown;
+  ascender: number;
+  descender: number;
+  capHeight: number;
+  xHeight: number;
+  baseline: number;
+  upm: number;
+  totalH: number;
+  showGuides: boolean;
+  showGrid: boolean;
+  gridSize: number;
+  rulerGuides: { id: string; axis: "h" | "v"; position: number }[];
+}
+
+/**
+ * One non-focused cell, as a memoized unit. With the grid zoomed out a
+ * thousand-plus of these are on screen, and the container re-renders on
+ * every pan frame, hover and brush preview — so all per-cell work (drawn
+ * check, family-ghost lookup, ghost availability, JSX) lives in here and
+ * only re-runs when this cell's own inputs change.
+ */
+const PassiveGridCell = memo(function PassiveGridCell({
+  char,
+  glyph,
+  x,
+  y,
+  cellW,
+  cellH,
+  labelH,
+  selected,
+  ringSc,
+  detail,
+  cheap,
+  showLabels,
+  ghostMode,
+  ghostOpacity,
+  ghostScale,
+  ghostOffsetX,
+  ghostOffsetY,
+  ghostImageSrc,
+  ghostImageAspect,
+  leftGhostMap,
+  rightGhostMap,
+  ascender,
+  descender,
+  capHeight,
+  xHeight,
+  baseline,
+  upm,
+  totalH,
+  showGuides,
+  showGrid,
+  gridSize,
+  rulerGuides,
+}: PassiveGridCellProps) {
+  const drawn = hasOutlineCached(glyph);
+  const rx = cellW * 0.014;
+  const mode = cheap ? null : ghostMode;
+  const familyGlyph =
+    mode === "family"
+      ? matchingFamilyGlyph(leftGhostMap, glyph, char) ?? matchingFamilyGlyph(rightGhostMap, glyph, char)
+      : undefined;
+  const ghostVisible = mode !== null && ghostRendersFor(mode, glyph, ghostImageSrc, familyGlyph);
+  return (
+    <g
+      className={`fm-mx-cell passive${selected ? " selected" : ""}${drawn ? " drawn" : " empty"}`}
+      data-char={char}
+      transform={`translate(${x} ${y})`}
+    >
+      <rect className="fm-mx-cell-box" x={0} y={0} rx={rx} ry={rx} width={cellW} height={cellH} />
+      {selected && ringSc > 0 && (
+        <rect
+          className="fm-mx-cell-ring soft"
+          x={-5 / ringSc}
+          y={-5 / ringSc}
+          rx={rx + 5 / ringSc}
+          ry={rx + 5 / ringSc}
+          width={cellW + 10 / ringSc}
+          height={cellH + 10 / ringSc}
+        />
+      )}
+      {mode !== null && (
+        <CellGhost
+          mode={mode}
+          glyph={glyph}
+          leftFamilyGlyph={familyGlyph}
+          rightFamilyGlyph={undefined}
+          ascender={ascender}
+          capHeight={capHeight}
+          upm={upm}
+          totalH={totalH}
+          opacity={ghostOpacity}
+          scale={ghostScale}
+          offsetX={ghostOffsetX}
+          offsetY={ghostOffsetY}
+          imageSrc={ghostImageSrc}
+          imageAspect={ghostImageAspect}
+        />
+      )}
+      {!cheap && (
+        <CellGuides
+          detail={detail}
+          cellW={cellW}
+          cellH={cellH}
+          ascender={ascender}
+          descender={descender}
+          capHeight={capHeight}
+          xHeight={xHeight}
+          baseline={baseline}
+          advanceWidth={glyph.advanceWidth}
+          lsb={glyph.lsb}
+          showGuides={showGuides}
+          showGrid={showGrid}
+          gridSize={gridSize}
+          guides={rulerGuides}
+          // Only the focused cell ("full") sizes anything by screen scale.
+          sc={1}
+        />
+      )}
+      <PassiveCell
+        glyph={glyph}
+        ascender={ascender}
+        cellW={cellW}
+        cellH={cellH}
+        drawn={drawn}
+        showPlaceholder={!ghostVisible}
+      />
+      {showLabels && !cheap && (
+        <text
+          className={`fm-mx-label${selected ? " selected" : ""}`}
+          x={cellW / 2}
+          y={cellH + labelH * 0.78}
+          textAnchor="middle"
+          fontSize={labelH * 0.66}
+        >
+          {cellLabel(glyph)}
+        </text>
+      )}
+    </g>
+  );
+});
+
+/** Cell chrome. The whole point of this block is RESTRAINT: one hairline
+ *  per cell, one soft fill difference between drawn and empty, and a
+ *  single accent ring that sits OUTSIDE the em box so it marks the
+ *  focused cell without drawing a second line on top of that glyph's own
+ *  advance/origin marks. Static text — screen-px widths divide by the
+ *  `--sc` custom property set on the <svg>, so zooming never rewrites
+ *  (and never re-parses) a stylesheet. */
+const MULTI_CELL_CSS = `
+          .fm-mx-cell-box {
+            fill: var(--canvas);
+            stroke: color-mix(in srgb, var(--line) 62%, transparent);
+            stroke-width: calc(1px / var(--sc, 1));
+          }
+          .fm-mx-cell.drawn .fm-mx-cell-box { fill: color-mix(in srgb, var(--panel) 42%, var(--canvas)); }
+          .fm-mx-cell.selected .fm-mx-cell-box {
+            fill: color-mix(in srgb, var(--accent) 8%, var(--canvas));
+            stroke: color-mix(in srgb, var(--accent) 42%, var(--line));
+          }
+          .fm-mx-cell.active .fm-mx-cell-box { fill: var(--canvas); stroke: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+          .fm-mx-cell-ring { fill: none; stroke: var(--accent); stroke-width: calc(1.9px / var(--sc, 1)); }
+          .fm-mx-cell-ring.soft { stroke: color-mix(in srgb, var(--accent) 50%, transparent); stroke-width: calc(1.3px / var(--sc, 1)); }
+          .fm-mx-ink-fill { fill: var(--ink); stroke: none; }
+          .fm-mx-ink { stroke: var(--ink); fill: none; }
+          /* Passive ink is a touch quieter than the cell being drawn in,
+             so the focused letter reads first without the others fading
+             into unreadability. */
+          .fm-mx-cell.passive .fm-mx-ink-fill,
+          .fm-mx-cell.passive .fm-mx-ink { opacity: 0.86; }
+          .fm-mx-placeholder { fill: var(--text-faint); opacity: 0.2; font-family: var(--sans); font-weight: 600; }
+          .fm-mx-label { fill: var(--text-faint); font-family: var(--mono); opacity: 0.72; }
+          .fm-mx-label.selected { fill: var(--accent); opacity: 1; }
+          .fm-mx-cell.active .fm-mx-label { fill: var(--accent); opacity: 1; }
+          /* Guide fade-out away from focus — see CellDetail. The lines are
+             still there when you need them, just no longer shouting. */
+          .fm-mx-guides.metrics { opacity: 0.5; }
+          .fm-mx-guides.lite { opacity: 0.34; }
+          .fm-mx-ghost { pointer-events: none; }
+        `;
+
+/** client → world, against a rect read ONCE per event (a coalesced brush
+ *  move can carry dozens of samples; each used to force its own
+ *  getBoundingClientRect). */
+function clientToWorld(rect: DOMRect | undefined, vbX: number, vbY: number, sc: number, clientX: number, clientY: number): Point | null {
+  if (!rect || !rect.width) return null;
+  return { x: vbX + (clientX - rect.left) / sc, y: vbY + (clientY - rect.top) / sc };
+}
+
 export function GlyphMultiEditCanvas() {
   // Subscribed so cells re-evaluate ghostRendersFor() once the reference
   // font finishes loading (see ghostFont.ts).
-  useGhostFont();
+  const ghostFont = useGhostFont();
   const frameRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -568,14 +794,23 @@ export function GlyphMultiEditCanvas() {
 
   const totalH = Math.max(1, ascender - descender);
   // ------------------------------------------------------------ layout
+  // The search box filters through a deferred copy of the query, so a
+  // burst of keystrokes re-filters (and refits, see below) once it settles
+  // instead of once per key. The view bar's count uses the same deferred
+  // value, which keeps filterGlyphChars' single-entry memo warm for both.
+  const deferredQuery = useDeferredValue(query);
   const chars = useMemo(
-    () => filterGlyphChars(glyphs, filter, selectedGlyphChars, query),
-    [glyphs, filter, selectedGlyphChars, query]
+    () => filterGlyphChars(glyphs, filter, selectedGlyphChars, deferredQuery),
+    [glyphs, filter, selectedGlyphChars, deferredQuery]
   );
 
+  // Layout only depends on how MANY cells there are, not which ones — so
+  // an edit that leaves the filtered list the same length never rebuilds
+  // it (or anything memoized on it).
+  const charCount = chars.length;
   const layout: MultiEditLayout = useMemo(
-    () => computeMultiEditLayout({ count: chars.length, columns, upm, totalH, spacing }),
-    [chars, columns, upm, totalH, spacing]
+    () => computeMultiEditLayout({ count: charCount, columns, upm, totalH, spacing }),
+    [charCount, columns, upm, totalH, spacing]
   );
 
   useLayoutEffect(() => {
@@ -673,6 +908,10 @@ export function GlyphMultiEditCanvas() {
   const lastFitRef = useRef(0);
   useEffect(() => {
     if (multiFitNonce === lastFitRef.current) return;
+    // Typing in the search bumps the fit nonce per key; wait until the
+    // deferred query (and therefore `layout`) has caught up, so the fit
+    // runs once, against the layout actually on screen.
+    if (query !== deferredQuery) return;
     if (!viewSize.w || !viewSize.h || layout.count === 0) return;
     lastFitRef.current = multiFitNonce;
     const padU = upm * 0.1;
@@ -681,38 +920,55 @@ export function GlyphMultiEditCanvas() {
     const target = Math.min(viewSize.w / w, viewSize.h / h);
     useAppStore.getState().setMultiZoom((target / baseScale) * 100);
     setMultiPan({ x: layout.contentW / 2, y: layout.contentH / 2 });
-  }, [multiFitNonce, viewSize.w, viewSize.h, layout, upm, baseScale, setMultiPan]);
+  }, [multiFitNonce, viewSize.w, viewSize.h, layout, upm, baseScale, setMultiPan, query, deferredQuery]);
 
   // ------------------------------------------------------------- input
   const toWorld = useCallback(
-    (clientX: number, clientY: number): Point | null => {
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect || !rect.width) return null;
-      return { x: vbX + (clientX - rect.left) / sc, y: vbY + (clientY - rect.top) / sc };
-    },
+    (clientX: number, clientY: number): Point | null =>
+      clientToWorld(svgRef.current?.getBoundingClientRect(), vbX, vbY, sc, clientX, clientY),
     [vbX, vbY, sc]
   );
 
   // Native non-passive wheel: the page must never scroll behind the
   // canvas, and the browser's own zoom must never hijack Ctrl+wheel.
+  //
+  // Trackpads and high-resolution wheels fire several events per frame;
+  // each used to write the store (twice for zoom: zoom + pan) and so
+  // re-render the whole grid per event. Deltas are now accumulated —
+  // zoom multiplicatively, pan additively — and applied once per frame,
+  // anchored at the newest cursor position. Same total motion, one render.
   const wheelRef = useRef({ applyZoomAt, sc });
   wheelRef.current = { applyZoomAt, sc };
   useEffect(() => {
     const el = frameRef.current;
     if (!el) return;
+    const acc = { zoomFactor: 1, panDx: 0, clientX: 0, clientY: 0, raf: null as number | null };
+    const flush = () => {
+      acc.raf = null;
+      const { applyZoomAt: zoomAt } = wheelRef.current;
+      const store = useAppStore.getState();
+      if (acc.panDx !== 0) store.setMultiPan({ x: store.multiPan.x + acc.panDx, y: store.multiPan.y });
+      if (acc.zoomFactor !== 1) zoomAt(useAppStore.getState().multiZoom * acc.zoomFactor, acc.clientX, acc.clientY);
+      acc.panDx = 0;
+      acc.zoomFactor = 1;
+    };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const { applyZoomAt: zoomAt, sc: scale } = wheelRef.current;
-      const store = useAppStore.getState();
       if (e.shiftKey) {
         const dx = e.deltaX !== 0 ? e.deltaX : e.deltaY;
-        store.setMultiPan({ x: store.multiPan.x + dx / scale, y: store.multiPan.y });
-        return;
+        acc.panDx += dx / wheelRef.current.sc;
+      } else {
+        acc.zoomFactor *= Math.exp(-e.deltaY * 0.0018);
+        acc.clientX = e.clientX;
+        acc.clientY = e.clientY;
       }
-      zoomAt(store.multiZoom * Math.exp(-e.deltaY * 0.0018), e.clientX, e.clientY);
+      if (acc.raf === null) acc.raf = requestAnimationFrame(flush);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      if (acc.raf !== null) cancelAnimationFrame(acc.raf);
+    };
   }, []);
 
   /** Resolve the cell under a world point and make it the active glyph.
@@ -938,8 +1194,9 @@ export function GlyphMultiEditCanvas() {
     if (sketchGestures.handlePointerMove(native)) return true;
     const index = gestureCellRef.current;
     const coalesced = typeof native.getCoalescedEvents === "function" ? native.getCoalescedEvents() : [];
+    const rect = svgRef.current?.getBoundingClientRect();
     for (const ev of coalesced.length > 0 ? coalesced : [native]) {
-      const world = toWorld(ev.clientX, ev.clientY);
+      const world = clientToWorld(rect, vbX, vbY, sc, ev.clientX, ev.clientY);
       if (!world) continue;
       t.brushTool.pointerMove(glyphPointFor(index, world), { pressure: ev.pressure, pointerType: ev.pointerType, timeStamp: ev.timeStamp });
     }
@@ -1149,6 +1406,7 @@ export function GlyphMultiEditCanvas() {
   // its name label is even large enough to be worth drawing.
   const cellPx = layout.cellH * sc;
   const passiveDetail = detailForCellPx(cellPx);
+  const cheapCells = cellPx < CHEAP_CELL_PX;
   const showLabels = layout.labelH * sc >= 7;
   const ghostOn = ghost.enabled && ghost.opacity > 0;
   const ghostMode = ghost.mode ?? "sample";
@@ -1206,6 +1464,9 @@ export function GlyphMultiEditCanvas() {
         onContextMenu={onContextMenu}
         style={{
           touchAction: "none",
+          // Read by the static canvas CSS (calc(<n>px / var(--sc))) — see
+          // EDITOR_CANVAS_CSS_SCALED_BY_VAR.
+          ["--sc" as string]: String(sc),
           ...(showRuler
             ? {
                 position: "absolute",
@@ -1217,43 +1478,8 @@ export function GlyphMultiEditCanvas() {
             : {}),
         }}
       >
-        <style>{editorCanvasCss(sc)}</style>
-        {/* Cell chrome. The whole point of this block is RESTRAINT: one
-            hairline per cell, one soft fill difference between drawn and
-            empty, and a single accent ring that sits OUTSIDE the em box
-            so it marks the focused cell without drawing a second line on
-            top of that glyph's own advance/origin marks. */}
-        <style>{`
-          .fm-mx-cell-box {
-            fill: var(--canvas);
-            stroke: color-mix(in srgb, var(--line) 62%, transparent);
-            stroke-width: ${1 / sc};
-          }
-          .fm-mx-cell.drawn .fm-mx-cell-box { fill: color-mix(in srgb, var(--panel) 42%, var(--canvas)); }
-          .fm-mx-cell.selected .fm-mx-cell-box {
-            fill: color-mix(in srgb, var(--accent) 8%, var(--canvas));
-            stroke: color-mix(in srgb, var(--accent) 42%, var(--line));
-          }
-          .fm-mx-cell.active .fm-mx-cell-box { fill: var(--canvas); stroke: color-mix(in srgb, var(--accent) 30%, var(--line)); }
-          .fm-mx-cell-ring { fill: none; stroke: var(--accent); stroke-width: ${1.9 / sc}; }
-          .fm-mx-cell-ring.soft { stroke: color-mix(in srgb, var(--accent) 50%, transparent); stroke-width: ${1.3 / sc}; }
-          .fm-mx-ink-fill { fill: var(--ink); stroke: none; }
-          .fm-mx-ink { stroke: var(--ink); fill: none; }
-          /* Passive ink is a touch quieter than the cell being drawn in,
-             so the focused letter reads first without the others fading
-             into unreadability. */
-          .fm-mx-cell.passive .fm-mx-ink-fill,
-          .fm-mx-cell.passive .fm-mx-ink { opacity: 0.86; }
-          .fm-mx-placeholder { fill: var(--text-faint); opacity: 0.2; font-family: var(--sans); font-weight: 600; }
-          .fm-mx-label { fill: var(--text-faint); font-family: var(--mono); opacity: 0.72; }
-          .fm-mx-label.selected { fill: var(--accent); opacity: 1; }
-          .fm-mx-cell.active .fm-mx-label { fill: var(--accent); opacity: 1; }
-          /* Guide fade-out away from focus — see CellDetail. The lines are
-             still there when you need them, just no longer shouting. */
-          .fm-mx-guides.metrics { opacity: 0.5; }
-          .fm-mx-guides.lite { opacity: 0.34; }
-          .fm-mx-ghost { pointer-events: none; }
-        `}</style>
+        <style>{EDITOR_CANVAS_CSS_SCALED_BY_VAR}</style>
+        <style>{MULTI_CELL_CSS}</style>
 
         {visible.map((index) => {
           const char = chars[index];
@@ -1263,19 +1489,58 @@ export function GlyphMultiEditCanvas() {
           const isActive = char === activeChar;
           const isSelected = selectedSet.has(char);
           const cellW = cellWidthAt(layout, index);
+          if (!isActive) {
+            return (
+              <PassiveGridCell
+                key={char}
+                char={char}
+                glyph={cellGlyph}
+                x={origin.x}
+                y={origin.y}
+                cellW={cellW}
+                cellH={layout.cellH}
+                labelH={layout.labelH}
+                selected={isSelected}
+                ringSc={isSelected ? sc : 0}
+                detail={passiveDetail}
+                cheap={cheapCells}
+                showLabels={showLabels}
+                ghostMode={ghostOn ? ghostMode : null}
+                ghostOpacity={ghost.opacity}
+                ghostScale={ghost.scale}
+                ghostOffsetX={ghost.offsetX}
+                ghostOffsetY={ghost.offsetY}
+                ghostImageSrc={ghost.imageSrc}
+                ghostImageAspect={ghost.imageAspect}
+                leftGhostMap={leftGhostMap}
+                rightGhostMap={rightGhostMap}
+                ghostFont={ghostFont}
+                ascender={ascender}
+                descender={descender}
+                capHeight={capHeight}
+                xHeight={xHeight}
+                baseline={baseline}
+                upm={upm}
+                totalH={totalH}
+                showGuides={showGuides}
+                showGrid={showGrid}
+                gridSize={gridSize}
+                rulerGuides={rulerGuides}
+              />
+            );
+          }
+          // ---- The focused cell: the full editable stack. ----
           const rx = cellW * 0.014;
           const cellFamilyGlyph =
             ghostOn && ghostMode === "family"
               ? matchingFamilyGlyph(leftGhostMap, cellGlyph, char) ??
                 matchingFamilyGlyph(rightGhostMap, cellGlyph, char)
               : undefined;
-          const cellGhostVisible =
-            ghostOn && ghostRendersFor(ghostMode, cellGlyph, ghost.imageSrc, cellFamilyGlyph);
           return (
             <g
               key={char}
               className={`fm-mx-cell${isActive ? " active" : " passive"}${isSelected ? " selected" : ""}${
-                hasOutline(cellGlyph) ? " drawn" : " empty"
+                hasOutlineCached(cellGlyph) ? " drawn" : " empty"
               }`}
               data-char={char}
               transform={`translate(${origin.x} ${origin.y})`}
@@ -1547,16 +1812,7 @@ export function GlyphMultiEditCanvas() {
                     );
                   })()}
                 </>
-              ) : (
-                <PassiveCell
-                  glyph={cellGlyph}
-                  ascender={ascender}
-                  cellW={cellW}
-                  cellH={layout.cellH}
-                  drawn={hasOutline(cellGlyph)}
-                  showPlaceholder={!cellGhostVisible}
-                />
-              )}
+              ) : null}
               {/* One label rule for every cell, focused or not. Labels are
                   dropped entirely once a cell is too small to render them
                   at a readable size — below that they are a grey smear

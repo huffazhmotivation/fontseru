@@ -2,6 +2,7 @@ import {
   forwardRef,
   useImperativeHandle,
   useRef,
+  useState,
   type InputHTMLAttributes,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -22,16 +23,33 @@ type StepperDrag = {
 };
 
 export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(function NumericInput(
-  { value, onChange, showStepper = true, className = "", readOnly, disabled, ...props },
+  { value, onChange, showStepper = true, className = "", readOnly, disabled, onBlur, ...props },
   forwardedRef
 ) {
   const inputRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<StepperDrag | null>(null);
   useImperativeHandle(forwardedRef, () => inputRef.current as HTMLInputElement);
+  // While the field holds text that isn't a complete number yet — emptied
+  // to retype, or a lone "-" / "1e" mid-entry (a number input reports all of
+  // those as "") — keep showing exactly that instead of committing it.
+  // Number("") is 0, so the old handler silently committed 0 the moment the
+  // field was cleared (moving a node to 0, zeroing a stroke width…). And as
+  // a controlled number input, React would otherwise snap the box straight
+  // back to the previous value, making "-12" impossible to type. Any valid
+  // number clears the draft so the controlled value (with any clamping the
+  // owner applies) is displayed again.
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const parseCommitted = (raw: string): number | null => {
+    if (raw.trim() === "") return null;
+    const next = Number(raw);
+    return Number.isFinite(next) ? next : null;
+  };
 
   const commitDomValue = () => {
-    const next = Number(inputRef.current?.value);
-    if (Number.isFinite(next)) onChange(next);
+    const next = parseCommitted(inputRef.current?.value ?? "");
+    setDraft(null);
+    if (next !== null) onChange(next);
   };
 
   const stepBy = (direction: 1 | -1, amount = 1) => {
@@ -147,12 +165,22 @@ export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(func
         ref={inputRef}
         type="number"
         className={className}
-        value={value}
+        value={draft ?? value}
         readOnly={readOnly}
         disabled={disabled}
         onChange={(e) => {
-          const next = Number(e.target.value);
-          if (Number.isFinite(next)) onChange(next);
+          const next = parseCommitted(e.target.value);
+          if (next === null) {
+            setDraft(e.target.value);
+            return;
+          }
+          setDraft(null);
+          onChange(next);
+        }}
+        onBlur={(e) => {
+          // Leaving the field with an incomplete entry restores the real value.
+          setDraft(null);
+          onBlur?.(e);
         }}
       />
       {showStepper && !readOnly && (

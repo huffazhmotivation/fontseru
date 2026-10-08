@@ -10,9 +10,9 @@
    setelah reload. (localStorage hanya menyimpan string dan akan cepat penuh.)
 
    Catatan pemulihan media: klip media menyimpan blob: URL untuk digambar dan
-   File aslinya sebagai cadangan. blob: URL mati setelah reload, tapi pemuat
-   media di MotionStudio otomatis jatuh-balik membaca ulang File cadangan itu
-   jadi data URL — jadi media tetap muncul. Font didaftarkan ulang dari
+   File aslinya sebagai cadangan. blob: URL mati setelah reload, jadi saat
+   proyek dipulihkan MotionStudio membuat blob: URL baru dari File tersimpan
+   (reviveMediaObjectUrls) — jalur data URL hanya tersisa sebagai cadangan. Font didaftarkan ulang dari
    buffer-nya di MotionStudio saat proyek dimuat.
    ========================================================================== */
 
@@ -21,8 +21,13 @@ const STORE = "project";
 const KEY = "current";
 const DB_VERSION = 1;
 
+// Koneksi IndexedDB di-cache: simpan otomatis bisa terjadi berkali-kali per
+// menit, jadi membuka/menutup database tiap kali hanya menambah latensi.
+let dbPromise = null;
+
 function openDb() {
-  return new Promise((resolve, reject) => {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") {
       reject(new Error("IndexedDB tidak tersedia"));
       return;
@@ -32,9 +37,17 @@ function openDb() {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      // Lepas cache bila koneksi ditutup browser / ada upgrade dari tab lain.
+      db.onclose = () => { dbPromise = null; };
+      db.onversionchange = () => { try { db.close(); } catch (e) {} dbPromise = null; };
+      resolve(db);
+    };
     req.onerror = () => reject(req.error || new Error("Gagal membuka database"));
   });
+  dbPromise.catch(() => { dbPromise = null; });
+  return dbPromise;
 }
 
 /**
@@ -53,8 +66,8 @@ export async function saveMotionProject(project) {
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
-    db.close();
   } catch (e) {
+    dbPromise = null; // koneksi mungkin basi — buka ulang lain kali
     /* abaikan kegagalan penyimpanan */
   }
 }
@@ -71,7 +84,6 @@ export async function loadMotionProject() {
       req.onsuccess = () => resolve(req.result || null);
       req.onerror = () => reject(req.error);
     });
-    db.close();
     return result || null;
   } catch (e) {
     return null;
@@ -190,9 +202,56 @@ export function deserializeImportedProject(data) {
     name: f.name,
     buffer: f.bufferB64 ? b64ToAb(f.bufferB64) : (f.buffer || null),
   }));
+  // Media di file ekspor berupa data URL base64. Data URL besar (video!)
+  // lambat didekode & boros memori kalau dipakai langsung sebagai src, jadi
+  // ubah jadi File + blob: URL. File-nya juga ikut tersimpan di IndexedDB,
+  // jadi setelah reload src bisa dibuat ulang dari situ. SVG sengaja tidak
+  // diubah (pewarnaan ulang SVG bekerja dengan data URL).
+  const blobCache = new Map();
+  const toBlobMedia = (item) => {
+    if (!item || item.isSvg || typeof item.src !== "string" || !item.src.startsWith("data:")) return item;
+    let hit = blobCache.get(item.src);
+    if (!hit) {
+      const file = dataUrlToFile(item.src, item.name);
+      if (!file) return item;
+      let url = null;
+      try { url = URL.createObjectURL(file); } catch (e) { return item; }
+      hit = { file, url };
+      blobCache.set(item.src, hit);
+    }
+    return { ...item, src: hit.url, file: hit.file };
+  };
+  const clips = root.clips.map((c) => (c && (c.type === "image" || c.type === "video" || c.type === "audio") ? toBlobMedia(c) : c));
+  const lib = root.library;
+  const library = lib ? {
+    ...lib,
+    images: (lib.images || []).map(toBlobMedia),
+    videos: (lib.videos || []).map(toBlobMedia),
+    audios: (lib.audios || []).map(toBlobMedia),
+  } : lib;
   // Normalisasi: project yang dibuat sebelum fitur transition slots
   // mungkin belum punya array transitions — inisialisasi sebagai [].
-  return { ...root, fonts, transitions: Array.isArray(root.transitions) ? root.transitions : [] };
+  return { ...root, clips, library, fonts, transitions: Array.isArray(root.transitions) ? root.transitions : [] };
+}
+
+// data:[mime][;base64],payload → File (atau Blob). null bila gagal.
+function dataUrlToFile(dataUrl, name) {
+  try {
+    if (typeof Blob === "undefined" || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return null;
+    const comma = dataUrl.indexOf(",");
+    if (comma < 0) return null;
+    const meta = dataUrl.slice(5, comma);
+    const isB64 = /;base64/i.test(meta);
+    const mime = meta.split(";")[0] || "application/octet-stream";
+    const payload = dataUrl.slice(comma + 1);
+    const bytes = isB64 ? new Uint8Array(b64ToAb(payload)) : new TextEncoder().encode(decodeURIComponent(payload));
+    if (typeof File === "function") {
+      try { return new File([bytes], name || "media", { type: mime }); } catch (e) {}
+    }
+    return new Blob([bytes], { type: mime });
+  } catch (e) {
+    return null;
+  }
 }
 
 /**
@@ -206,8 +265,8 @@ export async function clearMotionProject() {
       tx.objectStore(STORE).delete(KEY);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
     });
-    db.close();
   } catch (e) {
     /* abaikan */
   }

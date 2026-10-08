@@ -15,8 +15,14 @@ export function cloneGlyphMap(source: GlyphMap): GlyphMap {
  * explicitly clones Regular.
  */
 export function emptyStyleGlyphsFrom(source: GlyphMap): GlyphMap {
-  const next = cloneGlyphMap(source);
-  for (const glyph of Object.values(next)) glyph.outline = { objects: [] };
+  // Clone only the small non-outline fields: deep-cloning every outline just
+  // to throw it away cost hundreds of ms on large (thousands-of-glyph) fonts.
+  const next: GlyphMap = {};
+  for (const key in source) {
+    const { outline: _outline, ...rest } = source[key];
+    const meta = typeof structuredClone === "function" ? structuredClone(rest) : JSON.parse(JSON.stringify(rest));
+    next[key] = { ...meta, outline: { objects: [] } };
+  }
   return next;
 }
 

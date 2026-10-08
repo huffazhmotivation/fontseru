@@ -3,6 +3,7 @@ import { useAppStore } from "@/glyph/store";
 import type { ToolId } from "@/types/tool";
 import { copyAndPublish, cutAndPublish, pasteSmart } from "@/lib/seruBridge";
 import { getOrderedChars } from "@/glyph/defaultGlyphs";
+import { DRAW_CHAR } from "@/glyph/drawMode";
 
 const KEY_TO_TOOL: Record<string, ToolId> = {
   v: "select", p: "pen", y: "pencil", b: "brush", n: "node", h: "hand", z: "zoom",
@@ -15,16 +16,51 @@ const KEY_TO_TOOL: Record<string, ToolId> = {
  */
 function stepGlyph(direction: 1 | -1) {
   const s = useAppStore.getState();
-  const ordered = getOrderedChars(s.glyphs);
-  const idx = ordered.indexOf(s.activeChar);
+  // Drawing Mode: the canvas stays on the scratch sketch glyph (DRAW_CHAR),
+  // so stepping must move the drawing TARGET instead — exactly what
+  // GlyphStepper's Prev/Next do — skipping the scratch glyph itself.
+  // Stepping from activeChar here used to always start from DRAW_CHAR.
+  const drawMode = s.editorMode === "draw";
+  const ordered = drawMode
+    ? getOrderedChars(s.glyphs).filter((ch) => ch !== DRAW_CHAR)
+    : getOrderedChars(s.glyphs);
+  const current = drawMode ? s.drawTargetChar : s.activeChar;
+  const idx = current === null ? -1 : ordered.indexOf(current);
+  // No target yet in Drawing Mode: "next" picks the first glyph, like
+  // GlyphStepper's enabled Next button does from that state.
+  if (idx < 0) {
+    if (drawMode && direction === 1 && ordered.length > 0) s.setActiveChar(ordered[0]);
+    return;
+  }
   const nextIdx = idx + direction;
-  if (idx < 0 || nextIdx < 0 || nextIdx >= ordered.length) return;
+  if (nextIdx < 0 || nextIdx >= ordered.length) return;
   s.setActiveChar(ordered[nextIdx]);
 }
+
+const ARROW_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
 
 /** Global shortcuts: tools, undo/redo, clipboard, and object delete/nudge. */
 export function useKeyboardShortcuts() {
   useEffect(() => {
+    // Holding an arrow key auto-repeats a nudge many times per second; each
+    // used to be its own undo step, flooding history. The first nudge of a
+    // press opens a glyph-edit bracket and releasing the key (or leaving the
+    // window) closes it, so one press-and-hold is one undo step.
+    let nudgeBracketOpen = false;
+    const endNudgeBracket = () => {
+      if (!nudgeBracketOpen) return;
+      nudgeBracketOpen = false;
+      useAppStore.getState().endGlyphEdit();
+    };
+    const nudge = (dx: number, dy: number) => {
+      const s = useAppStore.getState();
+      if (!nudgeBracketOpen) {
+        nudgeBracketOpen = true;
+        s.beginGlyphEdit();
+      }
+      s.nudgeSelectedObjects(dx, dy);
+    };
+
     function onKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
       const tagName = target?.tagName;
@@ -117,10 +153,10 @@ export function useKeyboardShortcuts() {
       if (s.tool === "select") {
         if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); s.deleteSelectedObjects(); return; }
         const step = e.shiftKey ? 10 : 1;
-        if (e.key === "ArrowLeft") { e.preventDefault(); s.nudgeSelectedObjects(-step, 0); return; }
-        if (e.key === "ArrowRight") { e.preventDefault(); s.nudgeSelectedObjects(step, 0); return; }
-        if (e.key === "ArrowUp") { e.preventDefault(); s.nudgeSelectedObjects(0, step); return; }
-        if (e.key === "ArrowDown") { e.preventDefault(); s.nudgeSelectedObjects(0, -step); return; }
+        if (e.key === "ArrowLeft") { e.preventDefault(); nudge(-step, 0); return; }
+        if (e.key === "ArrowRight") { e.preventDefault(); nudge(step, 0); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); nudge(0, step); return; }
+        if (e.key === "ArrowDown") { e.preventDefault(); nudge(0, -step); return; }
       }
 
       const tool = KEY_TO_TOOL[e.key.toLowerCase()];
@@ -129,7 +165,18 @@ export function useKeyboardShortcuts() {
       }
     }
 
+    function onKeyUp(e: KeyboardEvent) {
+      if (ARROW_KEYS.includes(e.key)) endNudgeBracket();
+    }
+
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", endNudgeBracket);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", endNudgeBracket);
+      endNudgeBracket();
+    };
   }, []);
 }

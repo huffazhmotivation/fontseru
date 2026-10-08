@@ -136,6 +136,10 @@ export function wrapLines(
   // True right after a soft wrap, so the whitespace that caused it isn't
   // carried over to the start of the next line.
   let afterSoftWrap = false;
+  // Whether the current line holds any non-whitespace char. Tracked as
+  // chars are appended instead of rescanning the whole line per token
+  // (which made long unbroken paragraphs quadratic).
+  let lineHasInk = false;
 
   const glyphAdvanceOf = (ch: string) => {
     const g = glyphs[ch];
@@ -149,6 +153,7 @@ export function wrapLines(
     out.push({ text: lineText, layout: layoutLine(lineText, glyphs, unitsPerEm, kerningPairs, trackingUnits, wordSpacing) });
     lineChars = [];
     advance = 0;
+    lineHasInk = false;
   };
   const softWrap = () => {
     while (lineChars.length > 0 && /\s/u.test(lineChars[lineChars.length - 1])) lineChars.pop();
@@ -158,8 +163,9 @@ export function wrapLines(
   const append = (ch: string) => {
     advance += gapBefore(lineChars[lineChars.length - 1] ?? null, ch) + glyphAdvanceOf(ch);
     lineChars.push(ch);
+    if (!lineHasInk && !/\s/u.test(ch)) lineHasInk = true;
   };
-  const hasInk = () => lineChars.some((ch) => !/\s/u.test(ch));
+  const hasInk = () => lineHasInk;
 
   text.split("\n").forEach((segment, segmentIndex) => {
     if (segmentIndex > 0) {

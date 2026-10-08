@@ -37,12 +37,6 @@ export async function decodeAudioFile(file) {
   try {
     const arrayBuffer = await file.arrayBuffer();
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-    console.log("[AutoCaption] decoded audio:", {
-      duration: audioBuffer.duration,
-      sampleRate: audioBuffer.sampleRate,
-      channels: audioBuffer.numberOfChannels,
-      length: audioBuffer.length,
-    });
     return audioBuffer;
   } finally {
     try { await ctx.close(); } catch (_) {}
@@ -112,27 +106,12 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
 
   onProgress?.("Mengenali ucapan…", 0.6);
 
-  console.log("[AutoCaption] input PCM length:", inputPcm.length, "sampleRate: 16000, duration:", (inputPcm.length / 16000).toFixed(2) + "s");
-
   const result = await pipeline(inputPcm, {
     language: whisperLang,
     task: "transcribe",
     return_timestamps: "word",
     chunk_length_s: 30,
   });
-
-  console.log("[AutoCaption] raw whisper result:", result);
-  if (result?.segments) {
-    console.log("[AutoCaption] segments count:", result.segments.length);
-    result.segments.forEach((seg, i) => console.log(`[AutoCaption] seg ${i}:`, seg));
-  }
-  if (result?.chunks) {
-    console.log("[AutoCaption] chunks count:", result.chunks.length);
-    result.chunks.forEach((ch, i) => console.log(`[AutoCaption] chunk ${i}:`, ch));
-  }
-  if (result?.text) {
-    console.log("[AutoCaption] full text:", result.text.slice(0, 300));
-  }
 
   onProgress?.("Selesai!", 1);
 
@@ -153,7 +132,6 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
     // Fallback: satu segment besar untuk seluruh audio
     const totalDur = audioBuffer.duration;
     rawSegments = [{ text: result.text.trim(), timestamp: [0, totalDur] }];
-    console.log("[AutoCaption] no segments/chunks, using full text fallback");
   }
 
   const normalized = [];
@@ -221,8 +199,12 @@ export function groupCaptionSentences(words, gapMs = 900) {
     const start = Number.isFinite(word?.start) ? word.start : 0;
     const end = Number.isFinite(word?.end) && word.end > start ? word.end : start + 250;
     const gap = current ? Math.max(0, start - current.end) : 0;
-    const punctuation = /[.!?。！？؟…]$/.test(text);
-    const naturalBreak = /[,;:]$/.test(text) && gap >= 350;
+    // Tanda baca dicek pada AKHIR kalimat berjalan (kata sebelumnya), bukan
+    // pada kata yang baru masuk — supaya "Halo." menutup kalimat sebelum
+    // kata berikutnya, bukan malah menempel ke kalimat sebelumnya.
+    const prevText = current ? current.text : "";
+    const punctuation = /[.!?。！？؟…]$/.test(prevText);
+    const naturalBreak = /[,;:]$/.test(prevText) && gap >= 350;
     const shouldSplit = current && (gap >= gapMs || punctuation || naturalBreak);
     if (shouldSplit) {
       result.push(current);

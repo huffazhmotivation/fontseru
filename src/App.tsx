@@ -118,8 +118,24 @@ export default function App() {
   // Restore the saved project from IndexedDB on first mount.
   useEffect(() => {
     let cancelled = false;
-    loadProject().then((snap) => {
-      if (cancelled) return;
+    // A failed read (DB blocked by another window, transient I/O error) is
+    // retried; if it keeps failing autosave stays OFF, so the stored project
+    // is never overwritten by the default glyph set.
+    const loadWithRetry = async (): Promise<Awaited<ReturnType<typeof loadProject>>> => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await loadProject();
+        } catch (err) {
+          if (attempt >= 2 || cancelled) throw err;
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        }
+      }
+    };
+    loadWithRetry().catch((err) => {
+      console.error("FontSeru: gagal memuat proyek tersimpan; autosave dinonaktifkan agar data lama tidak tertimpa.", err);
+      return undefined;
+    }).then((snap) => {
+      if (cancelled || snap === undefined) return;
       if (snap?.glyphs) useAppStore.getState().hydrate({
         glyphs: snap.glyphs,
         glyphsByStyle: snap.glyphsByStyle,
@@ -144,8 +160,12 @@ export default function App() {
   // Persist glyphs + font name (debounced) whenever they change, and flush
   // immediately when the tab is hidden/closed so a quick reload can't lose work.
   useEffect(() => {
+    // Only write when something actually changed since the last save —
+    // switching tabs/windows used to rewrite the project every time.
+    let dirty = false;
     const flush = () => {
-      if (!hydratedRef.current) return;
+      if (!hydratedRef.current || !dirty) return;
+      dirty = false;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       const state = useAppStore.getState();
       saveProject({
@@ -187,6 +207,7 @@ export default function App() {
       ) {
         return;
       }
+      dirty = true;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(flush, 350);
     });

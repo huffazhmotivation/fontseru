@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useAppStore, type GlyphMetricKey } from "@/glyph/store";
 import { useGlyphEditor } from "./useGlyphEditor";
-import { useBrushTool } from "./useBrushTool";
+import { useBrushTool, type BrushPreview } from "./useBrushTool";
 import { useBrushNodeTool } from "./useBrushNodeTool";
 import { usePencilTool } from "./usePencilTool";
 import { useSelectTool, handlePositions, type HandleId, type SkewHandleId } from "./useSelectTool";
@@ -18,14 +18,45 @@ import { mergeOutlineBrushStrokes } from "./glyphPaths";
 import { GhostGlyph } from "./GhostGlyph";
 import { familyGhostOrder, ghostCenterX as ghostCenterXFor, matchingFamilyGlyph } from "./ghostRef";
 import { CanvasRuler, RulerGuideLines, RULER_SIZE } from "./CanvasRuler";
-import { editorCanvasCss } from "./editorCanvasCss";
+import { EDITOR_CANVAS_CSS_SCALED_BY_VAR } from "./editorCanvasCss";
 import { GridLayer } from "./GridLayer";
 import { useLongPress } from "./useLongPress";
 import { CanvasContextMenu, type CanvasMenuPos } from "@/components/CanvasContextMenu";
 import { NodeTypePopup, type NodePopupState } from "@/components/NodeTypePopup";
 import { RecordingBadge } from "@/timelapse/RecordingBadge";
 import { isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
-import type { GlyphOutline, NodeType, Point, VectorObject } from "@/types/geometry";
+import type { Contour, GlyphOutline, NodeType, PathNode, Point, VectorObject } from "@/types/geometry";
+import { createPreviewStore, usePreviewValue, type PreviewStore } from "./previewStore";
+import { affineToSvgMatrix, transformPreviewIsExact } from "./transformPreview";
+
+const EMPTY_ID_SET: ReadonlySet<string> = new Set<string>();
+const EXTERNAL_PREVIEW = { externalPreview: true } as const;
+
+/** requestIdleCallback with a setTimeout fallback (Safari). */
+function scheduleIdle(cb: () => void, timeout: number): () => void {
+  const w = window as Window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+    cancelIdleCallback?: (id: number) => void;
+  };
+  if (typeof w.requestIdleCallback === "function") {
+    const id = w.requestIdleCallback(cb, { timeout });
+    return () => w.cancelIdleCallback?.(id);
+  }
+  const id = window.setTimeout(cb, 100);
+  return () => window.clearTimeout(id);
+}
+
+function sameIdSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
+}
+
+function isFormField(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null;
+  if (!el) return false;
+  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable;
+}
 
 
 type PointerMoveSample = {
@@ -105,7 +136,12 @@ export function GlyphCanvas() {
   const penAutoCloseShape = useAppStore((s) => s.penAutoClose);
 
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
-  const [hover, setHover] = useState<Point | null>(null);
+  // Pointer hover position, only consumed by the Pen / Node-Brush
+  // rubber-band. Kept in a tiny observable store instead of React state so a
+  // hover sample re-renders just the rubber-band, not this whole canvas.
+  const hoverStoreRef = useRef<PreviewStore<Point | null> | null>(null);
+  if (!hoverStoreRef.current) hoverStoreRef.current = createPreviewStore<Point | null>(null);
+  const hoverStore = hoverStoreRef.current;
   const panDragRef = useRef<{ startClient: Point; startPan: Point } | null>(null);
   const pendingPointerMoveRef = useRef<PointerMoveSample | null>(null);
   const pointerMoveRafRef = useRef<number | null>(null);
@@ -123,6 +159,8 @@ export function GlyphCanvas() {
   const glyphMetricMoveRafRef = useRef<number | null>(null);
   const [activeGlyphMetricGuide, setActiveGlyphMetricGuide] = useState<GlyphMetricKey | null>(null);
   const spacePanRef = useRef(false);
+  // Pointer that started the current canvas gesture (see pointercancel).
+  const activePointerIdRef = useRef<number | null>(null);
 
   const totalH = ascender - descender;
   // Default horizontal anchor for the "sample" and "image" ghost modes:
@@ -131,12 +169,14 @@ export function GlyphCanvas() {
   // with where this glyph's ink is actually drawn, the same way LSB/RSB/
   // Advance already default to FontSeru's standard sidebearing metrics.
   const ghostCenterX = ghostCenterXFor(glyph, upm);
-  const leftFamilyGlyph = glyph
-    ? matchingFamilyGlyph(leftGhostMap, glyph, activeChar)
-    : undefined;
-  const rightFamilyGlyph = glyph
-    ? matchingFamilyGlyph(rightGhostMap, glyph, activeChar)
-    : undefined;
+  const leftFamilyGlyph = useMemo(
+    () => (glyph ? matchingFamilyGlyph(leftGhostMap, glyph, activeChar) : undefined),
+    [leftGhostMap, glyph, activeChar]
+  );
+  const rightFamilyGlyph = useMemo(
+    () => (glyph ? matchingFamilyGlyph(rightGhostMap, glyph, activeChar) : undefined),
+    [rightGhostMap, glyph, activeChar]
+  );
 
   const baseFit = viewSize.w && viewSize.h ? 0.62 * Math.min(viewSize.w / upm, viewSize.h / totalH) : 0.35;
   const scale = baseFit * (zoom / 100);
@@ -157,9 +197,12 @@ export function GlyphCanvas() {
   const lastUpRef = useRef<{ x: number; y: number } | null>(null);
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
   const closeNodePopup = useCallback(() => { setNodePopup(null); editor.clearNodeClick(); }, [editor]);
-  const brushTool = useBrushTool(hitScale);
+  // Live brush/pencil previews are published to small subscribed preview
+  // components (BrushStrokePreview / PencilStrokePreview below) instead of
+  // React state here, so a drawing frame doesn't re-render the full canvas.
+  const brushTool = useBrushTool(hitScale, EXTERNAL_PREVIEW);
   const brushNodeTool = useBrushNodeTool(hitScale);
-  const pencilTool = usePencilTool(hitScale);
+  const pencilTool = usePencilTool(hitScale, EXTERNAL_PREVIEW);
   // Brush tool, Node draw mode: same toolbar button as freehand Brush, just
   // captured Pen-tool style (see BrushDrawMode). Kept as its own flag rather
   // than switching `tool` to "pen" so it can never touch the real Pen
@@ -362,7 +405,7 @@ export function GlyphCanvas() {
       if (!p) return;
       // Hover is only rendered for Pen's rubber-band. Select's handle hover
       // has its own change guard in useSelectTool.
-      if (tool === "pen" || isNodeBrush) setHover(p);
+      if (tool === "pen" || isNodeBrush) hoverStore.set(p);
       if (panDragRef.current) {
         setPan({
           x: panDragRef.current.startPan.x - (sample.clientX - panDragRef.current.startClient.x) / sc,
@@ -375,7 +418,7 @@ export function GlyphCanvas() {
       if (tool === "select") return selectTool.pointerMove(p, sample.shiftKey, sample.pointerType, sample.metaKey);
       editor.pointerMove(p, sample.shiftKey, sample.altKey);
     },
-    [sketchGestures, getFontPoint, tool, setPan, sc, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, editor]
+    [sketchGestures, getFontPoint, tool, setPan, sc, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, editor, hoverStore]
   );
   pointerMoveProcessorRef.current = processPointerMove;
 
@@ -389,20 +432,24 @@ export function GlyphCanvas() {
     if (pending) pointerMoveProcessorRef.current(pending);
   }, []);
 
-  // Brush strokes need EVERY input sample, not one per frame: a pen or
-  // fast mouse reports far more positions than the screen repaints
+  // Brush and Pencil strokes need EVERY input sample, not one per frame: a
+  // pen or fast mouse reports far more positions than the screen repaints
   // (Apple Pencil: 240 Hz), and keeping only the newest per frame turned
-  // quick curves into visible straight facets. While a brush stroke is in
-  // progress, all coalesced samples go straight to the brush tool (which
+  // quick curves into visible straight facets. While a brush/pencil stroke
+  // is in progress, all coalesced samples go straight to the tool (each
   // throttles its own preview to one rebuild per frame).
   const brushDirectMoveRef = useRef<(e: PointerEvent) => boolean>(() => false);
   brushDirectMoveRef.current = (native: PointerEvent) => {
-    if (tool !== "brush" || isNodeBrush || !brushTool.isDrawing || panDragRef.current) return false;
+    const brushStroke = tool === "brush" && !isNodeBrush && brushTool.isDrawing;
+    const pencilStroke = tool === "pencil" && pencilTool.isDrawing;
+    if ((!brushStroke && !pencilStroke) || panDragRef.current) return false;
     if (sketchGestures.handlePointerMove(native)) return true;
     const coalesced = typeof native.getCoalescedEvents === "function" ? native.getCoalescedEvents() : [];
     for (const ev of coalesced.length > 0 ? coalesced : [native]) {
       const p = getFontPoint(ev);
-      if (p) brushTool.pointerMove(p, { pressure: ev.pressure, pointerType: ev.pointerType, timeStamp: ev.timeStamp });
+      if (!p) continue;
+      if (brushStroke) brushTool.pointerMove(p, { pressure: ev.pressure, pointerType: ev.pointerType, timeStamp: ev.timeStamp });
+      else pencilTool.pointerMove(p);
     }
     return true;
   };
@@ -441,7 +488,37 @@ export function GlyphCanvas() {
   }, []);
 
   useEffect(() => {
-    if (tool !== "pen" && !isNodeBrush) setHover(null);
+    if (tool !== "pen" && !isNodeBrush) hoverStore.set(null);
+  }, [tool, isNodeBrush, hoverStore]);
+
+  // Switching tools mid-gesture (keyboard shortcut while dragging, toolbar
+  // tap with a second pointer…) used to leave the previous tool's drag
+  // state alive, so the next pointer move kept dragging under the new tool.
+  // The store's setTool already finalizes any pending liveOutline; here
+  // every tool hook just drops its gesture bookkeeping. A brush/pencil
+  // stroke in progress is abandoned, and an open Node-Brush path is
+  // finished exactly like Escape would.
+  const prevToolKeyRef = useRef({ tool, isNodeBrush });
+  const toolResetRef = useRef<(prev: { tool: string; isNodeBrush: boolean }) => void>(() => {});
+  toolResetRef.current = (prev) => {
+    // Drop (don't replay) a move still queued for the previous tool.
+    if (pointerMoveRafRef.current !== null) cancelAnimationFrame(pointerMoveRafRef.current);
+    pointerMoveRafRef.current = null;
+    pendingPointerMoveRef.current = null;
+    panDragRef.current = null;
+    activePointerIdRef.current = null;
+    longPress.cancel();
+    editor.reset();
+    selectTool.reset();
+    if (prev.tool === "brush" && !prev.isNodeBrush) brushTool.cancel();
+    if (prev.tool === "pencil") pencilTool.cancel();
+    if (prev.isNodeBrush) brushNodeTool.escape();
+  };
+  useEffect(() => {
+    const prev = prevToolKeyRef.current;
+    if (prev.tool === tool && prev.isNodeBrush === isNodeBrush) return;
+    prevToolKeyRef.current = { tool, isNodeBrush };
+    toolResetRef.current(prev);
   }, [tool, isNodeBrush]);
 
   const onPointerDown = useCallback(
@@ -467,6 +544,7 @@ export function GlyphCanvas() {
       // drawing tools would otherwise lose a stroke while the finger rests).
       if (tool === "select" || tool === "node") longPress.begin(e);
       (e.target as Element).setPointerCapture?.(e.pointerId);
+      activePointerIdRef.current = e.pointerId;
       if (usingHandPan(e)) {
         panDragRef.current = { startClient: { x: e.clientX, y: e.clientY }, startPan: pan };
         return;
@@ -485,7 +563,15 @@ export function GlyphCanvas() {
     queuePointerMove(e);
   }, [longPress, queuePointerMove]);
 
-  const onPointerUp = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
+  // pointerup reaches BOTH the SVG's onPointerUp and the window listener
+  // below (which exists to catch releases outside the canvas). Running the
+  // whole release path twice meant two tool pointerUp calls per click —
+  // harmless only by accident. The SVG handler marks the native event and
+  // the window listener skips anything already handled.
+  const handledPointerUpsRef = useRef(new WeakSet<Event>());
+  const pointerUpHandlerRef = useRef<(e: PointerEvent | ReactPointerEvent<SVGSVGElement>) => void>(() => {});
+  pointerUpHandlerRef.current = (e) => {
+    if (e.pointerId === activePointerIdRef.current) activePointerIdRef.current = null;
     lastUpRef.current = { x: e.clientX, y: e.clientY };
     longPress.cancel();
     flushPointerMove();
@@ -495,7 +581,11 @@ export function GlyphCanvas() {
     if (tool === "pencil") return pencilTool.pointerUp();
     if (tool === "select") return selectTool.pointerUp();
     editor.pointerUp();
-  }, [editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, tool, sketchGestures, flushPointerMove, longPress]);
+  };
+  const onPointerUp = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
+    handledPointerUpsRef.current.add(e.nativeEvent);
+    pointerUpHandlerRef.current(e);
+  }, []);
 
   const onContextMenu = useCallback((e: ReactMouseEvent<SVGSVGElement>) => {
     // Replaces the browser menu on right-click; also swallows the native
@@ -598,24 +688,40 @@ export function GlyphCanvas() {
     [tool, isNodeBrush, brushNodeTool, getFontPoint, editor, hitScale, setTool, selectNodes, selectObjects]
   );
 
+  // pointercancel (the OS/browser took the pointer away: palm rejection,
+  // a system gesture…) must NOT run the commit path of pointerup — but it
+  // must still end the gesture, or the tool stays stuck mid-drag. The
+  // interrupted gesture is abandoned: live edits are discarded and an
+  // in-progress brush/pencil stroke is dropped.
+  const pointerCancelHandlerRef = useRef<(e: PointerEvent) => void>(() => {});
+  pointerCancelHandlerRef.current = (e) => {
+    longPress.cancel();
+    sketchGestures.handlePointerUp(e);
+    // Only the pointer that owns the gesture cancels it (a stray second
+    // touch that was rejected by palm/gesture handling is irrelevant).
+    if (activePointerIdRef.current === null || e.pointerId !== activePointerIdRef.current) return;
+    activePointerIdRef.current = null;
+    if (pointerMoveRafRef.current !== null) cancelAnimationFrame(pointerMoveRafRef.current);
+    pointerMoveRafRef.current = null;
+    pendingPointerMoveRef.current = null;
+    panDragRef.current = null;
+    if (tool === "brush") return isNodeBrush ? brushNodeTool.endDrag() : brushTool.cancel();
+    if (tool === "pencil") return pencilTool.cancel();
+    if (tool === "select") return selectTool.cancel();
+    editor.cancel();
+  };
+
+  // Registered once; the handlers themselves live in refs so these listeners
+  // are never torn down and re-added on every render (which used to happen
+  // on every live drag frame).
   useEffect(() => {
+    const handled = handledPointerUpsRef.current;
     function onWindowPointerUp(e: PointerEvent) {
-      lastUpRef.current = { x: e.clientX, y: e.clientY };
-      longPress.cancel();
-      flushPointerMove();
-      sketchGestures.handlePointerUp(e);
-      panDragRef.current = null;
-      if (tool === "brush") (isNodeBrush ? brushNodeTool.pointerUp() : brushTool.pointerUp());
-      else if (tool === "pencil") pencilTool.pointerUp();
-      else if (tool === "select") selectTool.pointerUp();
-      else editor.pointerUp();
+      if (handled.has(e)) return;
+      pointerUpHandlerRef.current(e);
     }
-    // pointercancel only needs to keep Sketch Mode's touch bookkeeping tidy
-    // (e.g. the OS interrupts a touch gesture); it must NOT run the same
-    // commit path as pointerup, so normal-mode tool behavior is unchanged.
     function onWindowPointerCancel(e: PointerEvent) {
-      longPress.cancel();
-      sketchGestures.handlePointerUp(e);
+      pointerCancelHandlerRef.current(e);
     }
     window.addEventListener("pointerup", onWindowPointerUp);
     window.addEventListener("pointercancel", onWindowPointerCancel);
@@ -623,7 +729,7 @@ export function GlyphCanvas() {
       window.removeEventListener("pointerup", onWindowPointerUp);
       window.removeEventListener("pointercancel", onWindowPointerCancel);
     };
-  }, [editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, tool, sketchGestures, flushPointerMove, longPress]);
+  }, []);
 
   // A plain click on a node (Node tool) -> Corner / Smooth / Symmetric popup.
   useEffect(() => {
@@ -635,31 +741,73 @@ export function GlyphCanvas() {
   }, [editor.nodeClick, editor, tool]);
   useEffect(() => { if (tool !== "node") setNodePopup(null); }, [tool]);
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-      if (e.code === "Space") spacePanRef.current = true;
-      if (e.key === "Escape") {
-        editor.finishOpenContour();
-        brushTool.cancel();
-        if (isNodeBrush) brushNodeTool.escape();
-        pencilTool.cancel();
-      }
-      if (tool === "node") {
-        if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); editor.deleteSelectedNodes(); }
-        const step = e.shiftKey ? 10 : 1;
-        if (e.key === "ArrowLeft") { e.preventDefault(); editor.nudgeNodes(-step, 0); }
-        if (e.key === "ArrowRight") { e.preventDefault(); editor.nudgeNodes(step, 0); }
-        if (e.key === "ArrowUp") { e.preventDefault(); editor.nudgeNodes(0, step); }
-        if (e.key === "ArrowDown") { e.preventDefault(); editor.nudgeNodes(0, -step); }
+  // Holding an arrow key auto-repeats node nudges; the first nudge of a
+  // press opens a glyph-edit bracket so the whole hold is ONE undo step
+  // (closed on key release / window blur).
+  const nudgeBracketOpenRef = useRef(false);
+  const endNudgeBracket = useCallback(() => {
+    if (!nudgeBracketOpenRef.current) return;
+    nudgeBracketOpenRef.current = false;
+    useAppStore.getState().endGlyphEdit();
+  }, []);
+  const keyDownHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyDownHandlerRef.current = (e) => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    if (e.code === "Space") {
+      spacePanRef.current = true;
+      // Space is the temporary-pan modifier here; without this the page (or
+      // a focused toolbar button) also scrolls / "clicks" on Space.
+      if (!isFormField(e.target) && !(t && (t.tagName === "BUTTON" || t.getAttribute("role") === "button"))) e.preventDefault();
+    }
+    if (e.key === "Escape") {
+      editor.finishOpenContour();
+      brushTool.cancel();
+      if (isNodeBrush) brushNodeTool.escape();
+      pencilTool.cancel();
+    }
+    if (tool === "node") {
+      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); editor.deleteSelectedNodes(); }
+      const step = e.shiftKey ? 10 : 1;
+      const delta =
+        e.key === "ArrowLeft" ? { x: -step, y: 0 }
+        : e.key === "ArrowRight" ? { x: step, y: 0 }
+        : e.key === "ArrowUp" ? { x: 0, y: step }
+        : e.key === "ArrowDown" ? { x: 0, y: -step }
+        : null;
+      if (delta) {
+        e.preventDefault();
+        if (editor.selectedNodes.length > 0 && !nudgeBracketOpenRef.current) {
+          nudgeBracketOpenRef.current = true;
+          useAppStore.getState().beginGlyphEdit();
+        }
+        editor.nudgeNodes(delta.x, delta.y);
       }
     }
-    function onKeyUp(e: KeyboardEvent) { if (e.code === "Space") spacePanRef.current = false; }
+  };
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) { keyDownHandlerRef.current(e); }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === "Space") spacePanRef.current = false;
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown") endNudgeBracket();
+    }
+    // A Space (or arrow) released while the window is unfocused never
+    // delivers its keyup — reset so the canvas doesn't stay stuck in
+    // hand-pan mode after e.g. Cmd+Tab while holding Space.
+    function onBlur() {
+      spacePanRef.current = false;
+      endNudgeBracket();
+    }
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
-    return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); };
-  }, [editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, tool]);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+      endNudgeBracket();
+    };
+  }, [endNudgeBracket]);
 
   const beginGuideDrag = useCallback(
     (key: MetricGuideKey, e: ReactPointerEvent<SVGLineElement>) => {
@@ -817,25 +965,65 @@ export function GlyphCanvas() {
   const objects = editor.outline.objects;
   const renderOutline = liveOutline ?? glyph?.outline ?? { objects: [] };
   const visualObjects = renderOutline.objects;
-  // The boolean merge is needed for committed outline-brush geometry, but it
-  // is intentionally skipped during live drawing. Re-running polygon unions
-  // on every pointer frame is what made the canvas feel delayed after the
-  // performance pass; the final committed outline still takes the exact same
-  // merge path once the stroke is released.
-  const objectsForRender = liveOutline ? visualObjects : objects;
-  const [overlappingIds, setOverlappingIds] = useState<Set<string>>(() => findOverlappingObjectIds(objects));
-  // Cache the last objects reference we ran overlap detection on, so we can
-  // skip the expensive O(n²) pass when objects identity hasn't actually
-  // changed (e.g. only liveOutline or selection changed).
-  const lastOverlapObjectsRef = useRef(objects);
+  // (Outline-Brush boolean merge during live gestures: see
+  // useOutlineBrushMerge in ObjectsLayer.)
+  // Select-tool move/rotate/scale/skew drag: render every object whose look
+  // is exactly affine-equivariant from its UNCHANGED base object plus an SVG
+  // transform (see transformPreview.ts), so its memoized path / brush
+  // outline isn't rebuilt every frame. Everything else renders the live
+  // geometry exactly as before.
+  const dragPreview = tool === "select" && liveOutline ? selectTool.dragPreview : null;
+  const transformedRender = useMemo(() => {
+    if (!dragPreview || !liveOutline) return null;
+    const liveById = new Map<string, VectorObject>();
+    for (const o of liveOutline.objects) if (dragPreview.ids.has(o.id)) liveById.set(o.id, o);
+    const transformedIds = new Set<string>();
+    const renderObjects = dragPreview.baseObjects.map((o) => {
+      if (!dragPreview.ids.has(o.id)) return o;
+      if (transformPreviewIsExact(o, dragPreview.kind)) {
+        transformedIds.add(o.id);
+        return o;
+      }
+      return liveById.get(o.id) ?? o;
+    });
+    // Sanity: the preview must describe exactly the live outline's objects
+    // (same ids, same order); otherwise just render the live geometry.
+    if (renderObjects.length !== liveOutline.objects.length) return null;
+    for (let i = 0; i < renderObjects.length; i++) if (renderObjects[i].id !== liveOutline.objects[i].id) return null;
+    return { renderObjects, transformedIds, matrix: affineToSvgMatrix(dragPreview.matrix, ascender) };
+  }, [dragPreview, liveOutline, ascender]);
+  const objectsForRender = transformedRender ? transformedRender.renderObjects : liveOutline ? visualObjects : objects;
+
+  // Overlap highlighting is O(objects² × segments²) in the worst case. It is
+  // hidden during live gestures anyway, so it is only (re)computed once the
+  // outline settles, in idle time, never synchronously on mount or on every
+  // drag frame. Flattened geometry is cached per object (overlapDetect.ts).
+  const [overlappingIds, setOverlappingIds] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
+  const lastOverlapObjectsRef = useRef<VectorObject[] | null>(null);
   useEffect(() => {
+    if (liveOutline) return;
     if (objects === lastOverlapObjectsRef.current) return;
-    lastOverlapObjectsRef.current = objects;
-    const timer = window.setTimeout(() => {
-      setOverlappingIds(findOverlappingObjectIds(objects));
-    }, 100);
-    return () => window.clearTimeout(timer);
-  }, [objects]);
+    const target = objects;
+    return scheduleIdle(() => {
+      lastOverlapObjectsRef.current = target;
+      const next = findOverlappingObjectIds(target);
+      setOverlappingIds((prev) => (sameIdSet(prev, next) ? prev : next));
+    }, 300);
+  }, [objects, liveOutline]);
+
+  // Stable (memoized) inputs for the memoized node/handle layer — inline
+  // literals here used to bust its memo on every canvas render.
+  const brushNodeLiveNodes = brushNodeTool.liveNodes;
+  const brushNodePreviewOutline = useMemo<GlyphOutline | null>(
+    () => (brushNodeLiveNodes.length > 0 ? brushNodePreviewOutlineFor(brushNodeLiveNodes) : null),
+    [brushNodeLiveNodes]
+  );
+  const roundCornerContourId = editor.roundCornerLabel?.contourId;
+  const roundCornerPoint = editor.roundCornerLabel?.cornerPoint;
+  const activeRoundCorner = useMemo(
+    () => (roundCornerContourId && roundCornerPoint ? { contourId: roundCornerContourId, cornerPoint: roundCornerPoint } : undefined),
+    [roundCornerContourId, roundCornerPoint]
+  );
 
   const selBounds = tool === "select" ? selectTool.bounds : null;
   const handlePts = useMemo(
@@ -895,10 +1083,14 @@ export function GlyphCanvas() {
         onContextMenu={onContextMenu}
         style={{
           touchAction: "none",
+          // Zoom-dependent CSS sizes read this variable (see the static
+          // stylesheet below), so zooming only changes one custom property
+          // instead of regenerating and re-parsing the whole <style> text.
+          ["--sc" as string]: sc,
           ...(showRuler ? { position: "absolute", top: RULER_SIZE, left: RULER_SIZE, width: `calc(100% - ${RULER_SIZE}px)`, height: `calc(100% - ${RULER_SIZE}px)` } : {}),
         }}
       >
-        <style>{editorCanvasCss(sc)}</style>
+        <style>{EDITOR_CANVAS_CSS_SCALED_BY_VAR}</style>
 
         <defs>
           <clipPath id="fontseru-main-canvas" clipPathUnits="userSpaceOnUse">
@@ -1151,27 +1343,14 @@ export function GlyphCanvas() {
           penAutoCloseShape={penAutoCloseShape}
           drawingContourId={editor.drawingContourId}
           selectedObjectIds={selectedObjectIds}
-          overlappingIds={liveOutline ? new Set<string>() : overlappingIds}
+          overlappingIds={liveOutline ? EMPTY_ID_SET : overlappingIds}
+          live={liveOutline !== null}
+          transformedIds={transformedRender?.transformedIds}
+          transformMatrix={transformedRender?.matrix}
         />
 
         {/* Brush silhouette preview (true nib/taper outline) */}
-        {brushTool.previewOutline.length > 0 && (
-          <path
-            d={brushTool.previewOutline.map((c) => contourToPath(c, ascender)).join(" ")}
-            className="obj-fill"
-            fillRule="nonzero"
-            opacity={0.9}
-          />
-        )}
-        {brushTool.previewCenterline && (
-          <path
-            d={contourToPath(brushTool.previewCenterline, ascender)}
-            className="brush-preview"
-            strokeWidth={brush.size}
-            strokeLinecap={brushCap}
-            strokeLinejoin="round"
-          />
-        )}
+        <BrushStrokePreview store={brushTool.previewStore} ascender={ascender} size={brush.size} cap={brushCap} />
 
         {/* Brush tool, Node draw mode: live preview of the path placed so
             far — see BrushNodeLivePreview. */}
@@ -1186,36 +1365,21 @@ export function GlyphCanvas() {
         {/* Pencil preview: the live curve-fit result, shown both as the
             open gesture drawn so far AND — faintly — as it will land once
             closed, so the eventual auto-close never comes as a surprise. */}
-        {pencilTool.previewContour && (
-          <>
-            <path
-              d={contourToPath({ ...pencilTool.previewContour, closed: true }, ascender)}
-              className="pencil-preview-fill"
-              fillRule="nonzero"
-            />
-            <path
-              d={contourToPath({ ...pencilTool.previewContour, closed: false }, ascender)}
-              className="pencil-preview"
-              strokeWidth={2 * hitScale}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </>
-        )}
+        <PencilStrokePreview store={pencilTool.previewStore} ascender={ascender} hitScale={hitScale} />
 
         {/* Pen rubber-band */}
-        {tool === "pen" && editor.drawingContourId && hover && (
-          <RubberBand outline={editor.outline} contourId={editor.drawingContourId} hover={hover} ascender={ascender} hitScale={hitScale} />
+        {tool === "pen" && editor.drawingContourId && (
+          <HoverRubberBand store={hoverStore} outline={editor.outline} contourId={editor.drawingContourId} ascender={ascender} hitScale={hitScale} />
         )}
 
         {/* Brush Node draw mode rubber-band — same idea as Pen's, tracking
             brushNodeTool's own in-progress path instead of the shared
             editor outline. */}
-        {isNodeBrush && brushNodeTool.liveNodes.length > 0 && hover && (
-          <RubberBand
-            outline={{ objects: [{ id: "brush-node-preview", kind: "brush", contours: [{ id: "brush-node-preview-contour", nodes: brushNodeTool.liveNodes, closed: false }] } as VectorObject] }}
+        {isNodeBrush && brushNodePreviewOutline && (
+          <HoverRubberBand
+            store={hoverStore}
+            outline={brushNodePreviewOutline}
             contourId="brush-node-preview-contour"
-            hover={hover}
             ascender={ascender}
             hitScale={hitScale}
           />
@@ -1320,13 +1484,7 @@ export function GlyphCanvas() {
               tool === "node"
                 ? editor.nodeableOutline.objects
                 : isNodeBrush
-                ? (brushNodeTool.liveNodes.length > 0
-                    ? [{
-                        id: "brush-node-preview",
-                        kind: "brush",
-                        contours: [{ id: "brush-node-preview-contour", nodes: brushNodeTool.liveNodes, closed: false }],
-                      } as VectorObject]
-                    : [])
+                ? (brushNodePreviewOutline?.objects ?? NO_OBJECTS)
                 : objects
             }
             ascender={ascender}
@@ -1334,11 +1492,7 @@ export function GlyphCanvas() {
             tool={tool}
             selectedNodes={editor.selectedNodes}
             selectedHandle={editor.selectedHandle}
-            activeRoundCorner={
-              editor.roundCornerLabel
-                ? { contourId: editor.roundCornerLabel.contourId, cornerPoint: editor.roundCornerLabel.cornerPoint }
-                : undefined
-            }
+            activeRoundCorner={activeRoundCorner}
           />
         ) : (
           /* Outside Node/Pen: line + brush objects are built from a skeleton
@@ -1376,8 +1530,57 @@ export function GlyphCanvas() {
  * the cost that scales directly with how many nodes a pasted vector
  * brought in.
  */
+const NO_OBJECTS: VectorObject[] = [];
+
+function brushNodePreviewOutlineFor(nodes: PathNode[]): GlyphOutline {
+  return {
+    objects: [{
+      id: "brush-node-preview",
+      kind: "brush",
+      contours: [{ id: "brush-node-preview-contour", nodes, closed: false }],
+    } as VectorObject],
+  };
+}
+
+function isOutlineBrushObject(o: VectorObject): boolean {
+  return o.kind === "brush" && o.brushType === "outline";
+}
+
+function sameObjectList(a: VectorObject[], b: VectorObject[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * Outline-Brush boolean merge, cached on the IDENTITIES of the Outline Brush
+ * objects only — any other object changing (a pen node drag, a shape being
+ * moved) no longer re-runs the polygon union.
+ *
+ * During a live gesture, an Outline Brush stroke that is itself being edited
+ * (new identity vs. the last settled render) is left out of the merge and
+ * renders as its own silhouette for the duration of the gesture, so the
+ * union is NOT recomputed on every pointer frame; the settled outline goes
+ * back through the full merge the moment the gesture is committed.
+ */
+function useOutlineBrushMerge(objects: VectorObject[], live: boolean) {
+  const cacheRef = useRef<{ inputs: VectorObject[]; result: ReturnType<typeof mergeOutlineBrushStrokes> } | null>(null);
+  const settledRef = useRef<Set<VectorObject> | null>(null);
+  const outlineObjs = objects.filter(isOutlineBrushObject);
+  const settled = settledRef.current;
+  const inputs = live && settled ? outlineObjs.filter((o) => settled.has(o)) : outlineObjs;
+  let cache = cacheRef.current;
+  if (!cache || !sameObjectList(cache.inputs, inputs)) {
+    cache = { inputs, result: inputs.length > 0 ? mergeOutlineBrushStrokes(inputs) : null };
+    cacheRef.current = cache;
+  }
+  if (!live) settledRef.current = new Set(outlineObjs);
+  return cache.result;
+}
+
 export const ObjectsLayer = memo(function ObjectsLayer({
   objects, ascender, tool, penAutoCloseShape, drawingContourId, selectedObjectIds, overlappingIds,
+  live = false, transformedIds, transformMatrix,
 }: {
   objects: VectorObject[];
   ascender: number;
@@ -1385,13 +1588,20 @@ export const ObjectsLayer = memo(function ObjectsLayer({
   penAutoCloseShape: boolean;
   drawingContourId: string | null;
   selectedObjectIds: string[];
-  overlappingIds: Set<string>;
+  overlappingIds: ReadonlySet<string>;
+  /** A live gesture is in progress (liveOutline set) — see useOutlineBrushMerge. */
+  live?: boolean;
+  /** Select-tool drag preview: these objects are drawn from their base
+   *  geometry wrapped in `transformMatrix` (see transformPreview.ts). */
+  transformedIds?: ReadonlySet<string>;
+  transformMatrix?: string;
 }) {
   // Same merge used for Preview/Test Lab/export (see glyphPaths.ts) so
   // crossing Outline Brush strokes read as one clean merged shape on the
   // main canvas too, instead of each stroke's own independent hollow ring
   // just stacking on top of the others.
-  const outlineMerge = useMemo(() => mergeOutlineBrushStrokes(objects), [objects]);
+  const outlineMerge = useOutlineBrushMerge(objects, live);
+  const selectedSet = useMemo(() => new Set(selectedObjectIds), [selectedObjectIds]);
   const mergedD = useMemo(
     () => (outlineMerge ? outlineMerge.contours.map((c) => contourToPath(c, ascender)).join(" ") : null),
     [outlineMerge, ascender]
@@ -1410,7 +1620,7 @@ export const ObjectsLayer = memo(function ObjectsLayer({
           !penAutoCloseShape &&
           drawingContourId != null &&
           obj.contours.some((c) => c.id === drawingContourId && !c.closed);
-        const isSelected = selectedObjectIds.includes(obj.id);
+        const isSelected = selectedSet.has(obj.id);
         // Node tool: dim every object except the one being edited. The
         // active object stays fully solid (opacity here would blur exactly
         // the outline you're trying to read while dragging nodes/handles),
@@ -1443,6 +1653,7 @@ export const ObjectsLayer = memo(function ObjectsLayer({
             dimmed={dimmed}
             semiFill={semiFill}
             mergedFillD={mergedFillD}
+            transform={transformMatrix && transformedIds?.has(obj.id) ? transformMatrix : undefined}
           />
         );
       })}
@@ -1468,89 +1679,125 @@ export const NodesAndHandlesLayer = memo(function NodesAndHandlesLayer({
   selectedHandle: { contourId: string; nodeId: string; part: "handleIn" | "handleOut" } | null;
   activeRoundCorner?: { contourId: string; cornerPoint: Point };
 }) {
+  // Built once per selection change instead of a linear scan per node.
+  const selectedKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const r of selectedNodes) keys.add(`${r.contourId}:${r.nodeId}`);
+    return keys;
+  }, [selectedNodes]);
   return (
     <>
       {objects.map((obj) => (
-        <g key={obj.id}>
-          {/* Solid skeleton/centerline for line & brush objects — this is the
-              actual path being edited, kept visible under its own thick
-              rendered stroke/silhouette (mirrors the "show path" behavior
-              you get in Node tool in apps like Affinity Designer), so you
-              can see exactly where the curve/nodes sit while dragging. */}
-          {(obj.kind === "line" || obj.kind === "brush") &&
-            obj.contours.map((contour) => (
-              <path
-                key={contour.id}
-                d={contourToPath(contour, ascender)}
-                className="skeleton-guide-path active"
-                vectorEffect="non-scaling-stroke"
-                pointerEvents="none"
-              />
-            ))}
-          {obj.contours.map((contour) =>
-            contour.nodes.map((node) => {
-              const svgP = toSvgPoint(node.point, ascender);
-              const isSel = selectedNodes.some((r) => r.contourId === contour.id && r.nodeId === node.id);
-              // Font editors (Glyphs, FontLab, RoboFont) keep every on-curve
-              // and off-curve handle visible for the whole glyph while the
-              // Node tool is active — not just the selected node's — because
-              // seeing the full curve skeleton at once is how you spot a
-              // stray handle angle elsewhere in the shape. Outside Node tool
-              // (Select/Shape/etc), fall back to "only nodes that actually
-              // have handles" so other tools' overlays stay uncluttered.
-              const showHandles = tool === "node" ? true : Boolean(node.handleIn || node.handleOut);
-              return (
-                <g key={node.id}>
-                  {showHandles && node.handleIn && (
-                    <HandleGlyph node={node} part="handleIn" ascender={ascender} hitScale={hitScale} emphasized={isSel}
-                      selected={selectedHandle?.contourId === contour.id && selectedHandle?.nodeId === node.id && selectedHandle?.part === "handleIn"} />
-                  )}
-                  {showHandles && node.handleOut && (
-                    <HandleGlyph node={node} part="handleOut" ascender={ascender} hitScale={hitScale} emphasized={isSel}
-                      selected={selectedHandle?.contourId === contour.id && selectedHandle?.nodeId === node.id && selectedHandle?.part === "handleOut"} />
-                  )}
-                  <NodeShape point={svgP} type={node.type} hitScale={hitScale} selected={isSel} />
-                </g>
-              );
-            })
-          )}
-          {/* Figma-style corner-round handle: a small rounded square sitting
-              a fixed distance in from each sharp corner (drag it out to
-              round) or from each already-rounded corner (drag it further to
-              re-radius, or back to the vertex to un-round) — never a plain
-              dot, and never sized or positioned off the live radius, so
-              it's always the same easy target to find and grab no matter
-              how far a corner has already been rounded. Rendered once per
-              object, in font-space, from the same getCornerHandles() the
-              pointer-down hit test uses, so the drawn icon and the
-              clickable spot can't drift apart. */}
-          {tool === "node" &&
-            getCornerHandles(
-              { objects: [obj] } as GlyphOutline,
-              16 * hitScale,
-              activeRoundCorner
-            ).map((h) => {
-              const halfPx = 4;
-              const halfFont = halfPx * hitScale;
-              const rxFont = 1.8 * hitScale;
-              const svgP = toSvgPoint(h.point, ascender);
-              return (
-                <rect
-                  key={`ch-${h.nodeId}`}
-                  x={svgP.x - halfFont}
-                  y={svgP.y - halfFont}
-                  width={halfFont * 2}
-                  height={halfFont * 2}
-                  rx={rxFont}
-                  ry={rxFont}
-                  className={`corner-radius-handle ${h.rounded ? "rounded" : ""}`}
-                  pointerEvents="none"
-                />
-              );
-            })}
-        </g>
+        <ObjectNodesAndHandles
+          key={obj.id}
+          obj={obj}
+          ascender={ascender}
+          hitScale={hitScale}
+          tool={tool}
+          selectedKeys={selectedKeys}
+          selectedHandle={selectedHandle}
+          activeRoundCorner={activeRoundCorner}
+        />
       ))}
     </>
+  );
+});
+
+/**
+ * One object's nodes, handles and corner-round icons. Memoized per object so
+ * that during a node/handle drag (which, with structural sharing in nodeOps,
+ * only replaces the object being edited) every other object's nodes skip
+ * re-rendering entirely.
+ */
+const ObjectNodesAndHandles = memo(function ObjectNodesAndHandles({
+  obj, ascender, hitScale, tool, selectedKeys, selectedHandle, activeRoundCorner,
+}: {
+  obj: VectorObject;
+  ascender: number;
+  hitScale: number;
+  tool: string;
+  selectedKeys: ReadonlySet<string>;
+  selectedHandle: { contourId: string; nodeId: string; part: "handleIn" | "handleOut" } | null;
+  activeRoundCorner?: { contourId: string; cornerPoint: Point };
+}) {
+  const cornerHandles = useMemo(
+    () => (tool === "node" ? getCornerHandles({ objects: [obj] } as GlyphOutline, 16 * hitScale, activeRoundCorner) : []),
+    [tool, obj, hitScale, activeRoundCorner]
+  );
+  return (
+    <g>
+      {/* Solid skeleton/centerline for line & brush objects — this is the
+          actual path being edited, kept visible under its own thick
+          rendered stroke/silhouette (mirrors the "show path" behavior
+          you get in Node tool in apps like Affinity Designer), so you
+          can see exactly where the curve/nodes sit while dragging. */}
+      {(obj.kind === "line" || obj.kind === "brush") &&
+        obj.contours.map((contour) => (
+          <path
+            key={contour.id}
+            d={contourToPath(contour, ascender)}
+            className="skeleton-guide-path active"
+            vectorEffect="non-scaling-stroke"
+            pointerEvents="none"
+          />
+        ))}
+      {obj.contours.map((contour) =>
+        contour.nodes.map((node) => {
+          const svgP = toSvgPoint(node.point, ascender);
+          const isSel = selectedKeys.has(`${contour.id}:${node.id}`);
+          // Font editors (Glyphs, FontLab, RoboFont) keep every on-curve
+          // and off-curve handle visible for the whole glyph while the
+          // Node tool is active — not just the selected node's — because
+          // seeing the full curve skeleton at once is how you spot a
+          // stray handle angle elsewhere in the shape. Outside Node tool
+          // (Select/Shape/etc), fall back to "only nodes that actually
+          // have handles" so other tools' overlays stay uncluttered.
+          const showHandles = tool === "node" ? true : Boolean(node.handleIn || node.handleOut);
+          return (
+            <g key={node.id}>
+              {showHandles && node.handleIn && (
+                <HandleGlyph node={node} part="handleIn" ascender={ascender} hitScale={hitScale} emphasized={isSel}
+                  selected={selectedHandle?.contourId === contour.id && selectedHandle?.nodeId === node.id && selectedHandle?.part === "handleIn"} />
+              )}
+              {showHandles && node.handleOut && (
+                <HandleGlyph node={node} part="handleOut" ascender={ascender} hitScale={hitScale} emphasized={isSel}
+                  selected={selectedHandle?.contourId === contour.id && selectedHandle?.nodeId === node.id && selectedHandle?.part === "handleOut"} />
+              )}
+              <NodeShape point={svgP} type={node.type} hitScale={hitScale} selected={isSel} />
+            </g>
+          );
+        })
+      )}
+      {/* Figma-style corner-round handle: a small rounded square sitting
+          a fixed distance in from each sharp corner (drag it out to
+          round) or from each already-rounded corner (drag it further to
+          re-radius, or back to the vertex to un-round) — never a plain
+          dot, and never sized or positioned off the live radius, so
+          it's always the same easy target to find and grab no matter
+          how far a corner has already been rounded. Rendered once per
+          object, in font-space, from the same getCornerHandles() the
+          pointer-down hit test uses, so the drawn icon and the
+          clickable spot can't drift apart. */}
+      {cornerHandles.map((h) => {
+        const halfPx = 4;
+        const halfFont = halfPx * hitScale;
+        const rxFont = 1.8 * hitScale;
+        const svgP = toSvgPoint(h.point, ascender);
+        return (
+          <rect
+            key={`ch-${h.nodeId}`}
+            x={svgP.x - halfFont}
+            y={svgP.y - halfFont}
+            width={halfFont * 2}
+            height={halfFont * 2}
+            rx={rxFont}
+            ry={rxFont}
+            className={`corner-radius-handle ${h.rounded ? "rounded" : ""}`}
+            pointerEvents="none"
+          />
+        );
+      })}
+    </g>
   );
 });
 
@@ -1588,7 +1835,7 @@ export const SkeletonGuideLayer = memo(function SkeletonGuideLayer({
       {skeletonObjects.map((obj) => (
         <g key={obj.id}>
           {obj.contours.map((contour) => (
-            <path key={contour.id} d={contourToPath(contour, ascender)} className="skeleton-guide-path" vectorEffect="non-scaling-stroke" />
+            <SkeletonGuidePath key={contour.id} contour={contour} ascender={ascender} />
           ))}
         </g>
       ))}
@@ -1596,9 +1843,20 @@ export const SkeletonGuideLayer = memo(function SkeletonGuideLayer({
   );
 });
 
+/** Per-contour memo: an untouched contour keeps its identity across edits,
+ *  so its path string isn't rebuilt while something else is being dragged. */
+const SkeletonGuidePath = memo(function SkeletonGuidePath({ contour, ascender }: { contour: Contour; ascender: number }) {
+  const d = useMemo(() => contourToPath(contour, ascender), [contour, ascender]);
+  return <path d={d} className="skeleton-guide-path" vectorEffect="non-scaling-stroke" />;
+});
+
 const ObjectShape = memo(function ObjectShape({
-  obj, ascender, selected, outlineOnly, overlapping, dimmed, semiFill, mergedFillD,
-}: { obj: VectorObject; ascender: number; selected: boolean; outlineOnly?: boolean; overlapping?: boolean; dimmed?: boolean; semiFill?: boolean; mergedFillD?: string | null }) {
+  obj, ascender, selected, outlineOnly, overlapping, dimmed, semiFill, mergedFillD, transform,
+}: {
+  obj: VectorObject; ascender: number; selected: boolean; outlineOnly?: boolean; overlapping?: boolean; dimmed?: boolean; semiFill?: boolean; mergedFillD?: string | null;
+  /** SVG transform applied during a Select-tool drag preview (see transformPreview.ts). */
+  transform?: string;
+}) {
   const isFillKind = obj.kind === "shape" || obj.kind === "expanded";
   const isMonolineBrush = obj.kind === "brush" && obj.brushType === "monoline";
   const isVariableBrush = obj.kind === "brush" && !isMonolineBrush;
@@ -1619,7 +1877,7 @@ const ObjectShape = memo(function ObjectShape({
   // object gets selected next the color doesn't "pop" or shift, only the
   // surrounding recede/return.
   const wrap = (node: ReactNode) =>
-    dimmed ? <g opacity={0.42}>{node}</g> : <>{node}</>;
+    dimmed || transform ? <g opacity={dimmed ? 0.42 : undefined} transform={transform}>{node}</g> : <>{node}</>;
 
   // obj-fill + optional overlap/semi-fill modifiers, joined conditionally.
   const fillClass = () =>
@@ -1628,7 +1886,7 @@ const ObjectShape = memo(function ObjectShape({
   if (isFillKind) {
     const d = fillOrStrokeD;
     if (outlineOnly) {
-      return <path d={d} className="obj-fill-preview-outline" vectorEffect="non-scaling-stroke" />;
+      return <path d={d} className="obj-fill-preview-outline" vectorEffect="non-scaling-stroke" transform={transform} />;
     }
     return wrap(
       <>
@@ -1733,6 +1991,77 @@ export function RubberBand({
     </>
   );
 }
+
+/** Pen / Node-Brush rubber-band fed by the hover preview store, so pointer
+ *  hover re-renders only this element instead of the whole canvas. */
+const HoverRubberBand = memo(function HoverRubberBand({
+  store, outline, contourId, ascender, hitScale,
+}: {
+  store: PreviewStore<Point | null>; outline: GlyphOutline; contourId: string; ascender: number; hitScale: number;
+}) {
+  const hover = usePreviewValue(store);
+  if (!hover) return null;
+  return <RubberBand outline={outline} contourId={contourId} hover={hover} ascender={ascender} hitScale={hitScale} />;
+});
+
+/** Live freehand Brush stroke preview (true nib/taper silhouette, or the
+ *  centerline for Monoline), subscribed to the brush tool's preview store. */
+const BrushStrokePreview = memo(function BrushStrokePreview({
+  store, ascender, size, cap,
+}: {
+  store: PreviewStore<BrushPreview>; ascender: number; size: number; cap: string;
+}) {
+  const preview = usePreviewValue(store);
+  return (
+    <>
+      {preview.outline.length > 0 && (
+        <path
+          d={preview.outline.map((c) => contourToPath(c, ascender)).join(" ")}
+          className="obj-fill"
+          fillRule="nonzero"
+          opacity={0.9}
+        />
+      )}
+      {preview.centerline && (
+        <path
+          d={contourToPath(preview.centerline, ascender)}
+          className="brush-preview"
+          strokeWidth={size}
+          strokeLinecap={cap as "round" | "butt" | "square"}
+          strokeLinejoin="round"
+        />
+      )}
+    </>
+  );
+});
+
+/** Pencil preview: the live curve-fit result, shown both as the open
+ *  gesture drawn so far AND — faintly — as it will land once closed, so the
+ *  eventual auto-close never comes as a surprise. */
+const PencilStrokePreview = memo(function PencilStrokePreview({
+  store, ascender, hitScale,
+}: {
+  store: PreviewStore<Contour | null>; ascender: number; hitScale: number;
+}) {
+  const contour = usePreviewValue(store);
+  if (!contour) return null;
+  return (
+    <>
+      <path
+        d={contourToPath({ ...contour, closed: true }, ascender)}
+        className="pencil-preview-fill"
+        fillRule="nonzero"
+      />
+      <path
+        d={contourToPath({ ...contour, closed: false }, ascender)}
+        className="pencil-preview"
+        strokeWidth={2 * hitScale}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  );
+});
 
 /**
  * Live preview for the Brush tool's Node draw mode, shared by the Single and

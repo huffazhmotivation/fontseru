@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabaseClient";
-import { parseFontSeruProject, serializeFontSeruProject } from "./projectIO";
+import { parseFontSeruProject } from "./projectIO";
 import type { FontSeruProject } from "@/types/project";
 
 /**
@@ -192,6 +192,21 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** Native base64 via FileReader — avoids building a huge binary string on
+ * the main thread for multi-MB payloads. */
+function bytesToBase64Async(bytes: Uint8Array): Promise<string> {
+  if (typeof FileReader === "undefined") return Promise.resolve(bytesToBase64(bytes));
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result);
+      resolve(url.slice(url.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(new Blob([bytes as BlobPart]));
+  });
+}
+
 function base64ToBytes(base64: string): Uint8Array {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -216,19 +231,10 @@ function base64ToBytes(base64: string): Uint8Array {
  */
 const CLOUD_SAVE_COORDINATE_DECIMALS = 2;
 
-function roundNumbersForStorage(value: unknown, decimals: number): unknown {
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) return value; // leave NaN/Infinity untouched rather than corrupt them
-    const factor = 10 ** decimals;
-    return Math.round(value * factor) / factor;
-  }
-  if (Array.isArray(value)) return value.map((item) => roundNumbersForStorage(item, decimals));
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value)) out[key] = roundNumbersForStorage(item, decimals);
-    return out;
-  }
-  return value;
+function roundingReplacer(decimals: number) {
+  const factor = 10 ** decimals;
+  return (_key: string, value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) ? Math.round(value * factor) / factor : value;
 }
 
 async function gzipCompress(text: string): Promise<Uint8Array> {
@@ -250,14 +256,14 @@ async function gzipDecompress(bytes: Uint8Array): Promise<string> {
  * back to sending it uncompressed (identical to the previous behavior) when
  * it doesn't. Returns the value to store plus its actual on-the-wire byte
  * size, which drives `uploadTimeoutFor`. `json` is expected to already have
- * gone through `roundNumbersForStorage` — this function only compresses. */
+ * gone through `roundingReplacer` — this function only compresses. */
 async function wrapPayload(json: string): Promise<{ value: unknown; bytes: number }> {
   if (!supportsGzipStreams()) {
     const value = JSON.parse(json);
     return { value, bytes: new TextEncoder().encode(json).length };
   }
   const gz = await gzipCompress(json);
-  const envelope: GzipEnvelope = { __fontseru: GZIP_ENVELOPE_MARKER, gz: bytesToBase64(gz) };
+  const envelope: GzipEnvelope = { __fontseru: GZIP_ENVELOPE_MARKER, gz: await bytesToBase64Async(gz) };
   return { value: envelope, bytes: gz.length };
 }
 
@@ -322,15 +328,15 @@ export async function saveCloudProject(
 
   // Round-trip through the same serializer used for .fs files so the
   // stored JSON is byte-identical in shape to a downloaded project.
-  const json = serializeFontSeruProject(project);
-  throwIfAborted(signal);
-  onProgress?.({ percent: 12, label: "Mengompresi data…" });
-
   // Quantize coordinate/pressure precision *only* for the cloud copy (the
   // local autosave and any exported .fs file are untouched) — see
-  // `roundNumbersForStorage` for why this matters specifically for
-  // brush-heavy projects.
-  const roundedJson = JSON.stringify(roundNumbersForStorage(JSON.parse(json), CLOUD_SAVE_COORDINATE_DECIMALS));
+  // `roundingReplacer` for why this matters specifically for
+  // brush-heavy projects. Done inside a single stringify pass: the old
+  // stringify → parse → round → stringify chain froze the UI for seconds
+  // on large projects.
+  const roundedJson = JSON.stringify(project, roundingReplacer(CLOUD_SAVE_COORDINATE_DECIMALS));
+  throwIfAborted(signal);
+  onProgress?.({ percent: 12, label: "Mengompresi data…" });
   throwIfAborted(signal);
 
   // See `wrapPayload` — this is what lets projects with a lot of glyphs

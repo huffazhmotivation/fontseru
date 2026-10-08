@@ -1,7 +1,8 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { getOrderedChars } from "@/glyph/defaultGlyphs";
-import { withoutDrawGlyph } from "@/glyph/drawMode";
+import { DRAW_CHAR } from "@/glyph/drawMode";
+import { useMemo } from "react";
 
 /**
  * Minimalist Prev/Next glyph navigator for Sketch Mode. Sits just above the
@@ -21,7 +22,10 @@ export function GlyphStepper() {
   const drawTargetChar = useAppStore((s) => s.drawTargetChar);
   const current = drawMode ? drawTargetChar : activeChar;
 
-  const ordered = getOrderedChars(withoutDrawGlyph(glyphs));
+  const ordered = useMemo(
+    () => (drawMode ? getOrderedChars(glyphs).filter((ch) => ch !== DRAW_CHAR) : getOrderedChars(glyphs)),
+    [drawMode, glyphs]
+  );
   const idx = current === null ? -1 : ordered.indexOf(current);
   const canPrev = idx > 0;
   const canNext = idx < ordered.length - 1;

@@ -9,17 +9,40 @@ interface Bounds {
   maxY: number;
 }
 
-function objectBoundsFlat(obj: VectorObject): Bounds {
+/** Flattened geometry of one object, cached per object identity (objects are
+ *  replaced, never mutated, on edit — so an untouched object is flattened
+ *  once and reused by every later overlap pass instead of on every change). */
+interface FlatObject {
+  contours: VectorObject["contours"];
+  /** One polyline per contour (closed contours are implicitly closed). */
+  polylines: Point[][];
+  bounds: Bounds;
+}
+
+const flatCache = new WeakMap<VectorObject, FlatObject>();
+
+function flatten(obj: VectorObject): FlatObject {
+  const hit = flatCache.get(obj);
+  if (hit && hit.contours === obj.contours) return hit;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const c of obj.contours) {
-    for (const p of flattenContour(c, 12)) {
+  const polylines = obj.contours.map((c) => {
+    const pts = flattenContour(c, 12);
+    for (const p of pts) {
       if (p.x < minX) minX = p.x;
       if (p.y < minY) minY = p.y;
       if (p.x > maxX) maxX = p.x;
       if (p.y > maxY) maxY = p.y;
     }
-  }
-  return { minX, minY, maxX, maxY };
+    return pts;
+  });
+  const flat: FlatObject = { contours: obj.contours, polylines, bounds: { minX, minY, maxX, maxY } };
+  flatCache.set(obj, flat);
+  return flat;
+}
+
+/** Consecutive duplicate points removed (zero-length segments are noise). */
+function dedupe(pts: Point[]): Point[] {
+  return pts.filter((p, idx, arr) => idx === 0 || p.x !== arr[idx - 1].x || p.y !== arr[idx - 1].y);
 }
 
 function boundsOverlap(a: Bounds, b: Bounds): boolean {
@@ -116,8 +139,9 @@ export function findOverlappingObjectIds(objects: VectorObject[]): Set<string> {
 
   const fills = objects.filter((o) => isFilledObject(o) && o.contours.length > 0);
   if (fills.length >= 2) {
-    const bounds = fills.map(objectBoundsFlat);
-    const polys = fills.map((o) => o.contours.map((c) => flattenContour(c, 12)).filter((p) => p.length >= 3));
+    const flats = fills.map(flatten);
+    const bounds = flats.map((f) => f.bounds);
+    const polys = flats.map((f) => f.polylines.filter((p) => p.length >= 3));
 
     for (let i = 1; i < fills.length; i++) {
       if (overlapping.has(fills[i].id)) continue;
@@ -135,19 +159,22 @@ export function findOverlappingObjectIds(objects: VectorObject[]): Set<string> {
   const strokes = objects.filter((o) => isStrokeObject(o) && o.contours.length > 0);
   if (strokes.length >= 2) {
     const halfWidths = strokes.map((o) => (o.strokeWidth ?? 20) / 2);
-    const lines = strokes.map((o) => o.contours.flatMap((c) => flattenContour(c, 12)).filter((p, idx, arr) => idx === 0 || p.x !== arr[idx - 1].x || p.y !== arr[idx - 1].y));
-    const bounds = lines.map((pts, idx) => {
-      const b = objectBoundsFlat(strokes[idx]);
-      return inflateBounds(b, halfWidths[idx]);
-    });
+    // One polyline PER CONTOUR. Concatenating every contour of an object
+    // into a single polyline (the old flatMap) invented a phantom segment
+    // from the end of one contour to the start of the next, which could
+    // report an overlap where no ink actually touches. (flattenContour
+    // already includes a closed contour's closing segment.)
+    const lines = strokes.map((o) => flatten(o).polylines.map(dedupe).filter((pts) => pts.length >= 2));
+    const bounds = strokes.map((o, idx) => inflateBounds(flatten(o).bounds, halfWidths[idx]));
 
     for (let i = 1; i < strokes.length; i++) {
       if (overlapping.has(strokes[i].id)) continue;
-      if (lines[i].length < 2) continue;
+      if (lines[i].length === 0) continue;
       for (let k = 0; k < i; k++) {
-        if (lines[k].length < 2) continue;
+        if (lines[k].length === 0) continue;
         if (!boundsOverlap(bounds[i], bounds[k])) continue;
-        if (strokesOverlap(lines[i], halfWidths[i], lines[k], halfWidths[k])) {
+        const hit = lines[i].some((a) => lines[k].some((b) => strokesOverlap(a, halfWidths[i], b, halfWidths[k])));
+        if (hit) {
           overlapping.add(strokes[i].id);
           break;
         }

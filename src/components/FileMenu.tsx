@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, Cloud, CloudDownload, CloudUpload, Download, FilePlus2, FileText, FolderOpen, Loader2, Lock, Save, SaveAll, ScrollText, Trash2, X, CheckCircle2, AlertTriangle, XCircle, Info, ShieldCheck } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useAuth } from "@/auth/AuthProvider";
@@ -311,7 +311,9 @@ function selectedExportStyles(
     .filter((style) => selected[style] && available[style]);
 }
 
-export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open: () => void) => void }) {
+const CLOSED_GLYPHS_BY_STYLE: GlyphFamily = { regular: {}, bold: {}, italic: {} };
+
+export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open: () => void) => void }) {
   const [open, setOpen] = useState(false);
   // The dropdown is rendered with `position: fixed` at this JS-computed
   // viewport position instead of `position: absolute` relative to the
@@ -392,7 +394,10 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   const projectFileName = useAppStore((s) => s.projectFileName);
   const setProjectFileName = useAppStore((s) => s.setProjectFileName);
   const newProject = useAppStore((s) => s.newProject);
-  const glyphsByStyle = useAppStore((s) => s.glyphsByStyle);
+  // Glyph data only feeds the export dialog (QA, style detection, name-table
+  // preview). Subscribing while it is closed made this large menu re-render
+  // and rescan every style after every stroke.
+  const glyphsByStyle = useAppStore((s) => (exportOpen ? s.glyphsByStyle : CLOSED_GLYPHS_BY_STYLE));
   const customFamilies = useAppStore((s) => s.customFamilies);
   const qaFontStyle = useAppStore((s) => s.fontStyle);
   const qaMetrics = useAppStore((s) => s.metrics);
@@ -892,6 +897,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
   // Each row mirrors the exact family/subfamily resolution runExport uses
   // (per-row override first, else the automatic style label / family name).
   const familyNameTablePreview = useMemo(() => {
+    if (!exportOpen) return null;
     const baseFamily = debouncedFontInfoForm.familyName.trim() || debouncedFontInfoForm.fontName.trim();
     if (!baseFamily) return null;
     const selected = selectedExportStyles(
@@ -909,7 +915,7 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       const family = override?.familyName.trim() || baseFamily;
       return { style, family, subfamily, fullName: `${family} ${subfamily}`.trim() };
     });
-  }, [debouncedFontInfoForm, selectedStyles, glyphsByStyle, customFamilies, styleNameOverrides]);
+  }, [exportOpen, debouncedFontInfoForm, selectedStyles, glyphsByStyle, customFamilies, styleNameOverrides]);
 
   const save = () => {
     try {
@@ -2237,4 +2243,4 @@ export function FileMenu({ onExportButtonReady }: { onExportButtonReady?: (open:
       )}
     </>
   );
-}
+});
