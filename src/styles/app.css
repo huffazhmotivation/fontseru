@@ -2132,12 +2132,19 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-bottombar .fm-inline-field.fm-bottombar-more-hide { display: flex !important; flex-wrap: nowrap; }
 }
 @media (min-width: 721px) and (max-width: 1919px) {
-  .fm-bottombar { gap: 4px; padding: 6px 8px; }
-  .fm-bottombar button { padding: 5px 6px; gap: 4px; font-size: 11px; min-width: 0; min-height: 0; }
-  .fm-bottombar .fm-icon-btn { min-width: 0; padding: 4px !important; }
-  .fm-bottombar .fm-zoom-controls input[type="range"] { width: 64px; }
+  .fm-bottombar { gap: 3px; }
+  .fm-bottombar, .fm-bottombar.fm-bottombar { padding-left: 8px; padding-right: 8px; }
+  .fm-bottombar button { padding: 4px 5px; gap: 3px; font-size: 10.5px; min-width: 0; min-height: 0; }
+  .fm-bottombar .fm-icon-btn { min-width: 0; padding: 3px !important; }
+  .fm-bottombar .fm-zoom-controls input[type="range"] { width: 28px; }
+  .fm-bottombar .fm-bottom-divider { display: none; }
+  .fm-bottombar .fm-grid-shape-select { width: 86px; font-size: 10.5px; }
 }
-@media (min-width: 721px) and (max-width: 1799px) {
+/* Labels stay as long as THE BAR itself has room (container query on the bar's
+   own width — not the window's): the bar sits in the canvas column, so its
+   width depends on the side panels. Icon-only only when it truly doesn't fit. */
+.fm-bottombar { container-type: inline-size; container-name: fmbottom; }
+@container fmbottom (max-width: 1026px) {
   .fm-bottombar button { font-size: 0; gap: 0; padding: 6px 7px; justify-content: center; }
   .fm-bottombar button svg { flex: 0 0 auto; }
   .fm-bottombar .fm-zoom-controls input[type="range"] { width: 56px; }

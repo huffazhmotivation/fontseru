@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useRegisterSW } from "virtual:pwa-register/react";
+import { isDesktopApp } from "@/lib/desktop";
 
 /*
  * Alur pembaruan aplikasi (browser biasa MAUPUN PWA "Add to Home Screen").
@@ -187,6 +188,8 @@ export function UpdatePrompt() {
       registration?.update().catch(() => {});
     },
     onRegisterError(error) {
+      // Aplikasi desktop memakai skema app:// yang memang tidak mendukung service worker — bukan error.
+      if (isDesktopApp) return;
       console.error("Service worker registration failed:", error);
     },
   });
