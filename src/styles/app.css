@@ -2093,9 +2093,9 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-topbar .fm-fontname { width: 84px; }
 }
 
-/* Below ~1535px the labeled Timelapse…Export row no longer fits next to every
+/* Below ~1490px the labeled Timelapse…Export row no longer fits next to every
    tool icon, so only THOSE labels fall back to icon + tooltip (tool icons stay). */
-@media (min-width: 721px) and (max-width: 1535px) {
+@media (min-width: 721px) and (max-width: 1489px) {
   .fm-topbar .fm-testlab-nav,
   .fm-topbar .fm-export-nav { font-size: 0; gap: 0; padding: 6px 7px; min-width: 30px; justify-content: center; }
   .fm-topbar .fm-testlab-nav svg,
@@ -2104,11 +2104,13 @@ input[type="number"]::-webkit-outer-spin-button {
 
 /* Small laptop / iPad landscape: squeeze the last bits so the whole bar fits
    without sideways scrolling where possible. */
-@media (min-width: 721px) and (max-width: 1360px) {
+@media (min-width: 721px) and (max-width: 1599px) {
   .fm-topbar .fm-fontname { width: 70px; min-width: 56px; flex: 0 1 70px; }
   .fm-topbar .fm-mode-tab { padding: 0 6px; }
-  .fm-topbar .fm-align-btn { width: 25px; height: 28px; }
+  .fm-topbar .fm-align-btn { width: 24px; height: 28px; }
   .fm-topbar .fm-spacer { flex: 0 0 0; }
+  .fm-topbar .fm-topbtn { padding: 5px 5px; }
+  .fm-topbar { gap: 2px; padding: 8px 6px; }
 }
 @media (min-width: 721px) and (max-width: 1180px) {
   .fm-topbar .fm-mode-tab { gap: 0; padding: 0 8px; }
