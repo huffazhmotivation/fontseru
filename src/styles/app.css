@@ -1591,13 +1591,14 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
      the panel's right edge and being silently clipped by `.fm-root`'s
      `overflow: hidden` (this was the "panel kanan agak kepotong" bug in
      landscape). */
-  overflow-x: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 }
 .fm-rightpanel > * { min-width: 0; }
+.fm-rightpanel .fm-field, .fm-rightpanel .fm-section-body > * { min-width: 0; max-width: 100%; }
 .fm-panel-header {
-  padding: 16px 18px; border-bottom: 1px solid var(--line);
-  display: flex; align-items: center; gap: 14px;
+  padding: 12px 14px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 12px;
 }
 .fm-panel-glyph {
   width: 60px; height: 60px; border-radius: 13px;
@@ -1619,12 +1620,12 @@ button:hover:not(:disabled):not(.fm-tile):not(.fm-brush-card):not(.fm-glyph-side
 .fm-section { border-bottom: 1px solid var(--line-soft); }
 .fm-section-head {
   width: 100%; display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px; background: transparent; border: none; cursor: pointer; color: var(--text);
+  padding: 11px 14px; background: transparent; border: none; cursor: pointer; color: var(--text);
 }
 .fm-section-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); font-weight: 700; }
 .fm-section-caret { color: var(--text-faint); transition: transform 0.18s ease; }
 .fm-section.closed .fm-section-caret { transform: rotate(-90deg); }
-.fm-section-body { padding: 0 18px 16px; }
+.fm-section-body { padding: 0 14px 14px; }
 
 .fm-field { margin-bottom: 11px; }
 .fm-field:last-child { margin-bottom: 0; }
@@ -1937,21 +1938,21 @@ input[type="number"]::-webkit-outer-spin-button {
 .fm-btn-row { display: flex; gap: 8px; }
 .fm-btn-row .fm-action-btn { margin-top: 10px; }
 
-.fm-brush-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fm-brush-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .fm-brush-card {
-  display: flex; flex-direction: row; align-items: center; gap: 9px;
-  padding: 10px 11px; border-radius: 12px; border: 1px solid var(--line);
+  display: flex; flex-direction: row; align-items: center; gap: 6px; min-width: 0;
+  padding: 7px 7px; border-radius: 11px; border: 1px solid var(--line);
   background: var(--panel-2); cursor: pointer; text-align: left;
   transition: border-color 0.14s ease, background 0.14s ease, transform 0.1s ease;
 }
 .fm-brush-card:hover { border-color: var(--text-faint); transform: translateY(-1px); }
 .fm-brush-card.active { border-color: var(--accent); background: var(--accent-soft); }
 .fm-brush-icon {
-  width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; width: 22px; height: 22px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
   background: var(--panel-3); color: var(--text);
 }
 .fm-brush-card.active .fm-brush-icon { background: var(--accent); color: var(--accent-ink); }
-.fm-brush-name { font-size: 12px; font-weight: 700; color: var(--text); }
+.fm-brush-name { font-size: 11px; font-weight: 700; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fm-brush-card.active .fm-brush-name { color: var(--accent); }
 
 /* Width profile preset picker (brush taper shortcuts) */
@@ -2055,25 +2056,75 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-bottombar-more-btn > button svg { flex: 0 0 auto; }
 }
 
-/* Laptop / small-desktop widths (1181px up to full HD): the full labeled top
-   bar is wider than the window, which used to push the trailing buttons
-   (account, theme, fullscreen) off the right edge. Collapse the secondary
-   nav labels to icons first (tooltips stay), and on narrower laptops move
-   the align/boolean/object groups into the "More" menu as tablets do. */
+/* ------------------------------------------------------------------
+   Top bar fit (desktop + tablet, >720px): every tool icon stays in the bar
+   (no "More" sub-menu) and the Timelapse…Export buttons keep their text.
+   Instead of hiding things, the bar is densified step by step as the
+   window narrows; only if it STILL doesn't fit (small iPad) does it scroll
+   sideways (scrollbar hidden). Phones (<=720px) keep their own layout.
+   ------------------------------------------------------------------ */
+@media (min-width: 721px) {
+  .fm-topbar { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -ms-overflow-style: none; }
+  .fm-topbar::-webkit-scrollbar { display: none; }
+  .fm-topbar > *, .fm-topbar .fm-topbar-row2 > * { flex-shrink: 0; }
+  .fm-topbar .fm-fontname { flex-shrink: 1; }
+  /* show everything that the ≤1180 rules would move into "More" */
+  .fm-topbar .fm-topbar-more-hide { display: flex !important; }
+  .fm-topbar .fm-topbar-more-btn { display: none !important; }
+  .fm-topbar .fm-spacer { flex: 1 0 8px; width: auto; }
+}
+@media (min-width: 721px) and (max-width: 1180px) {
+  .fm-topbar { gap: 3px; padding: 6px 8px; }
+  .fm-topbar .fm-topbtn { font-size: 11px; gap: 4px; padding: 6px 7px; min-width: 0; min-height: 0; }
+  .fm-topbar .fm-theme-toggle { width: 32px; height: 32px; }
+  .fm-topbar .fm-fontname { width: 110px; min-width: 70px; flex: 0 1 110px; }
+}
 @media (min-width: 1181px) and (max-width: 1919px) {
+  .fm-topbar { gap: 3px; padding: 8px 8px; }
+  .fm-topbar .fm-topbtn { font-size: 11.5px; gap: 4px; padding: 6px 6px; }
+  .fm-topbar .fm-topbtn-group { gap: 0; }
+  .fm-topbar .fm-align-group { gap: 0; }
+  .fm-topbar .fm-fontname { width: clamp(80px, 8vw, 150px); }
+  .fm-topbar .fm-mode-tab { padding: 0 9px; gap: 5px; font-size: 12.5px; }
+}
+@media (min-width: 1181px) and (max-width: 1599px) {
+  .fm-topbar .fm-topbtn { padding: 5px 5px; gap: 3px; font-size: 11px; }
+  .fm-topbar .fm-mode-tab { padding: 0 7px; gap: 4px; }
+  .fm-topbar .fm-fontname { width: 84px; }
+}
+
+/* Below ~1535px the labeled Timelapse…Export row no longer fits next to every
+   tool icon, so only THOSE labels fall back to icon + tooltip (tool icons stay). */
+@media (min-width: 721px) and (max-width: 1535px) {
   .fm-topbar .fm-testlab-nav,
-  .fm-topbar .fm-export-nav { font-size: 0; gap: 0; padding: 7px; min-width: 32px; justify-content: center; }
+  .fm-topbar .fm-export-nav { font-size: 0; gap: 0; padding: 6px 7px; min-width: 30px; justify-content: center; }
   .fm-topbar .fm-testlab-nav svg,
   .fm-topbar .fm-export-nav svg { flex: 0 0 auto; }
 }
-@media (min-width: 1181px) and (max-width: 1599px) {
-  .fm-topbar .fm-topbar-more-hide { display: none !important; }
-  .fm-topbar .fm-topbar-more-btn { display: inline-flex; }
-  .fm-topbar-more-btn > .fm-topbtn { font-size: 0; gap: 0; padding: 7px; min-width: 32px; justify-content: center; }
-  .fm-topbar-more-btn > .fm-topbtn svg { flex: 0 0 auto; }
+
+/* Small laptop / iPad landscape: squeeze the last bits so the whole bar fits
+   without sideways scrolling where possible. */
+@media (min-width: 721px) and (max-width: 1360px) {
+  .fm-topbar .fm-fontname { width: 70px; min-width: 56px; flex: 0 1 70px; }
+  .fm-topbar .fm-mode-tab { padding: 0 6px; }
+  .fm-topbar .fm-align-btn { width: 25px; height: 28px; }
+  .fm-topbar .fm-spacer { flex: 0 0 0; }
 }
+@media (min-width: 721px) and (max-width: 1180px) {
+  .fm-topbar .fm-mode-tab { gap: 0; padding: 0 8px; }
+  .fm-topbar .fm-mode-tab > span { display: none; }
+  .fm-topbar .fm-fontname { width: 60px; min-width: 50px; flex: 0 1 60px; }
+}
+
 /* The bottom bar lives in the canvas column (window minus both side panels),
    so its toggles move into the Settings menu up to a wider breakpoint. */
+@media (min-width: 1181px) and (max-width: 1799px) {
+  .fm-bottombar .fm-bottombar-more-hide { display: none !important; }
+  .fm-bottombar .fm-bottombar-more-btn { display: inline-flex; }
+}
+
+/* The bottom bar lives in the canvas column (window minus both side panels),
+   so on laptop widths its toggles live in the Settings menu. */
 @media (min-width: 1181px) and (max-width: 1799px) {
   .fm-bottombar .fm-bottombar-more-hide { display: none !important; }
   .fm-bottombar .fm-bottombar-more-btn { display: inline-flex; }

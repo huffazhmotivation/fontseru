@@ -1,7 +1,7 @@
 {
   "name": "fontseru",
   "private": true,
-  "version": "0.6.1",
+  "version": "0.6.2",
   "type": "module",
   "description": "FontSeru \u2014 a modern, browser-based vector type & font design studio. Original clean editor UI with a professional B\u00e9zier engine.",
   "scripts": {
