@@ -18,14 +18,48 @@
     <meta name="twitter:image" content="/logo-thumbnail.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Font dimuat NON-blocking: kalau fonts.googleapis.com lambat/diblokir, halaman tetap tampil
+         dengan font sistem (sebelumnya <link rel="stylesheet"> biasa membuat layar putih menunggu). -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      />
+    </noscript>
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="FontSeru" />
+    <!-- Splash instan: dicat browser SEBELUM JavaScript selesai diunduh, jadi tidak ada layar putih
+         (terutama saat dibuka dari Home Screen iPad). Dihapus main.tsx begitu React tampil. -->
+    <style>
+      html, body { margin: 0; background: #0b0d0c; }
+      #fs-splash {
+        position: fixed; inset: 0; z-index: 2147483000;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+        background: #0b0d0c; color: #e8ece9;
+        font: 600 20px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        letter-spacing: .02em; transition: opacity .2s ease;
+      }
+      #fs-splash.fs-splash-out { opacity: 0; pointer-events: none; }
+      #fs-splash i {
+        width: 26px; height: 26px; border-radius: 50%;
+        border: 3px solid rgba(255,255,255,.14); border-top-color: #7ee2b0;
+        animation: fs-spin .8s linear infinite;
+      }
+      @keyframes fs-spin { to { transform: rotate(360deg); } }
+    </style>
     <title>FontSeru — Vector Type Studio</title>
   </head>
   <body>
     <div id="root"></div>
+    <div id="fs-splash" aria-hidden="true"><span>FontSeru</span><i></i></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

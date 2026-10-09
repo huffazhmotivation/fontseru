@@ -185,7 +185,7 @@ export function UpdatePrompt() {
   } = useRegisterSW({
     onRegisteredSW(_swUrl, registration) {
       registrationRef.current = registration ?? null;
-      registration?.update().catch(() => {});
+      // update() sengaja tidak dipanggil di sini: check() yang menjalankannya setelah app stabil.
     },
     onRegisterError(error) {
       // Aplikasi desktop memakai skema app:// yang memang tidak mendukung service worker — bukan error.
@@ -230,7 +230,10 @@ export function UpdatePrompt() {
       }
     } catch { /* abaikan */ }
 
-    void check();
+    // Pemeriksaan pertama ditunda 2,5 dtk: dulu fetch version.json + registration.update() langsung berebut
+    // bandwidth/CPU dengan muat awal (terutama di iPad & koneksi pertama), dan bila build berbeda memicu
+    // muat ulang otomatis di tengah pemuatan — tampak sebagai "buka pertama lama, kedua baru cepat".
+    const firstCheck = window.setTimeout(() => void check(), 2500);
     const onVisible = () => { if (document.visibilityState === "visible") void check(); };
     // Tab lain sudah mengaktifkan service worker baru — halaman ini masih
     // kode lama, jadi minta dimuat ulang (kecuali kita sendiri yang memicu).
@@ -252,6 +255,7 @@ export function UpdatePrompt() {
     window.addEventListener("online", onVisible);
     navigator.serviceWorker?.addEventListener("controllerchange", onControllerChange);
     return () => {
+      window.clearTimeout(firstCheck);
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);

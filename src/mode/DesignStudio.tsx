@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppModeStore, type AppMode } from "@/mode/appModeStore";
 import { initSeruBridge, registerDesignFrame } from "@/lib/seruBridge";
+import { isTabletDevice } from "@/mode/tablet";
 
 /**
  * Design mode: the DesignSeru editor, hosted as a separate static app in
@@ -36,10 +37,36 @@ export function DesignStudio({ active, theme }: { active: boolean; theme: string
     }
   })();
 
+  // Pramuat iframe Design HANYA di desktop berkoneksi bagus, dan baru setelah app benar-benar menganggur
+  // (±8 dtk). Sebelumnya iframe ini (aset ±130MB, JS 1MB+, 15 font Google) selalu dimuat 1,5 dtk setelah
+  // buka — itu yang membuat iPad/HP macet dan tombol terasa delay. Di iPad/HP/hemat-data ia baru dimuat
+  // saat tab Design disentuh (lihat event "fontseru:warm-design" dari ModeTabs) atau dibuka.
   useEffect(() => {
     if (started) return;
-    const id = window.setTimeout(() => setStarted(true), 1500);
-    return () => clearTimeout(id);
+    const nav = navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string }; deviceMemory?: number };
+    const conn = nav.connection;
+    const weak =
+      isTabletDevice() ||
+      /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+      conn?.saveData === true ||
+      (conn?.effectiveType !== undefined && conn.effectiveType !== "4g") ||
+      (nav.deviceMemory !== undefined && nav.deviceMemory < 4);
+    let timer = 0;
+    let idleId = 0;
+    const start = () => setStarted(true);
+    const arm = () => {
+      const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+      if (ric) idleId = ric(start, { timeout: 4000 });
+      else start();
+    };
+    if (!weak) timer = window.setTimeout(arm, 8000);
+    const warm = () => setStarted(true);
+    window.addEventListener("fontseru:warm-design", warm);
+    return () => {
+      clearTimeout(timer);
+      if (idleId) (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(idleId);
+      window.removeEventListener("fontseru:warm-design", warm);
+    };
   }, [started]);
 
   useEffect(() => { if (active) setStarted(true); }, [active]);

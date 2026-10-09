@@ -42,21 +42,33 @@ const isChromiumBrowser =
 // Loading them lazily means their code is not downloaded/parsed/executed
 // until the user actually opens that feature, instead of on every app
 // load — this is one of the biggest wins for initial load speed.
-const TestLabOverlay = lazy(() =>
-  import("@/components/TestLab/TestLabOverlay").then((m) => ({ default: m.TestLabOverlay }))
-);
-const FamilyAutoGenerateOverlay = lazy(() =>
-  import("@/components/FamilyAutoGenerateOverlay").then((m) => ({ default: m.FamilyAutoGenerateOverlay }))
-);
-const TraceImageOverlay = lazy(() =>
-  import("@/components/TraceImage/TraceImageOverlay").then((m) => ({ default: m.TraceImageOverlay }))
-);
-const FeatureBuilderOverlay = lazy(() =>
-  import("@/components/FeatureBuilder/FeatureBuilderOverlay").then((m) => ({ default: m.FeatureBuilderOverlay }))
-);
-const TimelapseOverlay = lazy(() =>
-  import("@/timelapse/TimelapseOverlay").then((m) => ({ default: m.TimelapseOverlay }))
-);
+const loadTestLab = () => import("@/components/TestLab/TestLabOverlay").then((m) => ({ default: m.TestLabOverlay }));
+const loadFamily = () => import("@/components/FamilyAutoGenerateOverlay").then((m) => ({ default: m.FamilyAutoGenerateOverlay }));
+const loadTrace = () => import("@/components/TraceImage/TraceImageOverlay").then((m) => ({ default: m.TraceImageOverlay }));
+const loadFeatureBuilder = () => import("@/components/FeatureBuilder/FeatureBuilderOverlay").then((m) => ({ default: m.FeatureBuilderOverlay }));
+const loadTimelapse = () => import("@/timelapse/TimelapseOverlay").then((m) => ({ default: m.TimelapseOverlay }));
+const TestLabOverlay = lazy(loadTestLab);
+const FamilyAutoGenerateOverlay = lazy(loadFamily);
+const TraceImageOverlay = lazy(loadTrace);
+const FeatureBuilderOverlay = lazy(loadFeatureBuilder);
+const TimelapseOverlay = lazy(loadTimelapse);
+
+/**
+ * Unduh + parse kelima overlay saat app sudah menganggur (±1,5 dtk setelah tampil), BUKAN saat tombolnya
+ * diklik. Dulu klik pertama Test Lab / Feature Builder / Family / Timelapse harus mengunduh & mengeksekusi
+ * chunk-nya dulu sambil layar tidak berubah sama sekali — di iPad itu terasa "tombol tidak responsif / delay".
+ * Satu per satu (diselingi jeda) supaya tidak menyumbat thread utama.
+ */
+function warmOverlays() {
+  const loaders = [loadFeatureBuilder, loadTestLab, loadFamily, loadTimelapse, loadTrace];
+  let i = 0;
+  const next = () => {
+    const l = loaders[i++];
+    if (!l) return;
+    l().catch(() => {}).finally(() => window.setTimeout(next, 250));
+  };
+  next();
+}
 
 // The Motion Font Studio engine is a large, self-contained module that most
 // font-editing sessions never touch — load it lazily so its code is only
@@ -95,6 +107,11 @@ export default function App() {
   const appMode = useAppModeStore((s) => s.appMode);
   useKeyboardShortcuts();
   useEffect(() => { applyTabletAttr(); }, []);
+  useEffect(() => {
+    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+    const id = window.setTimeout(() => (ric ? ric(warmOverlays, { timeout: 3000 }) : warmOverlays()), 1500);
+    return () => clearTimeout(id);
+  }, []);
 
   // Once a heavy overlay has been opened for the first time, keep mounting
   // it forever afterwards (its own internal `if (!open) return null` hides
@@ -306,7 +323,7 @@ export default function App() {
           <div className="fm-mobile-backdrop" onClick={closeMobilePanels} aria-hidden="true" />
         )}
       </div>
-      <Suspense fallback={null}>
+      <Suspense fallback={<div className="fs-overlay-loading" role="status" aria-live="polite"><i /></div>}>
         {testLabEverOpened.current && <TestLabOverlay />}
         {familyEverOpened.current && <FamilyAutoGenerateOverlay />}
         {traceEverOpened.current && <TraceImageOverlay />}

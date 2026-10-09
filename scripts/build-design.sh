@@ -19,4 +19,6 @@ cp -R "$SRC/dist" "$HERE/public/design"
 # PWA DesignSeru tidak dipakai di dalam FontSeru (lihat patch main.tsx)
 rm -f "$HERE/public/design/sw.js" "$HERE/public/design/sw-manifest.json"
 perl -0pi -e 's|(<meta name="theme-color"[^>]*>)|$1<style>html{background:#0b0b0b}</style>|' "$HERE/public/design/index.html"
+# Font Google jangan memblokir render (layar putih bila fonts.googleapis.com lambat)
+perl -0pi -e 's|<link rel="stylesheet" href="(https://fonts\.googleapis\.com/[^"]+)"\s*/?>|<link rel="stylesheet" href="$1" media="print" onload="this.media=\x27all\x27" />|' "$HERE/public/design/index.html"
 echo "OK: public/design diperbarui"

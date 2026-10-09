@@ -7027,3 +7027,47 @@ html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-align-btn { width: 2
 .fm-saveas-dialog h2 { margin: 0; font-size: 16px; font-weight: 700; }
 .fm-saveas-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .fm-saveas-actions button { width: auto; min-width: 84px; }
+
+/* ==========================================================================
+   Performa sentuh (iPad / iPhone) & muat awal
+   ========================================================================== */
+
+/* Hapus jeda "tunggu double-tap-zoom" pada semua kontrol yang bisa diketuk.
+   Kanvas/area gambar tetap memakai touch-action: none miliknya sendiri. */
+button, [role="button"], [role="tab"], a, summary, label, select,
+input[type="checkbox"], input[type="radio"], input[type="range"] {
+  touch-action: manipulation;
+}
+html { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+html, body { overscroll-behavior: none; }
+
+/* Indikator saat chunk overlay (Test Lab, Feature Builder, dst.) masih diunduh — klik tidak pernah "mati". */
+.fs-overlay-loading {
+  position: fixed; inset: 0; z-index: 9000; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.35); pointer-events: auto;
+}
+.fs-overlay-loading i {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 3px solid rgba(255,255,255,.2); border-top-color: #7ee2b0; animation: fs-ovl-spin .8s linear infinite;
+}
+@keyframes fs-ovl-spin { to { transform: rotate(360deg); } }
+
+/* iPad / tablet: backdrop-filter di atas kanvas SVG yang terus berubah sangat berat di Safari/WebKit
+   (tiap gambar ulang kanvas memaksa blur ulang) — itu penyebab tap terasa tertunda. Ganti dengan
+   permukaan solid yang tampilannya hampir sama. */
+html[data-tablet="true"] *,
+html[data-tablet="true"] *::before,
+html[data-tablet="true"] *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html[data-tablet="true"] .fm-floating-toolbar,
+html[data-tablet="true"] .fm-sketch-toolbar,
+html[data-tablet="true"] .fm-glyph-stepper,
+html[data-tablet="true"] .fm-glyph-sidenav-btn,
+html[data-tablet="true"] .fm-glyphview-bar,
+html[data-tablet="true"] .fm-glyphview-mode,
+html[data-tablet="true"] .fm-filemenu,
+html[data-tablet="true"] .fm-toast {
+  background-color: var(--panel);
+}

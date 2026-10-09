@@ -56,7 +56,16 @@ export default defineConfig(({ command }) => ({
         // Mode Design = aplikasi terpisah (public/design) yang dimuat di iframe.
         // Besar (~130MB) dan punya index.html sendiri, jadi jangan di-precache
         // dan jangan dialihkan ke index.html FontSeru oleh service worker.
-        globIgnores: ["design/**"],
+        // transformers (Whisper auto-caption, ~800KB) & Motion jarang dipakai: diunduh saat dipakai saja
+        // (runtime cache), supaya instalasi service worker pertama (yang bersaing dengan muat awal) ringan.
+        globIgnores: ["design/**", "**/transformers-*.js", "**/MotionStudio-*.js", "**/html2canvas*.js", "**/vendor-pdf-*.js", "**/index.es-*.js", "**/purify.es-*.js"],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith("/assets/") && url.pathname.endsWith(".js"),
+            handler: "CacheFirst",
+            options: { cacheName: "fs-lazy-chunks", expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 30 } },
+          },
+        ],
         navigateFallbackDenylist: [/^\/design\//],
       },
       devOptions: {
@@ -97,11 +106,13 @@ export default defineConfig(({ command }) => ({
         // the editor can render at all. Browsers fetch/parse these in
         // parallel, and — because they rarely change — they stay cached
         // across app updates instead of being re-downloaded every time.
+        // HANYA opentype yang dipisah. vendor-pdf (jspdf), vendor-imagetrace & vendor-supabase dulu ikut
+        // dipaksa jadi chunk sendiri, dan karena entry butuh potongan kecil dari masing-masing, ketiganya
+        // (±600KB) jadi <link rel="modulepreload"> yang diunduh di setiap buka — padahal jsPDF/ImageTracer
+        // hanya dipakai saat ekspor lisensi / Trace Image. Tanpa manualChunks, Rollup memisahkan yang
+        // dipakai dinamis dan yang lain ikut chunk utama.
         manualChunks: {
           "vendor-opentype": ["opentype.js"],
-          "vendor-imagetrace": ["imagetracerjs"],
-          "vendor-pdf": ["jspdf"],
-          "vendor-supabase": ["@supabase/supabase-js"],
         },
       },
     },

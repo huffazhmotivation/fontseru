@@ -46,3 +46,11 @@ if (framedAtDesign) {
     </AuthProvider>
   </StrictMode>
 );
+
+// Splash dari index.html: lepas begitu React sudah menggambar frame pertamanya.
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  const splash = document.getElementById("fs-splash");
+  if (!splash) return;
+  splash.classList.add("fs-splash-out");
+  window.setTimeout(() => splash.remove(), 250);
+}));

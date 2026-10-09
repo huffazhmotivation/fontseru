@@ -20,6 +20,9 @@ const TABS: { mode: AppMode; label: string; icon: typeof Type }[] = [
  * (--accent / --accent-soft / --text / --text-dim), so it looks native in
  * both modes and in both light/dark themes.
  */
+// Mulai memuat iframe Design begitu tab-nya didekati/disentuh, jadi sudah setengah jalan saat diklik.
+const warmDesign = () => window.dispatchEvent(new Event("fontseru:warm-design"));
+
 export function ModeTabs() {
   const appMode = useAppModeStore((s) => s.appMode);
   const setAppMode = useAppModeStore((s) => s.setAppMode);
@@ -36,6 +39,8 @@ export function ModeTabs() {
             aria-selected={active}
             className={`fm-mode-tab ${active ? "active" : ""}`}
             onClick={() => setAppMode(mode)}
+            onPointerEnter={mode === "design" ? warmDesign : undefined}
+            onPointerDown={mode === "design" ? warmDesign : undefined}
             title={mode === "font" ? "Mode Font — desain & ekspor huruf" : mode === "design" ? "Mode Design — editor desain vektor, gambar & mockup" : "Mode Motion — animasi teks jadi video"}
             data-testid={`mode-tab-${mode}`}
           >
