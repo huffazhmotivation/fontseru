@@ -7070,3 +7070,74 @@ html[data-tablet="true"] .fm-filemenu,
 html[data-tablet="true"] .fm-toast {
   background-color: var(--panel);
 }
+
+/* ==========================================================================
+   iPad / tablet - perbaikan Add to Home Screen (PWA) + Sketch Mode
+   Hanya menimpa lewat html[data-tablet="true"] (specificity lebih tinggi dari
+   aturan tablet sebelumnya yang tanpa sengaja menimpa safe-area dan lebar
+   panel Sketch Mode). Tidak menyentuh desktop / HP / Mode Design.
+   ========================================================================== */
+
+/* 1) Layar penuh yang pasti: root menempel ke seluruh viewport (bukan 100dvh,
+      yang di PWA iPad bisa lebih pendek sehingga bagian bawah jadi kosong). */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  width: auto;
+  height: auto;
+}
+
+/* 2) Safe area: bar atas tidak lagi menempel/menabrak jam & status bar iPad,
+      bar bawah tidak menempel ke home indicator. Aturan tablet sebelumnya
+      (padding: 4px 6px) menimpa padding-top/bottom milik safe-area. */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar {
+  padding-top: calc(4px + env(safe-area-inset-top, 0px));
+  padding-left: max(6px, env(safe-area-inset-left, 0px));
+  padding-right: max(6px, env(safe-area-inset-right, 0px));
+  /* semua ikon tetap tampil; kalau kurang lebar, bar bisa digeser ke samping */
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar::-webkit-scrollbar { display: none; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar {
+  padding-bottom: calc(3px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(6px, env(safe-area-inset-left, 0px));
+  padding-right: max(6px, env(safe-area-inset-right, 0px));
+}
+
+/* 3) Ikon Fullscreen & Light/Dark mode: sebelumnya ikut menyusut (flex-shrink)
+      saat bar penuh sehingga ikonnya kecil sekali. Dikunci ukurannya. */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-theme-toggle {
+  flex: 0 0 auto;
+  width: 34px; height: 34px;
+  min-width: 34px; min-height: 34px;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-theme-toggle svg {
+  flex: 0 0 auto;
+  width: 19px; height: 19px;
+}
+
+/* 4) Sketch Mode: panel glyph kiri benar-benar tersembunyi & tidak menghalangi
+      sentuhan. Lebar 188px dari aturan tablet sebelumnya mengalahkan
+      "width: 0" milik Sketch Mode, jadi panel tetap tampil (dan pointer-events
+      none membuatnya tidak bisa diklik). */
+html[data-tablet="true"] .fm-root[data-sketch-mode="true"]:not(.fm-design-shell) .fm-glyphnav {
+  width: 0;
+  min-width: 0;
+  padding-left: 0;
+  border-right-width: 0;
+  overflow: hidden;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* 5) Toolbar mengambang Sketch Mode: pembatas antar-ikon harus garis tipis
+      horizontal. Aturan ".fm-toolbar-divider { height: 19px; margin: 0 5px }"
+      (media query iPad) menimpanya sehingga jadi kotak besar. */
+.fm-sketch-toolbar .fm-toolbar-divider.fm-toolbar-divider-h {
+  width: 21px;
+  height: 1px;
+  margin: 3px 0;
+  flex: 0 0 auto;
+}
