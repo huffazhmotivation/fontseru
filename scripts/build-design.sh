@@ -21,4 +21,8 @@ rm -f "$HERE/public/design/sw.js" "$HERE/public/design/sw-manifest.json"
 perl -0pi -e 's|(<meta name="theme-color"[^>]*>)|$1<style>html{background:#0b0b0b}</style>|' "$HERE/public/design/index.html"
 # Font Google jangan memblokir render (layar putih bila fonts.googleapis.com lambat)
 perl -0pi -e 's|<link rel="stylesheet" href="(https://fonts\.googleapis\.com/[^"]+)"\s*/?>|<link rel="stylesheet" href="$1" media="print" onload="this.media=\x27all\x27" />|' "$HERE/public/design/index.html"
+# Perbaikan export iPad/iOS: ios-export.js + tambalan bundle
+cp "$HERE/scripts/design-patches/ios-export.js" "$HERE/public/design/ios-export.js"
+perl -0pi -e 's|(<script type="module" crossorigin src="\./assets/index-)|<script src="./ios-export.js"></script>\n    $1|' "$HERE/public/design/index.html"
+node "$HERE/scripts/design-patches/patch-export.mjs" "$HERE/public/design/assets"
 echo "OK: public/design diperbarui"
