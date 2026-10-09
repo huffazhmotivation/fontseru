@@ -107,11 +107,19 @@
     if (text != null) e.textContent = text;
     return e;
   }
+  /* Warna mengikuti token tema app (--c-*) sehingga otomatis terang/gelap; angka cadangan = tema gelap. */
+  var C = {
+    panel: 'rgb(var(--c-panel,21 24 22))', text: 'rgb(var(--c-text,232 236 232))', muted: 'rgb(var(--c-muted,140 147 140))',
+    border: 'rgb(var(--c-border,37 41 38))', input: 'rgb(var(--c-input,28 32 29))', hover: 'rgb(var(--c-hover,31 35 32))',
+    accent: 'rgb(var(--c-accent,255 77 166))', onAccent: 'rgb(var(--c-on-accent,26 7 16))'
+  };
+  var FONT = 'ds-ui,-apple-system,system-ui,sans-serif';
   function btn(label, primary, onClick) {
     var b = el('button',
-      'appearance:none;border:0;border-radius:12px;padding:13px 16px;font:600 15px -apple-system,system-ui,sans-serif;' +
-      'touch-action:manipulation;cursor:pointer;' +
-      (primary ? 'background:#7ee2b0;color:#06281a;' : 'background:rgba(255,255,255,.1);color:#f2f4f3;'), label);
+      'appearance:none;-webkit-appearance:none;border:0;border-radius:10px;padding:0 16px;min-height:44px;font:600 14px/1 ' + FONT + ';' +
+      'touch-action:manipulation;cursor:pointer;flex:none;' +
+      (primary ? 'background:' + C.accent + ';color:' + C.onAccent + ';'
+               : 'background:' + C.input + ';color:' + C.text + ';box-shadow:inset 0 0 0 1px ' + C.border + ';'), label);
     b.type = 'button';
     b.addEventListener('click', onClick);
     return b;
@@ -139,18 +147,26 @@
 
   function open() {
     if (root) return;
+    // Modal di tengah layar (bukan bottom sheet); jarak aman dari notch / home indicator
     root = el('div',
-      'position:fixed;inset:0;z-index:2147483600;display:flex;align-items:flex-end;justify-content:center;' +
-      'background:rgba(0,0,0,.55);padding:env(safe-area-inset-top) 0 0;');
+      'position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;' +
+      'background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);' +
+      'padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));' +
+      'box-sizing:border-box;');
     var sheet = el('div',
-      'width:min(560px,100%);max-height:88%;overflow:auto;-webkit-overflow-scrolling:touch;background:#161817;color:#f2f4f3;' +
-      'border-radius:20px 20px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom));' +
-      'font:14px/1.45 -apple-system,system-ui,sans-serif;box-shadow:0 -10px 40px rgba(0,0,0,.5);');
+      'width:min(520px,100%);max-height:100%;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;' +
+      'background:' + C.panel + ';color:' + C.text + ';border:1px solid ' + C.border + ';border-radius:16px;padding:20px;' +
+      'font:14px/1.45 ' + FONT + ';box-shadow:var(--glass-shadow,0 24px 60px rgba(0,0,0,.45));');
     sheet.id = 'ds-export-sheet';
+    sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true');
     root.appendChild(sheet);
     root.addEventListener('click', function (e) { if (e.target === root) close(); });
     document.body.appendChild(root);
     list = sheet;
+    try {
+      sheet.animate([{ opacity: 0, transform: 'scale(.96)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 160, easing: 'ease-out' });
+      root.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: 'ease-out' });
+    } catch (e) { /* animasi opsional */ }
     render();
   }
 
@@ -158,13 +174,13 @@
     if (!root || !list) return;
     var sheet = list; sheet.textContent = '';
     var n = items.length;
-    sheet.appendChild(el('div', 'font:700 18px -apple-system,system-ui,sans-serif;margin-bottom:4px;',
+    sheet.appendChild(el('div', 'font:700 17px/1.3 ' + FONT + ';margin-bottom:4px;flex:none;',
       n > 1 ? 'Ekspor siap · ' + n + ' file' : 'Ekspor siap'));
-    sheet.appendChild(el('div', 'color:#aab2ad;margin-bottom:14px;',
+    sheet.appendChild(el('div', 'color:' + C.muted + ';font-size:13px;margin-bottom:14px;flex:none;',
       'Ketuk Simpan / Bagikan, lalu pilih “Simpan ke File” atau “Simpan Gambar”. File belum tersimpan sebelum langkah ini.'));
 
     var files = items.map(function (i) { return i.file; });
-    var actions = el('div', 'display:flex;flex-direction:column;gap:8px;margin-bottom:16px;');
+    var actions = el('div', 'display:flex;flex-direction:column;gap:8px;margin-bottom:12px;flex:none;');
     if (canShareFiles(files)) {
       actions.appendChild(btn('Simpan / Bagikan' + (n > 1 ? ' (' + n + ' file)' : ''), true, function () {
         // dipanggil langsung dari ketukan → iOS mengizinkan share sheet
@@ -187,31 +203,34 @@
     }
     sheet.appendChild(actions);
 
-    var noteBox = el('div', 'color:#ffb4a8;margin:-6px 0 12px;display:none;'); noteBox.id = 'ds-export-note';
+    var noteBox = el('div', 'color:#e5484d;font-size:13px;margin:0 0 10px;display:none;flex:none;'); noteBox.id = 'ds-export-note';
     sheet.appendChild(noteBox);
 
-    items.forEach(function (it) {
-      var row = el('div', 'display:flex;gap:12px;align-items:center;padding:10px 0;border-top:1px solid rgba(255,255,255,.08);');
+    // Daftar file: bagian yang bisa di-scroll bila file banyak, header & tombol tetap terlihat
+    var scroller = el('div', 'flex:1 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;border-top:1px solid ' + C.border + ';');
+    items.forEach(function (it, idx) {
+      var row = el('div', 'display:flex;gap:12px;align-items:center;padding:10px 0;' + (idx ? 'border-top:1px solid ' + C.border + ';' : ''));
       if (isImg(it.name)) {
         if (!it.url) it.url = URL.createObjectURL(it.file);
-        var img = el('img', 'width:64px;height:64px;object-fit:contain;border-radius:8px;flex:none;' +
-          'background:repeating-conic-gradient(#2a2d2b 0% 25%,#222523 0% 50%) 50%/12px 12px;-webkit-touch-callout:default;');
+        var img = el('img', 'width:56px;height:56px;object-fit:contain;border-radius:8px;flex:none;border:1px solid ' + C.border + ';' +
+          'background:repeating-conic-gradient(' + C.input + ' 0% 25%,' + C.hover + ' 0% 50%) 50%/12px 12px;-webkit-touch-callout:default;');
         img.src = it.url; img.alt = it.name; img.draggable = true;
         row.appendChild(img);
       } else {
-        row.appendChild(el('div', 'width:64px;height:64px;border-radius:8px;flex:none;display:flex;align-items:center;justify-content:center;background:#222523;font-weight:700;color:#7ee2b0;',
+        row.appendChild(el('div', 'width:56px;height:56px;border-radius:8px;flex:none;display:flex;align-items:center;justify-content:center;background:' + C.input + ';border:1px solid ' + C.border + ';font-weight:700;color:' + C.accent + ';',
           extOf(it.name).toUpperCase()));
       }
       var meta = el('div', 'min-width:0;flex:1;');
       meta.appendChild(el('div', 'font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', it.name));
-      meta.appendChild(el('div', 'color:#aab2ad;font-size:12px;',
+      meta.appendChild(el('div', 'color:' + C.muted + ';font-size:12px;',
         fmtSize(it.file.size) + (isImg(it.name) && extOf(it.name) !== 'svg' ? ' · tahan lama gambar → Simpan ke Foto' : '')));
       row.appendChild(meta);
       row.appendChild(btn('Unduh', false, function () { anchorDownload(it.file); }));
-      sheet.appendChild(row);
+      scroller.appendChild(row);
     });
+    sheet.appendChild(scroller);
 
-    var foot = el('div', 'margin-top:14px;display:flex;justify-content:flex-end;');
+    var foot = el('div', 'margin-top:12px;display:flex;justify-content:flex-end;flex:none;');
     foot.appendChild(btn('Selesai', false, close));
     sheet.appendChild(foot);
   }

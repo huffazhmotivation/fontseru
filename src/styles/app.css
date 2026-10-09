@@ -2113,8 +2113,7 @@ input[type="number"]::-webkit-outer-spin-button {
   .fm-topbar { gap: 2px; padding: 8px 6px; }
 }
 @media (min-width: 721px) and (max-width: 1180px) {
-  .fm-topbar .fm-mode-tab { gap: 0; padding: 0 8px; }
-  .fm-topbar .fm-mode-tab > span { display: none; }
+  .fm-topbar .fm-mode-tab { gap: 5px; padding: 0 8px; }
   .fm-topbar .fm-fontname { width: 60px; min-width: 50px; flex: 0 1 60px; }
 }
 
