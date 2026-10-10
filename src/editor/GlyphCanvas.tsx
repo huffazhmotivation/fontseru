@@ -560,8 +560,9 @@ export function GlyphCanvas() {
 
   const onPointerMove = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
     longPress.move(e);
+    sketchGestures.trackMove(e.nativeEvent);
     queuePointerMove(e);
-  }, [longPress, queuePointerMove]);
+  }, [longPress, queuePointerMove, sketchGestures]);
 
   // pointerup reaches BOTH the SVG's onPointerUp and the window listener
   // below (which exists to catch releases outside the canvas). Running the

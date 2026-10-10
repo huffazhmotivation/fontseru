@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 interface TouchPt { x: number; y: number; }
@@ -23,6 +23,12 @@ interface SketchGestureOptions {
 
 const TAP_MAX_MS = 400;
 const TAP_MAX_MOVE = 14; // px, in screen space
+/** Telapak tangan menyentuh layar dengan area kontak besar; jari normal jauh di bawah ini (px CSS). */
+const PALM_CONTACT_PX = 40;
+/** Tolak sentuhan selama pena ada di dekat layar (hover Apple Pencil) — telapak biasanya mendarat SEBELUM ujung pena. */
+const PEN_NEAR_MS = 500;
+/** Tolak sentuhan sebentar setelah pena diangkat (telapak sering masih menempel). */
+const PEN_RELEASE_MS = 900;
 
 /**
  * Sketch Mode multi-touch gestures, layered on top of the existing pointer
@@ -32,7 +38,17 @@ const TAP_MAX_MOVE = 14; // px, in screen space
  * their existing handlers; a `true` return means the event was consumed by
  * a gesture and the normal tool logic for that event should be skipped.
  */
-export function useSketchGestures({ enabled, applyZoomAt, getZoom, onUndo, onRedo, onCancelActive, onPanBy }: SketchGestureOptions) {
+export function useSketchGestures(options: SketchGestureOptions) {
+  const { enabled, getZoom, onUndo, onRedo, onCancelActive } = options;
+  // Callback terbaru lewat ref: pinch/geser dihitung di requestAnimationFrame, dan closure lamanya
+  // (skala `sc` yang usang) membuat geser 2 jari melenceng.
+  const applyZoomAtRef = useRef(options.applyZoomAt);
+  const onPanByRef = useRef(options.onPanBy);
+  applyZoomAtRef.current = options.applyZoomAt;
+  onPanByRef.current = options.onPanBy;
+  const penNearUntil = useRef(0);
+  const rafId = useRef<number | null>(null);
+  useEffect(() => () => { if (rafId.current !== null) cancelAnimationFrame(rafId.current); }, []);
   const pointers = useRef<Map<number, TouchPt>>(new Map());
   const tapStart = useRef<Map<number, TouchPt>>(new Map());
   const penActiveRef = useRef(false);
@@ -54,6 +70,7 @@ export function useSketchGestures({ enabled, applyZoomAt, getZoom, onUndo, onRed
     tapCandidate.current = null;
     pinchStartDist.current = null;
     panMid.current = null;
+    if (rafId.current !== null) { cancelAnimationFrame(rafId.current); rafId.current = null; }
   }, []);
 
   const handlePointerDown = useCallback(
@@ -62,14 +79,18 @@ export function useSketchGestures({ enabled, applyZoomAt, getZoom, onUndo, onRed
 
       if (e.pointerType === "pen") {
         penActiveRef.current = true;
+        penNearUntil.current = Date.now() + PEN_NEAR_MS;
         if (penReleaseTimer.current) { clearTimeout(penReleaseTimer.current); penReleaseTimer.current = null; }
+        // Telapak yang sudah terlanjur menyentuh sebelum pena mendarat: batalkan coretan/geser dari sentuhan itu.
+        if (pointers.current.size > 0) { resetGesture(); onCancelActive(); }
         return false; // pen always draws normally
       }
       if (e.pointerType !== "touch") return false; // mouse: untouched
 
-      // Palm rejection: while a pen is down (or just lifted), ignore touch
-      // input entirely rather than letting a resting palm draw or gesture.
-      if (penActiveRef.current) return true;
+      // Palm rejection: while a pen is down, hovering close, or just lifted, ignore touch input entirely
+      // rather than letting a resting palm draw or gesture. A big contact patch is a palm, not a fingertip.
+      if (penActiveRef.current || Date.now() < penNearUntil.current) return true;
+      if ((e.width ?? 0) >= PALM_CONTACT_PX || (e.height ?? 0) >= PALM_CONTACT_PX) return true;
 
       pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       tapStart.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -92,7 +113,41 @@ export function useSketchGestures({ enabled, applyZoomAt, getZoom, onUndo, onRed
       }
       return true; // 4+ fingers: ignore
     },
-    [enabled, getZoom, onCancelActive]
+    [enabled, getZoom, onCancelActive, resetGesture]
+  );
+
+  /** Terapkan pinch + geser 2 jari SEKALI per frame dari posisi jari terbaru. Urutan: geser dulu (titik yang tadi di
+   * tengah jari ikut pindah), baru zoom di titik tengah yang sekarang. */
+  const applyGestureFrame = useCallback(() => {
+    rafId.current = null;
+    if (pointers.current.size !== 2 || !pinchStartDist.current) return;
+    const pts = [...pointers.current.values()];
+    const mid = midpoint(pts[0], pts[1]);
+    if (panMid.current) onPanByRef.current(mid.x - panMid.current.x, mid.y - panMid.current.y);
+    panMid.current = mid;
+    const ratio = dist(pts[0], pts[1]) / pinchStartDist.current;
+    applyZoomAtRef.current(pinchStartZoom.current * ratio, mid.x, mid.y);
+  }, []);
+
+  /**
+   * Catat posisi tiap pointer SEGERA di setiap event (murah). Canvas hanya meneruskan event terakhir per frame
+   * ke handlePointerMove, padahal dua jari mengirim event bergantian — tanpa pencatatan ini jari yang satunya
+   * "basi" dan pinch/geser tersendat. Juga menandai pena yang melayang (hover) untuk palm rejection.
+   */
+  const trackMove = useCallback(
+    (e: ReactPointerEvent | PointerEvent) => {
+      if (!enabled) return;
+      if (e.pointerType === "pen") { penNearUntil.current = Date.now() + PEN_NEAR_MS; return; }
+      if (e.pointerType !== "touch" || !pointers.current.has(e.pointerId)) return;
+      const pt = { x: e.clientX, y: e.clientY };
+      pointers.current.set(e.pointerId, pt);
+      const start = tapStart.current.get(e.pointerId);
+      if (start && tapCandidate.current && dist(start, pt) > TAP_MAX_MOVE) tapCandidate.current.moved = true;
+      if (pointers.current.size === 2 && pinchStartDist.current && rafId.current === null) {
+        rafId.current = requestAnimationFrame(applyGestureFrame);
+      }
+    },
+    [enabled, applyGestureFrame]
   );
 
   const handlePointerMove = useCallback(
@@ -100,36 +155,10 @@ export function useSketchGestures({ enabled, applyZoomAt, getZoom, onUndo, onRed
       if (!enabled) return false;
       if (e.pointerType !== "touch") return false;
       if (!pointers.current.has(e.pointerId)) return false;
-
-      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-      const start = tapStart.current.get(e.pointerId);
-      if (start && tapCandidate.current) {
-        const moved = dist(start, { x: e.clientX, y: e.clientY }) > TAP_MAX_MOVE;
-        if (moved) tapCandidate.current.moved = true;
-      }
-
-      const n = pointers.current.size;
-      if (n === 2 && pinchStartDist.current) {
-        const pts = [...pointers.current.values()];
-        const d = dist(pts[0], pts[1]);
-        const ratio = d / pinchStartDist.current;
-        const mid = midpoint(pts[0], pts[1]);
-        applyZoomAt(pinchStartZoom.current * ratio, mid.x, mid.y);
-        // 2-finger drag = pan: on top of pinch-zoom's focal-point recentring
-        // above (a no-op for pure translation, since it re-anchors whatever
-        // font point sits under the live midpoint), walk the view by the
-        // midpoint's own frame-to-frame movement so panning works whether or
-        // not the fingers are also pinching.
-        if (panMid.current) {
-          onPanBy(mid.x - panMid.current.x, mid.y - panMid.current.y);
-        }
-        panMid.current = mid;
-        return true;
-      }
-      return n >= 2;
+      trackMove(e);
+      return pointers.current.size >= 2;
     },
-    [enabled, applyZoomAt, onPanBy]
+    [enabled, trackMove]
   );
 
   const handlePointerUp = useCallback(
@@ -140,7 +169,7 @@ export function useSketchGestures({ enabled, applyZoomAt, getZoom, onUndo, onRed
         // Keep rejecting touch briefly after the pen lifts, since a resting
         // palm often lingers a moment past pen-up.
         if (penReleaseTimer.current) clearTimeout(penReleaseTimer.current);
-        penReleaseTimer.current = setTimeout(() => { penActiveRef.current = false; }, 700);
+        penReleaseTimer.current = setTimeout(() => { penActiveRef.current = false; }, PEN_RELEASE_MS);
         return false;
       }
       if (e.pointerType !== "touch") return false;
@@ -178,5 +207,5 @@ export function useSketchGestures({ enabled, applyZoomAt, getZoom, onUndo, onRed
     [enabled, onUndo, onRedo, getZoom]
   );
 
-  return { handlePointerDown, handlePointerMove, handlePointerUp, resetGesture };
+  return { handlePointerDown, handlePointerMove, handlePointerUp, trackMove, resetGesture };
 }

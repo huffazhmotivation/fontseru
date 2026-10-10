@@ -1205,6 +1205,7 @@ export function GlyphMultiEditCanvas() {
 
   const onPointerMove = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
     lpMove(e);
+    sketchGestures.trackMove(e.nativeEvent);
     if (brushDirectMoveRef.current(e.nativeEvent)) return;
     pendingMoveRef.current = {
       clientX: e.clientX,
@@ -1223,7 +1224,7 @@ export function GlyphMultiEditCanvas() {
       pendingMoveRef.current = null;
       if (pending) processMoveRef.current(pending);
     });
-  }, [lpMove]);
+  }, [lpMove, sketchGestures]);
 
   useEffect(
     () => () => {
