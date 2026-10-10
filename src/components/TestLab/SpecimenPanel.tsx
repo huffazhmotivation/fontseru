@@ -9,6 +9,7 @@ import { GlyphRun } from "@/editor/GlyphRun";
 import { GlyphThumbnail } from "@/components/GlyphThumbnail";
 import { caretX, fallbackAdvance, layoutLine, nearestCaretColumn, type LineLayout } from "@/editor/textLayout";
 import { useTypingCaret } from "@/editor/useTypingCaret";
+import { useDoubleTapKeyboard } from "@/hooks/useDoubleTapKeyboard";
 import { getGlyphPaths } from "@/editor/glyphPaths";
 import { applyFeatureSubstitution, layoutTokens, resolveLigatureInputChars, type FeatureToggles } from "@/editor/featureTextLayout";
 import { FONT_STYLES, fontStyleLabel, hasOutline, type FontStyle, type GlyphMap } from "@/types/glyph";
@@ -174,6 +175,7 @@ function EditableStage({
     // with a family context (e.g. Bold) caret hit-testing measures the
     // Bold advances it is actually drawn with, not the store's active map.
   } = useTypingCaret(visualLines, fontSize, tracking, sourceLineStarts, glyphs, kerningPairs);
+  const kb = useDoubleTapKeyboard(inputRef);
   const caretPx = caretPxFor(caret);
 
   const [isDragging, setIsDragging] = useState(false);
@@ -302,6 +304,7 @@ function EditableStage({
   const onStagePointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (isDragging) return;
     placeCaretAt(e.clientX, e.clientY);
+    kb.onTap(e);
   };
 
   // Keep the existing focus workflow when switching Test Lab presets/modes.
@@ -483,6 +486,8 @@ function EditableStage({
         onKeyDown={() => requestAnimationFrame(syncFromSelection)}
         onKeyUp={syncFromSelection}
         onFocus={syncFromSelection}
+        onBlur={kb.onBlur}
+        inputMode={kb.inputMode}
         onSelect={syncFromSelection}
         spellCheck={false}
         style={{ fontSize, lineHeight }}
@@ -712,6 +717,7 @@ function FamilyStylePreview({
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const kb = useDoubleTapKeyboard(inputRef);
   const lineInnerRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [availableWidth, setAvailableWidth] = useState(0);
   const [caretIndex, setCaretIndex] = useState(0);
@@ -937,7 +943,7 @@ function FamilyStylePreview({
         ref={bodyRef}
         className="fm-family-style-body"
         onPointerUp={(e) => {
-          if (!isDragging) placeCaretAt(e.clientX, e.clientY);
+          if (!isDragging) { placeCaretAt(e.clientX, e.clientY); if (editable) kb.onTap(e); }
         }}
         onPointerDown={() => {
           if (editable) inputRef.current?.focus({ preventScroll: true });
@@ -1104,6 +1110,8 @@ function FamilyStylePreview({
             onKeyDown={() => requestAnimationFrame(syncCaretFromSelection)}
             onKeyUp={syncCaretFromSelection}
             onFocus={syncCaretFromSelection}
+            onBlur={kb.onBlur}
+            inputMode={kb.inputMode}
             onSelect={syncCaretFromSelection}
             spellCheck={false}
             data-testid="family-regular-input"
@@ -1245,6 +1253,8 @@ function FeatureSentencePreview({
   const wordSpacing = effectiveWordSpacing(metrics.wordSpacing, wordSpacingOverridesByStyle, fontStyle);
 
   const [previewText, setPreviewText] = useState("");
+  const previewInputRef = useRef<HTMLInputElement>(null);
+  const previewKb = useDoubleTapKeyboard(previewInputRef);
   const [toggles, setToggles] = useState<FeatureToggles>({ ligatures: true, alternates: false, swashes: false });
 
   // On first open, if the user hasn't typed anything yet, pre-fill the auto
@@ -1467,7 +1477,11 @@ function FeatureSentencePreview({
     <div className="fm-lab-feature-preview" data-testid="lab-feature-sentence-preview">
       <div className="fm-lab-feature-preview-head">
         <input
+          ref={previewInputRef}
           type="text"
+          inputMode={previewKb.inputMode}
+          onBlur={previewKb.onBlur}
+          onPointerUp={previewKb.onTap}
           className="fm-lab-feature-preview-input"
           placeholder={FEATURE_PREVIEW_PLACEHOLDER}
           value={previewText}

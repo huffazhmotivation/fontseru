@@ -7254,3 +7254,23 @@ input, textarea, select, [contenteditable="true"] {
 @media (max-width: 1180px) {
   .fm-canvas-area[data-editor-mode="draw"] .fm-drawbar { bottom: 66px; }
 }
+
+/* ==========================================================================
+   iPad / layar sentuh — ikon silang (×) & tombol tutup kecil dibesarkan sedikit dan diseragamkan:
+   ikon 14–16px, area sentuh ≥ 22–30px. Desktop (mouse) tidak berubah.
+   ========================================================================== */
+@media (pointer: coarse) {
+  .fm-family-tab-remove { width: 22px; height: 22px; opacity: 0.8; }
+  .fm-family-tab-remove svg { width: 14px; height: 14px; }
+  .fm-family-add-confirm, .fm-family-add-cancel { width: 34px; height: 34px; }
+  .fm-family-add-confirm svg, .fm-family-add-cancel svg { width: 16px; height: 16px; }
+  .fm-preview-close { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+  .fm-preview-close svg { width: 16px; height: 16px; }
+  .fm-preview-text-clear { font-size: 20px; padding: 4px 9px; right: 3px; }
+  .fm-toast-close { width: 32px; height: 32px; }
+  .fm-toast-close svg { width: 16px; height: 16px; }
+  .fm-glyphview-selected { padding: 6px 10px; gap: 6px; }
+  .fm-glyphview-selected svg { width: 14px; height: 14px; }
+  .fm-iconbtn svg { min-width: 16px; min-height: 16px; }
+  .fm-feature-remove svg { width: 15px; height: 15px; }
+}

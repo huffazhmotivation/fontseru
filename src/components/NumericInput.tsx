@@ -155,7 +155,15 @@ export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(func
     // down, so the final pointer position is never dropped by the throttle.
     flushStepperDrag();
     dragRef.current = null;
-    inputRef.current?.focus({ preventScroll: true });
+    // Fokus dikembalikan ke kolom, tapi jangan memunculkan keyboard layar di iPad hanya karena stepper digeser.
+    const el = inputRef.current;
+    if (el) {
+      el.inputMode = "none";
+      el.focus({ preventScroll: true });
+      const restore = () => { el.inputMode = ""; el.removeEventListener("blur", restore); };
+      el.addEventListener("blur", restore);
+      window.setTimeout(restore, 900);
+    }
   };
 
   return (
