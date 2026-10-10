@@ -7141,3 +7141,97 @@ html[data-tablet="true"] .fm-root[data-sketch-mode="true"]:not(.fm-design-shell)
   margin: 3px 0;
   flex: 0 0 auto;
 }
+
+/* ==========================================================================
+   iPad / tablet - layar penuh (PWA Home Screen) + ikon yang terlalu kecil
+   Semua aturan di bawah hanya aktif lewat html[data-tablet="true"]:
+   desktop, HP, Mode Design, dan top bar Mode Font TIDAK diubah.
+   Ukuran sentuh minimal ±32px, ikon minimal ±17px.
+   ========================================================================== */
+
+/* A) Area aman atas (jam / status bar iPad). Saat PWA standalone dengan status bar translucent,
+      env() kadang 0 sesaat setelah dibuka, jadi dipasang batas bawah 22px khusus mode standalone. */
+html[data-tablet="true"] { --fs-safe-top: env(safe-area-inset-top, 0px); }
+@media (display-mode: standalone) {
+  html[data-tablet="true"] { --fs-safe-top: max(env(safe-area-inset-top, 0px), 22px); }
+}
+
+/* B) Rasio normal sampai layar penuh: html/body/#root ikut ukuran layar sungguhan (--fs-app-h/--fs-app-w
+      dihitung di src/mode/tablet.ts; di luar PWA variabelnya kosong → memakai 100% biasa). */
+html[data-tablet="true"],
+html[data-tablet="true"] body {
+  width: 100%;
+  height: var(--fs-app-h, 100%);
+  min-height: var(--fs-app-h, 100%);
+  overflow: hidden;
+}
+html[data-tablet="true"] #root { height: 100%; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell),
+html[data-tablet="true"] .mfs-root {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: var(--fs-app-w, auto);
+  height: var(--fs-app-h, auto);
+}
+
+/* C) Mode Motion: bilah atas turun di bawah jam / status bar. */
+@media (min-width: 861px) {
+  html[data-tablet="true"] .mfs-root { grid-template-rows: calc(48px + var(--fs-safe-top)) minmax(0, 1fr) 226px; }
+  html[data-tablet="true"] .mfs-root .mfs-top {
+    height: calc(48px + var(--fs-safe-top));
+    padding-top: var(--fs-safe-top);
+    padding-left: max(8px, env(safe-area-inset-left, 0px));
+    padding-right: max(8px, env(safe-area-inset-right, 0px));
+  }
+}
+@media (max-width: 860px) {
+  html[data-tablet="true"] .mfs-root { height: var(--fs-app-h, 100%); }
+  html[data-tablet="true"] .mfs-root .mfs-top { padding-top: calc(6px + var(--fs-safe-top)); }
+}
+
+/* D) Mode Motion: ikon non-topbar yang terlalu kecil (transport, timeline, tambah, klip). */
+html[data-tablet="true"] .mfs-transport { height: 54px; gap: 14px; }
+html[data-tablet="true"] .mfs-transport .mfs-icon-btn { width: 38px; height: 38px; }
+html[data-tablet="true"] .mfs-transport .mfs-icon-btn svg { width: 19px; height: 19px; }
+html[data-tablet="true"] .mfs-transport .mfs-play-btn { width: 42px; height: 42px; }
+html[data-tablet="true"] .mfs-transport .mfs-play-btn svg { width: 18px; height: 18px; }
+html[data-tablet="true"] .mfs-add-btn { width: 32px; height: 32px; border-radius: 8px; }
+html[data-tablet="true"] .mfs-add-btn svg { width: 18px; height: 18px; }
+html[data-tablet="true"] .mfs-add-track-btn { width: 30px; height: 30px; }
+html[data-tablet="true"] .mfs-add-track-btn svg { width: 16px; height: 16px; }
+html[data-tablet="true"] .mfs-btn.mfs-btn-sm { min-height: 32px; padding-left: 12px; padding-right: 12px; }
+html[data-tablet="true"] .mfs-btn.mfs-btn-sm svg { width: 15px; height: 15px; }
+html[data-tablet="true"] .mfs-clip-handle { width: 22px; }
+html[data-tablet="true"] .mfs-clip-del { width: 28px; height: 28px; }
+html[data-tablet="true"] .mfs-clip-del svg { width: 16px; height: 16px; }
+
+/* E) Mode Font: ikon kecil di luar top bar. */
+/* bilah bawah (zoom, grid, penggaris, mata, info, layar penuh, reset) */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar button { min-width: 34px; min-height: 34px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-icon-btn { min-width: 34px; min-height: 34px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar button svg { width: 18px; height: 18px; }
+/* Test Lab: Undo / Redo kerning */
+html[data-tablet="true"] .fm-kern-history-btns { gap: 6px; }
+html[data-tablet="true"] .fm-kern-history-btns button { width: 38px; height: 38px; min-width: 38px; min-height: 38px; }
+html[data-tablet="true"] .fm-kern-history-btns button svg { width: 20px; height: 20px; }
+/* stepper glyph (prev/next) & tombol panah di tepi canvas */
+html[data-tablet="true"] .fm-glyph-stepper-btn { width: 36px; height: 36px; }
+html[data-tablet="true"] .fm-glyph-stepper-btn svg { width: 22px; height: 22px; }
+html[data-tablet="true"] .fm-glyph-sidenav-btn svg { width: 24px; height: 24px; }
+/* Single / Multi / Drawing */
+html[data-tablet="true"] .fm-glyphview-mode button { min-height: 34px; padding: 6px 12px; }
+html[data-tablet="true"] .fm-glyphview-mode button svg { width: 16px; height: 16px; }
+/* panah naik/turun pada kolom angka (Size, Spacing, dst.) */
+html[data-tablet="true"] .fm-numeric-stepper { grid-template-rows: 16px 16px; right: 3px; }
+html[data-tablet="true"] .fm-numeric-stepper button { width: 28px; height: 16px; }
+html[data-tablet="true"] .fm-numeric-stepper button svg { width: 12px; height: 12px; }
+/* kunci rasio, ikon "i", family tab, rename, hapus fitur, kotak centang */
+html[data-tablet="true"] .fm-lock-btn { width: 30px; height: 30px; }
+html[data-tablet="true"] .fm-lock-btn svg { width: 16px; height: 16px; }
+html[data-tablet="true"] .fm-infotip-badge { width: 26px; height: 26px; min-width: 26px; font-size: 14px; }
+html[data-tablet="true"] .fm-family-tabs button { height: 34px; }
+html[data-tablet="true"] .fm-export-rename-toggle { height: 32px; padding: 0 12px; font-size: 11.5px; }
+html[data-tablet="true"] .fm-feature-alt-chip .fm-feature-remove { width: 24px; height: 24px; top: -9px; right: -9px; }
+html[data-tablet="true"] .fm-flag-toggle-box { flex: 0 0 18px; width: 18px; height: 18px; border-radius: 4px; }
+html[data-tablet="true"] .fm-flag-toggle.active .fm-flag-toggle-box::after { width: 5px; height: 9px; }
+html[data-tablet="true"] .fm-preview-resize-handle { height: 26px; }

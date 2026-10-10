@@ -3798,7 +3798,7 @@ const GlobalStyle = () => (
     .mfs-root ::-webkit-scrollbar-thumb { background:#9b6cff; border:2px solid transparent; background-clip:padding-box; border-radius:99px; }
     .mfs-root ::-webkit-scrollbar-thumb:hover { background:#bd9cff; border-width:1px; }
 
-    .mfs-top { grid-area:top; display:flex; align-items:center; justify-content:space-between; padding:var(--sat, 0px) 14px 0; border-bottom:1px solid var(--border); background:var(--bg-panel); }
+    .mfs-top { grid-area:top; display:flex; align-items:center; justify-content:space-between; padding:0 14px; border-bottom:1px solid var(--border); background:var(--bg-panel); }
     .mfs-top-left { display:flex; align-items:center; gap:16px; }
     .mfs-top-right { display:flex; align-items:center; gap:6px; }
     .mfs-top-info { font-size:11.5px; color:var(--text-dim); margin-right:6px; white-space:nowrap; }
@@ -4108,7 +4108,7 @@ const GlobalStyle = () => (
          undo/redo + preview/ekspor) dipaksa satu baris dan kepotong/tumpang
          tindih di lebar ~1024px (iPad landscape). Bolehkan bungkus 2 baris,
          sama seperti pola di breakpoint HP di bawah. */
-      .mfs-top { height:auto; min-height:48px; flex-wrap:wrap; row-gap:6px; padding:calc(6px + var(--sat, 0px)) 14px 6px; }
+      .mfs-top { height:auto; min-height:48px; flex-wrap:wrap; row-gap:6px; padding:6px 14px; }
       .mfs-top-left, .mfs-top-right { flex-wrap:wrap; gap:6px; }
       .mfs-top-info { display:none; }
     }
@@ -4118,7 +4118,7 @@ const GlobalStyle = () => (
        tetap besar & semua kontrol tetap terjangkau dengan satu tangan. */
     @media (max-width: 860px) {
       .mfs-root { display:flex; flex-direction:column; height:100dvh; }
-      .mfs-top { height:auto; min-height:48px; flex-wrap:wrap; row-gap:6px; padding:calc(6px + var(--sat, 0px)) 10px 6px; }
+      .mfs-top { height:auto; min-height:48px; flex-wrap:wrap; row-gap:6px; padding:6px 10px; }
       .mfs-top-left, .mfs-top-right { gap:6px; flex-wrap:wrap; }
       .mfs-top-info { display:none; }
       /* Grup "ratakan ke kanvas" itu tool presisi ala-desktop yang paling
@@ -7132,14 +7132,6 @@ const TopBar = React.memo(function TopBar({ project, dispatch, canUndo, canRedo,
       <Icon size={14} style={rot ? { transform: `rotate(${rot}deg)` } : undefined} />
     </button>
   );
-  // iPad / tablet: 6 tombol rata kanvas dilipat jadi satu tombol + popover supaya tombol lain bisa besar & tetap muat satu baris
-  // (CSS di src/styles/tablet-touch.css memilih mana yang tampil; di desktop .mfs-align-menu disembunyikan).
-  const [alignOpen, setAlignOpen] = useState(false);
-  const alignItem = (axis, where, Icon, rot, label) => (
-    <button key={label} className="mfs-align-menu-item" disabled={!canAlign} onClick={() => { onAlign && onAlign(axis, where); setAlignOpen(false); }} title={label} aria-label={label}>
-      <Icon size={20} style={rot ? { transform: `rotate(${rot}deg)` } : undefined} />
-    </button>
-  );
   return (
     <div className="mfs-top">
       <div className="mfs-top-left">
@@ -7158,24 +7150,6 @@ const TopBar = React.memo(function TopBar({ project, dispatch, canUndo, canRedo,
           {alignBtn("v", "start", AlignLeft, 90, "Rata atas kanvas")}
           {alignBtn("v", "center", AlignCenter, 90, "Rata tengah vertikal")}
           {alignBtn("v", "end", AlignRight, 90, "Rata bawah kanvas")}
-        </div>
-        <div className="mfs-align-menu">
-          <button className={`mfs-icon-btn ${alignOpen ? "active" : ""}`} onClick={() => setAlignOpen((o) => !o)} title="Ratakan objek terpilih ke kanvas" aria-label="Ratakan objek ke kanvas" aria-expanded={alignOpen}>
-            <AlignCenter size={16} />
-          </button>
-          {alignOpen && (
-            <>
-              <div className="mfs-align-menu-backdrop" onClick={() => setAlignOpen(false)} aria-hidden="true" />
-              <div className="mfs-align-menu-pop" role="menu">
-                {alignItem("h", "start", AlignLeft, 0, "Rata kiri kanvas")}
-                {alignItem("h", "center", AlignCenter, 0, "Rata tengah horizontal")}
-                {alignItem("h", "end", AlignRight, 0, "Rata kanan kanvas")}
-                {alignItem("v", "start", AlignLeft, 90, "Rata atas kanvas")}
-                {alignItem("v", "center", AlignCenter, 90, "Rata tengah vertikal")}
-                {alignItem("v", "end", AlignRight, 90, "Rata bawah kanvas")}
-              </div>
-            </>
-          )}
         </div>
         <div className="mfs-top-sep" />
         <span className="mfs-top-info">{project.clips.length} klip ({mediaCount} media) · {project.fonts.length} font diunggah</span>
@@ -7470,7 +7444,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="mfs-root" data-theme={theme} data-mpane={mobilePane || "none"} style={{ gridTemplateRows: `calc(var(--mfs-top-h, 48px) + var(--sat, 0px)) minmax(0, 1fr) calc(${timelineHeight}px + var(--sab, 0px))` }}>
+      <div className="mfs-root" data-theme={theme} data-mpane={mobilePane || "none"} style={{ gridTemplateRows: `48px 1fr ${timelineHeight}px` }}>
         <GlobalStyle />
         <TopBar
           project={project}

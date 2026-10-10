@@ -4,10 +4,12 @@ import App from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import { UpdatePrompt } from "./components/UpdatePrompt";
 import { PrayerReminder } from "./prayer/PrayerReminder";
+import { applyTabletAttr } from "./mode/tablet";
 import "./styles/app.css";
 import "./mode/modeTabs.css";
-// Harus terakhir: perbaikan layar penuh, safe-area & target sentuh iPad.
-import "./styles/tablet-touch.css";
+
+// Tandai tablet + ukur layar penuh (PWA iPad) sebelum React menggambar, supaya frame pertama sudah pas.
+applyTabletAttr();
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {
