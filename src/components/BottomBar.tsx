@@ -79,10 +79,10 @@ export function BottomBar() {
   return (
     <div className="fm-bottombar" data-testid="bottom-bar">
       <div className="fm-zoom-controls">
-        <button className="fm-icon-btn" onClick={() => setZoom(zoom - 10)} title="Zoom out"><Minus size={13} /></button>
-        <span className="fm-zoom-value" data-testid="zoom-value">{zoom}%</span>
-        <button className="fm-icon-btn" onClick={() => setZoom(zoom + 10)} title="Zoom in"><Plus size={13} /></button>
-        <input type="range" min={20} max={8000} step={10} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} data-testid="zoom-slider" style={{ ["--fm-range-fill" as string]: `${((zoom - 20) / (8000 - 20)) * 100}%` }} />
+        <button className="fm-icon-btn" onClick={() => setZoom(Math.round(zoom) - 10)} title="Zoom out"><Minus size={13} /></button>
+        <span className="fm-zoom-value" data-testid="zoom-value">{Math.round(zoom)}%</span>
+        <button className="fm-icon-btn" onClick={() => setZoom(Math.round(zoom) + 10)} title="Zoom in"><Plus size={13} /></button>
+        <input type="range" min={20} max={8000} step={10} value={Math.round(zoom)} onChange={(e) => setZoom(Number(e.target.value))} data-testid="zoom-slider" style={{ ["--fm-range-fill" as string]: `${((zoom - 20) / (8000 - 20)) * 100}%` }} />
       </div>
 
       <div className="fm-bottom-divider fm-bottombar-more-hide" />
