@@ -26,3 +26,8 @@ cp "$HERE/scripts/design-patches/ios-export.js" "$HERE/public/design/ios-export.
 perl -0pi -e 's|(<script type="module" crossorigin src="\./assets/index-)|<script src="./ios-export.js"></script>\n    $1|' "$HERE/public/design/index.html"
 node "$HERE/scripts/design-patches/patch-export.mjs" "$HERE/public/design/assets"
 echo "OK: public/design diperbarui"
+# Bar bawah Design: Snap/Penggaris/Grid tetap tampil di iPad (ukur lebar jendela, bukan lebar kanvas)
+node "$HERE/scripts/design-patches/patch-ui.mjs" "$HERE/public/design/assets"
+# Beri nama baru pada bundle yang sudah ditambal (aset /design/assets/ di-cache "immutable" setahun, lihat vercel.json).
+# Naikkan tag (r2 -> r3 ...) setiap kali isi tambalan berubah.
+node "$HERE/scripts/design-patches/bump-assets.mjs" "$HERE/public/design" r2

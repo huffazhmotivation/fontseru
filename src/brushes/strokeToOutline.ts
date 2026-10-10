@@ -457,6 +457,7 @@ function segmentIntersection(a0: Point, a1: Point, b0: Point, b1: Point): Point 
  * the corner that caused them, so this keeps the cost close to linear on
  * long, mostly-straight strokes instead of scanning every distant pair.
  */
+const MAX_LOCAL_FOLD_POINTS = 120;
 function removeSelfIntersectionLoops(chain: Point[]): Point[] {
   if (chain.length < 4) return chain;
   const pts = chain.slice();
@@ -475,7 +476,10 @@ function removeSelfIntersectionLoops(chain: Point[]): Point[] {
   // A fold is "local" when it spans at most this many points OR this
   // fraction of the whole chain, whichever is larger — anything bigger is a
   // real loop and must be preserved.
-  const maxFoldSpan = Math.max(24, Math.ceil(pts.length * 0.12));
+  // Absolute cap: a local fold spans a handful of points whatever the stroke's
+  // total length, while the fractional term made the scan O(n²) — a long
+  // cursive stroke took >100ms per live-preview frame (visible stutter).
+  const maxFoldSpan = Math.max(24, Math.min(MAX_LOCAL_FOLD_POINTS, Math.ceil(pts.length * 0.12)));
   const maxPasses = 200;
   // Segments only ever need testing against the next `maxFoldSpan` ones —
   // anything further is a large loop that's skipped anyway — so the inner

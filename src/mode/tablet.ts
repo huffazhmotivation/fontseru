@@ -32,6 +32,7 @@ export function applyTabletAttr(): void {
   if (typeof document === "undefined") return;
   document.documentElement.setAttribute("data-tablet", isTabletDevice() ? "true" : "false");
   installStandaloneViewportFix();
+  installTouchInputFixes();
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -50,6 +51,7 @@ function isStandalonePwa(): boolean {
 }
 
 let viewportFixInstalled = false;
+let keyboardSync: (() => void) | null = null;
 function installStandaloneViewportFix(): void {
   if (viewportFixInstalled || typeof window === "undefined") return;
   if (!isTabletDevice() || !isStandalonePwa()) return;
@@ -68,11 +70,22 @@ function installStandaloneViewportFix(): void {
     const fullH = landscape ? short : long;
     const fullW = landscape ? long : short;
     // Hanya MEMPERBESAR bila innerHeight kurang dari layar (selisih wajar ≤ 80px); nilai ngawur diabaikan.
-    const h = fullH > ih && fullH - ih <= 80 ? fullH : ih;
+    let h = fullH > ih && fullH - ih <= 80 ? fullH : ih;
     const w = fullW > iw && fullW - iw <= 80 && Math.abs(fullW - iw) < 80 ? fullW : iw;
+    // Keyboard terbuka: iPadOS TIDAK mengecilkan layout viewport (hanya visual viewport), jadi tanpa ini
+    // bagian bawah app (bottom bar) tertutup keyboard dan halaman digeser iOS sehingga app tampak "meloncat".
+    // Saat sebuah kolom teks sedang fokus, tinggi root disamakan dengan area yang benar-benar terlihat.
+    const vv = window.visualViewport;
+    let top = 0;
+    if (vv && isEditableFocused() && ih - vv.height > 120) {
+      h = Math.max(240, Math.round(vv.height));
+      top = Math.max(0, Math.round(vv.offsetTop));
+    }
     root.style.setProperty("--fs-app-h", `${h}px`);
     root.style.setProperty("--fs-app-w", `${w}px`);
+    root.style.setProperty("--fs-app-top", `${top}px`);
   };
+  keyboardSync = sync;
   sync();
   // iPadOS memperbarui ukuran sesudah rotasi / kembali dari app switcher dengan jeda, jadi ukur beberapa kali.
   const later = () => { sync(); window.setTimeout(sync, 120); window.setTimeout(sync, 400); window.setTimeout(sync, 1000); };
@@ -123,4 +136,67 @@ export function installVirtualModifiers(): void {
   for (const t of ["pointerdown", "pointermove", "pointerup", "mousedown", "mousemove", "mouseup", "click", "wheel", "contextmenu"]) {
     window.addEventListener(t, apply, true);
   }
+}
+
+
+/* ------------------------------------------------------------------------------------------------
+   Perbaikan input di iPad / iPhone (Safari & PWA Home Screen)
+   1. Fokus ke kolom teks membuat iOS men-zoom halaman (font < 16px); zoom itu tersangkut — setelah app ditutup
+      dan dibuka lagi tampilan jadi membesar & bergeser. Di sini zoom di-reset begitu kolom kehilangan fokus,
+      saat app kembali tampil, dan saat orientasi berubah. Pinch-zoom halaman diblok (kanvas punya zoom sendiri).
+   2. Keyboard muncul/hilang → ukur ulang tinggi root (lihat sync di atas) dan kembalikan scroll halaman ke 0.
+   ------------------------------------------------------------------------------------------------ */
+export function isEditableFocused(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  if (el.tagName === "TEXTAREA") return true;
+  if (el.tagName !== "INPUT") return false;
+  const t = ((el as HTMLInputElement).type || "text").toLowerCase();
+  return !["range", "checkbox", "radio", "button", "submit", "reset", "file", "color"].includes(t);
+}
+
+let touchFixesInstalled = false;
+function installTouchInputFixes(): void {
+  if (touchFixesInstalled || typeof window === "undefined") return;
+  const touch = (navigator.maxTouchPoints || 0) > 1 || Boolean(window.matchMedia?.("(pointer: coarse)").matches);
+  if (!touch) return;
+  touchFixesInstalled = true;
+
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+  const baseContent = meta?.content ?? "";
+  const resetZoom = () => {
+    try {
+      if (isEditableFocused()) return;
+      const vv = window.visualViewport;
+      if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+      if (meta && vv && vv.scale > 1.01) {
+        // Mengubah isi meta viewport sesaat memaksa iOS menghitung ulang skala (kembali ke 1).
+        meta.content = `${baseContent}, minimum-scale=1`;
+        window.setTimeout(() => { meta.content = baseContent; keyboardSync?.(); }, 60);
+      }
+    } catch { /* abaikan */ }
+  };
+  const resetSoon = () => {
+    window.setTimeout(() => { resetZoom(); keyboardSync?.(); }, 60);
+    window.setTimeout(() => { resetZoom(); keyboardSync?.(); }, 350);
+  };
+
+  // Pinch-zoom bawaan Safari (kanvas memakai pointer event sendiri, jadi tidak terganggu).
+  for (const t of ["gesturestart", "gesturechange", "gestureend"]) {
+    document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+  }
+  document.addEventListener("focusout", resetSoon, true);
+  document.addEventListener("focusin", () => { keyboardSync?.(); window.setTimeout(() => keyboardSync?.(), 250); }, true);
+  window.addEventListener("pageshow", resetSoon);
+  window.addEventListener("orientationchange", resetSoon);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) resetSoon(); });
+  window.visualViewport?.addEventListener("resize", () => {
+    keyboardSync?.();
+    if (isEditableFocused() && window.scrollY) window.scrollTo(0, 0);
+  });
+  window.visualViewport?.addEventListener("scroll", () => {
+    if (isEditableFocused()) keyboardSync?.();
+  });
+  resetSoon();
 }

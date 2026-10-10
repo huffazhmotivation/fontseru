@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { Check, ChevronDown, Cloud, CloudDownload, CloudUpload, Download, FilePlus2, FileText, FolderOpen, Loader2, Lock, Save, SaveAll, ScrollText, Trash2, X, CheckCircle2, AlertTriangle, XCircle, Info, ShieldCheck } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useAuth } from "@/auth/AuthProvider";
@@ -937,10 +938,18 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [saveAsName, setSaveAsName] = useState("");
 
+  const saveAsInputRef = useRef<HTMLInputElement>(null);
   const saveAs = () => {
-    setSaveAsName(safeProjectBaseName(useAppStore.getState().fontName || projectFileName));
-    setSaveAsOpen(true);
-    setOpen(false);
+    // iPad/iPhone hanya menampilkan keyboard bila fokus diberikan SINKRON di dalam ketukan pengguna.
+    // `autoFocus` saja kadang jalan sesudah ketukan selesai → kolom fokus tapi keyboard tidak muncul.
+    // Maka dialog dirender paksa dulu (flushSync), lalu kolom difokuskan di handler yang sama.
+    flushSync(() => {
+      setSaveAsName(safeProjectBaseName(useAppStore.getState().fontName || projectFileName));
+      setSaveAsOpen(true);
+      setOpen(false);
+    });
+    const el = saveAsInputRef.current;
+    if (el) { el.focus({ preventScroll: true }); el.select(); }
   };
 
   const confirmSaveAs = () => {
@@ -2193,6 +2202,7 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
             <label className="fm-export-field">
               <span>Nama berkas project (.fs)</span>
               <input
+                ref={saveAsInputRef}
                 value={saveAsName}
                 onChange={(event) => setSaveAsName(event.target.value)}
                 onFocus={(event) => event.target.select()}

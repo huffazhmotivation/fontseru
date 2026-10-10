@@ -179,6 +179,9 @@ export function TopBar() {
         onBlur={commitFontNameEdit}
         onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
         spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        enterKeyHint="done"
         data-testid="font-name-input"
       />
       {/* Everything below is wrapped as one unit (see .fm-topbar-row2 in

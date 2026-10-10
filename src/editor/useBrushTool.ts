@@ -204,10 +204,25 @@ export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
   // committed accuracy is unaffected — only the live visual update is
   // throttled.
   const rafIdRef = useRef<number | null>(null);
+  // Adaptive throttle: a long stroke on a slow device (iPad) can take longer
+  // to rebuild than one frame. Rebuilding every frame then starves pointer
+  // events and the stroke trails the pen. Track how long the last rebuild
+  // took and leave at least that much idle time before the next one, so the
+  // main thread keeps >=50% free for input. The committed stroke is unaffected.
+  const lastCostRef = useRef(0);
+  const lastEndRef = useRef(0);
   const flushPreview = useCallback(() => {
     rafIdRef.current = null;
     if (!isDrawingRef.current) return;
+    const t0 = performance.now();
+    if (t0 - lastEndRef.current < lastCostRef.current) {
+      rafIdRef.current = requestAnimationFrame(flushPreview);
+      return;
+    }
     publishPreview(buildPreview());
+    const t1 = performance.now();
+    lastCostRef.current = Math.min(120, t1 - t0);
+    lastEndRef.current = t1;
   }, [buildPreview, publishPreview]);
   const schedulePreviewUpdate = useCallback(() => {
     if (rafIdRef.current != null) return;
@@ -233,6 +248,8 @@ export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
     // rather than carrying over the previous stroke's accumulated specks.
     sprayCacheRef.current = null;
     isDrawingRef.current = true;
+    lastCostRef.current = 0;
+    lastEndRef.current = 0;
     setIsDrawing(true);
     publishPreview(EMPTY_BRUSH_PREVIEW);
     clearQuickShapeHold();

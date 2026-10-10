@@ -7169,7 +7169,7 @@ html[data-tablet="true"] #root { height: 100%; }
 html[data-tablet="true"] .fm-root:not(.fm-design-shell),
 html[data-tablet="true"] .mfs-root {
   position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
+  top: var(--fs-app-top, 0px); left: 0; right: 0; bottom: 0;
   width: var(--fs-app-w, auto);
   height: var(--fs-app-h, auto);
 }
@@ -7227,3 +7227,30 @@ html[data-tablet="true"] .fm-feature-alt-chip .fm-feature-remove { width: 24px; 
 html[data-tablet="true"] .fm-flag-toggle-box { flex: 0 0 18px; width: 18px; height: 18px; border-radius: 4px; }
 html[data-tablet="true"] .fm-flag-toggle.active .fm-flag-toggle-box::after { width: 5px; height: 9px; }
 html[data-tablet="true"] .fm-preview-resize-handle { height: 26px; }
+
+
+/* ==========================================================================
+   Input sentuh (iPad / iPhone)
+   - iOS men-zoom halaman saat kolom teks ber-font < 16px difokuskan, dan zoom itu tersangkut
+     (app jadi membesar/bergeser, apalagi setelah dibuka dari Home Screen). 16px saat fokus menghindarinya.
+   - user-select: none pada leluhur (kanvas, bar, dsb.) bisa membuat iOS tidak mau menampilkan keyboard
+     untuk kolom teks di dalamnya, jadi kolom teks selalu boleh diseleksi/diketik.
+   ========================================================================== */
+input, textarea, select, [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+@media (pointer: coarse) {
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):focus,
+  textarea:focus,
+  select:focus {
+    font-size: 16px !important;
+  }
+}
+
+/* Mode Drawing: kartu "Terapkan" (kanan bawah) menimpa toolbar mengambang (tengah bawah) begitu kanvas menyempit
+   (iPad dengan panel kiri+kanan terbuka, jendela PC yang kecil). Di lebar itu kartu dinaikkan di atas toolbar. */
+@media (max-width: 1180px) {
+  .fm-canvas-area[data-editor-mode="draw"] .fm-drawbar { bottom: 66px; }
+}

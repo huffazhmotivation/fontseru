@@ -52,9 +52,16 @@ if (framedAtDesign) {
 );
 
 // Splash dari index.html: lepas begitu React sudah menggambar frame pertamanya.
-requestAnimationFrame(() => requestAnimationFrame(() => {
+// requestAnimationFrame dijeda saat app dibuka di latar belakang (PWA iPad dari app switcher), jadi ada
+// cadangan setTimeout supaya splash tidak pernah tersangkut menutupi layar.
+let splashGone = false;
+const hideSplash = () => {
+  if (splashGone) return;
+  splashGone = true;
   const splash = document.getElementById("fs-splash");
   if (!splash) return;
   splash.classList.add("fs-splash-out");
   window.setTimeout(() => splash.remove(), 250);
-}));
+};
+requestAnimationFrame(() => requestAnimationFrame(hideSplash));
+window.setTimeout(hideSplash, 1200);
