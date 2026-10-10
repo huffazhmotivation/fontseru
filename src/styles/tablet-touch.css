@@ -1,0 +1,448 @@
+/* ==========================================================================
+   TABLET (iPad / tablet Android) — layar penuh, safe-area, dan target sentuh.
+   Dimuat TERAKHIR (lihat main.tsx) dan hanya aktif lewat <html data-tablet="true">
+   (src/mode/tablet.ts), jadi desktop & HP tidak berubah.
+
+   Aturan di sini sengaja memakai !important karena menimpa tumpukan aturan
+   tablet lama di app.css dan <style> milik Mode Motion yang saling bertabrakan
+   (mis. .fm-align-btn dulu berakhir 20px lebar). Pegangan umum:
+     - tombol ikon  : minimal 38–40px (Apple HIG 44px; 36px untuk bar yang padat)
+     - ikon di dalam: 19–20px
+     - elemen yang memang harus kecil secara visual (badge info, tombol hapus
+       klip) diberi area sentuh tambahan lewat ::after, bukan dibesarkan.
+   ========================================================================== */
+
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+/* ---- 0) Layar penuh yang pasti (PWA "Add to Home Screen") ---------------- */
+html[data-tablet="true"],
+html[data-tablet="true"] body {
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html[data-tablet="true"] body {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  width: 100%;
+}
+html[data-tablet="true"] #root {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  height: auto;
+}
+
+/* ---- 1) Token ukuran ------------------------------------------------------ */
+html[data-tablet="true"] {
+  --tt: 40px;      /* tombol ikon utama */
+  --tt-sm: 36px;   /* tombol ikon di bar padat */
+  --tt-ico: 20px;  /* ikon di dalam tombol */
+}
+
+/* ==========================================================================
+   MODE FONT
+   ========================================================================== */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) { --tb: var(--tt); }
+
+/* bar atas */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar {
+  box-sizing: border-box;
+  min-height: calc(var(--tt) + 14px + var(--sat));
+  padding-top: calc(7px + var(--sat));
+  padding-bottom: 7px;
+  padding-left: max(8px, var(--sal));
+  padding-right: max(8px, var(--sar));
+  gap: 4px;
+  align-items: center;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-topbtn,
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar-more-btn > .fm-topbtn {
+  width: var(--tt) !important;
+  min-width: var(--tt) !important;
+  height: var(--tt) !important;
+  min-height: var(--tt) !important;
+  padding: 0 !important;
+  flex: 0 0 auto;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-topbtn svg,
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar-more-btn > .fm-topbtn svg {
+  width: var(--tt-ico) !important;
+  height: var(--tt-ico) !important;
+  flex: 0 0 auto;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-align-btn {
+  width: 38px !important;
+  min-width: 38px !important;
+  height: var(--tt) !important;
+  flex: 0 0 auto;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-align-btn svg {
+  width: var(--tt-ico) !important;
+  height: var(--tt-ico) !important;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-theme-toggle {
+  width: var(--tt) !important;
+  min-width: var(--tt) !important;
+  height: var(--tt) !important;
+  min-height: var(--tt) !important;
+  flex: 0 0 auto;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-theme-toggle svg {
+  width: var(--tt-ico) !important;
+  height: var(--tt-ico) !important;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-fontname {
+  height: 36px;
+  min-width: 70px;
+  max-width: 130px;
+  font-size: 13px;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-mode-tab {
+  height: 36px;
+  padding: 0 12px;
+  gap: 6px;
+  font-size: 13px;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-mode-tab svg { width: 17px; height: 17px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-mode-tab.fm-mode-prayer { padding: 0 11px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-mode-tabs { padding: 3px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-topbtn-group { gap: 2px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-auth-avatar-btn,
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-auth-login-btn {
+  min-width: var(--tt) !important;
+  min-height: var(--tt) !important;
+}
+
+/* bar bawah */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar {
+  box-sizing: border-box;
+  min-height: calc(var(--tt-sm) + 12px + var(--sab));
+  padding-top: 6px;
+  padding-bottom: calc(6px + var(--sab));
+  padding-left: max(8px, var(--sal));
+  padding-right: max(8px, var(--sar));
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar button {
+  min-width: var(--tt-sm) !important;
+  min-height: var(--tt-sm) !important;
+  padding: 0 !important;
+  justify-content: center;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar button svg {
+  width: 19px !important;
+  height: 19px !important;
+  flex: 0 0 auto;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-icon-btn {
+  min-width: var(--tt-sm) !important;
+  min-height: var(--tt-sm) !important;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-zoom-controls { gap: 2px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-zoom-value { font-size: 12.5px; min-width: 46px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-grid-size-input {
+  height: 34px; width: 52px; font-size: 13px;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-grid-shape-select {
+  height: 34px; width: 74px; font-size: 13px;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-bottom-divider { display: none; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-hint-inline { gap: 2px; margin-left: auto; }
+
+/* Lebar < 1366px (iPad 10"/11"/Air/mini): item sekunder dipindah ke menu "More"
+   / "Settings" supaya tombol yang tersisa bisa besar DAN tetap muat satu baris.
+   (Aturan lama @media 901px yang memaksa semuanya tampil sebagai ikon 20px
+   dibatalkan di sini.) Layar ≥1366px (iPad Pro 12.9") menampilkan semuanya. */
+@media (max-width: 1365px) {
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar-more-hide { display: none !important; }
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar-more-btn { display: inline-flex !important; }
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar > .fm-align-divider { display: none !important; }
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar-more-hide { display: none !important; }
+  /* yang paling sering dipakai tetap di bar */
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar [data-testid="toggle-grid"],
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar [data-testid="grid-size-field"],
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar [data-testid="toggle-ruler"],
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar [data-testid="toggle-snap"] { display: inline-flex !important; align-items: center; }
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-bottombar-more-btn { display: inline-flex !important; }
+}
+
+/* kolom kiri (daftar glyph) */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyph-select-toggle {
+  min-height: 32px; padding: 0 9px; font-size: 12px; gap: 4px;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyph-select-toggle svg { width: 16px !important; height: 16px !important; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-family-tab,
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-family-tab-custom,
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-family-tabs button {
+  min-height: 36px; font-size: 12px; padding: 0 5px; gap: 3px;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-family-tabs button svg { width: 13px !important; height: 13px !important; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-action-btn { min-height: 38px; font-size: 13px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-action-btn svg { width: 16px !important; height: 16px !important; }
+
+/* Single / Multi / Drawing */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyphview-bar button,
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyphview-mode button {
+  min-height: 34px; padding: 0 12px; font-size: 13px;
+}
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyphview-bar button svg,
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyphview-mode button svg { width: 16px !important; height: 16px !important; }
+
+/* badge "i": tetap kecil secara visual, area sentuhnya diperluas */
+html[data-tablet="true"] .fm-infotip-badge { position: relative; }
+html[data-tablet="true"] .fm-infotip-badge::after {
+  content: ""; position: absolute; top: -12px; right: -12px; bottom: -12px; left: -12px;
+}
+
+/* semua slider: pegangan yang gampang diraih */
+html[data-tablet="true"] input[type="range"] { min-height: 28px; }
+
+/* ==========================================================================
+   MODE MOTION
+   ========================================================================== */
+
+/* layar penuh + safe area (jam/status bar di atas, home indicator di bawah) */
+html[data-tablet="true"] .mfs-root {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  width: auto;
+  height: auto;
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+}
+html[data-tablet="true"] .mfs-root { --mfs-top-h: 56px; min-height: 100lvh; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) { min-height: 100lvh; }
+@media (min-width: 861px) {
+  html[data-tablet="true"] .mfs-timeline { padding-bottom: var(--sab); box-sizing: border-box; }
+}
+html[data-tablet="true"] .mfs-top {
+  box-sizing: border-box;
+  height: auto;
+  min-height: calc(56px + var(--sat));
+  padding-top: var(--sat);
+  padding-bottom: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  gap: 6px;
+}
+html[data-tablet="true"] .mfs-top-left,
+html[data-tablet="true"] .mfs-top-right { flex-wrap: nowrap; gap: 6px; min-width: 0; align-items: center; }
+html[data-tablet="true"] .mfs-top-left { flex: 0 1 auto; }
+html[data-tablet="true"] .mfs-top-right { flex: 0 0 auto; }
+html[data-tablet="true"] .mfs-top-sep { height: 24px; margin: 0 2px; }
+html[data-tablet="true"] .mfs-top-info,
+html[data-tablet="true"] .mfs-top .mfs-frame-dims { display: none; }
+html[data-tablet="true"] .mfs-top .mfs-logo-image { height: 26px; }
+
+/* tombol ikon & tombol berlabel di bar atas */
+html[data-tablet="true"] .mfs-top .mfs-icon-btn {
+  width: var(--tt) !important;
+  min-width: var(--tt) !important;
+  height: var(--tt) !important;
+  flex: 0 0 auto;
+}
+html[data-tablet="true"] .mfs-top .mfs-icon-btn svg { width: var(--tt-ico) !important; height: var(--tt-ico) !important; }
+html[data-tablet="true"] .mfs-top .mfs-preview-btn,
+html[data-tablet="true"] .mfs-top .mfs-export-btn,
+html[data-tablet="true"] .mfs-top .mfs-btn {
+  height: var(--tt) !important;
+  min-height: var(--tt) !important;
+  padding: 0 14px !important;
+  font-size: 13px !important;
+  gap: 7px;
+  white-space: nowrap;
+}
+html[data-tablet="true"] .mfs-top .mfs-preview-btn svg,
+html[data-tablet="true"] .mfs-top .mfs-export-btn svg,
+html[data-tablet="true"] .mfs-top .mfs-btn svg { width: 17px !important; height: 17px !important; flex: 0 0 auto; }
+html[data-tablet="true"] .mfs-top .fm-mode-tab { height: 36px !important; padding: 0 12px !important; gap: 6px !important; font-size: 13px !important; }
+html[data-tablet="true"] .mfs-top .fm-mode-tab svg { width: 17px !important; height: 17px !important; }
+html[data-tablet="true"] .mfs-top .fm-mode-tab.fm-mode-prayer { padding: 0 11px !important; }
+
+/* perataan ke kanvas: 6 ikon dilipat jadi 1 tombol + popover (iPad) */
+.mfs-align-menu { display: none; position: relative; flex: 0 0 auto; }
+html[data-tablet="true"] .mfs-align-group,
+html[data-tablet="true"] .mfs-align-group + .mfs-top-sep { display: none; }
+html[data-tablet="true"] .mfs-align-menu { display: block; }
+.mfs-align-menu-backdrop { position: fixed; inset: 0; z-index: 900; background: transparent; }
+.mfs-align-menu-pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 901;
+  display: grid; grid-template-columns: repeat(3, 46px); gap: 4px; padding: 6px;
+  background: var(--bg-panel); border: 1px solid var(--border-light); border-radius: 12px;
+  box-shadow: 0 14px 38px var(--popover-shadow, rgba(0, 0, 0, 0.5));
+}
+.mfs-align-menu-item {
+  width: 46px; height: 46px; display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; border-radius: 9px; color: var(--text); cursor: pointer; padding: 0;
+}
+.mfs-align-menu-item:hover:not(:disabled), .mfs-align-menu-item:active:not(:disabled) { background: var(--bg-hover); }
+.mfs-align-menu-item:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* panel, layer, timeline & inspector Motion */
+html[data-tablet="true"] .mfs-root .mfs-icon-btn { min-width: var(--tt-sm); min-height: var(--tt-sm); }
+html[data-tablet="true"] .mfs-root .mfs-icon-btn svg { width: 18px; height: 18px; }
+html[data-tablet="true"] .mfs-root .mfs-btn-sm { min-height: var(--tt-sm); padding: 0 12px; font-size: 12.5px; gap: 7px; }
+html[data-tablet="true"] .mfs-root .mfs-btn svg { width: 16px; height: 16px; }
+html[data-tablet="true"] .mfs-root .mfs-tab { padding: 12px 0; font-size: 12px; }
+html[data-tablet="true"] .mfs-root .mfs-tabs-sub .mfs-tab { padding: 9px 8px; font-size: 12px; }
+html[data-tablet="true"] .mfs-root .mfs-segmented button { padding: 10px 0; font-size: 12.5px; min-height: 40px; }
+html[data-tablet="true"] .mfs-root .mfs-align-ibtn { width: var(--tt-sm); height: var(--tt-sm); padding: 0; }
+html[data-tablet="true"] .mfs-root .mfs-align-ibtn svg { width: 19px; height: 19px; }
+html[data-tablet="true"] .mfs-root .mfs-check-row { padding: 8px 0; font-size: 13px; gap: 10px; }
+html[data-tablet="true"] .mfs-root .mfs-check-row input { width: 22px; height: 22px; }
+html[data-tablet="true"] .mfs-root .mfs-slider { min-height: 32px; }
+html[data-tablet="true"] .mfs-root .mfs-select, html[data-tablet="true"] .mfs-root select { min-height: 38px; font-size: 13px; }
+html[data-tablet="true"] .mfs-root input[type="text"], html[data-tablet="true"] .mfs-root input[type="number"] { min-height: 36px; font-size: 13px; }
+
+/* Tidak ada "hover" di layar sentuh: tombol hapus klip/track yang biasanya muncul saat hover
+   dibuat selalu terlihat, dan diperbesar supaya bisa diketuk. */
+html[data-tablet="true"] .mfs-root .mfs-clip-del {
+  opacity: 0.9; width: 30px; height: 30px; top: 3px; right: 3px; border-radius: 8px;
+}
+html[data-tablet="true"] .mfs-root .mfs-clip-del svg { width: 15px !important; height: 15px !important; }
+html[data-tablet="true"] .mfs-root .mfs-track-label .mfs-track-del {
+  opacity: 0.85; width: 30px; height: 30px; border-radius: 8px;
+}
+html[data-tablet="true"] .mfs-root .mfs-track-label .mfs-track-del svg { width: 16px !important; height: 16px !important; }
+
+/* mobile nav (iPad potret ≤860px): hormati home indicator */
+@media (max-width: 860px) {
+  html[data-tablet="true"] .mfs-mobile-nav { height: calc(60px + var(--sab)); padding-bottom: var(--sab); }
+  html[data-tablet="true"] .mfs-mobile-nav button { font-size: 12px; min-height: 52px; }
+  html[data-tablet="true"] .mfs-mobile-nav button svg { width: 22px; height: 22px; }
+  html[data-tablet="true"] .mfs-layers, html[data-tablet="true"] .mfs-left, html[data-tablet="true"] .mfs-right { bottom: calc(60px + var(--sab)); }
+  html[data-tablet="true"] .mfs-mobile-backdrop { inset: 0 0 calc(60px + var(--sab)) 0; }
+  html[data-tablet="true"] .mfs-timeline { margin-bottom: calc(60px + var(--sab)); }
+}
+html[data-tablet="true"] .mfs-root .mfs-play-btn { width: 44px; height: 44px; }
+html[data-tablet="true"] .mfs-root .mfs-play-btn svg { width: 20px; height: 20px; }
+
+/* pad Salin/Tempel/Hapus + Shift/Alt/Cmd: lebar tetap (supaya tidak menabrak toolbar), tinggi diperbesar */
+html[data-tablet="true"] .fm-tpad { grid-template-columns: repeat(3, 38px); gap: 3px; }
+html[data-tablet="true"] .fm-tpad-btn { width: 38px; height: 40px; font-size: 19px; }
+html[data-tablet="true"] .fm-tpad-btn svg { width: 20px; height: 20px; }
+
+/* Test Lab tetap tampil di bar atas (ikon labu); tombol sekunder lain ada di menu "More" */
+@media (max-width: 1365px) {
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar [data-testid="test-lab-btn"] { display: inline-flex !important; }
+}
+
+/* isi menu "More" / "Settings": baris & ikon yang enak diketuk */
+html[data-tablet="true"] .fm-morebar-menu { min-width: 250px; }
+html[data-tablet="true"] .fm-morebar-menu button { min-height: 44px; font-size: 14px; gap: 10px; }
+html[data-tablet="true"] .fm-morebar-menu button svg { width: 19px !important; height: 19px !important; }
+html[data-tablet="true"] .fm-morebar-grid { gap: 4px; }
+html[data-tablet="true"] .fm-morebar-grid button { width: 44px !important; height: 44px !important; min-height: 44px; padding: 0; justify-content: center; }
+html[data-tablet="true"] .fm-morebar-grid button svg { width: 21px !important; height: 21px !important; }
+html[data-tablet="true"] .fm-morebar-section-label { font-size: 11.5px; }
+
+/* field & header panel kiri/kanan */
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyphnav input[type="text"],
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyphnav input[type="search"],
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyphnav input:not([type]) { min-height: 40px; font-size: 13.5px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-section-head { min-height: 38px; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-glyph-select-toggle { min-height: 34px; }
+
+/* ==========================================================================
+   OVERLAY (Test Lab, Family, Feature Builder, Timelapse, Trace Image, dll.)
+   ========================================================================== */
+html[data-tablet="true"] .fm-lab-backdrop {
+  padding: calc(12px + var(--sat)) max(12px, var(--sar)) calc(12px + var(--sab)) max(12px, var(--sal));
+  box-sizing: border-box;
+}
+html[data-tablet="true"] .fm-lab-modal { height: 100%; max-height: 100%; }
+html[data-tablet="true"] .fm-export-backdrop,
+html[data-tablet="true"] .fm-auth-backdrop {
+  padding-top: max(16px, calc(var(--sat) + 8px));
+  padding-bottom: max(16px, calc(var(--sab) + 8px));
+}
+
+/* tab, tombol tes, segmented control */
+html[data-tablet="true"] .fm-lab-head .fm-theme-toggle { width: var(--tt); height: var(--tt); }
+html[data-tablet="true"] .fm-lab-head-mode-toggle button,
+html[data-tablet="true"] .fm-kern-mode-toggle button { min-height: 40px; font-size: 13px; }
+html[data-tablet="true"] .fm-lab-test-btn { min-height: 38px; padding: 0 14px; font-size: 13px; }
+html[data-tablet="true"] .fm-lab-tabs button { min-height: 44px; font-size: 13px; }
+html[data-tablet="true"] .fm-tab-select button { min-height: 38px; min-width: 40px; padding: 0 14px; font-size: 13px; }
+html[data-tablet="true"] .fm-tab-select-sm button { min-height: 38px; }
+html[data-tablet="true"] .fm-tab-select button svg { width: 19px !important; height: 19px !important; }
+
+/* undo / redo kerning + angka */
+html[data-tablet="true"] .fm-kern-history-btns { gap: 6px; }
+html[data-tablet="true"] .fm-kern-history-btns button { width: 42px; height: 42px; border-radius: 10px; }
+html[data-tablet="true"] .fm-kern-history-btns button svg { width: 20px !important; height: 20px !important; }
+html[data-tablet="true"] .fm-kern-value-row input,
+html[data-tablet="true"] .fm-lab-bottom-bar input[type="number"],
+html[data-tablet="true"] .fm-numeric-control > input { min-height: 40px; font-size: 14px; }
+html[data-tablet="true"] .fm-numeric-stepper { width: 30px; }
+html[data-tablet="true"] .fm-numeric-stepper button { height: 50%; min-height: 20px; width: 100%; }
+html[data-tablet="true"] .fm-numeric-stepper button svg { width: 14px !important; height: 14px !important; }
+html[data-tablet="true"] .fm-lab-bottom-bar input[type="range"] { min-height: 36px; }
+html[data-tablet="true"] .fm-lab-modal button svg { min-width: 16px; min-height: 16px; }
+
+/* iPad potret (≤900px): bar atas harus muat satu baris tanpa ada tombol yang terpotong.
+   Salin/Tempel/Hapus sudah ada di pad kanvas, dan PWA sudah layar penuh, jadi dua grup itu disembunyikan. */
+@media (max-width: 900px) {
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-topbar-edit,
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-topbar-edit-divider,
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-fullscreen-toggle { display: none !important; }
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-logo-image { width: 30px; max-width: 30px; object-fit: cover; object-position: left center; }
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-mode-tab:not(.active):not(.fm-mode-prayer) { font-size: 0 !important; gap: 0 !important; padding: 0 11px !important; }
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-fontname { min-width: 60px; max-width: 90px; }
+  html[data-tablet="true"] .mfs-top .mfs-logo-image { width: 30px; object-fit: cover; object-position: left center; }
+  html[data-tablet="true"] .mfs-top .fm-mode-tab:not(.active):not(.fm-mode-prayer) { font-size: 0 !important; gap: 0 !important; padding: 0 11px !important; }
+}
+@media (max-width: 900px) {
+  html[data-tablet="true"] .mfs-align-menu { display: none; }
+  html[data-tablet="true"] .mfs-top-left .mfs-preview-btn { font-size: 0 !important; gap: 0 !important; width: var(--tt); padding: 0 !important; justify-content: center; }
+  html[data-tablet="true"] .mfs-top-left { flex: 0 0 auto; }
+}
+
+/* ==========================================================================
+   Panel kanan (Inspector), dialog Family / Export / Feature / Timelapse
+   ========================================================================== */
+html[data-tablet="true"] .fm-field input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+html[data-tablet="true"] .fm-field select { min-height: 38px; font-size: 13px; }
+html[data-tablet="true"] .fm-node-type-btn,
+html[data-tablet="true"] .fm-cap-btn { min-height: 38px; }
+html[data-tablet="true"] .fm-cap-btn svg, html[data-tablet="true"] .fm-node-type-btn svg { width: 18px !important; height: 18px !important; }
+html[data-tablet="true"] .fm-width-profile-btn { min-height: 38px; font-size: 12.5px; }
+html[data-tablet="true"] .fm-width-profile-advanced-toggle { min-height: 34px; padding: 8px 4px; font-size: 12px; }
+html[data-tablet="true"] .fm-sketch-panel-toggle { width: 40px; height: 40px; }
+html[data-tablet="true"] .fm-sketch-panel-toggle svg { width: 20px !important; height: 20px !important; }
+html[data-tablet="true"] input[type="checkbox"],
+html[data-tablet="true"] input[type="radio"] { width: 22px; height: 22px; }
+html[data-tablet="true"] .fm-checkbox-row { min-height: 38px; gap: 10px; font-size: 13px; }
+
+html[data-tablet="true"] .fm-family-auto-categories button { min-height: 34px; padding: 0 8px; font-size: 12px; display: inline-flex; align-items: center; }
+html[data-tablet="true"] .fm-family-generate-tabs button { min-height: 38px; font-size: 13px; }
+
+html[data-tablet="true"] .fm-feature-select,
+html[data-tablet="true"] .fm-feature-input,
+html[data-tablet="true"] .fm-feature-btn { min-height: 40px; font-size: 13px; }
+
+html[data-tablet="true"] .fm-timelapse-speed-btn { min-height: 38px; padding: 0 14px; font-size: 13px; }
+
+html[data-tablet="true"] .fm-export-dialog .fm-iconbtn { width: 42px; height: 42px; }
+html[data-tablet="true"] .fm-export-dialog .fm-iconbtn svg { width: 20px !important; height: 20px !important; }
+html[data-tablet="true"] .fm-format-segment button { min-height: 40px; min-width: 60px; font-size: 13px; }
+html[data-tablet="true"] .fm-nametable-preview-toggle { min-height: 36px; font-size: 12.5px; }
+
+/* ==========================================================================
+   MODE DESIGN (iframe DesignSeru): env(safe-area-*) bernilai 0 di dalam iframe,
+   jadi cangkang di luarnya yang memberi ruang untuk jam/status bar & home indicator.
+   ========================================================================== */
+html[data-tablet="true"] .fm-root.fm-design-shell {
+  box-sizing: border-box;
+  padding: var(--sat) var(--sar) var(--sab) var(--sal);
+}

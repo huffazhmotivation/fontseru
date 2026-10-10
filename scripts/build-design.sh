@@ -25,4 +25,7 @@ perl -0pi -e 's|<link rel="stylesheet" href="(https://fonts\.googleapis\.com/[^"
 cp "$HERE/scripts/design-patches/ios-export.js" "$HERE/public/design/ios-export.js"
 perl -0pi -e 's|(<script type="module" crossorigin src="\./assets/index-)|<script src="./ios-export.js"></script>\n    $1|' "$HERE/public/design/index.html"
 node "$HERE/scripts/design-patches/patch-export.mjs" "$HERE/public/design/assets"
+# Target sentuh iPad: stylesheet tambahan (aktif hanya di html.tablet), disisipkan setelah CSS bawaan
+cp "$HERE/scripts/design-patches/tablet-touch.css" "$HERE/public/design/tablet-touch.css"
+perl -0pi -e 's|(<link rel="stylesheet" crossorigin href="\./assets/index-[^"]+\.css">)|$1\n    <link rel="stylesheet" href="./tablet-touch.css">|' "$HERE/public/design/index.html"
 echo "OK: public/design diperbarui"

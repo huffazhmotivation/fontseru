@@ -6,6 +6,8 @@ import { UpdatePrompt } from "./components/UpdatePrompt";
 import { PrayerReminder } from "./prayer/PrayerReminder";
 import "./styles/app.css";
 import "./mode/modeTabs.css";
+// Harus terakhir: perbaikan layar penuh, safe-area & target sentuh iPad.
+import "./styles/tablet-touch.css";
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {
