@@ -7285,9 +7285,9 @@ input, textarea, select, [contenteditable="true"] {
   .mfs-root .mfs-clip-item .del,
   .mfs-root .mfs-list-item .del {
     opacity: 0.75 !important;
-    width: 16px; height: 16px; padding: 6px; box-sizing: content-box; flex-shrink: 0;
+    width: 15px; height: 15px; padding: 4px; margin: -4px 0; box-sizing: content-box; flex-shrink: 0;
   }
-  .mfs-root .mfs-layer-grip { width: 16px; height: 16px; padding: 6px 4px; box-sizing: content-box; }
+  .mfs-root .mfs-layer-grip { width: 15px; height: 15px; padding: 4px 3px; margin: -4px 0; box-sizing: content-box; }
   .mfs-root .mfs-track-label .mfs-track-del { opacity: 0.85 !important; width: 28px; height: 28px; }
   .mfs-root .mfs-track-label .mfs-track-del svg { width: 16px; height: 16px; }
   .mfs-root .mfs-transition-slot .mfs-transition-del { opacity: 1; padding: 6px; margin: -6px -4px -6px 0; }
@@ -7297,3 +7297,60 @@ input, textarea, select, [contenteditable="true"] {
   .mfs-root .mfs-popover-item svg { width: 16px; height: 16px; }
   .mfs-root .mfs-fullscreen-close { width: 40px; height: 40px; }
 }
+
+/* ==========================================================================
+   iPad: panel tidak boleh "goyang" saat disentuh jari.
+   Panel kiri/kanan Mode Font hanya boleh digulir vertikal; pantulan elastis (rubber-band) iOS di tepi panel
+   dan di root app dimatikan, dan bar atas/bawah hanya boleh digeser horizontal.
+   ========================================================================== */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+html[data-tablet="true"] body,
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) { overscroll-behavior: none; }
+html[data-tablet="true"] .fm-glyphnav,
+html[data-tablet="true"] .fm-rightpanel,
+html[data-tablet="true"] .fm-glyphnav *,
+html[data-tablet="true"] .fm-rightpanel * { overscroll-behavior: contain; }
+html[data-tablet="true"] .fm-glyphnav,
+html[data-tablet="true"] .fm-rightpanel { touch-action: pan-y; overflow-x: hidden; -webkit-overflow-scrolling: auto; }
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar,
+html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar { touch-action: pan-x; overscroll-behavior: contain; }
+
+/* ==========================================================================
+   iPad: Mode Motion — bar atas rapi satu baris, panel tidak kebesaran.
+   Landscape (≥ 861px): kolom panel pas (kiri 196 / layer 150 / kanan 232; timeline awal lebih pendek di MotionStudio),
+   bar atas tidak pernah terpotong (bisa digeser bila sempit). Teks panel sedikit dirapatkan (12.5px), tetap nyaman.
+   Portrait (≤ 860px): panel bottom-sheet tidak setinggi 62% layar.
+   ========================================================================== */
+html[data-tablet="true"] body .mfs-root { font-size: 12.5px; overscroll-behavior: none; }
+html[data-tablet="true"] body .mfs-root .mfs-top {
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x; flex-wrap: nowrap;
+}
+html[data-tablet="true"] body .mfs-root .mfs-top::-webkit-scrollbar { display: none; }
+html[data-tablet="true"] body .mfs-root .mfs-top-left,
+html[data-tablet="true"] body .mfs-root .mfs-top-right { flex-wrap: nowrap; flex-shrink: 0; }
+html[data-tablet="true"] body .mfs-root .mfs-top-left > *,
+html[data-tablet="true"] body .mfs-root .mfs-top-right > * { flex-shrink: 0; }
+html[data-tablet="true"] body .mfs-root .mfs-left,
+html[data-tablet="true"] body .mfs-root .mfs-right,
+html[data-tablet="true"] body .mfs-root .mfs-layers { overscroll-behavior: contain; touch-action: pan-y; }
+@media (min-width: 861px) {
+  html[data-tablet="true"] body .mfs-root {
+    grid-template-columns: 196px minmax(0, 1fr) 150px 232px;
+  }
+  html[data-tablet="true"] body .mfs-root .mfs-right { padding: 12px; }
+}
+@media (max-width: 860px) {
+  html[data-tablet="true"] body .mfs-root .mfs-top { height: 48px; min-height: 0; row-gap: 0; }
+  html[data-tablet="true"] body .mfs-root .mfs-brand-text { display: none; }
+  html[data-tablet="true"] body .mfs-root .mfs-layers,
+  html[data-tablet="true"] body .mfs-root .mfs-left,
+  html[data-tablet="true"] body .mfs-root .mfs-right {
+    height: 46dvh; max-height: 46dvh;
+    left: 50%; right: auto; width: min(560px, 100%); margin-left: max(-280px, -50%);
+  }
+}
+/* Transport (play/zoom) Motion: di kanvas yang sempit (iPad) teks waktu absolut menimpa tombol reset → jadikan bagian
+   dari baris flex sehingga tidak pernah tumpang tindih. */
+html[data-tablet="true"] body .mfs-root .mfs-transport { justify-content: flex-start; padding: 0 12px; gap: 10px; }
+html[data-tablet="true"] body .mfs-root .mfs-transport > :first-child { margin-left: auto; }
+html[data-tablet="true"] body .mfs-root .mfs-transport-time { position: static; margin-left: auto; white-space: nowrap; flex-shrink: 0; }

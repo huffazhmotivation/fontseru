@@ -7219,7 +7219,10 @@ export default function App() {
   const [history, dispatchProject] = useReducer(historyReducer, initialHistoryState);
   const [playback, dispatchPlayback] = useReducer(playbackReducer, initialPlayback);
   const [exportState, setExportState] = useState({ exporting: false, progress: 0 });
-  const [timelineHeight, setTimelineHeight] = useState(226);
+  // iPad landscape: timeline awal sedikit lebih pendek supaya kanvas tetap lega (masih bisa ditarik).
+  const [timelineHeight, setTimelineHeight] = useState(() =>
+    typeof document !== "undefined" && document.documentElement.dataset.tablet === "true" && window.innerHeight < 900 ? 196 : 226
+  );
   const project = history.present;
   const canUndo = history.past.length > 0;
   const canRedo = history.future.length > 0;

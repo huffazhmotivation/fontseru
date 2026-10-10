@@ -23,8 +23,6 @@ interface SketchGestureOptions {
 
 const TAP_MAX_MS = 400;
 const TAP_MAX_MOVE = 14; // px, in screen space
-/** Telapak tangan menyentuh layar dengan area kontak besar; jari normal jauh di bawah ini (px CSS). */
-const PALM_CONTACT_PX = 40;
 /** Tolak sentuhan selama pena ada di dekat layar (hover Apple Pencil) — telapak biasanya mendarat SEBELUM ujung pena. */
 const PEN_NEAR_MS = 500;
 /** Tolak sentuhan sebentar setelah pena diangkat (telapak sering masih menempel). */
@@ -48,6 +46,7 @@ export function useSketchGestures(options: SketchGestureOptions) {
   onPanByRef.current = options.onPanBy;
   const penNearUntil = useRef(0);
   const rafId = useRef<number | null>(null);
+  const rafAt = useRef(0);
   useEffect(() => () => { if (rafId.current !== null) cancelAnimationFrame(rafId.current); }, []);
   const pointers = useRef<Map<number, TouchPt>>(new Map());
   const tapStart = useRef<Map<number, TouchPt>>(new Map());
@@ -88,9 +87,10 @@ export function useSketchGestures(options: SketchGestureOptions) {
       if (e.pointerType !== "touch") return false; // mouse: untouched
 
       // Palm rejection: while a pen is down, hovering close, or just lifted, ignore touch input entirely
-      // rather than letting a resting palm draw or gesture. A big contact patch is a palm, not a fingertip.
+      // rather than letting a resting palm draw or gesture.
+      // (Ukuran kontak `width/height` sengaja TIDAK dipakai: iPadOS melaporkan jari biasa pun dengan kontak besar,
+      // sehingga semua sentuhan jari — pinch, geser & ketuk 2 jari — ikut tertolak.)
       if (penActiveRef.current || Date.now() < penNearUntil.current) return true;
-      if ((e.width ?? 0) >= PALM_CONTACT_PX || (e.height ?? 0) >= PALM_CONTACT_PX) return true;
 
       pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       tapStart.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -102,6 +102,8 @@ export function useSketchGestures(options: SketchGestureOptions) {
         onCancelActive();
         tapCandidate.current = { count: n, startTime: Date.now(), moved: false };
         if (n === 2) {
+          // Frame tertunda dari gestur sebelumnya (mis. app sempat ke latar belakang) jangan sampai mengunci gestur baru.
+          if (rafId.current !== null) { cancelAnimationFrame(rafId.current); rafId.current = null; }
           const pts = [...pointers.current.values()];
           pinchStartDist.current = dist(pts[0], pts[1]);
           pinchStartZoom.current = getZoom();
@@ -137,14 +139,28 @@ export function useSketchGestures(options: SketchGestureOptions) {
   const trackMove = useCallback(
     (e: ReactPointerEvent | PointerEvent) => {
       if (!enabled) return;
-      if (e.pointerType === "pen") { penNearUntil.current = Date.now() + PEN_NEAR_MS; return; }
+      if (e.pointerType === "pen") {
+        penNearUntil.current = Date.now() + PEN_NEAR_MS;
+        // Pena melayang tanpa tombol = sudah terangkat (pointerup bisa hilang) → mulai hitung mundur pelepasan.
+        if (e.buttons === 0 && penActiveRef.current && !penReleaseTimer.current) {
+          penReleaseTimer.current = setTimeout(() => { penActiveRef.current = false; penReleaseTimer.current = null; }, PEN_RELEASE_MS);
+        }
+        return;
+      }
       if (e.pointerType !== "touch" || !pointers.current.has(e.pointerId)) return;
       const pt = { x: e.clientX, y: e.clientY };
       pointers.current.set(e.pointerId, pt);
       const start = tapStart.current.get(e.pointerId);
       if (start && tapCandidate.current && dist(start, pt) > TAP_MAX_MOVE) tapCandidate.current.moved = true;
-      if (pointers.current.size === 2 && pinchStartDist.current && rafId.current === null) {
-        rafId.current = requestAnimationFrame(applyGestureFrame);
+      if (pointers.current.size === 2 && pinchStartDist.current) {
+        if (rafId.current === null) {
+          rafId.current = requestAnimationFrame(applyGestureFrame);
+          rafAt.current = performance.now();
+        } else if (performance.now() - rafAt.current > 80) {
+          // requestAnimationFrame tertahan (tab disembunyikan / sistem) → jangan biarkan pinch membeku.
+          cancelAnimationFrame(rafId.current);
+          applyGestureFrame();
+        }
       }
     },
     [enabled, applyGestureFrame]
@@ -169,12 +185,14 @@ export function useSketchGestures(options: SketchGestureOptions) {
         // Keep rejecting touch briefly after the pen lifts, since a resting
         // palm often lingers a moment past pen-up.
         if (penReleaseTimer.current) clearTimeout(penReleaseTimer.current);
-        penReleaseTimer.current = setTimeout(() => { penActiveRef.current = false; }, PEN_RELEASE_MS);
+        penReleaseTimer.current = setTimeout(() => { penActiveRef.current = false; penReleaseTimer.current = null; }, PEN_RELEASE_MS);
         return false;
       }
       if (e.pointerType !== "touch") return false;
 
       const wasTracked = pointers.current.has(e.pointerId);
+      // Terapkan frame pinch/geser yang masih tertunda SEBELUM jari dilepas, supaya posisi akhir tidak hilang.
+      if (wasTracked && rafId.current !== null) { cancelAnimationFrame(rafId.current); applyGestureFrame(); }
       pointers.current.delete(e.pointerId);
       tapStart.current.delete(e.pointerId);
 
@@ -206,6 +224,30 @@ export function useSketchGestures(options: SketchGestureOptions) {
     },
     [enabled, onUndo, onRedo, getZoom]
   );
+
+  // Jaring pengaman: jari / pena yang diangkat DI LUAR kanvas (di atas toolbar, panel, dsb.) atau dibatalkan sistem
+  // (pointercancel) kadang tidak pernah sampai ke handler kanvas. Jari "hantu" yang tertinggal di peta membuat setiap
+  // sentuhan berikutnya dihitung sebagai gestur 2+ jari (jari tak dikenal sama sekali), dan pena yang tak pernah
+  // "terangkat" membuat palm rejection menolak semua sentuhan selamanya. Listener fase-bubble di window
+  // membereskannya (dipanggil SESUDAH handler kanvas, jadi tidak mengubah alur normal).
+  const handlePointerUpRef = useRef(handlePointerUp);
+  handlePointerUpRef.current = handlePointerUp;
+  useEffect(() => {
+    if (!enabled) return;
+    const onEnd = (e: PointerEvent) => {
+      if (e.pointerType === "pen") {
+        if (penActiveRef.current) handlePointerUpRef.current(e);
+        return;
+      }
+      if (e.pointerType === "touch" && pointers.current.has(e.pointerId)) handlePointerUpRef.current(e);
+    };
+    window.addEventListener("pointerup", onEnd);
+    window.addEventListener("pointercancel", onEnd);
+    return () => {
+      window.removeEventListener("pointerup", onEnd);
+      window.removeEventListener("pointercancel", onEnd);
+    };
+  }, [enabled]);
 
   return { handlePointerDown, handlePointerMove, handlePointerUp, trackMove, resetGesture };
 }
