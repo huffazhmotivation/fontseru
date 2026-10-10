@@ -7174,19 +7174,14 @@ html[data-tablet="true"] .mfs-root {
   height: var(--fs-app-h, auto);
 }
 
-/* C) Mode Motion: bilah atas turun di bawah jam / status bar. */
-@media (min-width: 861px) {
-  html[data-tablet="true"] .mfs-root { grid-template-rows: calc(48px + var(--fs-safe-top)) minmax(0, 1fr) 226px; }
-  html[data-tablet="true"] .mfs-root .mfs-top {
-    height: calc(48px + var(--fs-safe-top));
-    padding-top: var(--fs-safe-top);
-    padding-left: max(8px, env(safe-area-inset-left, 0px));
-    padding-right: max(8px, env(safe-area-inset-right, 0px));
-  }
-}
-@media (max-width: 860px) {
-  html[data-tablet="true"] .mfs-root { height: var(--fs-app-h, 100%); }
-  html[data-tablet="true"] .mfs-root .mfs-top { padding-top: calc(6px + var(--fs-safe-top)); }
+/* C) Mode Motion: seluruh isi app turun di bawah jam / status bar lewat padding-top pada root.
+      Baris grid & isi top bar TIDAK diubah (sebelumnya tinggi baris dan tinggi bar tidak sinkron → bar terpotong).
+      Strip di atasnya diwarnai sama dengan top bar. */
+html[data-tablet="true"] .mfs-root {
+  padding-top: var(--fs-safe-top);
+  background:
+    linear-gradient(var(--bg-panel), var(--bg-panel)) top left / 100% var(--fs-safe-top) no-repeat,
+    var(--bg);
 }
 
 /* D) Mode Motion: ikon non-topbar yang terlalu kecil (transport, timeline, tambah, klip). */
@@ -7206,10 +7201,7 @@ html[data-tablet="true"] .mfs-clip-del { width: 28px; height: 28px; }
 html[data-tablet="true"] .mfs-clip-del svg { width: 16px; height: 16px; }
 
 /* E) Mode Font: ikon kecil di luar top bar. */
-/* bilah bawah (zoom, grid, penggaris, mata, info, layar penuh, reset) */
-html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar button { min-width: 34px; min-height: 34px; }
-html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar .fm-icon-btn { min-width: 34px; min-height: 34px; }
-html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar button svg { width: 18px; height: 18px; }
+/* bilah bawah Mode Font (Grid, Ruler, Guides, Snap, dst.) sengaja dikembalikan ke ukuran semula agar semua tombol tetap tampil */
 /* Test Lab: Undo / Redo kerning */
 html[data-tablet="true"] .fm-kern-history-btns { gap: 6px; }
 html[data-tablet="true"] .fm-kern-history-btns button { width: 38px; height: 38px; min-width: 38px; min-height: 38px; }
