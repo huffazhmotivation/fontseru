@@ -7274,3 +7274,26 @@ input, textarea, select, [contenteditable="true"] {
   .fm-iconbtn svg { min-width: 16px; min-height: 16px; }
   .fm-feature-remove svg { width: 15px; height: 15px; }
 }
+
+/* ==========================================================================
+   Mode Motion di layar sentuh (iPad): ikon hapus (tong sampah) / drag-handle kecil.
+   - Ikon `.del` di daftar klip & aset baru tampil saat hover → di iPad tidak ada hover, jadi tak pernah terlihat.
+     Sekarang selalu terlihat (agak redup) dan area sentuhnya ±28px.
+   - Ikon 10–14px dibesarkan jadi 16px, seragam dengan ikon lain.
+   ========================================================================== */
+@media (hover: none) and (pointer: coarse) {
+  .mfs-root .mfs-clip-item .del,
+  .mfs-root .mfs-list-item .del {
+    opacity: 0.75 !important;
+    width: 16px; height: 16px; padding: 6px; box-sizing: content-box; flex-shrink: 0;
+  }
+  .mfs-root .mfs-layer-grip { width: 16px; height: 16px; padding: 6px 4px; box-sizing: content-box; }
+  .mfs-root .mfs-track-label .mfs-track-del { opacity: 0.85 !important; width: 28px; height: 28px; }
+  .mfs-root .mfs-track-label .mfs-track-del svg { width: 16px; height: 16px; }
+  .mfs-root .mfs-transition-slot .mfs-transition-del { opacity: 1; padding: 6px; margin: -6px -4px -6px 0; }
+  .mfs-root .mfs-transition-slot .mfs-transition-del svg { width: 16px; height: 16px; }
+  .mfs-root .mfs-add-btn svg { width: 16px; height: 16px; }
+  .mfs-root .mfs-subhead svg, .mfs-root .mfs-chip svg { width: 14px; height: 14px; }
+  .mfs-root .mfs-popover-item svg { width: 16px; height: 16px; }
+  .mfs-root .mfs-fullscreen-close { width: 40px; height: 40px; }
+}
