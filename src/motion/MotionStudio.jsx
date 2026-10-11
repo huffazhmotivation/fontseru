@@ -4908,7 +4908,23 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     resizeRef.current = resize;
     resize();
     window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
+    // Ukur ulang setiap kali AREA kanvas berubah ukuran, bukan hanya jendela. Di iPad, saat Motion pertama dibuka
+    // area kanvas masih 0px (layout belum selesai / panel baru menempel) sehingga frame terlihat kecil sekali
+    // dan tidak pernah membesar karena jendelanya sendiri tidak berubah ukuran.
+    let ro = null;
+    let roRaf = 0;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => {
+        cancelAnimationFrame(roRaf);
+        roRaf = requestAnimationFrame(() => resizeRef.current());
+      });
+      ro.observe(wrap);
+    }
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(roRaf);
+      ro?.disconnect();
+    };
   }, [drawFrame, playback.previewOpen]);
 
   // Re-fit/re-render whenever the frame preset/custom size changes.

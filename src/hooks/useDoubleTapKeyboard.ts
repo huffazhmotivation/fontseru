@@ -1,14 +1,20 @@
-import { useCallback, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { flushSync } from "react-dom";
 
 /**
  * Keyboard layar HANYA muncul lewat tombol ikon keyboard di kotak teks, atau ketuk 2x (iPad / tablet / HP).
  *
- * Di Test Lab, hampir semua interaksi (menggeser kerning, ganti preset, mengetuk glyph) memanggil `focus()` pada
- * textarea tersembunyi supaya caret kustom tetap bekerja — di iPad itu memunculkan keyboard setiap saat.
- * `inputMode="none"` membuat elemen tetap fokus (caret, seleksi, keyboard fisik jalan) tanpa keyboard layar.
- * Ketukan ganda mengaktifkan `inputMode="text"` lalu memfokus ulang elemen di dalam gestur yang sama (syarat iOS),
- * dan keyboard dimatikan lagi begitu elemen kehilangan fokus. Mouse / desktop tidak terpengaruh.
+ * Kotak teks Test Lab adalah textarea transparan yang menutupi seluruh area preview, dan banyak interaksi
+ * (geser kerning, ganti preset, ketuk glyph) memanggil `focus()` padanya supaya caret kustom bekerja. Di iPad tiap
+ * fokus itu memunculkan keyboard — atau, bila diketuk dengan Apple Pencil, bar Scribble dari bawah.
+ *
+ * Di layar sentuh, selama keyboard belum diminta:
+ *  - textarea tidak menerima sentuhan (`pointer-events: none`), jadi ketukan jatuh ke area preview yang hanya
+ *    memindah caret kustom;
+ *  - `focus()` terprogram pada elemen ini diabaikan (seleksi/caret tetap diperbarui tanpa fokus).
+ * `openKeyboard()` (tombol ikon / ketuk 2x) mengaktifkannya lalu memfokus elemen langsung di dalam ketukan pengguna
+ * (syarat iOS agar keyboard muncul). Begitu elemen kehilangan fokus, kembali ke mode tanpa keyboard.
+ * Mouse / desktop tidak terpengaruh sama sekali.
  */
 export function useDoubleTapKeyboard<T extends HTMLElement>(ref: RefObject<T>) {
   const coarse = useMemo(
@@ -16,18 +22,29 @@ export function useDoubleTapKeyboard<T extends HTMLElement>(ref: RefObject<T>) {
     []
   );
   const [armed, setArmed] = useState(false);
+  const armedRef = useRef(false);
   const last = useRef<{ t: number; x: number; y: number } | null>(null);
-  const refocusing = useRef(false);
 
-  /** Munculkan keyboard layar sekarang (dipanggil dari ketukan pengguna, mis. tombol ikon keyboard). */
+  // Abaikan focus() terprogram selama keyboard belum diminta (hanya di layar sentuh).
+  useEffect(() => {
+    const el = ref.current as (T & { focus: HTMLElement["focus"] }) | null;
+    if (!el || !coarse) return;
+    const nativeFocus = HTMLElement.prototype.focus;
+    el.focus = function guardedFocus(this: HTMLElement, opts?: FocusOptions) {
+      if (armedRef.current) nativeFocus.call(this, opts);
+    };
+    return () => {
+      delete (el as unknown as { focus?: unknown }).focus;
+    };
+  });
+
   const openKeyboard = useCallback(() => {
+    armedRef.current = true;
     flushSync(() => setArmed(true));
     const el = ref.current;
     if (!el) return;
-    refocusing.current = true;
-    el.blur();
-    el.focus({ preventScroll: true });
-    refocusing.current = false;
+    if (document.activeElement === el) el.blur();
+    HTMLElement.prototype.focus.call(el, { preventScroll: true });
   }, [ref]);
 
   const onTap = useCallback(
@@ -46,8 +63,12 @@ export function useDoubleTapKeyboard<T extends HTMLElement>(ref: RefObject<T>) {
   );
 
   const onBlur = useCallback(() => {
-    if (!refocusing.current) setArmed(false);
+    if (!armedRef.current) return;
+    armedRef.current = false;
+    setArmed(false);
   }, []);
 
-  return { inputMode: coarse && !armed ? ("none" as const) : undefined, onBlur, onTap, openKeyboard, showButton: coarse && !armed };
+  const locked = coarse && !armed;
+  const style: CSSProperties | undefined = locked ? { pointerEvents: "none" } : undefined;
+  return { style, onBlur, onTap, openKeyboard, showButton: locked };
 }

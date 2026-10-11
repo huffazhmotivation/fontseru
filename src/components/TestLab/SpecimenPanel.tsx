@@ -508,10 +508,9 @@ function EditableStage({
         onKeyUp={syncFromSelection}
         onFocus={syncFromSelection}
         onBlur={kb.onBlur}
-        inputMode={kb.inputMode}
         onSelect={syncFromSelection}
         spellCheck={false}
-        style={{ fontSize, lineHeight }}
+        style={{ fontSize, lineHeight, ...kb.style }}
         data-testid="lab-stage-input"
         aria-label="Editable FontSeru specimen"
         // No autoFocus: this textarea remounts on every tab/tool switch
@@ -1133,7 +1132,7 @@ function FamilyStylePreview({
             onKeyUp={syncCaretFromSelection}
             onFocus={syncCaretFromSelection}
             onBlur={kb.onBlur}
-            inputMode={kb.inputMode}
+            style={kb.style}
             onSelect={syncCaretFromSelection}
             spellCheck={false}
             data-testid="family-regular-input"
@@ -1275,8 +1274,6 @@ function FeatureSentencePreview({
   const wordSpacing = effectiveWordSpacing(metrics.wordSpacing, wordSpacingOverridesByStyle, fontStyle);
 
   const [previewText, setPreviewText] = useState("");
-  const previewInputRef = useRef<HTMLInputElement>(null);
-  const previewKb = useDoubleTapKeyboard(previewInputRef);
   const [toggles, setToggles] = useState<FeatureToggles>({ ligatures: true, alternates: false, swashes: false });
 
   // On first open, if the user hasn't typed anything yet, pre-fill the auto
@@ -1499,18 +1496,13 @@ function FeatureSentencePreview({
     <div className="fm-lab-feature-preview" data-testid="lab-feature-sentence-preview">
       <div className="fm-lab-feature-preview-head">
         <input
-          ref={previewInputRef}
           type="text"
-          inputMode={previewKb.inputMode}
-          onBlur={previewKb.onBlur}
-          onPointerUp={previewKb.onTap}
           className="fm-lab-feature-preview-input"
           placeholder={FEATURE_PREVIEW_PLACEHOLDER}
           value={previewText}
           onChange={(e) => setPreviewText(e.target.value)}
           data-testid="lab-feature-preview-input"
         />
-        <KeyboardButton kb={previewKb} className="fm-lab-kb-btn-inline" />
         {autoSampleText && (
           <button
             type="button"

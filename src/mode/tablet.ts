@@ -76,14 +76,14 @@ function installStandaloneViewportFix(): void {
     // bagian bawah app (bottom bar) tertutup keyboard dan halaman digeser iOS sehingga app tampak "meloncat".
     // Saat sebuah kolom teks sedang fokus, tinggi root disamakan dengan area yang benar-benar terlihat.
     const vv = window.visualViewport;
-    let top = 0;
-    if (vv && isEditableFocused() && ih - vv.height > 120) {
-      h = Math.max(240, Math.round(vv.height));
-      top = Math.max(0, Math.round(vv.offsetTop));
-    }
+    const editing = isEditableFocused();
+    if (vv && editing && ih - vv.height > 120) h = Math.max(240, Math.round(vv.height));
     root.style.setProperty("--fs-app-h", `${h}px`);
-    root.style.setProperty("--fs-app-w", `${w}px`);
-    root.style.setProperty("--fs-app-top", `${top}px`);
+    // Saat kolom teks fokus (keyboard / bar Scribble iPadOS muncul), iOS kadang sesaat melaporkan lebar layar yang
+    // salah (lebar potret) → app menyempit & sisi kanan putih. Lebar hanya diperbarui saat tidak sedang mengetik.
+    if (!editing || !root.style.getPropertyValue("--fs-app-w")) root.style.setProperty("--fs-app-w", `${w}px`);
+    root.style.setProperty("--fs-app-top", "0px");
+    if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
   };
   keyboardSync = sync;
   sync();
@@ -163,23 +163,17 @@ function installTouchInputFixes(): void {
   if (!touch) return;
   touchFixesInstalled = true;
 
-  const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
-  const baseContent = meta?.content ?? "";
   const resetZoom = () => {
     try {
       if (isEditableFocused()) return;
-      const vv = window.visualViewport;
       if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
-      if (meta && vv && vv.scale > 1.01) {
-        // Mengubah isi meta viewport sesaat memaksa iOS menghitung ulang skala (kembali ke 1).
-        meta.content = `${baseContent}, minimum-scale=1`;
-        window.setTimeout(() => { meta.content = baseContent; keyboardSync?.(); }, 60);
-      }
+      // CATATAN: dulu meta viewport diubah sesaat untuk memaksa zoom kembali ke 1. Di PWA iPad itu membuat iOS
+      // menghitung ulang `device-width` sebagai lebar POTRET walau layar landscape → app menyempit dengan strip
+      // putih di kanan. Zoom kini dicegah sejak awal (maximum-scale=1 + input 16px saat fokus), jadi trik itu dibuang.
     } catch { /* abaikan */ }
   };
   const resetSoon = () => {
-    window.setTimeout(() => { resetZoom(); keyboardSync?.(); }, 60);
-    window.setTimeout(() => { resetZoom(); keyboardSync?.(); }, 350);
+    for (const ms of [60, 350, 900]) window.setTimeout(() => { resetZoom(); keyboardSync?.(); }, ms);
   };
 
   // Pinch-zoom bawaan Safari (kanvas memakai pointer event sendiri, jadi tidak terganggu).

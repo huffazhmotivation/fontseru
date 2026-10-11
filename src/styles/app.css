@@ -7322,10 +7322,9 @@ html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-bottombar { touch-ac
    Portrait (≤ 860px): panel bottom-sheet tidak setinggi 62% layar.
    ========================================================================== */
 html[data-tablet="true"] body .mfs-root { font-size: 12.5px; overscroll-behavior: none; }
-html[data-tablet="true"] body .mfs-root .mfs-top {
-  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x; flex-wrap: nowrap;
-}
-html[data-tablet="true"] body .mfs-root .mfs-top::-webkit-scrollbar { display: none; }
+/* overflow harus visible: menu Proyek, popover ukuran frame & warna menggantung dari bar ini — overflow:auto
+   memotongnya sehingga menu "tersembunyi di belakang" dan tidak bisa dibuka. Isi bar dibuat muat (lihat di bawah). */
+html[data-tablet="true"] body .mfs-root .mfs-top { overflow: visible; flex-wrap: nowrap; gap: 6px; }
 html[data-tablet="true"] body .mfs-root .mfs-top-left,
 html[data-tablet="true"] body .mfs-root .mfs-top-right { flex-wrap: nowrap; flex-shrink: 0; }
 html[data-tablet="true"] body .mfs-root .mfs-top-left > *,
@@ -7335,7 +7334,7 @@ html[data-tablet="true"] body .mfs-root .mfs-right,
 html[data-tablet="true"] body .mfs-root .mfs-layers { overscroll-behavior: contain; touch-action: pan-y; }
 @media (min-width: 861px) {
   html[data-tablet="true"] body .mfs-root {
-    grid-template-columns: 196px minmax(0, 1fr) 150px 232px;
+    grid-template-columns: 188px minmax(0, 1fr) 168px 228px;
   }
   html[data-tablet="true"] body .mfs-root .mfs-right { padding: 12px; }
 }
@@ -7377,3 +7376,23 @@ html[data-tablet="true"] body .mfs-root .mfs-top .fm-mode-tab { height: 32px; pa
 html[data-tablet="true"] body .mfs-root .mfs-top .fm-mode-tab svg { width: 16px; height: 16px; }
 html[data-tablet="true"] body .mfs-root .mfs-preview-btn,
 html[data-tablet="true"] body .mfs-root .mfs-export-btn { height: 34px; padding: 0 12px; font-size: 12px; }
+
+/* Motion iPad landscape (861–1279px, mis. iPad 10.2" = 1080px, 9.7" = 1024px): seluruh isi bar atas harus MUAT tanpa
+   digeser — tombol Preview jadi ikon saja, logo & grup rata sedikit dirapatkan, Ekspor tetap berlabel. */
+@media (min-width: 861px) and (max-width: 1279px) {
+  html[data-tablet="true"] body .mfs-root .mfs-top { padding: 0 8px; gap: 4px; }
+  html[data-tablet="true"] body .mfs-root .mfs-top-left { gap: 6px; }
+  html[data-tablet="true"] body .mfs-root .mfs-top-right { gap: 2px; }
+  html[data-tablet="true"] body .mfs-root .mfs-logo-image { max-width: 104px; height: auto; }
+  html[data-tablet="true"] body .mfs-root .mfs-top .mfs-align-group .mfs-icon-btn { width: 28px; min-width: 28px; }
+  html[data-tablet="true"] body .mfs-root .mfs-top .mfs-align-group .mfs-icon-btn svg { width: 17px; height: 17px; }
+  html[data-tablet="true"] body .mfs-root .mfs-top .mfs-icon-btn { width: 32px; height: 32px; min-width: 32px; }
+  html[data-tablet="true"] body .mfs-root .mfs-top-right .mfs-preview-btn { font-size: 0; gap: 0; width: 38px; padding: 0; justify-content: center; }
+  html[data-tablet="true"] body .mfs-root .mfs-top-right .mfs-preview-btn svg { width: 18px; height: 18px; }
+  html[data-tablet="true"] body .mfs-root .mfs-export-btn { padding: 0 10px; }
+  html[data-tablet="true"] body .mfs-root .mfs-top .fm-mode-tab { padding: 0 8px; }
+}
+
+/* Tombol tutup (×) Test Lab sempat mengecil jadi titik di iPad (aturan ukuran ikon tablet ikut mengenainya). */
+[data-testid="lab-close-btn"] { width: 36px; height: 36px; min-width: 36px; display: inline-flex; align-items: center; justify-content: center; }
+[data-testid="lab-close-btn"] svg { width: 18px !important; height: 18px !important; }
