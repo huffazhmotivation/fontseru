@@ -1529,7 +1529,11 @@ function spliceSfntTable(buffer: ArrayBuffer, tag: string, data: Uint8Array): Ar
     if (existingTag === "head" && existingData.length >= 12) existingData.fill(0, 8, 12);
     tables.push({ tag: existingTag, data: existingData });
   }
-  tables.push({ tag, data });
+  // A replacement `head` must also have checkSumAdjustment zeroed before
+  // its table checksum and the whole-font sum are computed.
+  const newData = tag === "head" && data.length >= 12 ? data.slice() : data;
+  if (newData !== data) newData.fill(0, 8, 12);
+  tables.push({ tag, data: newData });
   tables.sort((a, b) => a.tag.localeCompare(b.tag));
 
   const count = tables.length;
@@ -2867,7 +2871,12 @@ function commandContours(commands: any[]): Contour[] {
       // duplicate because FontSeru expresses closure with `closed`.
       if (activeContour.nodes.length > 1) {
         const a = activeContour.nodes[0].point, b = activeContour.nodes[activeContour.nodes.length - 1].point;
-        if (a.x === b.x && a.y === b.y) activeContour.nodes.pop();
+        if (a.x === b.x && a.y === b.y) {
+          // Keep the closing curve's incoming handle: the closing segment
+          // reads it from the first node once the duplicate is gone.
+          const dup = activeContour.nodes.pop();
+          if (dup?.handleIn) activeContour.nodes[0].handleIn = dup.handleIn;
+        }
       }
       activeContour.closed = true;
       last = activeContour.nodes[activeContour.nodes.length - 1] ?? null;

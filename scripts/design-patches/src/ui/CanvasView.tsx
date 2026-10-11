@@ -4,7 +4,7 @@ import { render, invalidateViewCache, fxResultsReady } from '../engine/render';
 import { onDoubleClick, onPointerDown, onPointerMove, onPointerUp, onWheel, setCanvasRect } from '../tools/interaction';
 import { registerCanvas } from '../tools/extra';
 import { onFontLoaded, relayoutAll } from '../engine/text';
-import { TextEditor, ShapeBuilderChip } from './CanvasExtras';
+import { TextEditor, ShapeBuilderChip, CornerNumEdit } from './CanvasExtras';
 import { FrameRename } from './FrameRename';
 import { FloatingToolbar } from './Toolbar';
 import { AIDock } from './AIDock';
@@ -14,14 +14,16 @@ import { GradStopPicker } from './GradStopPicker';
 import { JobFx } from './JobFx';
 import { ReplaceChip } from './ReplaceChip';
 import { ActionChip } from './ActionChip';
-import { isSvgText, classifyClipText } from '../lib/seruBridge';
 import { InsideChip, InsideDrawChip, OutsideChip } from './InsideChip';
 import { DRAG_TYPE, placePayload } from '../lib/drop';
 import { handleFiles } from '../lib/library';
 import { onImageLoaded } from '../engine/images';
 import { onFxReady } from '../engine/imagefx';
-import { placeSvgText } from '../lib/place';
 import { zoomToFit, paste as pasteInternal } from '../engine/commands';
+import { textExt } from '../lib/textclip';
+import { pasteImageFiles, svgFromClipboard, systemPaste } from '../lib/syspaste';
+import { extFromSvg, offerAffinityDpi, runPaste } from '../lib/clipsync';
+import { CLIP_MARK_KEY, copyPending, internalNewer, markerInSvg } from '../lib/syscopy';
 import type { Pt } from '../engine/geometry';
 import { createTouchRouter } from '../tools/touch';
 import { withVirtualMods, useTablet, tabletState } from '../store/tablet';
@@ -122,6 +124,7 @@ export function CanvasView() {
     document.fonts?.ready.then(relayout).catch(() => {});
     const offFont = onFontLoaded(relayout);
     const offImg = onImageLoaded(() => {
+      fxResultsReady(); // area yang tadi memakai cadangan/placeholder ditambal dengan gambar penuh
       invalidateViewCache();
       schedule();
     });
@@ -135,28 +138,53 @@ export function CanvasView() {
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       // studio modal (mis. Mockup Studio) menangani tempelan sendiri: tanpa ini gambar tempelan masuk ke kanvas di belakang studio
       if (document.documentElement.classList.contains('modal-open')) return;
+      if (systemPaste(e, pasteInternal)) return; // aplikasi desktop: SVG/PDF/PNG dari Affinity, CorelDRAW, dll.
+      // vektor lebih dulu: bila clipboard memuat SVG (teks / image/svg+xml / HTML) DAN gambar PNG, ambil SVG-nya
+      const svg = svgFromClipboard(e.clipboardData);
       const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf');
+      if (svg) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        // salinan DesignSeru sendiri (penanda cocok) → objek asli dari clipboard internal
+        let mark: string | null = null;
+        try {
+          mark = localStorage.getItem(CLIP_MARK_KEY);
+        } catch {
+          /* abaikan */
+        }
+        if (mark && markerInSvg(svg) === mark) return void pasteInternal();
+        const png = files.find((f) => f.type === 'image/png');
+        // dari aplikasi lain: jadi objek, ditempel lewat perintah yang sama dengan klik kanan › Tempel
+        void (async () => {
+          const head = png ? new Uint8Array(await png.slice(0, 65536).arrayBuffer()) : null;
+          try {
+            const { ext, affinity } = extFromSvg(svg, { png: head });
+            runPaste('paste', undefined, ext);
+            offerAffinityDpi(svg, affinity);
+          } catch {
+            // bukan SVG valid → berkas gambar
+            if (files.length) void pasteImageFiles(files);
+          }
+        })();
+        return;
+      }
       if (files.length) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        handleFiles(files);
+        // SVG sebagai berkas → impor vektor lewat jalur berkas; PNG berdpi (Affinity, dll.) → ukuran fisik nyata
+        void pasteImageFiles(files);
         return;
       }
-      const text = e.clipboardData?.getData('text/plain')?.trim() ?? '';
-      if (isSvgText(text)) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        // SVG salinan Design sendiri → clipboard internal (presisi penuh); selain itu (Font / aplikasi lain) → impor SVG
-        if (classifyClipText(text) === 'own') {
-          pasteInternal();
+      // hanya teks di clipboard (huruf yang disalin dari editor teks, atau dari aplikasi lain) → kotak teks baru
+      const txt = e.clipboardData?.getData('text/plain') ?? '';
+      // salinan objek internal masih ditulis / gagal ditulis ke clipboard sistem → teks di clipboard itu barang lama
+      if (txt.trim() && !copyPending() && !internalNewer()) {
+        const ext = textExt(txt);
+        if (ext) {
+          e.preventDefault();
+          runPaste('paste', undefined, ext);
           return;
         }
-        try {
-          placeSvgText(text, 'SVG tempelan');
-        } catch {
-          /* bukan SVG valid */
-        }
-        return;
       }
       e.preventDefault();
       pasteInternal();
@@ -353,6 +381,7 @@ export function CanvasView() {
       <canvas ref={canvas} style={{ cursor, touchAction: 'none' }} className="block" aria-label="Kanvas desain" />
       <TextEditor />
       <FrameRename />
+      <CornerNumEdit />
       <NodeKindMenu />
       <GradStopPicker />
       <JobFx />

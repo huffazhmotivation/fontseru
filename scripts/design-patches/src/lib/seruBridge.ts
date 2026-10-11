@@ -11,7 +11,7 @@
  *  clipboard internalnya (presisi penuh: gambar, efek, grup) dan bukan mengimpor ulang SVG-nya.
  */
 import type { Doc, SceneNode } from '../model/types';
-import { exportSVG, exportBox } from './export';
+import { exportBox } from './export';
 import { cmdsToSvgD, nodeMatrix, shapeCmds, round2 } from '../engine/geometry';
 import { strokeToShape } from '../engine/stroke';
 import { instanceMatrix } from '../engine/draw';
@@ -29,8 +29,6 @@ interface Clip {
 let internal: Clip = { id: '', ts: 0 };
 /** salinan terakhir dari tab Font (diterima lewat postMessage) */
 let external: (Clip & { svg: string }) | null = null;
-/** teks SVG yang menunggu ditulis ke clipboard oleh event "copy" native (sinkron, tanpa izin) */
-let pending: { svg: string; at: number } | null = null;
 
 /* ---------------- penanda ---------------- */
 
@@ -39,7 +37,6 @@ export const isSvgText = (t: string) => {
   return s.startsWith('<svg') || (s.startsWith('<?xml') && s.includes('<svg'));
 };
 const markerId = (svg: string): string => /data-seru-clip="([^"]+)"/.exec(svg.slice(0, 600))?.[1] ?? '';
-const tag = (svg: string, id: string) => svg.replace(/<svg\b/, `<svg data-seru-clip="${id}" data-seru-origin="design"`);
 
 /* ---------------- ekspor outline (untuk FontSeru) ---------------- */
 
@@ -96,28 +93,15 @@ async function outlineSvg(doc: Doc, ids: string[], id: string): Promise<string |
 
 /* ---------------- salin ---------------- */
 
-/** dipanggil setiap kali Design menyalin (Ctrl/Cmd+C, tombol Salin tablet, menu klik kanan) */
+/** dipanggil setiap kali Design menyalin (Ctrl/Cmd+C, tombol Salin tablet, menu klik kanan).
+ *  Penulisan ke clipboard SISTEM kini dikerjakan mesin Design sendiri (lib/syscopy.ts); jembatan ini hanya
+ *  mengirim SVG "outline" ke tab Font lewat postMessage. */
 export function announceCopy(doc: Doc, ids: string[]) {
   if (!ids.length) return;
   const id = uid();
   internal = { id, ts: Date.now() };
   const ts = internal.ts;
-  // 1) SVG berwarna ke clipboard sistem
-  let rich = '';
-  try {
-    rich = tag(exportSVG(doc, ids), id);
-  } catch {
-    rich = '';
-  }
-  if (rich && rich.length < 12_000_000) {
-    pending = { svg: rich, at: ts };
-    try {
-      void navigator.clipboard?.writeText(rich).catch(() => undefined);
-    } catch {
-      /* tanpa izin: event "copy" native di bawah yang menulis */
-    }
-  }
-  // 2) SVG outline ke FontSeru
+  // SVG outline ke FontSeru
   if (EMBEDDED) {
     void outlineSvg(doc, ids, id)
       .then((svg) => {
@@ -155,17 +139,6 @@ export function initSeruBridge() {
     const d = e.data as { type?: string; from?: string; id?: string; ts?: number; svg?: string } | null;
     if (d?.type === MSG && d.from === 'font' && typeof d.svg === 'string' && d.id) external = { id: d.id, ts: d.ts ?? Date.now(), svg: d.svg };
   });
-  // event "copy"/"cut" native: tulis SVG sinkron ke clipboard (jalur andal di iPad / dalam iframe)
-  const onNativeCopy = (e: ClipboardEvent) => {
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (pending && Date.now() - pending.at < 1500 && e.clipboardData) {
-      e.clipboardData.setData('text/plain', pending.svg);
-      e.preventDefault();
-    }
-  };
-  window.addEventListener('copy', onNativeCopy, true);
-  window.addEventListener('cut', onNativeCopy, true);
   // minta salinan terakhir dari tab Font (bila sudah ada sebelum Design selesai dimuat)
   if (EMBEDDED) window.parent.postMessage({ type: 'seru:hello', from: 'design' }, location.origin);
 }

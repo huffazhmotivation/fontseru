@@ -1,3 +1,4 @@
+import { systemCopy } from '../lib/syscopy';
 import { getS, useStore } from '../store/store';
 import type { Doc, Fill, SceneNode, TextNode, ImageAsset } from '../model/types';
 import { runBoolean, canBoolean, separateCompound, BOOL_LABEL, type BoolOp } from './boolean';
@@ -22,7 +23,7 @@ import {
   descendants,
 } from '../model/doc';
 import { isEditable, dropSelected } from './editpts';
-import { unionBox, worldAABB, normalizePath, hasGeometry, mapNodePoints, nodeMatrix, applyM, cmdsToAnchors, shapeCmds } from './geometry';
+import { unionBox, worldAABB, normalizePath, hasGeometry, mapNodePoints, nodeMatrix, applyM, cmdsToAnchors, cmdsToContours, shapeCmds, sharpShapeCmds, fitRadii } from './geometry';
 import { translateTree, rotateNodes, scaleLeaf, groupsIn } from './transform';
 import { worldPivot, isCustomPivot, makePivot, withPivot } from './pivot';
 import { expandStrokeNode } from './stroke';
@@ -92,12 +93,12 @@ const imageRefs = (n: SceneNode): string[] => {
   return out;
 };
 /** lengkapi doc.images tujuan dengan gambar dari clipboard yang belum ada */
-function withClipImages(d: Doc, nodes: SceneNode[][]) {
+function withClipImages(d: Doc, nodes: SceneNode[][], images: Record<string, ImageAsset> = clipImages) {
   let add: Record<string, ImageAsset> | null = null;
   for (const list of nodes)
     for (const n of list)
       for (const id of imageRefs(n))
-        if (!d.images?.[id] && clipImages[id]) (add ??= {})[id] = clipImages[id];
+        if (!d.images?.[id] && images[id]) (add ??= {})[id] = images[id];
   if (add) d.images = { ...(d.images ?? {}), ...add };
 }
 
@@ -120,6 +121,8 @@ export function copy() {
   } catch {
     /* abaikan */
   }
+  // aplikasi desktop: salin juga ke clipboard sistem (SVG + PDF + PNG) untuk tempel di Affinity/CorelDRAW/dll.
+  systemCopy(doc, copiedIds);
 }
 
 /** id yang baru disalin (untuk tawaran "tempel untuk mengganti") */
@@ -151,6 +154,14 @@ function clipOrigin(): { id: string; x: number; y: number } | null {
   }
 }
 
+/** isi clipboard dari aplikasi lain (SVG/gambar yang sudah diubah jadi objek) — dipakai perintah tempel yang sama dengan
+ *  salinan DesignSeru, tanpa menimpa clipboard internal. `center`: titik dunia tempat isi diletakkan (Tempel biasa). */
+export interface ExtClip {
+  nodes: SceneNode[][];
+  images: Record<string, ImageAsset>;
+  center?: Pt;
+}
+
 /** frame tujuan tempel: frame yang dipilih, atau frame yang memuat objek terpilih */
 function pasteTarget(doc: Doc, selection: string[]): string | null {
   if (selection.length !== 1) return null;
@@ -163,27 +174,33 @@ function pasteTarget(doc: Doc, selection: string[]): string | null {
  * Tempel. Bila tujuannya sebuah frame (frame/objek di dalamnya sedang dipilih): posisi x,y RELATIF terhadap frame dipertahankan,
  * jadi menyalin dari frame A lalu menempel di frame B jatuh di titik yang sama di dalam frame B.
  */
-export function paste(offset = 16) {
+export function paste(offset = 16, ext?: ExtClip) {
   // salinan terbaru berasal dari tab Font → tempel sebagai SVG vektor
-  const ext = externalSvgIfNewer();
-  if (ext) {
+  const fromFont = ext ? null : externalSvgIfNewer();
+  if (fromFont) {
     try {
-      placeSvgText(ext, 'SVG dari Font');
+      placeSvgText(fromFont, 'SVG dari Font');
     } catch {
       /* SVG tidak valid */
     }
     return;
   }
-  const src = clipSource();
+  const src = ext?.nodes ?? clipSource();
   if (!src.length) return;
   const s = getS();
   const target = pasteTarget(s.doc, s.selection);
-  const origin = clipOrigin();
+  const origin = ext ? null : clipOrigin();
   const tf = target ? s.doc.nodes[target] : null;
   // dx,dy: selisih posisi frame tujuan terhadap frame asal; frame yang sama → geser sedikit seperti biasa
   let dx = offset,
     dy = offset;
-  if (tf) {
+  if (ext) {
+    // dari aplikasi lain: di tengah frame tujuan / tengah layar
+    const box = unionBox(src.map((nodes) => worldAABB(nodes[0])));
+    const c = tf ? { x: tf.x + tf.w / 2, y: tf.y + tf.h / 2 } : ext.center;
+    if (box && c) (dx = c.x - (box.x + box.w / 2)), (dy = c.y - (box.y + box.h / 2));
+    else dx = dy = 0;
+  } else if (tf) {
     if (origin && origin.id !== tf.id) (dx = tf.x - origin.x), (dy = tf.y - origin.y);
     else if (origin) (dx = offset), (dy = offset);
     else (dx = 0), (dy = 0);
@@ -191,7 +208,7 @@ export function paste(offset = 16) {
   offerReplace(false);
   let ids: string[] = [];
   s.mutate('Tempel', (d) => {
-    withClipImages(d, src);
+    withClipImages(d, src, ext?.images);
     const trees = src.map((nodes) => {
       const rec: Record<string, SceneNode> = {};
       nodes.forEach((n) => (rec[n.id] = n));
@@ -207,17 +224,17 @@ export function paste(offset = 16) {
  * Tempel di sini: isi clipboard ditaruh tepat di titik dunia `at` (pusat kotak pembatasnya berada di titik itu),
  * masuk ke frame yang berada di titik tersebut.
  */
-export function pasteAt(at: Pt) {
-  const ext = externalSvgIfNewer();
-  if (ext) {
+export function pasteAt(at: Pt, ext?: ExtClip) {
+  const fromFont = ext ? null : externalSvgIfNewer();
+  if (fromFont) {
     try {
-      placeSvgText(ext, 'SVG dari Font', { at });
+      placeSvgText(fromFont, 'SVG dari Font', { at });
     } catch {
       /* SVG tidak valid */
     }
     return;
   }
-  const src = clipSource();
+  const src = ext?.nodes ?? clipSource();
   if (!src.length) return;
   const s = getS();
   const box = unionBox(src.map((nodes) => worldAABB(nodes[0])));
@@ -228,7 +245,7 @@ export function pasteAt(at: Pt) {
   offerReplace(false);
   let ids: string[] = [];
   s.mutate('Tempel di sini', (d) => {
-    withClipImages(d, src);
+    withClipImages(d, src, ext?.images);
     const trees = src.map((nodes) => {
       const rec: Record<string, SceneNode> = {};
       nodes.forEach((n) => (rec[n.id] = n));
@@ -247,8 +264,8 @@ export const hasClipboard = () => clipSource().length > 0 || hasExternalClip();
  * Tempel untuk mengganti: objek di clipboard menggantikan objek terpilih — di induk & urutan tumpukan yang sama,
  * berpusat di posisi objek yang diganti.
  */
-export function pasteReplace() {
-  const src = clipSource();
+export function pasteReplace(ext?: ExtClip) {
+  const src = ext?.nodes ?? clipSource();
   const s = getS();
   const targets = sel().filter((id) => !s.doc.nodes[id]?.locked);
   if (!src.length) return toast('Salin objek dulu, lalu pilih objek yang ingin diganti', 'err');
@@ -258,7 +275,7 @@ export function pasteReplace() {
   const sc = { x: srcBox.x + srcBox.w / 2, y: srcBox.y + srcBox.h / 2 };
   const out: string[] = [];
   s.mutate('Tempel untuk mengganti', (d) => {
-    withClipImages(d, src);
+    withClipImages(d, src, ext?.images);
     for (const tid of targets) {
       const t = d.nodes[tid];
       if (!t) continue;
@@ -560,8 +577,9 @@ export async function expandStroke() {
         } else {
           // hanya garis: bentuk hasil menggantikan objek (efek bayangan/fx ikut pindah)
           Object.assign(out, { shadows: n.shadows, fx: n.fx, fade: n.fade });
-          removeNodes(d, [id]);
+          // sisipkan dulu, baru hapus: kalau objek ini satu-satunya isi grup, grup tidak ikut terhapus karena kosong
           insertNode(d, out, parent, idx);
+          removeNodes(d, [id]);
           made.push(out.id);
         }
       }
@@ -816,6 +834,26 @@ export function flip(axis: 'h' | 'v') {
       } else if (n.type === 'polygon' || n.type === 'star') {
         // simetris terhadap sumbu tegak lokal: balik vertikal = putar 180°
         out = { ...out, rotation: axis === 'h' ? rot : normRot(rot + 180) } as SceneNode;
+        // radius sudut per titik (tidak seragam): pindahkan ke titik pasangan cerminnya (titik terdekat setelah dicerminkan)
+        const radii = n.cornerRadii;
+        if (radii && radii.some((r) => Math.abs(r - radii[0]) > 1e-6)) {
+          const ptsOf = (q: SceneNode) => {
+            const m = nodeMatrix(q);
+            return cmdsToAnchors(sharpShapeCmds(q)).points.map((p) => applyM(m, p));
+          };
+          const src = ptsOf(n).map((p) => (axis === 'h' ? { x: 2 * cx - p.x, y: p.y } : { x: p.x, y: 2 * cy - p.y }));
+          const fit = fitRadii(radii, src.length);
+          const next = ptsOf(out).map((p) => {
+            let bi = 0,
+              bd = Infinity;
+            src.forEach((q, i) => {
+              const dd = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+              if (dd < bd) (bd = dd), (bi = i);
+            });
+            return fit[bi];
+          });
+          out = { ...out, cornerRadii: next } as SceneNode;
+        }
       } else if (n.type === 'image') {
         out = { ...out, rotation: rot, ...(axis === 'h' ? { flipX: !n.flipX } : { flipY: !n.flipY }) } as SceneNode;
       } else if (n.type !== 'frame') {
@@ -837,11 +875,8 @@ export function flip(axis: 'h' | 'v') {
 /** putar seleksi sekian derajat terhadap pusat seleksi */
 export function rotateBy(deg: number) {
   const s = getS();
-  const ids = sel().filter((id) => !s.doc.nodes[id].locked && s.doc.nodes[id].type !== 'frame');
-  if (!ids.length) {
-    if (sel().some((id) => s.doc.nodes[id].type === 'frame')) toast('Frame tidak diputar. Tukar lebar & tinggi di panel Properti untuk mengganti orientasi.');
-    return;
-  }
+  const ids = sel().filter((id) => !s.doc.nodes[id].locked);
+  if (!ids.length) return;
   const orig = s.doc;
   const b = unionBox(ids.map((id) => worldAABB(orig.nodes[id])))!;
   const c = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
@@ -1041,7 +1076,7 @@ export function pathOf(shape: SceneNode): { points: import('../model/types').Anc
       ? { points: shape.points, closed: shape.type === 'path' && shape.closed }
       : shape.type === 'compound'
         ? shape.contours[0]
-        : cmdsToAnchors(shapeCmds(shape));
+        : cmdsToContours(shapeCmds(shape))[0] ?? cmdsToAnchors(shapeCmds(shape));
   const tw = (x: number, y: number) => applyM(m, { x, y });
   const points = src.points.map((p) => {
     const a = tw(p.x, p.y),

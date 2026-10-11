@@ -197,6 +197,8 @@ export function useSketchGestures(options: SketchGestureOptions) {
       tapStart.current.delete(e.pointerId);
 
       if (!wasTracked) return true; // was a rejected/ignored touch
+      // pointercancel (gestur sistem iPadOS, dsb.) bukan ketukan: jangan sampai memicu Undo/Redo.
+      if (e.type === "pointercancel") tapCandidate.current = null;
 
       if (pointers.current.size === 0) {
         const tap = tapCandidate.current;

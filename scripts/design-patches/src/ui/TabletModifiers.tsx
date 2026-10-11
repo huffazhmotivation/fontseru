@@ -4,9 +4,7 @@ import { useStore } from '../store/store';
 import { useTablet, setHeld, toggleLatched, virtualMods, type ModKey } from '../store/tablet';
 import { keys, altPressedDuringMove, refreshHover } from '../tools/interaction';
 import * as C from '../engine/commands';
-import { handleFiles } from '../lib/library';
-import { placeSvgText } from '../lib/place';
-import { isSvgText, classifyClipText } from '../lib/seruBridge';
+import { pasteSmart } from '../lib/clipsync';
 
 const DEFS: { id: ModKey; sym: string; label: string; aria: string }[] = [
   { id: 'shift', sym: '⇧', label: 'Shift', aria: 'Shift' },
@@ -16,36 +14,8 @@ const DEFS: { id: ModKey; sym: string; label: string; aria: string }[] = [
 
 const TAP_MS = 280;
 
-/** tempel: gambar/SVG dari clipboard sistem bila ada izin, selain itu clipboard internal (sama dengan Ctrl+V di PC) */
-async function pasteFromAnywhere() {
-  try {
-    const items = await navigator.clipboard?.read?.();
-    if (items?.length) {
-      const files: File[] = [];
-      for (const it of items) {
-        for (const type of it.types) {
-          if (type.startsWith('image/') || type === 'application/pdf') {
-            const b = await it.getType(type);
-            files.push(new File([b], `tempelan.${type.split('/')[1] || 'png'}`, { type }));
-          }
-        }
-      }
-      if (files.length) return void handleFiles(files);
-      for (const it of items) {
-        if (it.types.includes('text/plain')) {
-          const t = (await (await it.getType('text/plain')).text()).trim();
-          if (isSvgText(t)) {
-            if (classifyClipText(t) === 'own') return void C.paste();
-            return void placeSvgText(t, 'SVG tempelan');
-          }
-        }
-      }
-    }
-  } catch {
-    /* tanpa izin / tidak didukung → pakai clipboard internal */
-  }
-  C.paste();
-}
+/** tempel: sama persis dengan Ctrl/Cmd+V di PC (clipboard sistem dulu, lalu clipboard internal) */
+const pasteFromAnywhere = () => pasteSmart('paste');
 
 /**
  * Pad 6 tombol mengambang di pojok kiri bawah kanvas (muncul otomatis di tablet), 3 × 2:

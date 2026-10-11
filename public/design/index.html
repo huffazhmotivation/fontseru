@@ -15,15 +15,49 @@
     <meta name="apple-mobile-web-app-title" content="DesignSeru" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=Poppins:wght@400;500;600;700&amp;family=Montserrat:wght@400;500;600;700&amp;family=DM+Sans:wght@400;500;700&amp;family=Playfair+Display:wght@400;600;700&amp;family=Lora:wght@400;600;700&amp;family=DM+Serif+Display&amp;family=Bebas+Neue&amp;family=Space+Mono:wght@400;700&amp;family=Caveat:wght@400;600;700&amp;family=Pacifico&amp;family=Cairo:wght@400;500;600;700&amp;family=Tajawal:wght@400;500;700&amp;family=Amiri:wght@400;700&amp;family=Noto+Naskh+Arabic:wght@400;500;600;700&amp;family=Stack+Sans+Notch&amp;display=swap" media="print" onload="this.media='all'" />
-    <script src="./ios-export.js"></script>
-    <script type="module" crossorigin src="./assets/index-DuBu79Ml-ios1-r2.js"></script>
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=Poppins:wght@400;500;600;700&amp;family=Montserrat:wght@400;500;600;700&amp;family=DM+Sans:wght@400;500;700&amp;family=Playfair+Display:wght@400;600;700&amp;family=Lora:wght@400;600;700&amp;family=DM+Serif+Display&amp;family=Bebas+Neue&amp;family=Space+Mono:wght@400;700&amp;family=Caveat:wght@400;600;700&amp;family=Pacifico&amp;family=Cairo:wght@400;500;600;700&amp;family=Tajawal:wght@400;500;700&amp;family=Amiri:wght@400;700&amp;family=Noto+Naskh+Arabic:wght@400;500;600;700&amp;family=Stack+Sans+Notch&amp;display=swap" media="print" onload="this.media='all'" /></noscript>
+    <style>
+      html, body { background: #16161a; }
+      @media (prefers-color-scheme: light) { html, body { background: #f4f4f5; } }
+      #ds-recover { display: none; position: fixed; inset: 0; z-index: 99999; align-items: center; justify-content: center; padding: 24px; background: #16161a; color: #f2f2f4; font: 15px/1.5 system-ui, -apple-system, sans-serif; }
+      #ds-recover.show { display: flex; }
+      #ds-recover > div { max-width: 420px; width: 100%; }
+      #ds-recover button { display: block; width: 100%; margin-top: 10px; padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(128,128,128,.4); background: transparent; color: inherit; font: inherit; }
+      #ds-recover button.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+    </style>
+    <script type="module" crossorigin src="./assets/index-DcVU_wwk.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/vendor-react-C0bWE8EL.js">
-    <link rel="modulepreload" crossorigin href="./assets/vendor-ui-icons-BbGXfwpX.js">
+    <link rel="modulepreload" crossorigin href="./assets/vendor-ui-icons-CX0muxgg.js">
     <link rel="modulepreload" crossorigin href="./assets/vendor-paper-vQrwSdCq.js">
     <link rel="modulepreload" crossorigin href="./assets/elements-DTQ6HGt5.js">
-    <link rel="stylesheet" crossorigin href="./assets/index-Byo2-b-q.css">
+    <link rel="stylesheet" crossorigin href="./assets/index-BtaN0cOe.css">
   </head>
   <body>
     <div id="root"></div>
+    <div id="ds-recover" role="alert">
+      <div>
+        <h1 style="margin:0 0 8px;font-size:20px">DesignSeru belum tampil</h1>
+        <p style="margin:0 0 8px;opacity:.75">Aplikasi tidak selesai dimuat. Ini bisa terjadi setelah aplikasi ditutup paksa atau koneksi lemah. Proyekmu tidak dihapus.</p>
+        <button class="primary" id="ds-reload">Muat ulang</button>
+        <button id="ds-reset">Bersihkan cache aplikasi &amp; muat ulang</button>
+      </div>
+    </div>
+    <script>
+      // jaring pengaman layar putih: bila setelah 10 dtk #root masih kosong, tampilkan tombol pemulihan
+      (function () {
+        var box = document.getElementById('ds-recover');
+        function ok() { var r = document.getElementById('root'); return r && r.childElementCount > 0; }
+        function check() { if (!ok()) { box.className = 'show'; var i = setInterval(function () { if (ok()) { box.className = ''; clearInterval(i); } }, 1000); } }
+        var t = setTimeout(check, 10000);
+        window.addEventListener('error', function (e) { if (e && e.target && e.target.tagName === 'SCRIPT') { clearTimeout(t); setTimeout(check, 1500); } }, true);
+        document.getElementById('ds-reload').onclick = function () { location.reload(); };
+        document.getElementById('ds-reset').onclick = function () {
+          var jobs = [];
+          try { if (navigator.serviceWorker) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })); } catch (e) {}
+          try { if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })); } catch (e) {}
+          Promise.all(jobs).catch(function () {}).then(function () { location.reload(); });
+        };
+      })();
+    </script>
   </body>
 </html>

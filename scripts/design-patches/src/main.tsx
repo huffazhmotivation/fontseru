@@ -3,6 +3,7 @@ import App from './App';
 import './index.css';
 import { initTablet } from './store/tablet';
 import { initSeruBridge } from './lib/seruBridge';
+import { ErrorBoundary } from './ui/ErrorBoundary';
 
 initTablet(); // deteksi iPad/tablet sebelum render pertama
 initSeruBridge(); // salin-tempel SVG antar tab Font ⇄ Design (aktif juga saat berdiri sendiri)
@@ -22,7 +23,11 @@ window.addEventListener('vite:preloadError', (e) => {
   }
 });
 
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>,
+);
 
 // pustaka ikon lengkap dimuat saat browser senggang (tidak menghambat muat awal)
 const idle = (cb: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(cb, { timeout: 4000 }) : setTimeout(cb, 2500));
@@ -40,7 +45,14 @@ lq?.setConsumer(async (p) => {
 });
 // aplikasi desktop (Electron) mengirim isi berkas yang diklik dua kali di Finder/Explorer
 window.addEventListener('designseru:openfile', (e) => {
-  const d = (e as CustomEvent<{ name: string; text: string; path?: string }>).detail;
-  if (d?.text) import('./lib/actions').then((m) => m.openProjectFile(new File([d.text], d.name), d.path ? { name: d.name, path: d.path } : undefined)).catch(() => {});
+  const d = (e as CustomEvent<{ name: string; text?: string; path?: string }>).detail;
+  if (d?.text) import('./lib/actions').then((m) => m.openProjectText(d.text!, d.name, d.path ? { name: d.name, path: d.path } : undefined)).catch(() => {});
+});
+// jalur IPC aplikasi desktop: teks langsung dibuka (tanpa disalin ke File/Blob); event tanpa teks tetap dikirim agar layar Welcome menutup
+window.designseruDesktop?.onOpenFile?.((d) => {
+  window.dispatchEvent(new CustomEvent('designseru:openfile', { detail: { name: d.name } }));
+  Promise.all([import('./lib/actions'), import('./lib/filelink')])
+    .then(async ([m, f]) => m.openProjectText(await f.loadDesktopFile(d), d.name, { name: d.name, path: d.path }))
+    .catch(() => {});
 });
 (window as unknown as { __dsReady?: boolean }).__dsReady = true;

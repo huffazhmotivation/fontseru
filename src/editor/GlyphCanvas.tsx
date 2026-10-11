@@ -375,6 +375,9 @@ export function GlyphCanvas() {
     pencilTool.cancel();
     if (tool === "select") selectTool.pointerUp();
     else if (tool !== "brush" && tool !== "pencil") editor.pointerUp();
+    // Hand-pan 1 jari yang masih aktif akan menimpa pan pinch/geser 2 jari
+    // (dan melompat) begitu jari kedua diangkat — sama seperti Multi canvas.
+    panDragRef.current = null;
   }, [brushTool, brushNodeTool, pencilTool, selectTool, editor, tool]);
   // 2-finger drag pan: reuses the exact same hand-pan math as the "hand"
   // tool's single-pointer drag (panDragRef above), just driven by the
