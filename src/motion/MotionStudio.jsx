@@ -3856,7 +3856,7 @@ const GlobalStyle = () => (
        underline) supaya jelas ini navigasi tingkat kedua, bukan tab
        utama panel kiri. */
     .mfs-tabs-sub { display:flex; gap:6px; border-bottom:none; background:var(--bg-elevated); border:1px solid var(--border-light); border-radius:999px; padding:3px; margin-bottom:10px; }
-    .mfs-tabs-sub .mfs-tab { flex:1; padding:6px 8px; border-radius:999px; border-bottom:none; font-size:10px; }
+    .mfs-tabs-sub .mfs-tab { flex:1 1 0; min-width:0; padding:6px 6px; border-radius:999px; border-bottom:none; font-size:10px; white-space:normal; line-height:1.2; overflow-wrap:anywhere; }
     .mfs-tabs-sub .mfs-tab.active { color:#fff; background:var(--accent); }
     .mfs-panel-body { flex:1; overflow-y:auto; padding:12px; }
     .mfs-section-label { font-size:11px; font-weight:600; color:var(--text-dim); text-transform:uppercase; letter-spacing:.04em; margin:4px 0 10px; display:flex; align-items:center; justify-content:space-between; }
@@ -4185,6 +4185,26 @@ const GlobalStyle = () => (
       html[data-tablet="true"] .mfs-preview-btn, html[data-tablet="true"] .mfs-export-btn { padding:0 9px; font-size:11.5px; white-space:nowrap; }
       html[data-tablet="true"] .mfs-top .mfs-frame-dims { display:none; }
       html[data-tablet="true"] .mfs-top .mfs-align-group .mfs-icon-btn { width:24px; }
+    }
+    /* iPad LANDSCAPE: panel Preset + Layer + Properti jadi satu blok di kiri (timeline hanya selebar blok itu);
+       preview/kanvas memenuhi seluruh sisi kanan dari bawah bar atas sampai dasar layar. Font panel dikecilkan. */
+    @media (min-width: 861px) and (orientation: landscape) {
+      html[data-tablet="true"] .mfs-root {
+        grid-template-columns: 164px 128px 212px minmax(0,1fr);
+        grid-template-areas: "top top top top" "left layers right center" "timeline timeline timeline center";
+      }
+      html[data-tablet="true"] .mfs-left { border-right:1px solid var(--border); }
+      html[data-tablet="true"] .mfs-center { border-left:1px solid var(--border); }
+      html[data-tablet="true"] .mfs-timeline { border-top:1px solid var(--border); }
+      html[data-tablet="true"] .mfs-left, html[data-tablet="true"] .mfs-right { zoom:0.84; }
+      html[data-tablet="true"] .mfs-layers { font-size:11px; }
+      html[data-tablet="true"] .mfs-layers .mfs-clip-item { padding:6px; gap:5px; }
+      html[data-tablet="true"] .mfs-layers .mfs-clip-item .name { font-size:11px; }
+      html[data-tablet="true"] .mfs-left .mfs-panel-body { overflow-x:hidden; padding:10px; }
+      html[data-tablet="true"] .mfs-left .mfs-list-item .name { font-size:12px; }
+      html[data-tablet="true"] .mfs-left .mfs-tab { font-size:10px; padding:9px 0; }
+      html[data-tablet="true"] .mfs-right { overflow-x:hidden; padding:12px; }
+      html[data-tablet="true"] .mfs-timeline { min-width:0; }
     }
     html[data-tablet="true"] .mfs-center { position:relative; }
     html[data-tablet="true"] .mfs-center > .fm-tpad { bottom:52px; }

@@ -7,6 +7,12 @@ import { sentenceForCategory } from "@/glyph/testSentences";
 import type { GlyphCategory } from "@/types/glyph";
 import { SunIcon, MoonIcon } from "@/components/icons/ThemeIcon";
 import { effectiveWordSpacing } from "@/types/kerning";
+import { DRAW_CHAR, DRAW_UNICODE } from "@/glyph/drawMode";
+import { outlineBounds, translateObject } from "@/editor/objectOps";
+import type { Glyph } from "@/types/glyph";
+
+/** Stand-in karakter untuk sketsa Drawing Mode saat belum ada huruf tujuan (DRAW_CHAR "" tidak bisa jadi teks). */
+const SKETCH_STANDIN = String.fromCharCode(DRAW_UNICODE);
 
 /** Small icon toggles for the categories that have a preset sentence (see
  * sentenceForCategory) — spacing/feature glyphs fall back to the uppercase
@@ -33,7 +39,11 @@ const CATEGORY_OPTIONS: { id: GlyphCategory; label: string; Icon: typeof CaseUpp
  * costs nothing while off.
  */
 function ProductionPreviewContent() {
-  const open = useAppStore((s) => s.productionPreviewOpen && s.editorMode !== "draw");
+  const open = useAppStore((s) => s.productionPreviewOpen);
+  const drawMode = useAppStore((s) => s.editorMode === "draw");
+  const drawTargetChar = useAppStore((s) => s.drawTargetChar);
+  const drawBaseChar = useAppStore((s) => s.drawStash?.activeChar ?? null);
+  const selectedObjectIds = useAppStore((s) => s.selectedObjectIds);
   const toggle = useAppStore((s) => s.toggleProductionPreview);
   const scale = useAppStore((s) => s.productionPreviewScale);
   const setScale = useAppStore((s) => s.setProductionPreviewScale);
@@ -76,8 +86,44 @@ function ProductionPreviewContent() {
     return () => observer.disconnect();
   }, [open]);
 
-  const activeCategory = category === "auto" ? deferredGlyphs[activeChar]?.category : category;
-  const text = customText.trim() ? customText : sentenceForCategory(activeCategory);
+  // Drawing Mode: sketsa (glyph sementara DRAW_CHAR) ditampilkan LIVE di dalam kalimat seolah sudah
+  // diterapkan ke huruf tujuan (sama persis dengan "Terapkan": bentuk terpilih, atau seluruh sketsa,
+  // digeser ke LSB huruf itu). Tanpa huruf tujuan, sketsa tampil sendiri berulang.
+  const sketch = drawMode ? deferredGlyphs[DRAW_CHAR] : undefined;
+  const sketchTarget = drawMode
+    ? ([drawTargetChar, drawBaseChar].find((c) => c && c !== DRAW_CHAR && deferredGlyphs[c]) ?? null)
+    : null;
+  const drawOverride = useMemo(() => {
+    if (!drawMode || !sketch) return undefined;
+    const sel = new Set(selectedObjectIds);
+    const all = sketch.outline.objects;
+    const chosen = sel.size > 0 ? all.filter((o) => sel.has(o.id)) : all;
+    const bounds = chosen.length ? outlineBounds({ objects: chosen }) : null;
+    if (sketchTarget) {
+      const base = deferredGlyphs[sketchTarget];
+      if (!base || !bounds) return deferredGlyphs;
+      const dx = base.lsb - bounds.minX;
+      const objects = chosen.map((o) => translateObject(o, dx, 0));
+      const inkRight = base.lsb + (bounds.maxX - bounds.minX);
+      const next: Glyph = { ...base, outline: { objects }, advanceWidth: Math.max(base.advanceWidth, Math.round(inkRight + base.rsb)) };
+      return { ...deferredGlyphs, [sketchTarget]: next };
+    }
+    const dx = bounds ? 60 - bounds.minX : 0;
+    const objects = chosen.map((o) => translateObject(o, dx, 0));
+    const width = bounds ? Math.round(bounds.maxX - bounds.minX + 120) : metrics.unitsPerEm / 2;
+    const stand: Glyph = { ...sketch, char: SKETCH_STANDIN, outline: { objects }, advanceWidth: width, lsb: 60, rsb: 60 };
+    return { ...deferredGlyphs, [SKETCH_STANDIN]: stand };
+  }, [drawMode, sketch, selectedObjectIds, sketchTarget, deferredGlyphs, metrics.unitsPerEm]);
+
+  const activeCategory = category === "auto"
+    ? deferredGlyphs[drawMode ? (sketchTarget ?? activeChar) : activeChar]?.category
+    : category;
+  let text = customText.trim() ? customText : sentenceForCategory(activeCategory);
+  if (drawMode && !customText.trim()) {
+    if (!sketchTarget) text = `${SKETCH_STANDIN} ${SKETCH_STANDIN} ${SKETCH_STANDIN}`;
+    else if (!text.includes(sketchTarget)) text = `${sketchTarget}${sketchTarget}${sketchTarget} ${text}`;
+  }
+  const runGlyphs = drawMode ? drawOverride : undefined;
 
   // Wrap to the box's own width so enlarging the glyph scale grows the
   // preview downward (more lines) instead of forcing sideways scrolling.
@@ -85,8 +131,8 @@ function ProductionPreviewContent() {
   const maxWidthUnits = Math.max(1, (stageWidth || 720) / Math.max(pxPerUnit, 0.0001));
   const wordSpacing = effectiveWordSpacing(metrics.wordSpacing, wordSpacingOverridesByStyle, fontStyle);
   const lines = useMemo(
-    () => wrapLines(text, deferredGlyphs, metrics.unitsPerEm, kerningPairs, 0, maxWidthUnits, wordSpacing),
-    [text, deferredGlyphs, metrics.unitsPerEm, kerningPairs, maxWidthUnits, wordSpacing]
+    () => wrapLines(text, runGlyphs ?? deferredGlyphs, metrics.unitsPerEm, kerningPairs, 0, maxWidthUnits, wordSpacing),
+    [text, deferredGlyphs, runGlyphs, metrics.unitsPerEm, kerningPairs, maxWidthUnits, wordSpacing]
   );
 
   if (!open) return null;
@@ -150,7 +196,7 @@ function ProductionPreviewContent() {
               className="fm-preview-line"
               style={{ marginTop: i > 0 ? scale * (lineHeight - 1) : 0 }}
             >
-              <GlyphRun text={line.text || " "} fontSizePx={scale} ghostEmpty className="fm-preview-glyphrun" />
+              <GlyphRun text={line.text || " "} fontSizePx={scale} ghostEmpty glyphsOverride={runGlyphs} className="fm-preview-glyphrun" />
             </div>
           ))}
         </div>

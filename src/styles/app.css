@@ -7338,6 +7338,13 @@ html[data-tablet="true"] body .mfs-root .mfs-layers { overscroll-behavior: conta
   }
   html[data-tablet="true"] body .mfs-root .mfs-right { padding: 12px; }
 }
+/* iPad LANDSCAPE: Preset + Layer + Properti satu blok di kiri, timeline hanya selebar blok itu, preview memenuhi sisi kanan penuh. */
+@media (min-width: 861px) and (orientation: landscape) {
+  html[data-tablet="true"] body .mfs-root {
+    grid-template-columns: 160px 150px 208px minmax(0, 1fr);
+    grid-template-areas: "top top top top" "left layers right center" "timeline timeline timeline center";
+  }
+}
 @media (max-width: 860px) {
   html[data-tablet="true"] body .mfs-root .mfs-top { height: 48px; min-height: 0; row-gap: 0; }
   html[data-tablet="true"] body .mfs-root .mfs-brand-text { display: none; }
