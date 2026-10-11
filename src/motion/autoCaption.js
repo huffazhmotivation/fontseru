@@ -244,3 +244,109 @@ export function splitCaptionText(text, maxChars = 40) {
 
   return lines.length > 0 ? lines : [text];
 }
+
+/* ------------------------------------------------------------------
+ * Caption per kalimat/frasa yang "pintar".
+ * Tidak lagi memotong buta tiap N kata. Urutan keputusan:
+ *  1. Batas keras: tanda akhir kalimat (. ! ? …) atau jeda ucapan panjang.
+ *  2. Di dalam satu kalimat yang lebih panjang dari `maxWords`, potongan
+ *     dipilih lewat DP supaya (a) ukuran tiap potongan seimbang, (b) potongan
+ *     jatuh di koma / jeda napas / sebelum kata sambung (dan, yang, karena,
+ *     tapi, and, but ...), (c) tidak berakhir di kata tugas (di, ke, dari,
+ *     the, of ...), (d) tidak ada potongan sisa satu kata, (e) tidak terlalu
+ *     panjang (karakter / durasi).
+ *  3. Waktu tiap caption = kata pertama sampai kata terakhir (presisi);
+ *     celah kecil antar caption (< 250 ms) ditutup agar tidak berkedip.
+ * ------------------------------------------------------------------ */
+const FUNCTION_WORDS = new Set([
+  // Indonesia
+  "di", "ke", "dari", "pada", "yang", "dan", "atau", "dengan", "untuk", "dalam", "oleh", "bagi", "kepada", "akan", "sudah", "telah",
+  "sedang", "ini", "itu", "para", "sang", "si", "adalah", "ialah", "agar", "supaya", "karena", "tapi", "tetapi", "namun", "serta", "juga", "sebagai", "seperti", "bahwa", "jika", "kalau", "bila",
+  // English
+  "a", "an", "the", "of", "in", "on", "at", "to", "for", "with", "by", "from", "and", "or", "but", "that", "which", "who", "is", "are", "was", "were", "be", "as", "if", "so", "than", "my", "your", "our", "their", "his", "her", "its",
+]);
+const BREAK_BEFORE = new Set([
+  "dan", "yang", "tapi", "tetapi", "namun", "karena", "sebab", "agar", "supaya", "atau", "serta", "sehingga", "ketika", "saat", "jika", "kalau", "bila", "dengan", "untuk", "padahal", "sedangkan", "lalu", "kemudian", "maka",
+  "and", "but", "because", "that", "which", "when", "while", "so", "or", "if", "with", "then",
+]);
+const bareWord = (t) => String(t || "").toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+
+function splitBlockSmart(block, maxWords, maxChars, maxDurMs) {
+  const n = block.length;
+  if (n === 0) return [];
+  const chars = (a, b) => block.slice(a, b).reduce((s, w) => s + w.text.length + 1, -1);
+  const dur = (a, b) => block[b - 1].end - block[a].start;
+  if (n <= maxWords && chars(0, n) <= maxChars * 1.4 && dur(0, n) <= maxDurMs) return [[0, n]];
+
+  const minChunks = Math.max(Math.ceil(n / maxWords), Math.ceil(chars(0, n) / maxChars));
+  const target = n / minChunks;
+
+  const breakCost = (i) => { // memotong di antara block[i-1] dan block[i]
+    if (i >= n) return 0;
+    const prev = block[i - 1], next = block[i];
+    let c = 0;
+    if (/[,;:–—]$/.test(prev.text)) c -= 3;
+    c -= Math.min(Math.max(next.start - prev.end, 0) / 120, 4);
+    if (BREAK_BEFORE.has(bareWord(next.text))) c -= 1.5;
+    if (FUNCTION_WORDS.has(bareWord(prev.text))) c += 4;
+    return c;
+  };
+
+  const dp = new Array(n + 1).fill(Infinity);
+  const from = new Array(n + 1).fill(-1);
+  dp[0] = 0;
+  for (let i = 1; i <= n; i++) {
+    for (let len = 1; len <= Math.min(maxWords + 1, i); len++) {
+      const j = i - len;
+      if (dp[j] === Infinity) continue;
+      let cost = (len - target) ** 2;
+      if (len === maxWords + 1) cost += 3; // boleh sedikit melebihi, tapi mahal
+      if (len === 1 && n > 1) cost += 4;   // hindari potongan satu kata
+      const ch = chars(j, i);
+      if (ch > maxChars) cost += (ch - maxChars) * 0.4;
+      const d = dur(j, i);
+      if (d > maxDurMs) cost += (d - maxDurMs) / 400;
+      cost += breakCost(i) + 1.2; // +1.2: sedikit hukuman per potongan agar tidak terlalu banyak
+      if (dp[j] + cost < dp[i]) { dp[i] = dp[j] + cost; from[i] = j; }
+    }
+  }
+  const out = [];
+  for (let i = n; i > 0; i = from[i]) {
+    if (from[i] < 0) return [[0, n]];
+    out.unshift([from[i], i]);
+  }
+  return out;
+}
+
+/**
+ * @param {Array<{text:string,start:number,end:number}>} words  per kata (ms)
+ * @param {{maxWords?:number,maxChars?:number,maxDurMs?:number,gapMs?:number}} [opts]
+ */
+export function smartCaptionSegments(words, opts = {}) {
+  const maxWords = Math.max(1, Math.round(opts.maxWords ?? 4));
+  const maxChars = opts.maxChars ?? Math.max(24, maxWords * 9);
+  const maxDurMs = opts.maxDurMs ?? 3800;
+  const gapMs = opts.gapMs ?? 700;
+  const list = (words || []).filter((w) => w && String(w.text || "").trim());
+  const blocks = [];
+  let cur = [];
+  for (const w of list) {
+    const prev = cur[cur.length - 1];
+    if (prev && (/[.!?。！？؟…]$/.test(prev.text) || w.start - prev.end >= gapMs)) { blocks.push(cur); cur = []; }
+    cur.push(w);
+  }
+  if (cur.length) blocks.push(cur);
+
+  const segments = [];
+  for (const block of blocks) {
+    for (const [a, b] of splitBlockSmart(block, maxWords, maxChars, maxDurMs)) {
+      const g = block.slice(a, b);
+      segments.push({ text: g.map((w) => w.text).join(" "), start: g[0].start, end: g[g.length - 1].end });
+    }
+  }
+  for (let i = 0; i < segments.length - 1; i++) {
+    const gap = segments[i + 1].start - segments[i].end;
+    if (gap > 0 && gap < 250) segments[i].end = segments[i + 1].start;
+  }
+  return segments;
+}

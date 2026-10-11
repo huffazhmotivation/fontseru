@@ -3,7 +3,7 @@ import { ModeTabs } from "@/mode/ModeTabs";
 import { TabletPad } from "@/mode/TabletPad";
 import motionLogoDark from "@/assets/logo-motion-dark.svg";
 import motionLogoLight from "@/assets/logo-motion-light.svg";
-import { decodeAudioFile, transcribeAudio, getLanguageOptions, splitCaptionText, groupCaptionSentences } from "@/motion/autoCaption";
+import { decodeAudioFile, transcribeAudio, getLanguageOptions, splitCaptionText, groupCaptionSentences, smartCaptionSegments } from "@/motion/autoCaption";
 import { loadMotionProject, saveMotionProject, clearMotionProject, serializeProjectForExport, deserializeImportedProject } from "@/motion/motionPersist";
 import {
   Play, Pause, Upload, Plus, Trash2, Type, Sparkles, Repeat,
@@ -5955,20 +5955,13 @@ function FontPicker({ fonts, clip, dispatch, updateSelected }) {
 function AutoCaptionControl({ clip, dispatch }) {
   const [language, setLanguage] = useState("id");
   const [mode, setMode] = useState("word");
+  const [maxWords, setMaxWords] = useState(4);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
-  const sentenceSegments = (words) => {
-    const result = [];
-    for (let i = 0; i < words.length; i += 4) {
-      const group = words.slice(i, i + 4);
-      if (!group.length) continue;
-      result.push({ text: group.map((w) => w.text).join(" "), start: group[0].start, end: group[group.length - 1].end });
-    }
-    return result;
-  };
+  const sentenceSegments = (words) => smartCaptionSegments(words, { maxWords });
   const generate = async () => {
     if (busy) return;
     if (!clip.file) {
@@ -6015,6 +6008,14 @@ function AutoCaptionControl({ clip, dispatch }) {
           <button type="button" className={mode === "sentence" ? "active" : ""} disabled={busy} onClick={() => setMode("sentence")}>Per kalimat</button>
         </div>
       </div>
+      {mode === "sentence" && (
+        <div className="mfs-field" style={{ marginTop: 7 }}>
+          <label>Maks. kata per baris (dipotong cerdas di jeda/kata sambung)</label>
+          <select className="mfs-input mfs-select" value={maxWords} disabled={busy} onChange={(e) => setMaxWords(Number(e.target.value))}>
+            {[2, 3, 4, 5, 6, 7, 8, 10].map((n) => <option key={n} value={n}>{n} kata</option>)}
+          </select>
+        </div>
+      )}
       <button className="mfs-btn mfs-btn-sm" style={{ marginTop: 7, width: "100%" }} disabled={busy} onClick={generate}>
         {busy ? <Loader2 size={13} className="mfs-spin" /> : <Type size={13} />} {busy ? "Menganalisis…" : "Buat caption otomatis"}
       </button>
