@@ -28,7 +28,7 @@
           ]
         }
       ],
-      "icon": "build/icon.png",
+      "icon": "build/icon-mac.png",
       "identity": null,
       "artifactName": "FontSeru-${version}-macOS.${ext}"
     },
