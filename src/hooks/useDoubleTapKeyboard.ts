@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState, type RefObject } from "react";
 import { flushSync } from "react-dom";
 
 /**
- * Keyboard layar HANYA muncul saat kotak teks diketuk 2x (iPad / tablet / HP).
+ * Keyboard layar HANYA muncul lewat tombol ikon keyboard di kotak teks, atau ketuk 2x (iPad / tablet / HP).
  *
  * Di Test Lab, hampir semua interaksi (menggeser kerning, ganti preset, mengetuk glyph) memanggil `focus()` pada
  * textarea tersembunyi supaya caret kustom tetap bekerja — di iPad itu memunculkan keyboard setiap saat.
@@ -19,6 +19,17 @@ export function useDoubleTapKeyboard<T extends HTMLElement>(ref: RefObject<T>) {
   const last = useRef<{ t: number; x: number; y: number } | null>(null);
   const refocusing = useRef(false);
 
+  /** Munculkan keyboard layar sekarang (dipanggil dari ketukan pengguna, mis. tombol ikon keyboard). */
+  const openKeyboard = useCallback(() => {
+    flushSync(() => setArmed(true));
+    const el = ref.current;
+    if (!el) return;
+    refocusing.current = true;
+    el.blur();
+    el.focus({ preventScroll: true });
+    refocusing.current = false;
+  }, [ref]);
+
   const onTap = useCallback(
     (e: { clientX: number; clientY: number; pointerType?: string }) => {
       if (!coarse || e.pointerType === "mouse") return;
@@ -26,24 +37,17 @@ export function useDoubleTapKeyboard<T extends HTMLElement>(ref: RefObject<T>) {
       const l = last.current;
       if (l && now - l.t < 400 && Math.hypot(e.clientX - l.x, e.clientY - l.y) < 30) {
         last.current = null;
-        flushSync(() => setArmed(true));
-        const el = ref.current;
-        if (el) {
-          refocusing.current = true;
-          el.blur();
-          el.focus({ preventScroll: true });
-          refocusing.current = false;
-        }
+        openKeyboard();
       } else {
         last.current = { t: now, x: e.clientX, y: e.clientY };
       }
     },
-    [coarse, ref]
+    [coarse, openKeyboard]
   );
 
   const onBlur = useCallback(() => {
     if (!refocusing.current) setArmed(false);
   }, []);
 
-  return { inputMode: coarse && !armed ? ("none" as const) : undefined, onBlur, onTap };
+  return { inputMode: coarse && !armed ? ("none" as const) : undefined, onBlur, onTap, openKeyboard, showButton: coarse && !armed };
 }

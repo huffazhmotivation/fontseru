@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { AlignCenter, AlignLeft, AlignRight, Loader2, MoveHorizontal, Redo2, RotateCcw, Undo2, Wand2, Zap } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Keyboard, Loader2, MoveHorizontal, Redo2, RotateCcw, Undo2, Wand2, Zap } from "lucide-react";
 import { NumericInput } from "@/components/NumericInput";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
@@ -33,6 +33,26 @@ type ActiveGlyph = {
   leftChar: string | null;
   rightChar: string | null;
 } | null;
+
+
+/** Tombol ikon keyboard (khusus layar sentuh): satu ketuk memunculkan keyboard untuk kotak teks Test Lab. */
+function KeyboardButton({ kb, className = "" }: { kb: ReturnType<typeof useDoubleTapKeyboard>; className?: string }) {
+  if (!kb.showButton) return null;
+  return (
+    <button
+      type="button"
+      className={`fm-lab-kb-btn ${className}`}
+      // Jangan mencuri fokus / memindah caret: tombol hanya memunculkan keyboard.
+      onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onPointerUp={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); kb.openKeyboard(); }}
+      title="Munculkan keyboard"
+      aria-label="Munculkan keyboard"
+    >
+      <Keyboard size={18} />
+    </button>
+  );
+}
 
 const TESTS: { id: TestId; label: string }[] = [
   { id: "type", label: "Type Test" },
@@ -323,6 +343,7 @@ function EditableStage({
       data-testid="lab-editable-specimen"
       data-kern-dragging={isDragging ? "true" : "false"}
     >
+      <KeyboardButton kb={kb} />
       <div className="fm-lab-lines" aria-hidden="true">
         {wrappedLines.map((wrappedLine, lineIndex) => {
           const placed = layouts[lineIndex]?.placed ?? [];
@@ -949,6 +970,7 @@ function FamilyStylePreview({
           if (editable) inputRef.current?.focus({ preventScroll: true });
         }}
       >
+        {editable && <KeyboardButton kb={kb} />}
         <div className="fm-family-lines" aria-hidden="true">
           {wrappedLines.map((line, lineIndex) => {
             const placed = line.layout.placed;
@@ -1488,6 +1510,7 @@ function FeatureSentencePreview({
           onChange={(e) => setPreviewText(e.target.value)}
           data-testid="lab-feature-preview-input"
         />
+        <KeyboardButton kb={previewKb} className="fm-lab-kb-btn-inline" />
         {autoSampleText && (
           <button
             type="button"

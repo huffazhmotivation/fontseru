@@ -7354,3 +7354,26 @@ html[data-tablet="true"] body .mfs-root .mfs-layers { overscroll-behavior: conta
 html[data-tablet="true"] body .mfs-root .mfs-transport { justify-content: flex-start; padding: 0 12px; gap: 10px; }
 html[data-tablet="true"] body .mfs-root .mfs-transport > :first-child { margin-left: auto; }
 html[data-tablet="true"] body .mfs-root .mfs-transport-time { position: static; margin-left: auto; white-space: nowrap; flex-shrink: 0; }
+
+/* Test Lab (layar sentuh): tombol ikon keyboard di kotak teks — satu ketuk memunculkan keyboard layar. */
+.fm-lab-kb-btn {
+  position: absolute; top: 10px; right: 10px; z-index: 6;
+  width: 40px; height: 40px; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: var(--panel); color: var(--accent);
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.6);
+  cursor: pointer; touch-action: manipulation;
+}
+.fm-lab-kb-btn:active { transform: scale(0.94); }
+.fm-lab-kb-btn.fm-lab-kb-btn-inline { position: static; flex: 0 0 auto; box-shadow: none; }
+
+/* Motion (iPad): ikon tool di bar atas terlalu kecil → dibesarkan & diseragamkan (tombol 34px, ikon 18px). */
+html[data-tablet="true"] body .mfs-root .mfs-top .mfs-icon-btn { width: 34px; height: 34px; min-width: 34px; }
+html[data-tablet="true"] body .mfs-root .mfs-top .mfs-icon-btn svg { width: 18px; height: 18px; }
+html[data-tablet="true"] body .mfs-root .mfs-top .mfs-align-group .mfs-icon-btn { width: 32px; min-width: 32px; }
+html[data-tablet="true"] body .mfs-root .mfs-top button svg { min-width: 16px; min-height: 16px; }
+html[data-tablet="true"] body .mfs-root .mfs-top .fm-mode-tab { height: 32px; padding: 0 10px; font-size: 12px; }
+html[data-tablet="true"] body .mfs-root .mfs-top .fm-mode-tab svg { width: 16px; height: 16px; }
+html[data-tablet="true"] body .mfs-root .mfs-preview-btn,
+html[data-tablet="true"] body .mfs-root .mfs-export-btn { height: 34px; padding: 0 12px; font-size: 12px; }
