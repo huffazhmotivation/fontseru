@@ -5,6 +5,7 @@ import motionLogoDark from "@/assets/logo-motion-dark.svg";
 import motionLogoLight from "@/assets/logo-motion-light.svg";
 import { GOOGLE_FONTS, GOOGLE_FONT_CATEGORIES, loadGoogleFont, googleFontValue, googleFamilyOf } from "@/motion/googleFonts";
 import { computeVideoMatte, getMattedFrame, hasMatte, setMatte, clearMatte } from "@/motion/videoMatte";
+import { SFX_LIBRARY, SFX_CATEGORIES, renderSfxFile, previewSfx } from "@/motion/sfx";
 import { decodeAudioFile, transcribeAudio, getLanguageOptions, splitCaptionText, groupCaptionSentences, smartCaptionSegments } from "@/motion/autoCaption";
 import { loadMotionProject, saveMotionProject, clearMotionProject, serializeProjectForExport, deserializeImportedProject } from "@/motion/motionPersist";
 import {
@@ -66,6 +67,22 @@ function ease(kind, t) {
    ============================================================ */
 const CAM_IDENTITY = { x: 0, y: 0, scale: 1 };
 const CAM_KEY_TOL_MS = 40;
+const CAM_COLOR = "#ff6a00";
+// Preset gerak kamera (gaya "Easy Ease" After Effects & kurva populer motion graphic).
+const CAM_EASES = [
+  { id: "easyEase", name: "Easy Ease — seimbang", hint: "Lambat di awal & akhir, cepat di tengah (paling umum)", bez: [0.33, 0, 0.67, 1] },
+  { id: "easeIn", name: "Ease In — lambat di awal", hint: "Mulai pelan lalu makin cepat", bez: [0.5, 0, 1, 1] },
+  { id: "easeOut", name: "Ease Out — lambat di akhir", hint: "Mulai cepat lalu mendarat pelan", bez: [0, 0, 0.5, 1] },
+  { id: "cinematic", name: "Sinematik — pelan · ngebut · pelan", hint: "Percepatan kuat di tengah, halus di kedua ujung", bez: [0.76, 0, 0.24, 1] },
+  { id: "snap", name: "Snap — cepat lalu halus", hint: "Langsung melesat lalu mendarat sangat halus", bez: [0.16, 1, 0.3, 1] },
+  { id: "overshoot", name: "Overshoot — melewati lalu kembali", hint: "Melampaui target sedikit lalu mantul balik", bez: [0.34, 1.45, 0.64, 1] },
+  { id: "linear", name: "Linear — konstan", hint: "Kecepatan tetap", bez: [0, 0, 1, 1] },
+];
+function camEaseDef(id) { return CAM_EASES.find((e) => e.id === id) || CAM_EASES[0]; }
+function camEaseFn(id) {
+  const [a, b, c, d] = camEaseDef(id).bez;
+  return (t) => (t <= 0 ? 0 : t >= 1 ? 1 : cubicBezier(a, b, c, d, t));
+}
 function sampleCamera(keys, t) {
   if (!keys || keys.length === 0) return CAM_IDENTITY;
   const first = keys[0];
@@ -75,8 +92,7 @@ function sampleCamera(keys, t) {
   let i = 0;
   while (i < keys.length - 2 && keys[i + 1].t <= t) i++;
   const a = keys[i], b = keys[i + 1];
-  if (b.ease === "instan") return t >= b.t ? b : a;
-  const p = ease("easeInOut", (t - a.t) / Math.max(1, b.t - a.t));
+  const p = camEaseFn(b.ease)(clamp((t - a.t) / Math.max(1, b.t - a.t), 0, 1));
   return { x: a.x + (b.x - a.x) * p, y: a.y + (b.y - a.y) * p, scale: a.scale * Math.pow(b.scale / a.scale, p) };
 }
 function cameraIsIdentity(c) { return !c || (Math.abs(c.x) < 0.01 && Math.abs(c.y) < 0.01 && Math.abs(c.scale - 1) < 0.0005); }
@@ -95,14 +111,19 @@ function cameraReducer(camera, action) {
       if (existing) {
         out = keys.map((k) => (k === existing ? { ...k, ...next, ...(action.ease ? { ease: action.ease } : {}) } : k));
       } else {
-        out = [...keys, { id: uid("cam"), t, ...next, ease: action.ease || "auto" }];
+        out = [...keys, { id: uid("cam"), t, ...next, ease: action.ease || "easyEase" }];
         // Key pertama di tengah timeline: tambahkan key awal (t=0) berisi kamera
         // semula supaya bagian sebelum key ini TIDAK ikut bergeser.
-        if (keys.length === 0 && t > CAM_KEY_TOL_MS) out.push({ id: uid("cam"), t: 0, ...CAM_IDENTITY, ease: "auto" });
+        if (keys.length === 0 && t > CAM_KEY_TOL_MS) out.push({ id: uid("cam"), t: 0, ...CAM_IDENTITY, ease: "easyEase" });
       }
       return { keys: out.sort((a, b) => a.t - b.t) };
     }
     case "CAMERA_SET_EASE": return { keys: keys.map((k) => (k.id === action.id ? { ...k, ease: action.ease } : k)) };
+    case "CAMERA_MOVE_KEY": {
+      const t = Math.max(0, Math.round(action.t));
+      if (keys.some((k) => k.id !== action.id && Math.abs(k.t - t) <= CAM_KEY_TOL_MS)) return camera;
+      return { keys: keys.map((k) => (k.id === action.id ? { ...k, t } : k)).sort((a, b) => a.t - b.t) };
+    }
     case "CAMERA_DELETE_KEY": return { keys: keys.filter((k) => k.id !== action.id) };
     case "CAMERA_CLEAR": return { keys: [] };
     default: return camera;
@@ -715,6 +736,67 @@ const TRANSITION_LIB = [
     return pose({ opacity: Math.min(t * 3, 1), scale, blur: 35 * (1 - e * e) });
   }},
 
+  // —— Transisi populer motion graphic (shake / swoosh / punch) ——
+  { id: "shakeZoom", name: "Shake Zoom", entranceMs: 520, exitMs: 380, curve: (t) => {
+    const e = cubicBezier(0.16, 1, 0.3, 1, t), d = 1 - e, w = Math.sin(t * 46) * d;
+    return pose({ opacity: Math.min(1, t * 6), scale: 1 + 0.45 * d, x: w * 26, y: Math.cos(t * 39) * d * 18, rotation: w * 2.2, blur: 14 * d * d });
+  }},
+  { id: "shakeUp", name: "Shake Up", entranceMs: 520, exitMs: 380, curve: (t) => {
+    const e = cubicBezier(0.16, 1, 0.3, 1, t), d = 1 - e;
+    return pose({ opacity: Math.min(1, t * 6), y: 130 * d + Math.sin(t * 52) * d * 14, x: Math.cos(t * 44) * d * 16, rotation: Math.sin(t * 40) * d * 1.6, blur: 12 * d * d });
+  }},
+  { id: "shakeDown", name: "Shake Down", entranceMs: 520, exitMs: 380, curve: (t) => {
+    const e = cubicBezier(0.16, 1, 0.3, 1, t), d = 1 - e;
+    return pose({ opacity: Math.min(1, t * 6), y: -130 * d + Math.sin(t * 52) * d * 14, x: Math.cos(t * 44) * d * 16, rotation: Math.sin(t * 40) * d * 1.6, blur: 12 * d * d });
+  }},
+  { id: "impactShake", name: "Impact Shake", entranceMs: 460, exitMs: 320, curve: (t) => {
+    const d = Math.pow(1 - cubicBezier(0.2, 0.9, 0.3, 1, t), 1.2);
+    return pose({ opacity: Math.min(1, t * 8), scale: 1 + 0.7 * d, x: Math.sin(t * 70) * d * 38, y: Math.cos(t * 61) * d * 30, rotation: Math.sin(t * 55) * d * 4, blur: 18 * d });
+  }},
+  { id: "swoosh", name: "Swoosh", entranceMs: 480, exitMs: 360, curve: (t) => {
+    const e = cubicBezier(0.16, 1, 0.3, 1, t), d = 1 - e;
+    return pose({ opacity: Math.min(1, t * 5), x: 320 * d, scale: 1 + 0.06 * d, blur: 26 * d });
+  }},
+  { id: "swooshR", name: "Swoosh Kanan", entranceMs: 480, exitMs: 360, curve: (t) => {
+    const e = cubicBezier(0.16, 1, 0.3, 1, t), d = 1 - e;
+    return pose({ opacity: Math.min(1, t * 5), x: -320 * d, scale: 1 + 0.06 * d, blur: 26 * d });
+  }},
+  { id: "swooshUp", name: "Swoosh Naik", entranceMs: 480, exitMs: 360, curve: (t) => {
+    const e = cubicBezier(0.16, 1, 0.3, 1, t), d = 1 - e;
+    return pose({ opacity: Math.min(1, t * 5), y: 340 * d, blur: 24 * d });
+  }},
+  { id: "swooshDown", name: "Swoosh Turun", entranceMs: 480, exitMs: 360, curve: (t) => {
+    const e = cubicBezier(0.16, 1, 0.3, 1, t), d = 1 - e;
+    return pose({ opacity: Math.min(1, t * 5), y: -340 * d, blur: 24 * d });
+  }},
+  { id: "whipPan", name: "Whip Pan", entranceMs: 380, exitMs: 300, curve: (t) => {
+    const e = cubicBezier(0.7, 0, 0.1, 1, t), d = 1 - e;
+    return pose({ opacity: Math.min(1, t * 4), x: -620 * d, blur: 40 * Math.sin(Math.min(1, t) * Math.PI) + 4 * d, scaleX: 1 + 0.18 * d, scaleY: 1 });
+  }},
+  { id: "zoomPunch", name: "Zoom Punch", entranceMs: 420, exitMs: 300, curve: (t) => {
+    const e = cubicBezier(0.34, 1.7, 0.64, 1, t);
+    return pose({ opacity: Math.min(1, t * 8), scale: 0.35 + 0.65 * e, blur: 10 * (1 - t) * (1 - t) });
+  }},
+  { id: "spinZoom", name: "Spin Zoom", entranceMs: 560, exitMs: 400, curve: (t) => {
+    const e = cubicBezier(0.16, 1, 0.3, 1, t), d = 1 - e;
+    return pose({ opacity: Math.min(1, t * 5), scale: 1 + 1.6 * d, rotation: 110 * d, blur: 28 * d });
+  }},
+  { id: "dropBounce", name: "Drop Bounce", entranceMs: 700, exitMs: 380, curve: (t) => {
+    const fall = Math.min(1, t / 0.45), e = fall * fall;
+    let y = -520 * (1 - e);
+    if (t >= 0.45) { const u = (t - 0.45) / 0.55; y = -Math.abs(Math.sin(u * Math.PI * 2.4)) * 70 * Math.pow(1 - u, 2); }
+    return pose({ opacity: Math.min(1, t * 8), y });
+  }},
+  { id: "popIn", name: "Pop In", entranceMs: 420, exitMs: 280, curve: (t) => {
+    const e = cubicBezier(0.34, 1.56, 0.64, 1, t);
+    return pose({ opacity: Math.min(1, t * 6), scale: Math.max(0, e) });
+  }},
+  { id: "glitchShake", name: "Glitch Shake", entranceMs: 420, exitMs: 280, curve: (t, seed = 0) => {
+    const d = 1 - t, j = Math.sin(t * 90 + seed * 17), k = Math.cos(t * 77 + seed * 9);
+    const cut = t < 0.8 ? (Math.sin(t * 120 + seed * 31) > -0.2 ? 1 : 0.2) : 1;
+    return pose({ opacity: cut * Math.min(1, t * 6), x: j * 42 * d, y: k * 14 * d, scaleX: 1 + Math.abs(j) * 0.12 * d, blur: 5 * d });
+  }},
+
   // —— Canvas overlay transitions (rendered via drawTransitionOverlay) ——
   { id: "paintSplash", name: "Paint Splash", entranceMs: 700, exitMs: 500, curve: (t) => pose({ opacity: ease("easeOut", Math.min(t * 2, 1)) }) },
   { id: "colorSwap", name: "Color Swap", entranceMs: 500, exitMs: 400, curve: (t) => pose({ opacity: ease("easeOut", Math.min(t * 2, 1)) }) },
@@ -809,7 +891,7 @@ function normalizeMotionProject(project) {
   return {
     ...project,
     transitions: Array.isArray(project.transitions) ? project.transitions : [],
-    camera: { keys: Array.isArray(project.camera?.keys) ? project.camera.keys.filter((k) => k && Number.isFinite(k.t)).sort((a, b) => a.t - b.t) : [] },
+    camera: { keys: Array.isArray(project.camera?.keys) ? project.camera.keys.filter((k) => k && Number.isFinite(k.t)).map((k) => ({ ...k, ease: CAM_EASES.some((e) => e.id === k.ease) ? k.ease : "easyEase" })).sort((a, b) => a.t - b.t) : [] },
   };
 }
 
@@ -1415,7 +1497,7 @@ function normalizePersistedMediaClips(rawClips, rawTracks, library) {
 
 function projectReducer(state, action) {
   switch (action.type) {
-    case "CAMERA_SET_KEY": case "CAMERA_SET_EASE": case "CAMERA_DELETE_KEY": case "CAMERA_CLEAR": {
+    case "CAMERA_SET_KEY": case "CAMERA_SET_EASE": case "CAMERA_MOVE_KEY": case "CAMERA_DELETE_KEY": case "CAMERA_CLEAR": {
       const camera = cameraReducer(state.camera, action);
       return camera === state.camera ? state : { ...state, camera };
     }
@@ -3542,23 +3624,34 @@ function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCt
   return { cx, cy, halfW: (dw * sx) / 2 + 8, halfH: (dh * sy) / 2 + 8, rotation: (p.rotation || 0) + off.rotation };
 }
 
+function CamEaseCurve({ id }) {
+  const f = camEaseFn(id);
+  const pts = Array.from({ length: 25 }, (_, i) => { const t = i / 24; return `${(2 + t * 28).toFixed(1)},${(20 - (2 + f(t) * 16) + 2).toFixed(1)}`; });
+  return (
+    <svg className="mfs-cam-curve" width="34" height="24" viewBox="0 0 34 24" aria-hidden="true">
+      <rect x="0.5" y="0.5" width="33" height="23" rx="4" fill="none" stroke="currentColor" opacity="0.25" />
+      <polyline points={pts.join(" ")} fill="none" stroke={CAM_COLOR} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function drawCameraOverlay(ctx, w, h, cam, k = 1) {
-  // k = piksel-kanvas per piksel-layar, supaya garis & handle tetap terlihat saat kanvas diperkecil di layar.
+  // k = piksel-kanvas per piksel-layar, supaya garis & handle tetap proporsional saat kanvas diperkecil di layar.
   k = Math.max(1, k);
   const cx = w / 2 + cam.x, cy = h / 2 + cam.y, hw = (w / 2) * cam.scale, hh = (h / 2) * cam.scale;
-  const hs = 7 * k;
+  const hs = 6 * k;
   ctx.save();
-  ctx.strokeStyle = "#ffb454"; ctx.fillStyle = "#ffb454";
-  ctx.lineWidth = 2 * k; ctx.setLineDash([8 * k, 5 * k]);
+  ctx.strokeStyle = CAM_COLOR; ctx.fillStyle = CAM_COLOR;
+  ctx.lineWidth = 1.1 * k; ctx.setLineDash([7 * k, 5 * k]);
   ctx.strokeRect(cx - hw, cy - hh, hw * 2, hh * 2);
   ctx.setLineDash([]);
-  ctx.lineWidth = 1.5 * k;
-  ctx.beginPath(); ctx.moveTo(cx - 14 * k, cy); ctx.lineTo(cx + 14 * k, cy); ctx.moveTo(cx, cy - 14 * k); ctx.lineTo(cx, cy + 14 * k); ctx.stroke();
+  ctx.lineWidth = 1 * k;
+  ctx.beginPath(); ctx.moveTo(cx - 9 * k, cy); ctx.lineTo(cx + 9 * k, cy); ctx.moveTo(cx, cy - 9 * k); ctx.lineTo(cx, cy + 9 * k); ctx.stroke();
   [[-hw, -hh], [hw, -hh], [-hw, hh], [hw, hh]].forEach(([dx, dy]) => {
     ctx.fillStyle = "#fff"; ctx.fillRect(cx + dx - hs / 2, cy + dy - hs / 2, hs, hs);
-    ctx.strokeStyle = "#ffb454"; ctx.strokeRect(cx + dx - hs / 2, cy + dy - hs / 2, hs, hs);
+    ctx.strokeStyle = CAM_COLOR; ctx.lineWidth = 1.2 * k; ctx.strokeRect(cx + dx - hs / 2, cy + dy - hs / 2, hs, hs);
   });
-  ctx.font = `600 ${12 * k}px Inter, sans-serif`; ctx.fillStyle = "#ffb454";
+  ctx.font = `600 ${11 * k}px Inter, sans-serif`; ctx.fillStyle = CAM_COLOR;
   ctx.fillText("KAMERA " + Math.round(cam.scale * 100) + "%", 12 * k, h - 12 * k);
   ctx.restore();
 }
@@ -3938,9 +4031,14 @@ const GlobalStyle = () => (
        kecil, sengaja dibedakan dari tab utama di atasnya (yang bergaya
        underline) supaya jelas ini navigasi tingkat kedua, bukan tab
        utama panel kiri. */
-    .mfs-tabs-sub { display:flex; gap:6px; border-bottom:none; background:var(--bg-elevated); border:1px solid var(--border-light); border-radius:999px; padding:3px; margin-bottom:10px; }
-    .mfs-tabs-sub .mfs-tab { flex:1 1 0; min-width:0; padding:6px 6px; border-radius:999px; border-bottom:none; font-size:10px; white-space:normal; line-height:1.2; overflow-wrap:anywhere; }
-    .mfs-tabs-sub .mfs-tab.active { color:#fff; background:var(--accent); }
+    .mfs-tabs-sub { display:flex; flex-direction:column; gap:6px; background:transparent; border:none; border-radius:0; padding:0; margin-bottom:12px; }
+    .mfs-tabs-sub .mfs-tab { flex:none; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; text-align:left; font-size:11.5px; font-weight:600; border-radius:10px; border:1px solid var(--border-light); background:var(--bg-elevated); color:var(--text-muted); white-space:normal; transition:background .12s, border-color .12s, color .12s; }
+    .mfs-tabs-sub .mfs-tab:hover { border-color:var(--accent-dim); color:var(--text); }
+    .mfs-tabs-sub .mfs-tab.active { color:#fff; background:linear-gradient(135deg, var(--accent), #8a7bff); border-color:var(--accent); box-shadow:0 4px 14px rgba(124,108,255,.28); }
+    .mfs-tab-label { display:inline-flex; align-items:center; gap:6px; min-width:0; white-space:normal; line-height:1.2; }
+    .mfs-tab-label svg { flex-shrink:0; }
+    .mfs-tab-count { flex-shrink:0; font-size:10px; font-weight:700; padding:1px 7px; border-radius:999px; background:rgba(255,255,255,.08); font-variant-numeric:tabular-nums; }
+    .mfs-tabs-sub .mfs-tab.active .mfs-tab-count { background:rgba(255,255,255,.22); }
     .mfs-panel-body { flex:1; overflow-y:auto; padding:12px; }
     .mfs-section-label { font-size:11px; font-weight:600; color:var(--text-dim); text-transform:uppercase; letter-spacing:.04em; margin:4px 0 10px; display:flex; align-items:center; justify-content:space-between; }
     .mfs-upload-zone { border:1.5px dashed var(--border-light); border-radius:var(--radius); padding:14px 8px; text-align:center; cursor:pointer; color:var(--text-muted); font-size:11.5px; margin-bottom:10px; }
@@ -3969,26 +4067,34 @@ const GlobalStyle = () => (
     .mfs-cam-ui { position:absolute; top:8px; left:8px; z-index:40; display:flex; flex-direction:column; align-items:flex-start; gap:6px; max-width:calc(100% - 16px); pointer-events:none; }
     .mfs-cam-ui > * { pointer-events:auto; }
     .mfs-cam-toggle { display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 12px; border-radius:999px; border:1px solid var(--border-light); background:var(--bg-panel); color:var(--text); font-size:12px; font-weight:600; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); }
-    .mfs-cam-toggle.active { background:#ffb454; color:#1a1206; border-color:#ffb454; }
+    .mfs-cam-toggle.active { background:#ff6a00; color:#fff; border-color:#ff6a00; }
     .mfs-cam-toggle:disabled { opacity:.5; cursor:default; }
-    .mfs-cam-bar { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; padding:7px 10px; border-top:1px solid #ffb45466; background:color-mix(in srgb, var(--bg-panel) 96%, #ffb454 4%); flex-shrink:0; }
+    .mfs-cam-bar { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; padding:7px 10px; border-top:1px solid #ff6a0066; background:color-mix(in srgb, var(--bg-panel) 96%, #ffb454 4%); flex-shrink:0; }
     .mfs-cam-nav { flex:1 1 150px; }
     .mfs-cam-row.mfs-cam-actions { flex:1 1 100%; }
     .mfs-cam-row { display:flex; align-items:center; gap:8px; min-width:0; }
-    .mfs-cam-row input[type=range] { flex:1; min-width:70px; accent-color:#ffb454; }
+    .mfs-cam-row input[type=range] { flex:1; min-width:70px; accent-color:#ff6a00; }
     .mfs-cam-label { font-size:10.5px; color:var(--text-dim); font-weight:600; width:34px; flex-shrink:0; }
     .mfs-cam-value { font-size:11px; color:var(--text-muted); width:40px; text-align:right; font-variant-numeric:tabular-nums; }
-    .mfs-cam-info { flex:1; font-size:11px; color:#ffb454; text-align:center; line-height:1.3; }
+    .mfs-cam-info { flex:1; font-size:11px; color:#ff6a00; font-weight:600; text-align:center; line-height:1.3; }
     .mfs-cam-actions { flex-wrap:wrap; gap:5px; }
     .mfs-cam-actions .mfs-btn { flex:1 1 auto; justify-content:center; }
-    .mfs-cam-done { background:#ffb454 !important; color:#1a1206 !important; border-color:#ffb454 !important; }
+    .mfs-cam-done { background:#ff6a00 !important; color:#fff !important; border-color:#ff6a00 !important; }
+    .mfs-cam-easerow { flex:1 1 220px; }
+    .mfs-cam-select { flex:1; min-width:0; padding:5px 8px; font-size:11.5px; }
+    .mfs-cam-curve { flex-shrink:0; color:var(--text-muted); }
+    .mfs-sfx { margin-top:6px; border-top:1px solid var(--border); padding-top:6px; }
+    .mfs-sfx-count { margin-left:auto; font-size:10px; color:var(--text-dim); }
+    .mfs-sfx-hint { font-size:10.5px; color:var(--text-dim); line-height:1.5; margin-bottom:8px; }
+    .mfs-sfx-item { padding:5px 6px; }
+    .mfs-sfx-dur { font-size:10px; color:var(--text-dim); font-variant-numeric:tabular-nums; }
     .mfs-gf-cats { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
     .mfs-gf-cats button { border:1px solid var(--border-light); background:var(--bg-elevated); color:var(--text-dim); font-size:10px; padding:3px 8px; border-radius:999px; cursor:pointer; }
     .mfs-gf-cats button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
     .mfs-gf-list { max-height:240px; overflow-y:auto; }
     .mfs-gf-list .mfs-font-item .name { font-size:14px; }
-    .mfs-cam-key { position:absolute; bottom:1px; width:10px; height:10px; margin-left:-5px; transform:rotate(45deg); background:#ffb454; border:1px solid #1a1206; border-radius:2px; cursor:pointer; z-index:9; padding:0; }
-    .mfs-cam-key.instan { background:#ff6b6b; }
+    .mfs-cam-key { position:absolute; bottom:2px; width:11px; height:11px; margin-left:-5.5px; transform:rotate(45deg); background:#ff6a00; border:1px solid #fff; border-radius:2px; cursor:ew-resize; z-index:9; padding:0; touch-action:none; box-shadow:0 0 0 1px rgba(0,0,0,.35); }
+    .mfs-cam-key:hover { background:#ff8a33; }
     .mfs-canvas-wrap { flex:1; display:flex; align-items:center; justify-content:center; position:relative; overflow:auto; background-image:radial-gradient(circle,var(--stage-checker) 1px,transparent 1px); background-size:22px 22px; background-position:center;
       /* Biar gestur cubit dua-jari (lihat pinch-to-zoom di CenterStage) jadi
          milik kanvas, bukan direbut zoom/scroll bawaan browser di area
@@ -4556,8 +4662,8 @@ function PresetPanel({ selectedClip, selectedClipIds = [], dispatch }) {
   return (
     <div className="mfs-panel-body">
       <div className="mfs-tabs mfs-tabs-sub">
-        <div className={`mfs-tab ${tab === "text" ? "active" : ""}`} onClick={() => setTab("text")}>Teks ({PRESET_LIB.length})</div>
-        <div className={`mfs-tab ${tab === "media" ? "active" : ""}`} onClick={() => setTab("media")}>Gambar & Video ({IMAGE_PRESET_LIB.length})</div>
+        <div className={`mfs-tab ${tab === "text" ? "active" : ""}`} onClick={() => setTab("text")}><span className="mfs-tab-label"><Type size={13} /> Teks</span><span className="mfs-tab-count">{PRESET_LIB.length}</span></div>
+        <div className={`mfs-tab ${tab === "media" ? "active" : ""}`} onClick={() => setTab("media")}><span className="mfs-tab-label"><Film size={13} /> Gambar &amp; Video</span><span className="mfs-tab-count">{IMAGE_PRESET_LIB.length}</span></div>
       </div>
       {!applicable && (
         <div className="mfs-empty" style={{ margin: "10px 0" }}>
@@ -4672,6 +4778,39 @@ function LibrarySection({ kind, label, accept, icon: Icon, assets, inputRef, hin
   );
 }
 
+function SfxSection({ dispatch }) {
+  const [cat, setCat] = useState(SFX_CATEGORIES[0]);
+  const [busyId, setBusyId] = useState(null);
+  const list = SFX_LIBRARY.filter((s) => s.cat === cat);
+  const add = async (def) => {
+    if (busyId) return;
+    setBusyId(def.id);
+    try {
+      const file = await renderSfxFile(def.id);
+      const asset = { id: uid("asset"), name: file.name, kind: "audio", src: URL.createObjectURL(file), file };
+      dispatch({ type: "ADD_LIBRARY_ASSET", kind: "audio", asset });
+      dispatch({ type: "ADD_MEDIA_CLIP", kind: "audio", asset });
+    } catch (err) { reportError(`Gagal membuat SFX: ${err.message || err}`); }
+    setBusyId(null);
+  };
+  return (
+    <div className="mfs-sfx">
+      <div className="mfs-subhead"><Volume2 size={12} />SFX Motion <span className="mfs-sfx-count">{SFX_LIBRARY.length}</span></div>
+      <div className="mfs-sfx-hint">Efek suara tanpa musik — whoosh, pop, impact, riser, glitch. Bawaan, offline, bebas hak cipta.</div>
+      <div className="mfs-gf-cats">
+        {SFX_CATEGORIES.map((c) => <button key={c} type="button" className={cat === c ? "active" : ""} onClick={() => setCat(c)}>{c}</button>)}
+      </div>
+      {list.map((def) => (
+        <div key={def.id} className="mfs-list-item mfs-sfx-item">
+          <button type="button" className="mfs-add-btn" title="Dengarkan" onClick={() => { previewSfx(def.id).catch(() => {}); }}><Play size={11} style={{ marginLeft: 1 }} /></button>
+          <span className="name" title={`${def.name} · ${def.dur.toFixed(1)} dtk`}>{def.name}</span>
+          <button type="button" className="mfs-add-btn" title="Tambah ke frame" disabled={!!busyId} onClick={() => add(def)}>{busyId === def.id ? <Loader2 size={12} className="mfs-spin" /> : <Plus size={13} />}</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function LibraryPanel({ library, dispatch }) {
   const imgRef = useRef(null), vidRef = useRef(null), audRef = useRef(null);
 
@@ -4703,6 +4842,7 @@ function LibraryPanel({ library, dispatch }) {
       <LibrarySection kind="image" label="Gambar" accept="image/*,.svg" icon={ImageIcon} assets={library.images} inputRef={imgRef} hint=".svg / .png / .jpg" onUpload={handleUpload} dispatch={dispatch} />
       <LibrarySection kind="video" label="Video" accept="video/*" icon={Film} assets={library.videos} inputRef={vidRef} hint="file video" onUpload={handleUpload} dispatch={dispatch} />
       <LibrarySection kind="audio" label="Audio" accept="audio/*" icon={Music} assets={library.audios} inputRef={audRef} hint="file audio" onUpload={handleUpload} dispatch={dispatch} />
+      <SfxSection dispatch={dispatch} />
     </div>
   );
 }
@@ -4923,8 +5063,8 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
   // --- Camera Angle ---------------------------------------------------
   const [cameraMode, setCameraMode] = useState(false);
   const cameraModeRef = useRef(false);
-  const [camEase, setCamEase] = useState("auto");
-  const camEaseRef = useRef("auto");
+  const [camEase, setCamEase] = useState("easyEase");
+  const camEaseRef = useRef("easyEase");
   const cameraKeysRef = useRef(project.camera?.keys || []);
   cameraKeysRef.current = project.camera?.keys || [];
   useEffect(() => { camEaseRef.current = camEase; }, [camEase]);
@@ -5819,12 +5959,12 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
                 <span className="mfs-cam-info">{curCamKey ? `◆ Keyframe di ${(curCamKey.t / 1000).toFixed(2)}dtk` : "Geser / skala preview = keyframe baru"}</span>
                 <button type="button" className="mfs-icon-btn" disabled={!nextCamKey} title="Keyframe berikutnya" onClick={() => nextCamKey && dispatchPlayback({ type: "SET_PLAYHEAD", value: nextCamKey.t })}><SkipForward size={13} /></button>
               </div>
-              <div className="mfs-cam-row">
+              <div className="mfs-cam-row mfs-cam-easerow">
                 <span className="mfs-cam-label">Ease</span>
-                <div className="mfs-segmented">
-                  <button type="button" className={shownEase === "auto" ? "active" : ""} onClick={() => chooseEase("auto")} title="Gerak halus (ease in-out) menuju keyframe ini">Otomatis</button>
-                  <button type="button" className={shownEase === "instan" ? "active" : ""} onClick={() => chooseEase("instan")} title="Kamera langsung pindah tepat di keyframe ini (potong)">Instan</button>
-                </div>
+                <CamEaseCurve id={shownEase} />
+                <select className="mfs-input mfs-select mfs-cam-select" value={camEaseDef(shownEase).id} onChange={(e) => chooseEase(e.target.value)} title={camEaseDef(shownEase).hint}>
+                  {CAM_EASES.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
               </div>
               <div className="mfs-cam-row">
                 <span className="mfs-cam-label">Skala</span>
@@ -6789,6 +6929,36 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const horizontalScrollRef = useRef(null);
   const [horizontalScroll, setHorizontalScroll] = useState(0);
   const [marquee, setMarquee] = useState(null);
+  // Seret keyframe kamera di penggaris untuk mengubah waktunya; ketuk saja = pindahkan playhead ke sana.
+  const onCamKeyDown = (e, key) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const ruler = rulerRef.current;
+    if (!ruler) return;
+    const startX = e.clientX;
+    let moved = false;
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (err) {}
+    const timeAt = (clientX) => {
+      const r = ruler.getBoundingClientRect();
+      return clamp(((clientX - r.left) / Math.max(1, r.width)) * tlDurRef.current, 0, tlDurRef.current);
+    };
+    const onMove = (ev) => {
+      if (!moved && Math.abs(ev.clientX - startX) < 3) return;
+      moved = true;
+      const t = Math.round(timeAt(ev.clientX));
+      dispatchProject({ type: "CAMERA_MOVE_KEY", id: key.id, t });
+      dispatchPlayback({ type: "SET_PLAYHEAD", value: t });
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      if (!moved) dispatchPlayback({ type: "SET_PLAYHEAD", value: key.t });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  };
   const MIN_TL_H = 120;
   const MAX_TL_H = Math.max(320, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) * 0.65));
   const liveTimelineDuration = useMemo(() => computeTimelineDuration(project.clips), [project.clips]);
@@ -7322,11 +7492,10 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
                   <button
                     key={k.id}
                     type="button"
-                    className={`mfs-cam-key ${k.ease === "instan" ? "instan" : ""}`}
+                    className="mfs-cam-key"
                     style={{ left: `${Math.min(100, (k.t / timelineDuration) * 100)}%` }}
-                    title={`Keyframe kamera ${(k.t / 1000).toFixed(2)}dtk · ${k.ease === "instan" ? "Instan" : "Ease otomatis"} · ${Math.round(k.scale * 100)}%`}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); dispatchPlayback({ type: "SET_PLAYHEAD", value: k.t }); }}
+                    title={`Keyframe kamera ${(k.t / 1000).toFixed(2)}dtk · ${camEaseDef(k.ease).name} · ${Math.round(k.scale * 100)}% — seret untuk memindah waktu`}
+                    onPointerDown={(e) => onCamKeyDown(e, k)}
                   />
                 ))}
                 <div ref={playheadMarkerRef} className="mfs-playhead-marker" style={{ left: 0 }} />
