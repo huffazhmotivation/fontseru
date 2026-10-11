@@ -7360,6 +7360,14 @@ html[data-tablet="true"] body .mfs-root .mfs-layers { overscroll-behavior: conta
 html[data-tablet="true"] body .mfs-root .mfs-transport { justify-content: flex-start; padding: 0 12px; gap: 10px; }
 html[data-tablet="true"] body .mfs-root .mfs-transport > :first-child { margin-left: auto; }
 html[data-tablet="true"] body .mfs-root .mfs-transport-time { position: static; margin-left: auto; white-space: nowrap; flex-shrink: 0; }
+/* iPad landscape: tombol Ulang · Play · Ulang-otomatis tepat di tengah preview; zoom di kiri, waktu di kanan. */
+@media (min-width: 861px) and (orientation: landscape) {
+  html[data-tablet="true"] body .mfs-root .mfs-transport { justify-content: center; gap: 14px; position: relative; padding: 0 12px; }
+  html[data-tablet="true"] body .mfs-root .mfs-transport > :first-child { margin-left: 0; }
+  html[data-tablet="true"] body .mfs-root .mfs-transport .mfs-zoom-badge { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); }
+  html[data-tablet="true"] body .mfs-root .mfs-transport > button:last-of-type { position: absolute; left: 62px; top: 50%; transform: translateY(-50%); }
+  html[data-tablet="true"] body .mfs-root .mfs-transport .mfs-transport-time { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); margin: 0; }
+}
 
 /* Test Lab (layar sentuh): tombol ikon keyboard di kotak teks — satu ketuk memunculkan keyboard layar. */
 .fm-lab-kb-btn {
