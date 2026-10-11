@@ -3,6 +3,8 @@ import { ModeTabs } from "@/mode/ModeTabs";
 import { TabletPad } from "@/mode/TabletPad";
 import motionLogoDark from "@/assets/logo-motion-dark.svg";
 import motionLogoLight from "@/assets/logo-motion-light.svg";
+import { GOOGLE_FONTS, GOOGLE_FONT_CATEGORIES, loadGoogleFont, googleFontValue, googleFamilyOf } from "@/motion/googleFonts";
+import { computeVideoMatte, getMattedFrame, hasMatte, setMatte, clearMatte } from "@/motion/videoMatte";
 import { decodeAudioFile, transcribeAudio, getLanguageOptions, splitCaptionText, groupCaptionSentences, smartCaptionSegments } from "@/motion/autoCaption";
 import { loadMotionProject, saveMotionProject, clearMotionProject, serializeProjectForExport, deserializeImportedProject } from "@/motion/motionPersist";
 import {
@@ -20,6 +22,7 @@ import {
   Download, FolderOpen, FilePlus2,
   Aperture, Camera, Orbit, Frame, Contrast, Shuffle, Maximize2, Clock, Scaling, Anchor, Crop,
   PenTool, Pencil, Scan, Circle, Underline, Highlighter, Copy,
+  Video, SkipBack, SkipForward, Check,
 } from "lucide-react";
 
 /* ============================================================
@@ -51,6 +54,58 @@ function ease(kind, t) {
     case "easeOut": return 1 - Math.pow(1 - t, 3);
     case "easeInOut": return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     default: return t;
+  }
+}
+
+/* ============================================================
+   CAMERA ANGLE (keyframe kamera ala After Effects)
+   Kamera = satu transformasi (geser x/y + skala) yang diterapkan ke SEMUA
+   objek sekaligus. Tiap key: { id, t(ms), x, y, scale, ease }.
+   ease "auto"  = gerak halus (ease in-out) dari key sebelumnya ke key ini
+   ease "instan" = kamera bertahan lalu LANGSUNG pindah tepat di waktu key ini
+   ============================================================ */
+const CAM_IDENTITY = { x: 0, y: 0, scale: 1 };
+const CAM_KEY_TOL_MS = 40;
+function sampleCamera(keys, t) {
+  if (!keys || keys.length === 0) return CAM_IDENTITY;
+  const first = keys[0];
+  if (keys.length === 1 || t <= first.t) return first;
+  const last = keys[keys.length - 1];
+  if (t >= last.t) return last;
+  let i = 0;
+  while (i < keys.length - 2 && keys[i + 1].t <= t) i++;
+  const a = keys[i], b = keys[i + 1];
+  if (b.ease === "instan") return t >= b.t ? b : a;
+  const p = ease("easeInOut", (t - a.t) / Math.max(1, b.t - a.t));
+  return { x: a.x + (b.x - a.x) * p, y: a.y + (b.y - a.y) * p, scale: a.scale * Math.pow(b.scale / a.scale, p) };
+}
+function cameraIsIdentity(c) { return !c || (Math.abs(c.x) < 0.01 && Math.abs(c.y) < 0.01 && Math.abs(c.scale - 1) < 0.0005); }
+function findCameraKey(keys, t) { return (keys || []).find((k) => Math.abs(k.t - t) <= CAM_KEY_TOL_MS) || null; }
+function cameraReducer(camera, action) {
+  const keys = camera?.keys || [];
+  switch (action.type) {
+    case "CAMERA_SET_KEY": {
+      const t = Math.max(0, Math.round(action.t));
+      const cur = sampleCamera(keys, t);
+      const base = { x: cur.x, y: cur.y, scale: cur.scale };
+      const next = { ...base, ...action.patch };
+      next.scale = clamp(next.scale, 0.1, 8);
+      const existing = findCameraKey(keys, t);
+      let out;
+      if (existing) {
+        out = keys.map((k) => (k === existing ? { ...k, ...next, ...(action.ease ? { ease: action.ease } : {}) } : k));
+      } else {
+        out = [...keys, { id: uid("cam"), t, ...next, ease: action.ease || "auto" }];
+        // Key pertama di tengah timeline: tambahkan key awal (t=0) berisi kamera
+        // semula supaya bagian sebelum key ini TIDAK ikut bergeser.
+        if (keys.length === 0 && t > CAM_KEY_TOL_MS) out.push({ id: uid("cam"), t: 0, ...CAM_IDENTITY, ease: "auto" });
+      }
+      return { keys: out.sort((a, b) => a.t - b.t) };
+    }
+    case "CAMERA_SET_EASE": return { keys: keys.map((k) => (k.id === action.id ? { ...k, ease: action.ease } : k)) };
+    case "CAMERA_DELETE_KEY": return { keys: keys.filter((k) => k.id !== action.id) };
+    case "CAMERA_CLEAR": return { keys: [] };
+    default: return camera;
   }
 }
 
@@ -754,6 +809,7 @@ function normalizeMotionProject(project) {
   return {
     ...project,
     transitions: Array.isArray(project.transitions) ? project.transitions : [],
+    camera: { keys: Array.isArray(project.camera?.keys) ? project.camera.keys.filter((k) => k && Number.isFinite(k.t)).sort((a, b) => a.t - b.t) : [] },
   };
 }
 
@@ -1216,6 +1272,7 @@ function makeInitialProject() {
     library: { images: [], videos: [], audios: [] },
     background: { type: "solid", color: "#0d0d10", gradFrom: "#1c1c28", gradTo: "#08080a", gradAngle: 135, imageSrc: null },
     frameSize: { presetId: DEFAULT_FRAME.id, w: DEFAULT_FRAME.w, h: DEFAULT_FRAME.h },
+    camera: { keys: [] },
   };
 }
 const initialProjectState = makeInitialProject();
@@ -1358,6 +1415,10 @@ function normalizePersistedMediaClips(rawClips, rawTracks, library) {
 
 function projectReducer(state, action) {
   switch (action.type) {
+    case "CAMERA_SET_KEY": case "CAMERA_SET_EASE": case "CAMERA_DELETE_KEY": case "CAMERA_CLEAR": {
+      const camera = cameraReducer(state.camera, action);
+      return camera === state.camera ? state : { ...state, camera };
+    }
     case "HYDRATE_PROJECT": {
       if (!action.project) return state;
       const normalized = normalizePersistedMediaClips(action.project.clips || state.clips, action.project.tracks || state.tracks, action.project.library || state.library);
@@ -1373,6 +1434,7 @@ function projectReducer(state, action) {
         frameSize: action.project.frameSize || state.frameSize,
         transitions: Array.isArray(action.project.transitions) ? action.project.transitions : [],
         library: action.project.library || state.library,
+        camera: action.project.camera || state.camera || { keys: [] },
         selectedClipId: normalizedIds.has(action.project.selectedClipId) ? action.project.selectedClipId : null,
         selectedClipIds: Array.isArray(action.project.selectedClipIds)
           ? action.project.selectedClipIds.filter((id) => normalizedIds.has(id))
@@ -3480,6 +3542,27 @@ function drawMediaVisual(mainCtx, el, clip, playheadMs, w, h, blurCanvas, blurCt
   return { cx, cy, halfW: (dw * sx) / 2 + 8, halfH: (dh * sy) / 2 + 8, rotation: (p.rotation || 0) + off.rotation };
 }
 
+function drawCameraOverlay(ctx, w, h, cam, k = 1) {
+  // k = piksel-kanvas per piksel-layar, supaya garis & handle tetap terlihat saat kanvas diperkecil di layar.
+  k = Math.max(1, k);
+  const cx = w / 2 + cam.x, cy = h / 2 + cam.y, hw = (w / 2) * cam.scale, hh = (h / 2) * cam.scale;
+  const hs = 7 * k;
+  ctx.save();
+  ctx.strokeStyle = "#ffb454"; ctx.fillStyle = "#ffb454";
+  ctx.lineWidth = 2 * k; ctx.setLineDash([8 * k, 5 * k]);
+  ctx.strokeRect(cx - hw, cy - hh, hw * 2, hh * 2);
+  ctx.setLineDash([]);
+  ctx.lineWidth = 1.5 * k;
+  ctx.beginPath(); ctx.moveTo(cx - 14 * k, cy); ctx.lineTo(cx + 14 * k, cy); ctx.moveTo(cx, cy - 14 * k); ctx.lineTo(cx, cy + 14 * k); ctx.stroke();
+  [[-hw, -hh], [hw, -hh], [-hw, hh], [hw, hh]].forEach(([dx, dy]) => {
+    ctx.fillStyle = "#fff"; ctx.fillRect(cx + dx - hs / 2, cy + dy - hs / 2, hs, hs);
+    ctx.strokeStyle = "#ffb454"; ctx.strokeRect(cx + dx - hs / 2, cy + dy - hs / 2, hs, hs);
+  });
+  ctx.font = `600 ${12 * k}px Inter, sans-serif`; ctx.fillStyle = "#ffb454";
+  ctx.fillText("KAMERA " + Math.round(cam.scale * 100) + "%", 12 * k, h - 12 * k);
+  ctx.restore();
+}
+
 function drawSelectionOverlay(ctx, bbox) {
   ctx.save();
   ctx.translate(bbox.cx, bbox.cy);
@@ -3882,7 +3965,30 @@ const GlobalStyle = () => (
     .mfs-subhead:first-child { margin-top:0; }
     .mfs-list-item[draggable="true"] { cursor:grab; }
 
-    .mfs-center { grid-area:center; background:var(--bg); display:flex; flex-direction:column; min-height:0; }
+    .mfs-center { grid-area:center; background:var(--bg); display:flex; flex-direction:column; min-height:0; position:relative; }
+    .mfs-cam-ui { position:absolute; top:8px; left:8px; z-index:40; display:flex; flex-direction:column; align-items:flex-start; gap:6px; max-width:calc(100% - 16px); pointer-events:none; }
+    .mfs-cam-ui > * { pointer-events:auto; }
+    .mfs-cam-toggle { display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 12px; border-radius:999px; border:1px solid var(--border-light); background:var(--bg-panel); color:var(--text); font-size:12px; font-weight:600; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); }
+    .mfs-cam-toggle.active { background:#ffb454; color:#1a1206; border-color:#ffb454; }
+    .mfs-cam-toggle:disabled { opacity:.5; cursor:default; }
+    .mfs-cam-bar { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; padding:7px 10px; border-top:1px solid #ffb45466; background:color-mix(in srgb, var(--bg-panel) 96%, #ffb454 4%); flex-shrink:0; }
+    .mfs-cam-nav { flex:1 1 150px; }
+    .mfs-cam-row.mfs-cam-actions { flex:1 1 100%; }
+    .mfs-cam-row { display:flex; align-items:center; gap:8px; min-width:0; }
+    .mfs-cam-row input[type=range] { flex:1; min-width:70px; accent-color:#ffb454; }
+    .mfs-cam-label { font-size:10.5px; color:var(--text-dim); font-weight:600; width:34px; flex-shrink:0; }
+    .mfs-cam-value { font-size:11px; color:var(--text-muted); width:40px; text-align:right; font-variant-numeric:tabular-nums; }
+    .mfs-cam-info { flex:1; font-size:11px; color:#ffb454; text-align:center; line-height:1.3; }
+    .mfs-cam-actions { flex-wrap:wrap; gap:5px; }
+    .mfs-cam-actions .mfs-btn { flex:1 1 auto; justify-content:center; }
+    .mfs-cam-done { background:#ffb454 !important; color:#1a1206 !important; border-color:#ffb454 !important; }
+    .mfs-gf-cats { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
+    .mfs-gf-cats button { border:1px solid var(--border-light); background:var(--bg-elevated); color:var(--text-dim); font-size:10px; padding:3px 8px; border-radius:999px; cursor:pointer; }
+    .mfs-gf-cats button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .mfs-gf-list { max-height:240px; overflow-y:auto; }
+    .mfs-gf-list .mfs-font-item .name { font-size:14px; }
+    .mfs-cam-key { position:absolute; bottom:1px; width:10px; height:10px; margin-left:-5px; transform:rotate(45deg); background:#ffb454; border:1px solid #1a1206; border-radius:2px; cursor:pointer; z-index:9; padding:0; }
+    .mfs-cam-key.instan { background:#ff6b6b; }
     .mfs-canvas-wrap { flex:1; display:flex; align-items:center; justify-content:center; position:relative; overflow:auto; background-image:radial-gradient(circle,var(--stage-checker) 1px,transparent 1px); background-size:22px 22px; background-position:center;
       /* Biar gestur cubit dua-jari (lihat pinch-to-zoom di CenterStage) jadi
          milik kanvas, bukan direbut zoom/scroll bawaan browser di area
@@ -4741,12 +4847,13 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
   const [canvasCursor, setCanvasCursor] = useState("move");
 
   const onCanvasHover = useCallback((e) => {
+    if (cameraModeRef.current) { setCanvasCursor("move"); return; }
     const sel = selectedClipRef.current;
     const bbox = bboxRef.current;
     if (!sel || !bbox) { setCanvasCursor("default"); return; }
     const rect = canvasRef.current.getBoundingClientRect();
     const sX = dimsRef.current.w / rect.width, sY = dimsRef.current.h / rect.height;
-    const mx = (e.clientX - rect.left) * sX, my = (e.clientY - rect.top) * sY;
+    const [mx, my] = toWorld((e.clientX - rect.left) * sX, (e.clientY - rect.top) * sY);
     const rad = (bbox.rotation * Math.PI) / 180;
     const dx = mx - bbox.cx, dy = my - bbox.cy;
     const lx = dx * Math.cos(-rad) - dy * Math.sin(-rad);
@@ -4813,6 +4920,36 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
   const selectedClipRef = useRef(selectedClip);
   useEffect(() => { selectedClipRef.current = selectedClip; }, [selectedClip]);
 
+  // --- Camera Angle ---------------------------------------------------
+  const [cameraMode, setCameraMode] = useState(false);
+  const cameraModeRef = useRef(false);
+  const [camEase, setCamEase] = useState("auto");
+  const camEaseRef = useRef("auto");
+  const cameraKeysRef = useRef(project.camera?.keys || []);
+  cameraKeysRef.current = project.camera?.keys || [];
+  useEffect(() => { camEaseRef.current = camEase; }, [camEase]);
+  useEffect(() => { cameraModeRef.current = cameraMode; redrawRef.current(); }, [cameraMode]);
+  // Proyek yang dibuka ulang: muat font Google yang dipakai klip teks.
+  const googleFamiliesKey = project.clips.map((c) => (c.type === "text" ? googleFamilyOf(c.fontFamily) : null)).filter(Boolean).sort().join("|");
+  useEffect(() => { googleFamiliesKey.split("|").filter(Boolean).forEach((f) => { loadGoogleFont(f); }); }, [googleFamiliesKey]);
+  // Font Google selesai diunduh → gambar ulang (dan buang cache layer yang memakai font cadangan).
+  useEffect(() => {
+    const fs = document.fonts;
+    if (!fs?.addEventListener) return;
+    const onDone = () => { clearLayerCache(); redrawRef.current(); };
+    fs.addEventListener("loadingdone", onDone);
+    return () => fs.removeEventListener("loadingdone", onDone);
+  }, []);
+  // koordinat piksel-kanvas → koordinat "dunia" (sebelum kamera) pada waktu t
+  const toWorld = (mx, my, camTime) => {
+    const cam = sampleCamera(cameraKeysRef.current, camTime ?? playheadRef.current);
+    const { w, h } = dimsRef.current;
+    return [(mx - w / 2 - cam.x) / cam.scale + w / 2, (my - h / 2 - cam.y) / cam.scale + h / 2];
+  };
+  const setCameraKey = useCallback((patch, ease) => {
+    dispatchProject({ type: "CAMERA_SET_KEY", t: playheadRef.current, patch, ease: ease || (findCameraKey(cameraKeysRef.current, playheadRef.current) ? undefined : camEaseRef.current) });
+  }, [dispatchProject]);
+
   const playheadRef = useRef(playback.playhead);
   const playingRef = useRef(playback.playing);
   useEffect(() => { playingRef.current = playback.playing; }, [playback.playing]);
@@ -4831,6 +4968,14 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
 
     const selId = selectedClipRef.current?.id;
     let selBBox = null;
+    const cam = sampleCamera(cameraKeysRef.current, timeMs);
+    const camActive = !cameraIsIdentity(cam);
+    if (camActive) {
+      ctx.save();
+      ctx.translate(w / 2 + cam.x, h / 2 + cam.y);
+      ctx.scale(cam.scale, cam.scale);
+      ctx.translate(-w / 2, -h / 2);
+    }
 
     // Digambar dari BAWAH ke ATAS daftar layer (array dibalik), supaya layer
     // yang berada paling atas di panel Layer selalu digambar TERAKHIR — jadi
@@ -4841,9 +4986,11 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       try {
         const slots = transitionsRef.current;
         const el = clip.type === "image" || clip.type === "video" ? mediaMapRef.current[clip.type][clip.id]?.el : null;
+        // Video dengan latar dihapus: pakai frame bertransparansi hasil matte.
+        const srcEl = clip.type === "video" && clip.bgRemoved && el ? (getMattedFrame(clip, el, timeMs - clip.start) || el) : el;
         const draw = (target) => (clip.type === "text"
           ? drawTextClip(target, offCtx, offCanvas, clip, timeMs, w, h, blurCanvas, blurCtx, slots)
-          : drawMediaVisual(target, el, clip, timeMs, w, h, blurCanvas, blurCtx, slots));
+          : drawMediaVisual(target, srcEl, clip, timeMs, w, h, blurCanvas, blurCtx, slots));
         if (clip.type === "text" || clip.type === "image" || clip.type === "video") {
           const lt = timeMs - clip.start;
           // Klip 3D/blur yang sedang diam → pakai cache layer (lihat drawCachedLayer).
@@ -4857,11 +5004,16 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       if (clip.id === selId) selBBox = bbox;
     }
 
-    if (selBBox && !playingRef.current && !exportingRef.current) {
+    if (selBBox && !playingRef.current && !exportingRef.current && !cameraModeRef.current) {
       drawSelectionOverlay(ctx, selBBox);
       bboxRef.current = selBBox;
     } else {
       bboxRef.current = null;
+    }
+    if (camActive) ctx.restore();
+    if (cameraModeRef.current && !playingRef.current && !exportingRef.current) {
+      const cw = canvasRef.current?.getBoundingClientRect().width || w;
+      drawCameraOverlay(ctx, w, h, cam, w / cw);
     }
   }, [mediaMapRef]);
 
@@ -4957,6 +5109,16 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     const onWheel = (e) => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+      if (cameraModeRef.current && !playingRef.current && canvasRef.current) {
+        // Camera Angle: roda mouse = skala kamera, titik di bawah kursor tetap diam.
+        const rect = canvasRef.current.getBoundingClientRect();
+        const { w, h } = dimsRef.current;
+        const px = (e.clientX - rect.left) * (w / rect.width) - w / 2, py = (e.clientY - rect.top) * (h / rect.height) - h / 2;
+        const cam = sampleCamera(cameraKeysRef.current, playheadRef.current);
+        const ns = clamp(cam.scale * factor, 0.1, 8), k = ns / cam.scale;
+        setCameraKey({ scale: Math.round(ns * 1000) / 1000, x: px - k * (px - cam.x), y: py - k * (py - cam.y) });
+        return;
+      }
       setZoom((z) => Math.round(clamp(z * factor, 0.15, 4) * 100) / 100);
     };
     wrap.addEventListener("wheel", onWheel, { passive: false });
@@ -4976,6 +5138,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     if (!wrap) return;
     let startDist = null;
     let startZoom = 1;
+    let startCam = null;
 
     const distanceOf = (touches) => {
       const [a, b] = touches;
@@ -4986,12 +5149,18 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       if (e.touches.length === 2) {
         startDist = distanceOf(e.touches);
         startZoom = zoomRef.current;
+        startCam = sampleCamera(cameraKeysRef.current, playheadRef.current);
       }
     };
     const onTouchMove = (e) => {
       if (e.touches.length !== 2 || !startDist) return;
       e.preventDefault();
       const scale = distanceOf(e.touches) / startDist;
+      if (cameraModeRef.current && startCam && !playingRef.current) {
+        const ns = clamp(startCam.scale * scale, 0.1, 8);
+        setCameraKey({ scale: Math.round(ns * 1000) / 1000 });
+        return;
+      }
       setZoom(Math.round(clamp(startZoom * scale, 0.15, 4) * 100) / 100);
     };
     const onTouchEnd = (e) => {
@@ -5029,7 +5198,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     if (exportingRef.current) return;
     syncMediaPlayback(project.clips, mediaMapRef, playback.playhead, false, transitionsRef.current);
     drawFrame(playback.playhead);
-  }, [playback.playhead, playback.playing, project.clips, project.selectedClipId, project.background, drawFrame, mediaMapRef, exporting]);
+  }, [playback.playhead, playback.playing, project.clips, project.selectedClipId, project.background, project.camera, cameraMode, drawFrame, mediaMapRef, exporting]);
 
   useEffect(() => {
     if (!playback.playing) return;
@@ -5089,12 +5258,51 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     return () => { cancelAnimationFrame(raf); setGfxQuality(1); };
   }, [playback.playing, playback.loop, dispatchPlayback, drawFrame, mediaMapRef, playClock]);
 
+  // Camera Angle: seret di mana saja = geser kamera, tarik sudut kotak = skala.
+  // Setiap perubahan otomatis menjadi keyframe kamera di posisi playhead.
+  const startCameraDrag = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const sX = dimsRef.current.w / rect.width, sY = dimsRef.current.h / rect.height;
+    const { w, h } = dimsRef.current;
+    const mx0 = (e.clientX - rect.left) * sX, my0 = (e.clientY - rect.top) * sY;
+    const cam0 = sampleCamera(cameraKeysRef.current, playheadRef.current);
+    const bcx = w / 2 + cam0.x, bcy = h / 2 + cam0.y;
+    const hit = [[-1, -1], [1, -1], [-1, 1], [1, 1]].some(([sx, sy]) => Math.hypot(mx0 - (bcx + sx * (w / 2) * cam0.scale), my0 - (bcy + sy * (h / 2) * cam0.scale)) < 16 * Math.max(sX, 1));
+    const mode = hit ? "scale" : "move";
+    const startDist = Math.max(1, Math.hypot(mx0 - bcx, my0 - bcy));
+    const lockedTime = playheadRef.current;
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (err) {}
+    let pending = null, raf = 0;
+    const apply = (ev) => {
+      const mx = (ev.clientX - rect.left) * sX, my = (ev.clientY - rect.top) * sY;
+      const ease = findCameraKey(cameraKeysRef.current, lockedTime) ? undefined : camEaseRef.current;
+      if (mode === "move") {
+        dispatchProject({ type: "CAMERA_SET_KEY", t: lockedTime, patch: { x: cam0.x + (mx - mx0), y: cam0.y + (my - my0) }, ease });
+      } else {
+        const sc = clamp(cam0.scale * (Math.hypot(mx - bcx, my - bcy) / startDist), 0.1, 8);
+        dispatchProject({ type: "CAMERA_SET_KEY", t: lockedTime, patch: { scale: Math.round(sc * 1000) / 1000 }, ease });
+      }
+    };
+    const onMove = (ev) => { pending = ev; if (!raf) raf = requestAnimationFrame(() => { raf = 0; const p2 = pending; pending = null; if (p2) apply(p2); }); };
+    const onUp = () => {
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (pending) { apply(pending); pending = null; }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  };
+
   const onMouseDown = (e) => {
     if (playback.playing) return;
     // Pakai Pointer Events supaya jari (touch) dan pena berlaku sama seperti
     // mouse — satu jalur kode untuk drag geser/putar/skala objek di kanvas,
     // baik di desktop maupun HP/tablet.
     if (e.pointerType === "touch") e.preventDefault();
+    if (cameraModeRef.current) { startCameraDrag(e); return; }
     const sel = selectedClipRef.current;
     const bbox = bboxRef.current;
     if (!sel || !bbox) {
@@ -5105,7 +5313,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     }
     const rect = canvasRef.current.getBoundingClientRect();
     const scaleX = dimsRef.current.w / rect.width, scaleY = dimsRef.current.h / rect.height;
-    const mx = (e.clientX - rect.left) * scaleX, my = (e.clientY - rect.top) * scaleY;
+    const [mx, my] = toWorld((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY);
     const rad = (bbox.rotation * Math.PI) / 180;
     const handleDist = bbox.halfH + 26;
     const hx = bbox.cx + Math.sin(rad) * handleDist;
@@ -5167,7 +5375,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       if (!canvasRef.current) return;
       const r = canvasRef.current.getBoundingClientRect();
       const sX = dimsRef.current.w / r.width, sY = dimsRef.current.h / r.height;
-      const cx2 = (ev.clientX - r.left) * sX, cy2 = (ev.clientY - r.top) * sY;
+      const [cx2, cy2] = toWorld((ev.clientX - r.left) * sX, (ev.clientY - r.top) * sY);
       const d = dragRef.current;
       if (!d) return;
       if (d.mode === "move") {
@@ -5540,8 +5748,30 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
     return () => window.removeEventListener("keydown", onSpaceKey);
   }, [togglePlayback]);
 
+  const camKeys = project.camera?.keys || [];
+  const curCamKey = findCameraKey(camKeys, playback.playhead);
+  const camNow = sampleCamera(camKeys, playback.playhead);
+  const prevCamKey = [...camKeys].reverse().find((k) => k.t < playback.playhead - CAM_KEY_TOL_MS) || null;
+  const nextCamKey = camKeys.find((k) => k.t > playback.playhead + CAM_KEY_TOL_MS) || null;
+  const shownEase = curCamKey ? curCamKey.ease : camEase;
+  const chooseEase = (v) => {
+    setCamEase(v);
+    if (curCamKey) dispatchProject({ type: "CAMERA_SET_EASE", id: curCamKey.id, ease: v });
+  };
+
   return (
     <div className="mfs-center">
+      {!playback.previewOpen && (
+        <div className="mfs-cam-ui">
+          <button
+            type="button"
+            className={`mfs-cam-toggle ${cameraMode ? "active" : ""}`}
+            onClick={() => setCameraMode((v) => !v)}
+            disabled={exporting}
+            title="Camera Angle: semua objek jadi satu. Geser / skala di preview → otomatis jadi keyframe kamera di posisi playhead."
+          ><Video size={14} /> Camera Angle{camKeys.length > 0 ? ` · ${camKeys.length}` : ""}</button>
+        </div>
+      )}
       {!playback.previewOpen && (
         <TabletPad
           onCopy={() => pressKey("c", { ctrlKey: true })}
@@ -5582,6 +5812,33 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
           </>
         )}
       </div>
+      {cameraMode && !playback.previewOpen && (
+            <div className="mfs-cam-bar">
+              <div className="mfs-cam-row mfs-cam-nav">
+                <button type="button" className="mfs-icon-btn" disabled={!prevCamKey} title="Keyframe sebelumnya" onClick={() => prevCamKey && dispatchPlayback({ type: "SET_PLAYHEAD", value: prevCamKey.t })}><SkipBack size={13} /></button>
+                <span className="mfs-cam-info">{curCamKey ? `◆ Keyframe di ${(curCamKey.t / 1000).toFixed(2)}dtk` : "Geser / skala preview = keyframe baru"}</span>
+                <button type="button" className="mfs-icon-btn" disabled={!nextCamKey} title="Keyframe berikutnya" onClick={() => nextCamKey && dispatchPlayback({ type: "SET_PLAYHEAD", value: nextCamKey.t })}><SkipForward size={13} /></button>
+              </div>
+              <div className="mfs-cam-row">
+                <span className="mfs-cam-label">Ease</span>
+                <div className="mfs-segmented">
+                  <button type="button" className={shownEase === "auto" ? "active" : ""} onClick={() => chooseEase("auto")} title="Gerak halus (ease in-out) menuju keyframe ini">Otomatis</button>
+                  <button type="button" className={shownEase === "instan" ? "active" : ""} onClick={() => chooseEase("instan")} title="Kamera langsung pindah tepat di keyframe ini (potong)">Instan</button>
+                </div>
+              </div>
+              <div className="mfs-cam-row">
+                <span className="mfs-cam-label">Skala</span>
+                <input type="range" min={10} max={600} step={1} value={Math.round(camNow.scale * 100)} onChange={(e) => setCameraKey({ scale: Number(e.target.value) / 100 })} />
+                <span className="mfs-cam-value">{Math.round(camNow.scale * 100)}%</span>
+              </div>
+              <div className="mfs-cam-row mfs-cam-actions">
+                <button type="button" className="mfs-btn mfs-btn-sm" onClick={() => setCameraKey({ x: 0, y: 0, scale: 1 })} title="Kembalikan kamera ke posisi awal pada keyframe ini"><RotateCcw size={11} /> Reset</button>
+                <button type="button" className="mfs-btn mfs-btn-sm" disabled={!curCamKey} onClick={() => curCamKey && dispatchProject({ type: "CAMERA_DELETE_KEY", id: curCamKey.id })}><Trash2 size={11} /> Key</button>
+                <button type="button" className="mfs-btn mfs-btn-sm" disabled={camKeys.length === 0} onClick={() => dispatchProject({ type: "CAMERA_CLEAR" })} title="Hapus semua keyframe kamera">Hapus semua</button>
+                <button type="button" className="mfs-btn mfs-btn-sm mfs-cam-done" onClick={() => setCameraMode(false)}><Check size={11} /> Selesai</button>
+              </div>
+            </div>
+      )}
       {!playback.previewOpen && (
         <div className="mfs-transport">
           <button className="mfs-icon-btn" disabled={exporting} onClick={() => dispatchPlayback({ type: "SET_PLAYHEAD", value: 0 })} title="Ulangi dari awal"><RotateCcw size={15} /></button>
@@ -5910,6 +6167,43 @@ function BackgroundInspector({ background, dispatch }) {
 // Pemilih & pengunggah font, kini hidup di PANEL KANAN (sebelumnya di panel
 // kiri) menyatu dengan pengaturan teks lain. Font yang baru diunggah langsung
 // diterapkan ke klip teks yang sedang dipilih.
+function GoogleFontList({ active, onPick }) {
+  const [cat, setCat] = useState("Sans-serif");
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const list = useMemo(
+    () => (q ? GOOGLE_FONTS.filter((f) => f.family.toLowerCase().includes(q)).slice(0, 14) : GOOGLE_FONTS.filter((f) => f.category === cat)),
+    [q, cat],
+  );
+  // Muat CSS hanya untuk font yang sedang tampil, supaya tiap item bisa
+  // ditampilkan dengan hurufnya sendiri tanpa mengunduh seluruh pustaka.
+  useEffect(() => { list.forEach((f) => { loadGoogleFont(f.family); }); }, [list]);
+  return (
+    <>
+      <div className="mfs-section-label">Google Fonts</div>
+      <input className="mfs-input" placeholder="Cari font…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: "100%", marginBottom: 6 }} />
+      {!q && (
+        <div className="mfs-gf-cats">
+          {GOOGLE_FONT_CATEGORIES.map((c) => (
+            <button key={c} type="button" className={cat === c ? "active" : ""} onClick={() => setCat(c)}>{c}</button>
+          ))}
+        </div>
+      )}
+      <div className="mfs-gf-list">
+        {list.map((f) => {
+          const value = googleFontValue(f.family);
+          return (
+            <div key={f.family} className={`mfs-font-item ${active === value ? "selected" : ""}`} style={{ fontFamily: value }} onClick={() => onPick(f.family)}>
+              <Type size={13} color={active === value ? "var(--accent)" : "var(--text-dim)"} /><span className="name">{f.family}</span>
+            </div>
+          );
+        })}
+        {list.length === 0 && <div className="mfs-empty">Font tidak ditemukan.</div>}
+      </div>
+    </>
+  );
+}
+
 function FontPicker({ fonts, clip, dispatch, updateSelected }) {
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -5930,6 +6224,7 @@ function FontPicker({ fonts, clip, dispatch, updateSelected }) {
     setBusy(false);
   };
   const applyFont = (family) => (updateSelected || ((patch) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch })))({ fontFamily: family });
+  const applyGoogleFont = (family) => { loadGoogleFont(family).then((ok) => { if (!ok) reportError(`Font Google "${family}" gagal dimuat — periksa koneksi internet.`); }); applyFont(googleFontValue(family)); };
   const active = clip.fontFamily;
   return (
     <>
@@ -5948,7 +6243,71 @@ function FontPicker({ fonts, clip, dispatch, updateSelected }) {
           <Type size={13} color={active === f.family ? "var(--accent)" : "var(--text-dim)"} /><span className="name">{f.name}</span>
         </div>
       ))}
+      <GoogleFontList active={active} onPick={applyGoogleFont} />
     </>
+  );
+}
+
+function VideoBgRemoveControl({ clip, dispatch }) {
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const abortRef = useRef(null);
+  const [, force] = useState(0);
+  const ready = hasMatte(clip);
+  const update = (patch) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch });
+  const run = async () => {
+    if (busy) return;
+    setBusy(true); setError(""); setProgress(0.01); setStatus("Menyiapkan…");
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    try {
+      const matte = await computeVideoMatte({
+        src: clip.src, file: clip.file, durationMs: clip.duration, signal: ctl.signal,
+        onProgress: (msg, f) => { setStatus(msg); setProgress(clamp(f ?? 0, 0, 1)); },
+      });
+      setMatte(clip, matte);
+      update({ bgRemoved: true, bgEdge: clip.bgEdge ?? 0.6, bgShrink: clip.bgShrink ?? 0 });
+      setStatus("Latar dihapus"); setProgress(1);
+    } catch (err) {
+      if (err?.name === "AbortError") setStatus("Dibatalkan");
+      else { setError(err?.message || "Gagal menghapus latar video."); setStatus(""); }
+    } finally { abortRef.current = null; setBusy(false); force((n) => n + 1); }
+  };
+  return (
+    <div className="mfs-field mfs-auto-caption-card" style={{ marginTop: 10 }}>
+      <div className="mfs-auto-caption-heading"><Scan size={15} /><span>Hapus Latar Video</span><span className="mfs-auto-caption-badge">AI</span></div>
+      <div className="mfs-auto-caption-description">Mengenali orang yang berbicara dan membuang semua latar di belakangnya — satu klik. Diproses di perangkat ini (model ±26 MB diunduh sekali).</div>
+      {!busy && (
+        <button className="mfs-btn mfs-btn-sm" style={{ marginTop: 7, width: "100%" }} onClick={run}>
+          <Scan size={13} /> {ready && clip.bgRemoved ? "Proses ulang" : clip.bgRemoved && !ready ? "Proses ulang (data hilang setelah reload)" : "Hapus latar video"}
+        </button>
+      )}
+      {busy && (
+        <>
+          <div className="mfs-progress" style={{ marginTop: 7 }}><div style={{ width: `${Math.round(progress * 100)}%` }} /></div>
+          <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>{status}</div>
+          <button className="mfs-btn mfs-btn-sm" style={{ marginTop: 6, width: "100%" }} onClick={() => abortRef.current?.abort()}>Batalkan</button>
+        </>
+      )}
+      {!busy && ready && (
+        <>
+          <label className="mfs-check" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 11.5 }}>
+            <input type="checkbox" checked={!!clip.bgRemoved} onChange={(e) => update({ bgRemoved: e.target.checked })} /> Latar dihapus (tampilkan hasil)
+          </label>
+          {clip.bgRemoved && (
+            <>
+              <SliderField label="Ketajaman tepi" value={clip.bgEdge ?? 0.6} min={0} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => update({ bgEdge: v })} />
+              <SliderField label="Rapatkan / lebarkan" value={clip.bgShrink ?? 0} min={-1} max={1} step={0.05} format={(v) => (v === 0 ? "Normal" : v > 0 ? `Rapat ${Math.round(v * 100)}%` : `Lebar ${Math.round(-v * 100)}%`)} onChange={(v) => update({ bgShrink: v })} />
+              <button className="mfs-btn mfs-btn-sm" style={{ marginTop: 6, width: "100%" }} onClick={() => { clearMatte(clip); update({ bgRemoved: false }); force((n) => n + 1); }}>Kembalikan latar asli</button>
+            </>
+          )}
+        </>
+      )}
+      {!busy && status && !error && <div style={{ fontSize: 10, color: "var(--accent)", marginTop: 5 }}>{status}</div>}
+      {error && <div style={{ fontSize: 10, color: "#ff7777", marginTop: 5, lineHeight: 1.4 }}>{error}</div>}
+    </div>
   );
 }
 
@@ -6316,7 +6675,10 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch: d
           <AutoCaptionControl clip={clip} dispatch={dispatch} />
         </>
       ) : (
-        <AnimationControls clip={clip} dispatch={dispatch} updateSelected={updateSelected} />
+        <>
+          {isVideo && <VideoBgRemoveControl clip={clip} dispatch={dispatch} />}
+          <AnimationControls clip={clip} dispatch={dispatch} updateSelected={updateSelected} />
+        </>
       )}
     </div>
   );
@@ -6956,6 +7318,17 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
             <div ref={rulerContentRef} style={{ width: `${Math.max(1, timelineZoom) * 100}%`, minWidth: "100%", position: "relative", transform: `translateX(${-horizontalScroll}px)` }}>
               <div ref={rulerRef} className="mfs-ruler" onPointerDown={onRulerDown}>
                 {ticks.map((t) => <div key={t} className="mfs-ruler-tick" style={{ left: `${(t / timelineDuration) * 100}%` }}>{(t / 1000).toFixed(1)}dtk</div>)}
+                {(project.camera?.keys || []).map((k) => (
+                  <button
+                    key={k.id}
+                    type="button"
+                    className={`mfs-cam-key ${k.ease === "instan" ? "instan" : ""}`}
+                    style={{ left: `${Math.min(100, (k.t / timelineDuration) * 100)}%` }}
+                    title={`Keyframe kamera ${(k.t / 1000).toFixed(2)}dtk · ${k.ease === "instan" ? "Instan" : "Ease otomatis"} · ${Math.round(k.scale * 100)}%`}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); dispatchPlayback({ type: "SET_PLAYHEAD", value: k.t }); }}
+                  />
+                ))}
                 <div ref={playheadMarkerRef} className="mfs-playhead-marker" style={{ left: 0 }} />
               </div>
             </div>
