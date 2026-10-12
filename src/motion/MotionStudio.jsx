@@ -4263,11 +4263,11 @@ const GlobalStyle = () => (
     .mfs-lane.track-over { background:var(--accent-soft); }
     .mfs-clip-block { position:absolute; top:3px; bottom:3px; border-radius:7px; cursor:grab; overflow:hidden; min-width:22px; border:1px solid; touch-action:none; }
     .mfs-clip-block.selected { box-shadow:0 0 0 2px var(--accent-dim); border-color:var(--accent); z-index:5; }
-    .mfs-clip-body { padding:0 26px; display:flex; align-items:center; justify-content:center; height:100%; pointer-events:none; }
-    .mfs-clip-name { font-size:11px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:center; max-width:100%; }
+    .mfs-clip-body { padding:0 16px; display:flex; align-items:center; justify-content:center; gap:6px; height:100%; pointer-events:none; min-width:0; }
+    .mfs-clip-name { font-size:11px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:center; min-width:0; flex:0 1 auto; }
     .mfs-clip-handle { position:absolute; top:0; bottom:0; width:14px; cursor:ew-resize; z-index:2; touch-action:none; }
     .mfs-clip-handle.left { left:0; } .mfs-clip-handle.right { right:0; }
-    .mfs-clip-del { position:absolute; top:50%; right:4px; transform:translateY(-50%); width:20px; height:20px; border-radius:5px; background:rgba(0,0,0,0.38); border:none; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3; opacity:.85; padding:0; transition:opacity .15s ease, color .15s ease, background .15s ease; }
+    .mfs-clip-del { position:relative; flex:0 0 auto; pointer-events:auto; width:20px; height:20px; border-radius:5px; background:rgba(0,0,0,0.38); border:none; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3; opacity:.85; padding:0; transition:opacity .15s ease, color .15s ease, background .15s ease; }
     .mfs-clip-block:hover .mfs-clip-del { opacity:1; }
     .mfs-clip-del:hover { color:#ff6b6b; background:rgba(0,0,0,0.6); opacity:1; }
     .mfs-playhead { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:#b995ff; box-shadow:0 0 5px #9b6cff, 0 0 11px #9b6cff88; z-index:6; pointer-events:none; }
@@ -4294,7 +4294,7 @@ const GlobalStyle = () => (
       pointer-events:auto; user-select:none;
       transition:opacity .15s ease, transform .15s ease, background .15s ease, border-color .15s ease; }
     .mfs-transition-slot > svg { flex-shrink:0; width:10px; height:10px; }
-    .mfs-transition-slot { padding:0 26px; }
+    .mfs-transition-slot { padding:0 16px; gap:6px; }
     .mfs-transition-name { overflow:hidden; text-overflow:ellipsis; text-align:center; font-size:11px; font-weight:600; letter-spacing:0; }
     .mfs-transition-slot:hover { background:#3cc474; transform:translateY(-1px); }
     .mfs-transition-slot:active { cursor:grabbing; transform:scale(0.97); }
@@ -6462,7 +6462,7 @@ function VideoBgRemoveControl({ clip, dispatch }) {
         onProgress: (msg, f) => { setStatus(msg); setProgress(clamp(f ?? 0, 0, 1)); },
       });
       setMatte(clip, matte);
-      update({ bgRemoved: true, bgEdge: clip.bgEdge ?? 0.6, bgShrink: clip.bgShrink ?? 0 });
+      update({ bgRemoved: true, bgEdge: clip.bgEdge ?? 0.7, bgShrink: clip.bgShrink ?? 0.2 });
       setStatus("Latar dihapus"); setProgress(1);
     } catch (err) {
       if (err?.name === "AbortError") setStatus("Dibatalkan");
@@ -6492,8 +6492,8 @@ function VideoBgRemoveControl({ clip, dispatch }) {
           </label>
           {clip.bgRemoved && (
             <>
-              <SliderField label="Ketajaman tepi" value={clip.bgEdge ?? 0.6} min={0} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => update({ bgEdge: v })} />
-              <SliderField label="Rapatkan / lebarkan" value={clip.bgShrink ?? 0} min={-1} max={1} step={0.05} format={(v) => (v === 0 ? "Normal" : v > 0 ? `Rapat ${Math.round(v * 100)}%` : `Lebar ${Math.round(-v * 100)}%`)} onChange={(v) => update({ bgShrink: v })} />
+              <SliderField label="Ketajaman tepi" value={clip.bgEdge ?? 0.7} min={0} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => update({ bgEdge: v })} />
+              <SliderField label="Rapatkan / lebarkan" value={clip.bgShrink ?? 0.2} min={-1} max={1} step={0.05} format={(v) => (v === 0 ? "Normal" : v > 0 ? `Rapat ${Math.round(v * 100)}%` : `Lebar ${Math.round(-v * 100)}%`)} onChange={(v) => update({ bgShrink: v })} />
               <button className="mfs-btn mfs-btn-sm" style={{ marginTop: 6, width: "100%" }} onClick={() => { clearMatte(clip); update({ bgRemoved: false }); force((n) => n + 1); }}>Kembalikan latar asli</button>
             </>
           )}
@@ -6954,9 +6954,9 @@ const TimelineClipBlock = React.memo(function TimelineClipBlock({ clip, row, col
       <div className="mfs-clip-handle left" onPointerDown={(e) => onClipMouseDown(e, clip, "resize-left")} />
       <div className="mfs-clip-body">
         <span className="mfs-clip-name">{clip.type === "text" ? (clip.text.split("\n")[0] || clip.name) : clip.name}</span>
+        <button type="button" className="mfs-clip-del" title="Hapus klip" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(clip.id); }}><Trash2 size={13} /></button>
       </div>
       <div className="mfs-clip-handle right" onPointerDown={(e) => onClipMouseDown(e, clip, "resize-right")} />
-      <button type="button" className="mfs-clip-del" title="Hapus klip" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(clip.id); }}><Trash2 size={13} /></button>
     </div>
   );
 });

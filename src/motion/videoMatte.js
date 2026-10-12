@@ -125,7 +125,7 @@ export async function computeVideoMatte({ src, file, durationMs, onProgress, sig
   const main = pool ? null : await ensureModel(onProgress);
   try {
     const dur = Math.max(0.2, Math.min(video.duration || durationMs / 1000, (durationMs || 1e9) / 1000 + 0.05));
-    const fps = Math.max(6, Math.min(24, Math.floor(150 / dur)));
+    const fps = Math.max(8, Math.min(30, Math.floor(300 / dur)));
     const total = Math.max(1, Math.ceil(dur * fps));
     const long = 512;
     const ratio = Math.min(1, long / Math.max(video.videoWidth, video.videoHeight));
@@ -206,7 +206,7 @@ export async function computeVideoMatte({ src, file, durationMs, onProgress, sig
       const cur = frames[i], prev = frames[i - 1];
       for (let p = 0; p < cur.length; p++) {
         const d = Math.abs(cur[p] - prev[p]) / 255;
-        const wPrev = 0.3 * (1 - Math.min(1, d * 2.5));
+        const wPrev = 0.25 * (1 - Math.min(1, d * 6)); // hanya meredam kedip; piksel yang bergerak tidak ditarik ke frame lama
         cur[p] = Math.round(cur[p] * (1 - wPrev) + prev[p] * wPrev);
       }
     }
@@ -251,10 +251,10 @@ export function getMattedFrame(clip, el, localMs) {
   if (st.canvas.width !== cw || st.canvas.height !== ch) { st.canvas.width = cw; st.canvas.height = ch; }
   if (st.mask.width !== m.w || st.mask.height !== m.h) { st.mask.width = m.w; st.mask.height = m.h; st.sig = ""; }
 
-  const pos = Math.max(0, Math.min(m.frames.length - 1, (localMs / 1000) * m.fps));
-  const i0 = Math.floor(pos), i1 = Math.min(m.frames.length - 1, i0 + 1);
-  const f = Math.round((pos - i0) * 8) / 8;
-  const edge = clip.bgEdge ?? 0.6, shrink = clip.bgShrink ?? 0;
+  // Frame matte TERDEKAT (bukan campuran dua frame): mencampur dua posisi objek yang bergerak menimbulkan halo/ghost di tepi.
+  const i0 = Math.max(0, Math.min(m.frames.length - 1, Math.round((localMs / 1000) * m.fps))), i1 = i0;
+  const f = 0;
+  const edge = clip.bgEdge ?? 0.7, shrink = clip.bgShrink ?? 0.2;
   const sig = `${i0}|${i1}|${f}|${edge}|${shrink}`;
   if (st.sig !== sig) {
     st.sig = sig;
