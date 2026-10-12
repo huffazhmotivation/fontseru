@@ -13,6 +13,8 @@
  * Hasil (matte) disimpan di memori per aset video.
  */
 
+import { refineToGuide } from "./matteRefine.js";
+
 let modelPromise = null;
 let ModelBundle = null;
 
@@ -93,7 +95,7 @@ function spawnWorker() {
   };
   w.onerror = (ev) => { const err = new Error(ev.message || "Worker gagal"); state.ready?.reject(err); state.pending.forEach((p) => p.reject(err)); state.pending.clear(); };
   state.init = () => new Promise((resolve, reject) => { state.ready = { resolve, reject }; w.postMessage({ type: "init" }); });
-  state.run = (id, rgb, iw, ih) => new Promise((resolve, reject) => { state.pending.set(id, { resolve, reject }); w.postMessage({ type: "frame", id, rgb, w: iw, h: ih }, [rgb.buffer]); });
+  state.run = (id, rgb, iw, ih, hrgb, hw, hh) => new Promise((resolve, reject) => { state.pending.set(id, { resolve, reject }); w.postMessage({ type: "frame", id, rgb, w: iw, h: ih, hrgb, hw, hh }, [rgb.buffer, hrgb.buffer]); });
   return state;
 }
 
@@ -117,14 +119,17 @@ async function startPool(onProgress) {
 /**
  * @returns {Promise<{fps:number,w:number,h:number,frames:Uint8Array[]}>}
  */
-export async function computeVideoMatte({ src, file, durationMs, onProgress, signal }) {
+export async function computeVideoMatte({ src, file, durationMs, startMs = 0, onProgress, signal }) {
   onProgress?.("Menyiapkan model…", 0.01);
   let pool = null;
   try { pool = await startPool(onProgress); } catch (err) { pool = null; }
   const { video, revoke } = await openVideo(src, file);
   const main = pool ? null : await ensureModel(onProgress);
   try {
-    const dur = Math.max(0.2, Math.min(video.duration || durationMs / 1000, (durationMs || 1e9) / 1000 + 0.05));
+    // Hanya bagian video yang dipakai klip (setelah dipotong): dari startMs sampai startMs + durationMs.
+    const vdur = video.duration || (startMs + durationMs) / 1000;
+    const t0 = Math.max(0, Math.min(startMs / 1000, Math.max(0, vdur - 0.2)));
+    const dur = Math.max(0.2, Math.min(vdur - t0, (durationMs || 1e9) / 1000 + 0.05));
     const fps = Math.max(8, Math.min(30, Math.floor(300 / dur)));
     const total = Math.max(1, Math.ceil(dur * fps));
     const long = 512;
@@ -135,21 +140,26 @@ export async function computeVideoMatte({ src, file, durationMs, onProgress, sig
     const canvas = document.createElement("canvas");
     canvas.width = iw; canvas.height = ih;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    // Frame panduan beresolusi tinggi (sisi panjang ≤800 px) untuk menyempurnakan tepi alpha secara presisi.
+    const hratio = Math.min(1, 800 / Math.max(video.videoWidth, video.videoHeight));
+    const hw = Math.max(2, Math.round(video.videoWidth * hratio)), hh = Math.max(2, Math.round(video.videoHeight * hratio));
+    const hcanvas = document.createElement("canvas");
+    hcanvas.width = hw; hcanvas.height = hh;
+    const hctx = hcanvas.getContext("2d", { willReadFrequently: true });
+    const toRgb = (rgba) => { const rgb = new Uint8ClampedArray((rgba.length / 4) * 3); for (let p = 0, q = 0; p < rgba.length; p += 4, q += 3) { rgb[q] = rgba[p]; rgb[q + 1] = rgba[p + 1]; rgb[q + 2] = rgba[p + 2]; } return rgb; };
     const frames = new Array(total);
     let mw = 0, mh = 0, done = 0;
     const report = () => onProgress?.(`Memproses frame ${done}/${total}…${pool ? ` (${pool.length} jalur paralel)` : ""}`, 0.15 + 0.85 * (done / total));
     const grab = async (i) => {
-      const target = Math.max(0, Math.min(dur - 0.001, i / fps));
+      const target = Math.max(0, Math.min(vdur - 0.001, t0 + Math.min(dur - 0.001, i / fps)));
       // Bila posisinya sudah sama, event "seeked" tidak akan muncul — jangan menunggu timeout.
       if (Math.abs(video.currentTime - target) > 0.0005 || video.readyState < 2) {
         video.currentTime = target;
         await waitEvent(video, "seeked", 6000);
       }
       ctx.drawImage(video, 0, 0, iw, ih);
-      const rgba = ctx.getImageData(0, 0, iw, ih).data;
-      const rgb = new Uint8ClampedArray(iw * ih * 3);
-      for (let p = 0, q = 0; p < rgba.length; p += 4, q += 3) { rgb[q] = rgba[p]; rgb[q + 1] = rgba[p + 1]; rgb[q + 2] = rgba[p + 2]; }
-      return rgb;
+      hctx.drawImage(video, 0, 0, hw, hh);
+      return { rgb: toRgb(ctx.getImageData(0, 0, iw, ih).data), hrgb: toRgb(hctx.getImageData(0, 0, hw, hh).data) };
     };
     const store = (i, ow, oh, a) => {
       if (!mw) { mw = ow; mh = oh; }
@@ -173,9 +183,9 @@ export async function computeVideoMatte({ src, file, durationMs, onProgress, sig
         if (signal?.aborted) throw new DOMException("Dibatalkan", "AbortError");
         if (failure) throw failure;
         const wk = await acquire();
-        const rgb = await grab(i);
+        const { rgb, hrgb } = await grab(i);
         jobs.push(
-          wk.run(i, rgb, iw, ih)
+          wk.run(i, rgb, iw, ih, hrgb, hw, hh)
             .then((r) => { store(i, r.w, r.h, r.data); })
             .catch((err) => { failure = failure || err; })
             .finally(() => release(wk)),
@@ -188,16 +198,18 @@ export async function computeVideoMatte({ src, file, durationMs, onProgress, sig
       const { tf, model } = main;
       for (let i = 0; i < total; i++) {
         if (signal?.aborted) throw new DOMException("Dibatalkan", "AbortError");
-        const rgb = await grab(i);
+        const { rgb, hrgb } = await grab(i);
         const n = iw * ih;
         const f = new Float32Array(3 * n);
         for (let i = 0, q = 0; i < n; i++, q += 3) { f[i] = (rgb[q] - 127.5) / 127.5; f[n + i] = (rgb[q + 1] - 127.5) / 127.5; f[2 * n + i] = (rgb[q + 2] - 127.5) / 127.5; }
         const { output } = await model({ input: new tf.Tensor("float32", f, [1, 3, ih, iw]) });
         const dims = output.dims;
         const oh = dims[dims.length - 2], ow = dims[dims.length - 1];
-        const a = new Uint8Array(ow * oh);
-        for (let p = 0; p < a.length; p++) a[p] = Math.max(0, Math.min(255, Math.round(output.data[p] * 255)));
-        store(i, ow, oh, a);
+        let fin = null;
+        try { fin = refineToGuide(output.data, ow, oh, hrgb, hw, hh); } catch (e) { fin = null; }
+        const a = new Uint8Array((fin ? hw * hh : ow * oh));
+        for (let p = 0; p < a.length; p++) a[p] = Math.max(0, Math.min(255, Math.round((fin ? fin[p] : output.data[p]) * 255)));
+        store(i, fin ? hw : ow, fin ? hh : oh, a);
         await new Promise((r) => setTimeout(r, 0));
       }
     }
@@ -210,7 +222,7 @@ export async function computeVideoMatte({ src, file, durationMs, onProgress, sig
         cur[p] = Math.round(cur[p] * (1 - wPrev) + prev[p] * wPrev);
       }
     }
-    return { fps, w: mw, h: mh, frames };
+    return { fps, w: mw, h: mh, frames, t0: t0 * 1000 };
   } finally {
     pool?.forEach((wk) => wk.w.terminate());
     try { video.removeAttribute("src"); video.load(); } catch (e) { /* abaikan */ }
@@ -233,7 +245,7 @@ function smoothstep(lo, hi, x) {
  * Kembalikan canvas berisi frame video saat ini dengan latar transparan, atau null bila matte belum ada.
  * @param {*} clip      klip video (memakai bgEdge 0..1 & bgShrink -1..1)
  * @param {HTMLVideoElement} el
- * @param {number} localMs waktu di dalam klip (ms)
+ * @param {number} localMs waktu di dalam video sumber (ms) = waktu klip + offset potong
  */
 export function getMattedFrame(clip, el, localMs) {
   const key = matteKeyOf(clip);
@@ -252,7 +264,7 @@ export function getMattedFrame(clip, el, localMs) {
   if (st.mask.width !== m.w || st.mask.height !== m.h) { st.mask.width = m.w; st.mask.height = m.h; st.sig = ""; }
 
   // Frame matte TERDEKAT (bukan campuran dua frame): mencampur dua posisi objek yang bergerak menimbulkan halo/ghost di tepi.
-  const i0 = Math.max(0, Math.min(m.frames.length - 1, Math.round((localMs / 1000) * m.fps))), i1 = i0;
+  const i0 = Math.max(0, Math.min(m.frames.length - 1, Math.round(((localMs - (m.t0 || 0)) / 1000) * m.fps))), i1 = i0;
   const f = 0;
   const edge = clip.bgEdge ?? 0.7, shrink = clip.bgShrink ?? 0.2;
   const sig = `${i0}|${i1}|${f}|${edge}|${shrink}`;

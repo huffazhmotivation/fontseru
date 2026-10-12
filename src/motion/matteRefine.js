@@ -51,3 +51,28 @@ export function guidedRefine(p, rgb, w, h, r = 3, eps = 0.0015) {
   for (let i = 0; i < n; i++) { const v = mA[i] * I[i] + mB[i]; q[i] = v < 0 ? 0 : v > 1 ? 1 : v; }
   return q;
 }
+
+/** Perbesar alpha (Float32 0..1) ke ukuran lain dengan interpolasi bilinear. */
+export function resizeAlpha(src, sw, sh, dw, dh) {
+  if (sw === dw && sh === dh) return Float32Array.from(src);
+  const out = new Float32Array(dw * dh);
+  const xr = sw / dw, yr = sh / dh;
+  for (let y = 0; y < dh; y++) {
+    const fy = Math.max(0, (y + 0.5) * yr - 0.5), y0 = Math.min(sh - 1, Math.floor(fy)), y1 = Math.min(sh - 1, y0 + 1), ty = fy - y0;
+    for (let x = 0; x < dw; x++) {
+      const fx = Math.max(0, (x + 0.5) * xr - 0.5), x0 = Math.min(sw - 1, Math.floor(fx)), x1 = Math.min(sw - 1, x0 + 1), tx = fx - x0;
+      const a = src[y0 * sw + x0] * (1 - tx) + src[y0 * sw + x1] * tx;
+      const b = src[y1 * sw + x0] * (1 - tx) + src[y1 * sw + x1] * tx;
+      out[y * dw + x] = a * (1 - ty) + b * ty;
+    }
+  }
+  return out;
+}
+
+/** Alpha model (resolusi rendah) → alpha presisi di resolusi gambar panduan (hi-res), tepi menempel ke tepi asli. */
+export function refineToGuide(src, sw, sh, guideRgb, gw, gh) {
+  const clamped = Float32Array.from(src, (v) => (v < 0 ? 0 : v > 1 ? 1 : v));
+  const up = resizeAlpha(clamped, sw, sh, gw, gh);
+  const r = Math.max(3, Math.round(Math.max(gw, gh) / 190));
+  return guidedRefine(up, guideRgb, gw, gh, r, 0.0006);
+}

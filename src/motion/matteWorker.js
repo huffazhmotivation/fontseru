@@ -1,4 +1,4 @@
-import { guidedRefine } from "./matteRefine.js";
+import { refineToGuide } from "./matteRefine.js";
 
 /* Worker penghapus latar: menjalankan MODNet (Xenova/modnet) di thread terpisah supaya UI tidak macet
  * dan beberapa worker bisa memproses frame video secara paralel. Lihat videoMatte.js. */
@@ -34,16 +34,17 @@ self.onmessage = async (e) => {
       const dims = output.dims;
       const oh = dims[dims.length - 2], ow = dims[dims.length - 1];
       const src = output.data;
-      const a = new Uint8Array(ow * oh);
-      let refined = null;
-      if (ow === m.w && oh === m.h) {
-        try { refined = guidedRefine(Float32Array.from(src, (v) => (v < 0 ? 0 : v > 1 ? 1 : v)), rgb, ow, oh); } catch (e) { refined = null; }
+      // Penyempurnaan tepi di resolusi tinggi: alpha model (±512px) di-upsample lalu dipasang ke tepi frame asli beresolusi tinggi.
+      let outW = ow, outH = oh, final = null;
+      if (m.hrgb) {
+        try { final = refineToGuide(src, ow, oh, new Uint8ClampedArray(m.hrgb), m.hw, m.hh); outW = m.hw; outH = m.hh; } catch (e) { final = null; }
       }
+      const a = new Uint8Array(outW * outH);
       for (let p = 0; p < a.length; p++) {
-        const v = (refined ? refined[p] : src[p]) * 255;
+        const v = (final ? final[p] : src[p]) * 255;
         a[p] = v < 0 ? 0 : v > 255 ? 255 : (v + 0.5) | 0;
       }
-      self.postMessage({ type: "result", id: m.id, w: ow, h: oh, data: a }, [a.buffer]);
+      self.postMessage({ type: "result", id: m.id, w: outW, h: outH, data: a }, [a.buffer]);
     }
   } catch (err) {
     self.postMessage({ type: "error", id: m.id, message: String(err?.message || err) });

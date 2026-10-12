@@ -6,10 +6,10 @@ import motionLogoLight from "@/assets/logo-motion-light.svg";
 import { GOOGLE_FONTS, GOOGLE_FONT_CATEGORIES, loadGoogleFont, googleFontValue, googleFamilyOf } from "@/motion/googleFonts";
 import { computeVideoMatte, getMattedFrame, hasMatte, setMatte, clearMatte } from "@/motion/videoMatte";
 import { SFX_LIBRARY, SFX_CATEGORIES, renderSfxFile, previewSfx } from "@/motion/sfx";
-import { cancelTranscription, CAPTION_QUALITY, decodeAudioFile, transcribeAudio, getLanguageOptions, splitCaptionText, groupCaptionSentences, smartCaptionSegments } from "@/motion/autoCaption";
+import { cancelTranscription, CAPTION_QUALITY, decodeAudioFile, sliceAudioBuffer, transcribeAudio, getLanguageOptions, splitCaptionText, groupCaptionSentences, smartCaptionSegments } from "@/motion/autoCaption";
 import { loadMotionProject, saveMotionProject, clearMotionProject, serializeProjectForExport, deserializeImportedProject } from "@/motion/motionPersist";
 import {
-  Play, Pause, Upload, Plus, Trash2, Type, Sparkles, Repeat,
+  Play, Pause, Upload, Plus, Trash2, Type, Sparkles, Repeat, ZoomIn, ZoomOut,
   GripVertical, RotateCcw, Wand2, Move, Image as ImageIcon,
   Film, Music, Wand, Volume2, VolumeX, Palette, Loader2, Clapperboard,
   Smartphone, Square, RectangleVertical, RectangleHorizontal, Monitor,
@@ -2017,6 +2017,11 @@ function playbackReducer(state, action) {
   }
 }
 
+const TL_ZOOM_MAX = 24;
+// Slider zoom linimasa berskala logaritmik: 0 = muat semua (100%), 1 = TL_ZOOM_MAX.
+const zoomToSlider = (z) => clamp(Math.log(Math.max(1, z)) / Math.log(TL_ZOOM_MAX), 0, 1);
+const sliderToZoom = (v) => Math.round(Math.exp(clamp(v, 0, 1) * Math.log(TL_ZOOM_MAX)) * 100) / 100;
+
 function computeTimelineDuration(clips) {
   const maxEnd = clips.reduce((m, c) => Math.max(m, c.start + c.duration), 0);
   return Math.max(3000, maxEnd + 700);
@@ -3920,7 +3925,7 @@ function syncMediaPlayback(clips, mediaMapRef, timeMs, playing, slotTransitions)
       const targetVol = clamp((c.volume ?? 1) * clamp(tp.opacity ?? 1, 0, 1), 0, 1);
       try { el.muted = c.type === "video" ? !!c.muted : false; el.volume = targetVol; } catch (e) {}
       if (playing) {
-        const targetTime = Math.max(0, local / 1000);
+        const targetTime = Math.max(0, (local + (c.mediaOffset || 0)) / 1000);
         try {
           if (!Number.isFinite(el.currentTime) || Math.abs(el.currentTime - targetTime) > SEEK_TOLERANCE_S) {
             el.currentTime = targetTime;
@@ -3931,7 +3936,7 @@ function syncMediaPlayback(clips, mediaMapRef, timeMs, playing, slotTransitions)
         if (!el.paused) el.pause();
         // Seek hanya bila posisinya benar-benar beda (> 1 frame) — dulu tiap
         // perubahan proyek apa pun (mis. geser slider) men-seek SEMUA media.
-        const targetTime = Math.max(0, local / 1000);
+        const targetTime = Math.max(0, (local + (c.mediaOffset || 0)) / 1000);
         try {
           if (!Number.isFinite(el.currentTime) || Math.abs(el.currentTime - targetTime) > 1 / 60) el.currentTime = targetTime;
         } catch (e) {}
@@ -4077,7 +4082,7 @@ const GlobalStyle = () => (
     .mfs-cam-row input[type=range] { flex:1; min-width:70px; accent-color:#ff6a00; }
     .mfs-cam-label { font-size:10.5px; color:var(--text-dim); font-weight:600; width:34px; flex-shrink:0; }
     .mfs-cam-value { font-size:11px; color:var(--text-muted); width:40px; text-align:right; font-variant-numeric:tabular-nums; }
-    .mfs-cam-info { flex:1; font-size:11px; color:#ff6a00; font-weight:600; text-align:center; line-height:1.3; }
+    .mfs-cam-info { flex:1; min-width:0; font-size:11px; color:#ff6a00; font-weight:600; text-align:center; line-height:1.3; }
     .mfs-cam-actions { flex-wrap:wrap; gap:5px; }
     .mfs-cam-actions .mfs-btn { flex:1 1 auto; justify-content:center; }
     .mfs-cam-done { background:#ff6a00 !important; color:#fff !important; border-color:#ff6a00 !important; }
@@ -4136,8 +4141,14 @@ const GlobalStyle = () => (
     .mfs-fullscreen-time { font-family:'JetBrains Mono',monospace; font-size:11.5px; color:rgba(255,255,255,0.75); margin-left:2px; white-space:nowrap; }
     /* Selalu diberi stacking context sendiri supaya transport bar edit
        normal tidak pernah tertimbun z-index overlay preview di atas. */
-    .mfs-transport { height:46px; border-top:1px solid var(--border); background:var(--bg-panel); display:flex; align-items:center; justify-content:center; gap:12px; position:relative; z-index:501; }
-    .mfs-transport-time { position:absolute; right:14px; font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--text-muted); }
+    .mfs-transport { height:46px; border-top:1px solid var(--border); background:var(--bg-panel); display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; column-gap:12px; padding:0 12px; position:relative; z-index:501; }
+    .mfs-transport-mid { grid-column:2; display:flex; align-items:center; justify-content:center; gap:12px; }
+    .mfs-tlzoom { justify-self:start; display:flex; align-items:center; gap:2px; min-width:0; }
+    .mfs-tlzoom input[type=range] { -webkit-appearance:auto; appearance:auto; height:22px; background:transparent; width:96px; min-width:40px; flex:0 1 96px; accent-color:var(--accent); }
+    @media (max-width: 700px) { .mfs-tlzoom { display:none; } }
+    @media (max-width: 1100px) { .mfs-tlzoom input[type=range] { width:64px; } }
+    .mfs-center[data-cam="true"] > .fm-tpad { display:none; }
+    .mfs-transport-time { grid-column:3; justify-self:end; white-space:nowrap; font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--text-muted); }
     .mfs-play-btn { width:32px; height:32px; border-radius:50%; background:var(--accent); border:none; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; }
     .mfs-play-btn:hover { background:#6a5aff; }
     .mfs-play-btn:disabled { opacity:0.5; cursor:not-allowed; }
@@ -4223,7 +4234,7 @@ const GlobalStyle = () => (
     .mfs-tl-resize::after { content:""; position:absolute; left:22px; right:22px; top:2px; height:1.5px; border-radius:1px; background:var(--border-light); opacity:0.85; transition:background .12s ease, opacity .12s ease; }
     .mfs-tl-resize:hover::after, .mfs-tl-resize:active::after { background:var(--accent); opacity:1; }
     .mfs-timeline { grid-area:timeline; background:var(--bg-panel); display:flex; flex-direction:column; min-height:0; max-height:100%; overflow:hidden; }
-    .mfs-timeline-head { height:28px; flex-shrink:0; display:flex; align-items:center; justify-content:flex-end; gap:10px; padding:0 14px; border-bottom:1px solid var(--border); }
+    .mfs-timeline-head { min-height:28px; flex-shrink:0; flex-wrap:wrap; row-gap:4px; display:flex; align-items:center; justify-content:flex-end; gap:10px; padding:3px 14px; border-bottom:1px solid var(--border); }
     .mfs-timeline-title { font-size:10.5px; color:var(--text-dim); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
     .mfs-tracks-outer { flex:1; display:flex; min-height:0; padding:0 12px; overflow:hidden; align-items:stretch; }
     .mfs-track-labels { width:56px; flex-shrink:0; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
@@ -4417,7 +4428,9 @@ const GlobalStyle = () => (
       html[data-tablet="true"] .mfs-layers .mfs-clip-item .name { font-size:11px; }
       html[data-tablet="true"] .mfs-left .mfs-panel-body { overflow-x:hidden; padding:10px; }
       html[data-tablet="true"] .mfs-left .mfs-list-item .name { font-size:12px; }
-      html[data-tablet="true"] .mfs-left .mfs-tab { font-size:10px; padding:9px 0; }
+      /* Tab kiri (Preset/Efek/Transisi/Library) jadi grid 2×2 supaya teksnya tidak menumpuk ke panel Layer. */
+      html[data-tablet="true"] .mfs-left .mfs-tabs:not(.mfs-tabs-sub) { display:grid; grid-template-columns:1fr 1fr; }
+      html[data-tablet="true"] .mfs-left .mfs-tabs:not(.mfs-tabs-sub) .mfs-tab { font-size:11px; padding:9px 4px; min-width:0; overflow:hidden; text-overflow:ellipsis; border-bottom-width:2px; }
       html[data-tablet="true"] .mfs-right { overflow-x:hidden; padding:12px; }
       html[data-tablet="true"] .mfs-timeline { min-width:0; }
     }
@@ -4968,7 +4981,7 @@ function consumeCanvasClickPos() {
   return pos;
 }
 
-const CenterStage = React.forwardRef(function CenterStage({ project, playback, dispatchProject, dispatchPlayback, exportState, setExportState, playClock }, ref) {
+const CenterStage = React.forwardRef(function CenterStage({ project, playback, dispatchProject, dispatchPlayback, exportState, setExportState, playClock, timelineZoom = 1, timelineApiRef }, ref) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const ctxRef = useRef(null);
@@ -5156,7 +5169,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
         const slots = transitionsRef.current;
         const el = clip.type === "image" || clip.type === "video" ? mediaMapRef.current[clip.type][clip.id]?.el : null;
         // Video dengan latar dihapus: pakai frame bertransparansi hasil matte.
-        const srcEl = clip.type === "video" && clip.bgRemoved && el ? (getMattedFrame(clip, el, timeMs - clip.start) || el) : el;
+        const srcEl = clip.type === "video" && clip.bgRemoved && el ? (getMattedFrame(clip, el, timeMs - clip.start + (clip.mediaOffset || 0)) || el) : el;
         const draw = (target) => (clip.type === "text"
           ? drawTextClip(target, offCtx, offCanvas, clip, timeMs, w, h, blurCanvas, blurCtx, slots)
           : drawMediaVisual(target, srcEl, clip, timeMs, w, h, blurCanvas, blurCtx, slots));
@@ -5954,7 +5967,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
   };
 
   return (
-    <div className="mfs-center">
+    <div className="mfs-center" data-cam={cameraMode ? "true" : "false"}>
       {!playback.previewOpen && (
         <div className="mfs-cam-ui">
           <button
@@ -6035,6 +6048,14 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       )}
       {!playback.previewOpen && (
         <div className="mfs-transport">
+          <div className="mfs-tlzoom" title="Zoom linimasa — geser ke kiri untuk memuat semua klip">
+            <button type="button" className="mfs-icon-btn" onClick={() => timelineApiRef?.current?.setZoom?.(timelineZoom / 1.4)} title="Zoom out linimasa"><ZoomOut size={14} /></button>
+            <input type="range" min={0} max={100} step={1} value={Math.round(zoomToSlider(timelineZoom) * 100)}
+              onChange={(e) => timelineApiRef?.current?.setZoom?.(sliderToZoom(Number(e.target.value) / 100))} aria-label="Zoom linimasa" />
+            <button type="button" className="mfs-icon-btn" onClick={() => timelineApiRef?.current?.setZoom?.(timelineZoom * 1.4)} title="Zoom in linimasa"><ZoomIn size={14} /></button>
+            <button type="button" className="mfs-icon-btn" onClick={() => timelineApiRef?.current?.setZoom?.(1)} title="Muat semua timeline"><Maximize2 size={13} /></button>
+          </div>
+          <div className="mfs-transport-mid">
           <button className="mfs-icon-btn" disabled={exporting} onClick={() => dispatchPlayback({ type: "SET_PLAYHEAD", value: 0 })} title="Ulangi dari awal"><RotateCcw size={15} /></button>
           <button className="mfs-play-btn" disabled={exporting} onClick={togglePlayback}>
             {playback.playing ? <Pause size={14} /> : <Play size={14} style={{ marginLeft: 1 }} />}
@@ -6042,6 +6063,7 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
           <button className={`mfs-icon-btn ${playback.loop ? "active" : ""}`} disabled={exporting} onClick={() => dispatchPlayback({ type: "SET_LOOP", value: !playback.loop })} title="Ulang otomatis"><Repeat size={15} /></button>
           <span className="mfs-zoom-badge" title="Scroll mouse di kanvas untuk zoom">{Math.round(zoom * 100)}%</span>
           <button className="mfs-icon-btn" disabled={exporting} onClick={() => setZoom(1)} title="Reset zoom"><RotateCcw size={13} /></button>
+          </div>
           <div className="mfs-transport-time" ref={timeTextRef}>{(playback.playhead / 1000).toFixed(2)}dtk / {(timelineDuration / 1000).toFixed(2)}dtk</div>
         </div>
       )}
@@ -6458,7 +6480,7 @@ function VideoBgRemoveControl({ clip, dispatch }) {
     abortRef.current = ctl;
     try {
       const matte = await computeVideoMatte({
-        src: clip.src, file: clip.file, durationMs: clip.duration, signal: ctl.signal,
+        src: clip.src, file: clip.file, durationMs: clip.duration, startMs: clip.mediaOffset || 0, signal: ctl.signal,
         onProgress: (msg, f) => { setStatus(msg); setProgress(clamp(f ?? 0, 0, 1)); },
       });
       setMatte(clip, matte);
@@ -6527,7 +6549,7 @@ function AutoCaptionControl({ clip, dispatch }) {
     setStatus("Menyiapkan audio…");
     setProgress(0.02);
     try {
-      const audioBuffer = await decodeAudioFile(clip.file);
+      const audioBuffer = sliceAudioBuffer(await decodeAudioFile(clip.file), (clip.mediaOffset || 0) / 1000, clip.duration / 1000);
       const words = await transcribeAudio(audioBuffer, language, (message, fraction) => {
         setStatus(message);
         setProgress(clamp(fraction ?? 0, 0, 1));
@@ -6969,7 +6991,7 @@ const TimelineClipBlock = React.memo(function TimelineClipBlock({ clip, row, col
   );
 });
 
-function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, playClock, timelineHeight, setTimelineHeight }) {
+function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, playClock, timelineHeight, setTimelineHeight, timelineZoom, setTimelineZoom, timelineApiRef }) {
   const trackRef = useRef(null);
   const timelineViewportRef = useRef(null);
   const labelScrollRef = useRef(null);
@@ -6986,7 +7008,6 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
   const [addTrackMenuOpen, setAddTrackMenuOpen] = useState(false);
   const [draggingClip, setDraggingClip] = useState(null); // clip.id sedang di-drag (untuk menampilkan zona ghost)
   const [dragHover, setDragHover] = useState(null); // { kind: 'track'|'ghost-top'|'ghost-bottom', trackId? }
-  const [timelineZoom, setTimelineZoom] = useState(1);
   const horizontalScrollRef = useRef(null);
   const [horizontalScroll, setHorizontalScroll] = useState(0);
   const [marquee, setMarquee] = useState(null);
@@ -7077,7 +7098,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
         const oldWidth = Math.max(rect.width, rect.width * timelineZoom);
         const timeAtCursor = ((currentScroll + localX) / oldWidth) * timelineDuration;
         const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-        const nextZoom = Math.round(clamp(timelineZoom * factor, 0.25, 8) * 100) / 100;
+        const nextZoom = Math.round(clamp(timelineZoom * factor, 1, TL_ZOOM_MAX) * 100) / 100;
         setTimelineZoom(nextZoom);
         requestAnimationFrame(() => {
           const nextWidth = Math.max(rect.width, rect.width * nextZoom);
@@ -7095,6 +7116,28 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [setTimelineScroll, timelineDuration, timelineZoom]);
+
+  // Zoom dari slider bar bawah: berpusat di playhead bila terlihat, kalau tidak di tengah layar linimasa.
+  const tlZoomRef = useRef(timelineZoom);
+  tlZoomRef.current = timelineZoom;
+  useEffect(() => {
+    if (!timelineApiRef) return;
+    timelineApiRef.current.setZoom = (raw) => {
+      const next = Math.round(clamp(raw, 1, TL_ZOOM_MAX) * 100) / 100;
+      const el = trackRef.current;
+      const rectW = el ? el.getBoundingClientRect().width : 0;
+      const scroll = horizontalScrollRef.current?.scrollLeft || 0;
+      const dur = tlDurRef.current || 1;
+      const oldW = rectW * Math.max(1, tlZoomRef.current);
+      const ph = lastPlayheadValRef.current;
+      const phX = oldW ? (ph / dur) * oldW - scroll : -1;
+      const anchorX = phX >= 0 && phX <= rectW ? phX : rectW / 2;
+      const anchorT = oldW ? ((scroll + anchorX) / oldW) * dur : 0;
+      setTimelineZoom(next);
+      requestAnimationFrame(() => setTimelineScroll(next <= 1 ? 0 : (anchorT / dur) * rectW * next - anchorX));
+    };
+    return () => { if (timelineApiRef.current.setZoom) timelineApiRef.current.setZoom = null; };
+  }, [timelineApiRef, setTimelineZoom, setTimelineScroll]);
 
   const onResizeHandleDown = useCallback((e) => {
     e.preventDefault();
@@ -7333,6 +7376,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
     const width = Math.max(trackRef.current.clientWidth, trackRef.current.scrollWidth);
     const startMx = e.clientX, startMy = e.clientY;
     const startStart = clip.start, startDuration = clip.duration;
+    const startMediaOffset = clip.mediaOffset || 0;
     setFrozenTimelineDuration(timelineDuration);
     // Jangan langsung menampilkan zona ghost "+ track baru" saat klip baru
     // di-mousedown (klik). Zona ghost (dan segala kemungkinan bikin track
@@ -7363,9 +7407,14 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
       } else if (mode === "resize-right") {
         dispatchProject({ type: "UPDATE_CLIP", id: clip.id, patch: { duration: Math.max(150, Math.round(startDuration + dxMs)) } });
       } else if (mode === "resize-left") {
-        const newStart = Math.max(0, Math.round(startStart + dxMs));
+        let newStart = Math.max(0, Math.round(startStart + dxMs));
+        const isMedia = clip.type === "video" || clip.type === "audio";
+        // Potong kiri video/audio: bagian awal sumber dibuang (mediaOffset), isi tidak ikut bergeser.
+        if (isMedia) newStart = Math.max(newStart, startStart - startMediaOffset);
         const newDuration = Math.max(150, Math.round(startDuration - (newStart - startStart)));
-        dispatchProject({ type: "UPDATE_CLIP", id: clip.id, patch: { start: newStart, duration: newDuration } });
+        const patch = { start: newStart, duration: newDuration };
+        if (isMedia) patch.mediaOffset = Math.max(0, Math.round(startMediaOffset + (newStart - startStart)));
+        dispatchProject({ type: "UPDATE_CLIP", id: clip.id, patch });
       }
     };
     const up = () => {
@@ -7864,6 +7913,9 @@ export default function App() {
   const [history, dispatchProject] = useReducer(historyReducer, initialHistoryState);
   const [playback, dispatchPlayback] = useReducer(playbackReducer, initialPlayback);
   const [exportState, setExportState] = useState({ exporting: false, progress: 0 });
+  // Zoom linimasa (1 = muat semua klip). State di App supaya slider di bar bawah (CenterStage) dan linimasa sinkron.
+  const [timelineZoom, setTimelineZoom] = useState(1);
+  const timelineApiRef = useRef({ setZoom: null });
   // iPad landscape: timeline awal sedikit lebih pendek supaya kanvas tetap lega (masih bisa ditarik).
   const [timelineHeight, setTimelineHeight] = useState(() =>
     typeof document !== "undefined" && document.documentElement.dataset.tablet === "true" && window.innerHeight < 900 ? 196 : 226
@@ -8118,9 +8170,11 @@ export default function App() {
           exportState={exportState}
           setExportState={setExportState}
           playClock={playClock}
+          timelineZoom={timelineZoom}
+          timelineApiRef={timelineApiRef}
         />
         <RightInspector project={project} dispatch={dispatchProject} />
-        <ClipTimeline project={project} playback={playback} dispatchProject={dispatchProject} dispatchPlayback={dispatchPlayback} playClock={playClock} timelineHeight={timelineHeight} setTimelineHeight={setTimelineHeight} />
+        <ClipTimeline project={project} playback={playback} dispatchProject={dispatchProject} dispatchPlayback={dispatchPlayback} playClock={playClock} timelineHeight={timelineHeight} setTimelineHeight={setTimelineHeight} timelineZoom={timelineZoom} setTimelineZoom={setTimelineZoom} timelineApiRef={timelineApiRef} />
         {mobilePane && <div className="mfs-mobile-backdrop" onClick={() => setMobilePane(null)} />}
         <nav className="mfs-mobile-nav">
           <button className={mobilePane === "layers" ? "active" : ""} onClick={() => toggleMobilePane("layers")}><LayoutGrid size={18} /><span>Layer</span></button>

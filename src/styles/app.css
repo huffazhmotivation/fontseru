@@ -7355,19 +7355,14 @@ html[data-tablet="true"] body .mfs-root .mfs-layers { overscroll-behavior: conta
     left: 50%; right: auto; width: min(560px, 100%); margin-left: max(-280px, -50%);
   }
 }
-/* Transport (play/zoom) Motion: di kanvas yang sempit (iPad) teks waktu absolut menimpa tombol reset → jadikan bagian
-   dari baris flex sehingga tidak pernah tumpang tindih. */
-html[data-tablet="true"] body .mfs-root .mfs-transport { justify-content: flex-start; padding: 0 12px; gap: 10px; }
-html[data-tablet="true"] body .mfs-root .mfs-transport > :first-child { margin-left: auto; }
-html[data-tablet="true"] body .mfs-root .mfs-transport-time { position: static; margin-left: auto; white-space: nowrap; flex-shrink: 0; }
-/* iPad landscape: tombol Ulang · Play · Ulang-otomatis tepat di tengah preview; zoom di kiri, waktu di kanan. */
-@media (min-width: 861px) and (orientation: landscape) {
-  html[data-tablet="true"] body .mfs-root .mfs-transport { justify-content: center; gap: 14px; position: relative; padding: 0 12px; }
-  html[data-tablet="true"] body .mfs-root .mfs-transport > :first-child { margin-left: 0; }
-  html[data-tablet="true"] body .mfs-root .mfs-transport .mfs-zoom-badge { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); }
-  html[data-tablet="true"] body .mfs-root .mfs-transport > button:last-of-type { position: absolute; left: 62px; top: 50%; transform: translateY(-50%); }
-  html[data-tablet="true"] body .mfs-root .mfs-transport .mfs-transport-time { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); margin: 0; }
-}
+/* Transport Motion (iPad): grid 3 kolom — kiri zoom linimasa, tengah kontrol putar + zoom kanvas, kanan waktu.
+   Tidak ada elemen absolut, jadi tidak pernah saling menimpa; kolom kiri/kanan menyusut bila ruang sempit. */
+html[data-tablet="true"] body .mfs-root .mfs-transport { padding: 0 10px; column-gap: 8px; }
+html[data-tablet="true"] body .mfs-root .mfs-transport-mid { gap: 8px; }
+html[data-tablet="true"] body .mfs-root .mfs-transport .mfs-tlzoom .mfs-icon-btn,
+html[data-tablet="true"] body .mfs-root .mfs-transport .mfs-transport-mid .mfs-icon-btn:not(:first-child):not(.active) { width: 30px; min-width: 30px; height: 30px; }
+html[data-tablet="true"] body .mfs-root .mfs-transport .mfs-tlzoom input[type=range] { width: 80px; flex-basis: 80px; }
+html[data-tablet="true"] body .mfs-root .mfs-transport .mfs-zoom-badge { position: static; transform: none; min-width: 34px; text-align: center; }
 
 /* Test Lab (layar sentuh): tombol ikon keyboard di kotak teks — satu ketuk memunculkan keyboard layar. */
 .fm-lab-kb-btn {

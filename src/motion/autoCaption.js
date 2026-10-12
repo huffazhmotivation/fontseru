@@ -41,6 +41,19 @@ export async function decodeAudioFile(file) {
   }
 }
 
+/** Ambil potongan [startSec, startSec+durSec] dari AudioBuffer — supaya caption hanya mencakup bagian klip yang tampil (setelah dipotong). */
+export function sliceAudioBuffer(buf, startSec, durSec) {
+  const sr = buf.sampleRate;
+  const from = Math.max(0, Math.min(buf.length - 1, Math.round(startSec * sr)));
+  const to = Math.max(from + 1, Math.min(buf.length, Math.round((startSec + durSec) * sr)));
+  if (from === 0 && to >= buf.length) return buf;
+  const len = to - from;
+  const ctx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(buf.numberOfChannels, len, sr);
+  const out = ctx.createBuffer(buf.numberOfChannels, len, sr);
+  for (let c = 0; c < buf.numberOfChannels; c++) out.copyToChannel(buf.getChannelData(c).subarray(from, to), c);
+  return out;
+}
+
 /**
  * Siapkan audio untuk Whisper: mono 16 kHz lewat resampler WebAudio (dengan anti-alias, bukan interpolasi linear),
  * high-pass 90 Hz (buang dengung/rumble), kompresor dinamis (mengangkat suara pelan), lalu normalisasi puncak.
