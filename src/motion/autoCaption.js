@@ -6,8 +6,6 @@
  * Lazy-loaded: the model (~75MB) is only fetched on first use, then cached
  * by the browser's network/service worker.
  */
-let pipeline = null;
-
 const LANGUAGE_MAP = {
   id: { label: "Indonesian", whisperLang: "id" },
   en: { label: "English", whisperLang: "en" },
@@ -44,96 +42,102 @@ export async function decodeAudioFile(file) {
 }
 
 /**
- * Transcribe an AudioBuffer and return caption segments.
- *
- * @param {AudioBuffer} audioBuffer  Decoded audio (from decodeAudioFile)
- * @param {string}      language     ISO 639-1 code, default "id"
- * @param {function}    onProgress   (message, fraction) callback
- * @returns {Promise<Array<{text:string, start:number, end:number}>>}
- *   start/end are in milliseconds
+ * Siapkan audio untuk Whisper: mono 16 kHz lewat resampler WebAudio (dengan anti-alias, bukan interpolasi linear),
+ * high-pass 90 Hz (buang dengung/rumble), kompresor dinamis (mengangkat suara pelan), lalu normalisasi puncak.
+ * Membuat ucapan yang kecil/kurang jelas jauh lebih terdeteksi.
  */
-export async function transcribeAudio(audioBuffer, language = "id", onProgress) {
-  const { pipeline: loadPipeline } = await import("@xenova/transformers");
+async function preparePcm(audioBuffer) {
+  const sr = 16000;
+  const length = Math.max(1, Math.ceil(audioBuffer.duration * sr));
+  const Ctor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const ctx = new Ctor(1, length, sr);
+  const src = ctx.createBufferSource();
+  src.buffer = audioBuffer;
+  const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 90; hp.Q.value = 0.7;
+  const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 7600; lp.Q.value = 0.7;
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -42; comp.knee.value = 28; comp.ratio.value = 5; comp.attack.value = 0.004; comp.release.value = 0.2;
+  src.connect(hp); hp.connect(lp); lp.connect(comp); comp.connect(ctx.destination);
+  src.start(0);
+  const rendered = await ctx.startRendering();
+  const pcm = rendered.getChannelData(0).slice();
+  let peak = 1e-6;
+  for (let i = 0; i < pcm.length; i++) { const v = Math.abs(pcm[i]); if (v > peak) peak = v; }
+  const gain = Math.min(14, 0.95 / peak);
+  if (gain > 1.05) for (let i = 0; i < pcm.length; i++) pcm[i] *= gain;
+  return pcm;
+}
 
+/** Energi per jendela 50 ms (RMS) — dipakai membuang kata "halusinasi" Whisper di bagian hening. */
+function energyEnvelope(pcm, sr = 16000, winMs = 50) {
+  const win = Math.round((sr * winMs) / 1000);
+  const n = Math.max(1, Math.floor(pcm.length / win));
+  const env = new Float32Array(n);
+  for (let w = 0; w < n; w++) {
+    let sum = 0;
+    for (let i = w * win; i < (w + 1) * win; i++) sum += pcm[i] * pcm[i];
+    env[w] = Math.sqrt(sum / win);
+  }
+  const sorted = Array.from(env).sort((a, b) => a - b);
+  const floor = sorted[Math.floor(sorted.length * 0.1)] || 0;
+  const speechLevel = sorted[Math.floor(sorted.length * 0.9)] || 0;
+  return { env, winMs, threshold: Math.max(floor * 2.2, speechLevel * 0.06, 0.004) };
+}
+
+let worker = null;
+let activeJob = null;
+function getWorker() {
+  if (worker) return worker;
+  worker = new Worker(new URL("./captionWorker.js", import.meta.url), { type: "module" });
+  worker.onmessage = (e) => {
+    const m = e.data;
+    if (!activeJob) return;
+    if (m.type === "status") activeJob.onProgress?.(m.message, m.fraction);
+    else if (m.type === "result") { const j = activeJob; activeJob = null; j.resolve(m.result); }
+    else if (m.type === "error") { const j = activeJob; activeJob = null; j.reject(new Error(m.message)); }
+  };
+  worker.onerror = (ev) => { const j = activeJob; activeJob = null; j?.reject(new Error(ev.message || "Worker transkripsi gagal")); };
+  return worker;
+}
+/** Batalkan transkripsi yang sedang berjalan (worker dihentikan; model dimuat ulang dari cache pada proses berikutnya). */
+export function cancelTranscription() {
+  if (worker) { worker.terminate(); worker = null; }
+  if (activeJob) { const j = activeJob; activeJob = null; j.reject(new DOMException("Dibatalkan", "AbortError")); }
+}
+
+export const CAPTION_QUALITY = [
+  { id: "accurate", label: "Teliti (lebih peka, suara kurang jelas)", model: "Xenova/whisper-small" },
+  { id: "fast", label: "Cepat (model ringan)", model: "Xenova/whisper-base" },
+];
+
+/**
+ * Transcribe an AudioBuffer and return caption segments.
+ * Berjalan di Web Worker — halaman tetap responsif.
+ *
+ * @returns {Promise<Array<{text:string, start:number, end:number}>>} start/end dalam milidetik
+ */
+export async function transcribeAudio(audioBuffer, language = "id", onProgress, quality = "accurate") {
   const langMeta = LANGUAGE_MAP[language] || LANGUAGE_MAP.id;
-  const whisperLang = langMeta.whisperLang;
+  const model = (CAPTION_QUALITY.find((q) => q.id === quality) || CAPTION_QUALITY[0]).model;
 
-  if (!pipeline) {
-    onProgress?.("Memuat model transkripsi Whisper…", 0);
-    try {
-      pipeline = await loadPipeline("automatic-speech-recognition", "Xenova/whisper-base", {
-        progress_callback: (p) => {
-          if (p.status === "progress" && typeof p.progress === "number") {
-            onProgress?.("Memuat model Whisper…", p.progress / 200); // 0 → 0.5
-          }
-        },
-      });
-    } catch (err) {
-      throw new Error(`Gagal memuat model transkripsi: ${err.message || err}. Coba periksa koneksi internet (model diunduh saat pertama kali).`);
-    }
-  }
+  onProgress?.("Menyiapkan audio (filter & penguatan suara)…", 0.02);
+  const pcm = await preparePcm(audioBuffer);
+  const envelope = energyEnvelope(pcm);
 
-  onProgress?.("Menganalisis audio…", 0.5);
-
-  // Get mono PCM data — if stereo, average the channels.
-  const numChannels = audioBuffer.numberOfChannels;
-  const length = audioBuffer.length;
-  const pcm = new Float32Array(length);
-  for (let ch = 0; ch < numChannels; ch++) {
-    const channelData = audioBuffer.getChannelData(ch);
-    for (let i = 0; i < length; i++) {
-      pcm[i] += channelData[i] / numChannels;
-    }
-  }
-
-  // Resample to 16kHz if needed (Whisper expects 16kHz)
-  const srcRate = audioBuffer.sampleRate;
-  const targetRate = 16000;
-  let inputPcm;
-  if (srcRate !== targetRate) {
-    const ratio = srcRate / targetRate;
-    const newLength = Math.round(length / ratio);
-    inputPcm = new Float32Array(newLength);
-    for (let i = 0; i < newLength; i++) {
-      const srcIdx = i * ratio;
-      const idx0 = Math.floor(srcIdx);
-      const frac = srcIdx - idx0;
-      inputPcm[i] = pcm[idx0] * (1 - frac) + (pcm[Math.min(idx0 + 1, length - 1)] || 0) * frac;
-    }
-  } else {
-    inputPcm = pcm;
-  }
-
-  onProgress?.("Mengenali ucapan…", 0.6);
-
-  const result = await pipeline(inputPcm, {
-    language: whisperLang,
-    task: "transcribe",
-    return_timestamps: "word",
-    chunk_length_s: 30,
-  });
-
-  onProgress?.("Selesai!", 1);
-
-  // Normalisasi hasil — @xenova/transformers bisa mengembalikan format
-  // berbeda tergantung versi model: `segments` (lama) atau `chunks` (baru
-  // whisper-timestamped), atau hanya `text` tanpa segmentasi.
-  let rawSegments = [];
-
-  if (Array.isArray(result?.segments) && result.segments.length > 0) {
-    rawSegments = result.segments;
-  } else if (Array.isArray(result?.chunks) && result.chunks.length > 0) {
-    // chunks: [{ text, timestamp: [start, end] }] atau [{ text, timestamps: [[s,e], ...] }]
-    rawSegments = result.chunks.map((ch) => {
-      const ts = ch.timestamp || ch.timestamps?.[0] || [0, 0];
-      return { text: ch.text, timestamp: ts };
+  let result;
+  try {
+    result = await new Promise((resolve, reject) => {
+      if (activeJob) { reject(new Error("Transkripsi lain masih berjalan.")); return; }
+      activeJob = { resolve, reject, onProgress };
+      getWorker().postMessage({ type: "transcribe", model, language: langMeta.whisperLang, pcm }, [pcm.buffer]);
     });
-  } else if (result?.text && result.text.trim().length > 0) {
-    // Fallback: satu segment besar untuk seluruh audio
-    const totalDur = audioBuffer.duration;
-    rawSegments = [{ text: result.text.trim(), timestamp: [0, totalDur] }];
+  } catch (err) {
+    if (err?.name === "AbortError") throw err;
+    throw new Error(`Gagal menjalankan transkripsi: ${err.message || err}. Periksa koneksi internet (model diunduh saat pertama kali).`);
   }
+  onProgress?.("Merapikan hasil…", 0.97);
 
+  // Normalisasi hasil — bisa berupa `chunks` (per kata), `segments`, atau hanya `text`.
   const normalized = [];
   const pushWord = (text, start, end) => {
     const clean = (text || "").trim();
@@ -142,16 +146,12 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
     const e = Number.isFinite(end) && end > s ? end : s + 0.25;
     normalized.push({ text: clean, start: Math.round(s * 1000), end: Math.round(e * 1000) });
   };
-
   if (Array.isArray(result?.chunks) && result.chunks.length > 0) {
     for (const ch of result.chunks) {
       const ts = ch.timestamp || ch.timestamps?.[0] || [0, 0];
       const text = String(ch.text || "").trim();
       const parts = text.split(/\s+/).filter(Boolean);
-      if (parts.length <= 1) {
-        pushWord(text, ts[0], ts[1]);
-        continue;
-      }
+      if (parts.length <= 1) { pushWord(text, ts[0], ts[1]); continue; }
       const start = Number(ts[0]) || 0;
       const end = Number(ts[1]) > start ? Number(ts[1]) : start + parts.length * 0.25;
       const totalChars = Math.max(parts.reduce((sum, part) => sum + part.length, 0), 1);
@@ -180,7 +180,26 @@ export async function transcribeAudio(audioBuffer, language = "id", onProgress) 
     const total = Math.max(audioBuffer.duration, words.length * 0.25);
     words.forEach((word, i) => pushWord(word, (i / words.length) * total, ((i + 1) / words.length) * total));
   }
-  return normalized;
+
+  // Buang "halusinasi" di bagian hening: kata yang hampir seluruh rentangnya di bawah ambang energi suara.
+  const { env, winMs, threshold } = envelope;
+  const voiced = (startMs, endMs) => {
+    const a = Math.max(0, Math.floor(startMs / winMs)), b = Math.min(env.length - 1, Math.max(a, Math.floor(endMs / winMs)));
+    let hit = 0;
+    for (let i = a; i <= b; i++) if (env[i] >= threshold) hit++;
+    return hit / (b - a + 1) >= 0.25;
+  };
+  const filtered = normalized.filter((w) => voiced(w.start, w.end));
+  // Buang pengulangan beruntun yang mencurigakan (loop halusinasi: kata sama ≥4× berturut-turut).
+  const out = [];
+  for (const w of filtered) {
+    const n = out.length;
+    if (n >= 3 && [1, 2, 3].every((k) => out[n - k].text.toLowerCase() === w.text.toLowerCase())) continue;
+    out.push(w);
+  }
+  onProgress?.("Selesai!", 1);
+  // Bila filter membuang hampir semuanya (ambang terlalu ketat untuk audio ini), percayai hasil Whisper apa adanya.
+  return filtered.length >= normalized.length * 0.2 ? out : normalized;
 }
 
 /**

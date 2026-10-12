@@ -6,7 +6,7 @@ import motionLogoLight from "@/assets/logo-motion-light.svg";
 import { GOOGLE_FONTS, GOOGLE_FONT_CATEGORIES, loadGoogleFont, googleFontValue, googleFamilyOf } from "@/motion/googleFonts";
 import { computeVideoMatte, getMattedFrame, hasMatte, setMatte, clearMatte } from "@/motion/videoMatte";
 import { SFX_LIBRARY, SFX_CATEGORIES, renderSfxFile, previewSfx } from "@/motion/sfx";
-import { decodeAudioFile, transcribeAudio, getLanguageOptions, splitCaptionText, groupCaptionSentences, smartCaptionSegments } from "@/motion/autoCaption";
+import { cancelTranscription, CAPTION_QUALITY, decodeAudioFile, transcribeAudio, getLanguageOptions, splitCaptionText, groupCaptionSentences, smartCaptionSegments } from "@/motion/autoCaption";
 import { loadMotionProject, saveMotionProject, clearMotionProject, serializeProjectForExport, deserializeImportedProject } from "@/motion/motionPersist";
 import {
   Play, Pause, Upload, Plus, Trash2, Type, Sparkles, Repeat,
@@ -6509,6 +6509,7 @@ function AutoCaptionControl({ clip, dispatch }) {
   const [language, setLanguage] = useState("id");
   const [mode, setMode] = useState("word");
   const [maxWords, setMaxWords] = useState(4);
+  const [quality, setQuality] = useState(() => (typeof document !== "undefined" && document.documentElement.dataset.tablet === "true" ? "fast" : "accurate"));
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("");
@@ -6530,7 +6531,7 @@ function AutoCaptionControl({ clip, dispatch }) {
       const words = await transcribeAudio(audioBuffer, language, (message, fraction) => {
         setStatus(message);
         setProgress(clamp(fraction ?? 0, 0, 1));
-      });
+      }, quality);
       const segments = mode === "sentence" ? sentenceSegments(words) : words;
       if (segments.length === 0) {
         setError("Tidak ada ucapan yang terdeteksi di audio ini.");
@@ -6540,8 +6541,8 @@ function AutoCaptionControl({ clip, dispatch }) {
       setStatus(`${segments.length} caption dibuat`);
       setProgress(1);
     } catch (err) {
-      setError(err?.message || "Gagal menganalisis audio.");
-      setStatus("");
+      if (err?.name === "AbortError") setStatus("Dibatalkan");
+      else { setError(err?.message || "Gagal menganalisis audio."); setStatus(""); }
     } finally {
       setBusy(false);
     }
@@ -6554,6 +6555,12 @@ function AutoCaptionControl({ clip, dispatch }) {
       <select className="mfs-input mfs-select" value={language} disabled={busy} onChange={(e) => setLanguage(e.target.value)}>
         {getLanguageOptions().map((option) => <option key={option.code} value={option.code}>{option.label}</option>)}
       </select>
+      <div className="mfs-field" style={{ marginTop: 7 }}>
+        <label>Ketelitian suara</label>
+        <select className="mfs-input mfs-select" value={quality} disabled={busy} onChange={(e) => setQuality(e.target.value)}>
+          {CAPTION_QUALITY.map((q) => <option key={q.id} value={q.id}>{q.label}</option>)}
+        </select>
+      </div>
       <div className="mfs-field" style={{ marginTop: 7 }}>
         <label>Format caption</label>
         <div className="mfs-segmented">
@@ -6576,6 +6583,7 @@ function AutoCaptionControl({ clip, dispatch }) {
         <>
           <div className="mfs-progress" style={{ marginTop: 7 }}><div style={{ width: `${Math.round(progress * 100)}%` }} /></div>
           {status && <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>{status}</div>}
+          <button className="mfs-btn mfs-btn-sm" style={{ marginTop: 6, width: "100%" }} onClick={() => cancelTranscription()}>Batalkan</button>
         </>
       )}
       {!busy && status && !error && <div style={{ fontSize: 10, color: "var(--accent)", marginTop: 5 }}>{status}</div>}
