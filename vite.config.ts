@@ -91,6 +91,8 @@ export default defineConfig(({ command }) => ({
     host: "0.0.0.0",
     port: 3000,
   },
+  // Web Worker modul (penghapus latar video memakai import dinamis → butuh format ES, bukan IIFE).
+  worker: { format: "es" },
   build: {
     target: "es2020",
     // Sourcemaps are only useful for local debugging; shipping them makes

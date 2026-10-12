@@ -4024,6 +4024,7 @@ const GlobalStyle = () => (
     .mfs-menu-backdrop { position:fixed; inset:0; z-index:19; }
 
     .mfs-left { grid-area:left; background:var(--bg-panel); border-right:1px solid var(--border); display:flex; flex-direction:column; min-height:0; }
+    .mfs-left.drop-over { outline:2px dashed var(--accent); outline-offset:-4px; background:var(--accent-soft); }
     .mfs-tabs { display:flex; border-bottom:1px solid var(--border); }
     .mfs-tab { flex:1; padding:9px 0; text-align:center; font-size:10.5px; font-weight:600; color:var(--text-dim); cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; }
     .mfs-tab.active { color:var(--text); border-bottom-color:var(--accent); }
@@ -4262,13 +4263,13 @@ const GlobalStyle = () => (
     .mfs-lane.track-over { background:var(--accent-soft); }
     .mfs-clip-block { position:absolute; top:3px; bottom:3px; border-radius:7px; cursor:grab; overflow:hidden; min-width:22px; border:1px solid; touch-action:none; }
     .mfs-clip-block.selected { box-shadow:0 0 0 2px var(--accent-dim); border-color:var(--accent); z-index:5; }
-    .mfs-clip-body { padding:0 8px; display:flex; align-items:center; height:100%; pointer-events:none; }
-    .mfs-clip-name { font-size:11px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .mfs-clip-body { padding:0 26px; display:flex; align-items:center; justify-content:center; height:100%; pointer-events:none; }
+    .mfs-clip-name { font-size:11px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:center; max-width:100%; }
     .mfs-clip-handle { position:absolute; top:0; bottom:0; width:14px; cursor:ew-resize; z-index:2; touch-action:none; }
     .mfs-clip-handle.left { left:0; } .mfs-clip-handle.right { right:0; }
-    .mfs-clip-del { position:absolute; top:2px; right:2px; width:20px; height:20px; border-radius:4px; background:rgba(0,0,0,0.55); border:none; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3; opacity:0; transition:opacity .15s ease, color .15s ease; }
+    .mfs-clip-del { position:absolute; top:50%; right:4px; transform:translateY(-50%); width:20px; height:20px; border-radius:5px; background:rgba(0,0,0,0.38); border:none; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3; opacity:.85; padding:0; transition:opacity .15s ease, color .15s ease, background .15s ease; }
     .mfs-clip-block:hover .mfs-clip-del { opacity:1; }
-    .mfs-clip-del:hover { color:#ff6b6b; }
+    .mfs-clip-del:hover { color:#ff6b6b; background:rgba(0,0,0,0.6); opacity:1; }
     .mfs-playhead { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:#b995ff; box-shadow:0 0 5px #9b6cff, 0 0 11px #9b6cff88; z-index:6; pointer-events:none; }
 
     /* Transisi hidup di STRIP TERSENDIRI di bagian bawah tiap lane — bukan
@@ -4293,6 +4294,8 @@ const GlobalStyle = () => (
       pointer-events:auto; user-select:none;
       transition:opacity .15s ease, transform .15s ease, background .15s ease, border-color .15s ease; }
     .mfs-transition-slot > svg { flex-shrink:0; width:10px; height:10px; }
+    .mfs-transition-slot { padding:0 26px; }
+    .mfs-transition-name { overflow:hidden; text-overflow:ellipsis; text-align:center; font-size:11px; font-weight:600; letter-spacing:0; }
     .mfs-transition-slot:hover { background:#3cc474; transform:translateY(-1px); }
     .mfs-transition-slot:active { cursor:grabbing; transform:scale(0.97); }
     .mfs-transition-slot .mfs-transition-del { opacity:0.7; cursor:pointer; flex-shrink:0; display:flex; align-items:center; }
@@ -4778,6 +4781,42 @@ function LibrarySection({ kind, label, accept, icon: Icon, assets, inputRef, hin
   );
 }
 
+const IMG_EXT = /\.(png|jpe?g|gif|webp|svg|avif|bmp|heic|heif)$/i;
+const VID_EXT = /\.(mp4|m4v|mov|webm|mkv|avi|3gp|ogv)$/i;
+const AUD_EXT = /\.(mp3|wav|m4a|aac|ogg|oga|opus|flac|aif|aiff)$/i;
+function kindOfFile(file) {
+  const t = file.type || "";
+  if (t.startsWith("image/") || IMG_EXT.test(file.name)) return "image";
+  if (t.startsWith("video/") || VID_EXT.test(file.name)) return "video";
+  if (t.startsWith("audio/") || AUD_EXT.test(file.name)) return "audio";
+  return null;
+}
+// kind = null → tentukan otomatis per file (drag & drop banyak jenis sekaligus).
+function importMediaFiles(files, kindHint, dispatch) {
+  Array.from(files).forEach(async (file) => {
+    const kind = kindHint || kindOfFile(file);
+    if (!kind) { reportError(`File "${file.name}" bukan gambar, video, atau audio yang didukung.`); return; }
+    if (file.size === 0) { reportError(`File "${file.name}" kosong (0 byte), tidak bisa diimpor.`); return; }
+    if (file.size > 150 * 1024 * 1024) {
+      reportError(`File "${file.name}" berukuran ${(file.size / (1024 * 1024)).toFixed(1)}MB — file sebesar ini mungkin lambat diimpor atau membuat tab browser berat.`);
+    }
+    if (kind === "video") {
+      const warn = checkVideoPlayability(file);
+      if (warn) reportError(warn);
+    } else if (kind === "audio") {
+      const warn = checkAudioPlayability(file);
+      if (warn) reportError(warn);
+    }
+    try {
+      const imgData = kind === "image" ? await readImageAsset(file) : { src: URL.createObjectURL(file), file };
+      const asset = { id: uid("asset"), name: file.name, kind, ...imgData };
+      dispatch({ type: "ADD_LIBRARY_ASSET", kind, asset });
+    } catch (err) {
+      reportError(`Gagal mengimpor "${file.name}": ${err.message || err}`);
+    }
+  });
+}
+
 function SfxSection({ dispatch }) {
   const [cat, setCat] = useState(SFX_CATEGORIES[0]);
   const [busyId, setBusyId] = useState(null);
@@ -4814,28 +4853,7 @@ function SfxSection({ dispatch }) {
 function LibraryPanel({ library, dispatch }) {
   const imgRef = useRef(null), vidRef = useRef(null), audRef = useRef(null);
 
-  const handleUpload = (files, kind) => {
-    Array.from(files).forEach(async (file) => {
-      if (file.size === 0) { reportError(`File "${file.name}" kosong (0 byte), tidak bisa diimpor.`); return; }
-      if (file.size > 150 * 1024 * 1024) {
-        reportError(`File "${file.name}" berukuran ${(file.size / (1024 * 1024)).toFixed(1)}MB — file sebesar ini mungkin lambat diimpor atau membuat tab browser berat.`);
-      }
-      if (kind === "video") {
-        const warn = checkVideoPlayability(file);
-        if (warn) reportError(warn);
-      } else if (kind === "audio") {
-        const warn = checkAudioPlayability(file);
-        if (warn) reportError(warn);
-      }
-      try {
-        const imgData = kind === "image" ? await readImageAsset(file) : { src: URL.createObjectURL(file), file };
-        const asset = { id: uid("asset"), name: file.name, kind, ...imgData };
-        dispatch({ type: "ADD_LIBRARY_ASSET", kind, asset });
-      } catch (err) {
-        reportError(`Gagal mengimpor "${file.name}": ${err.message || err}`);
-      }
-    });
-  };
+  const handleUpload = (files, kind) => importMediaFiles(files, kind, dispatch);
 
   return (
     <div className="mfs-panel-body">
@@ -4901,8 +4919,19 @@ const LeftPanel = React.memo(function LeftPanel({ project, dispatch }) {
   const [tab, setTab] = useState("preset");
   const selectedClip = project.clips.find((c) => c.id === project.selectedClipId);
   const selectedClipIds = project.selectedClipIds || (project.selectedClipId ? [project.selectedClipId] : []);
+  const [dropOver, setDropOver] = useState(false);
+  const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+  const onDragOver = (e) => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropOver(true); };
+  const onDragLeave = (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropOver(false); };
+  const onDrop = (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    setDropOver(false);
+    importMediaFiles(e.dataTransfer.files, null, dispatch);
+    setTab("library");
+  };
   return (
-    <div className="mfs-left">
+    <div className={`mfs-left ${dropOver ? "drop-over" : ""}`} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
       <div className="mfs-tabs">
         {LEFT_TABS.map((t) => (
           <div key={t.id} className={`mfs-tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</div>
@@ -5417,7 +5446,10 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
       const mx = (ev.clientX - rect.left) * sX, my = (ev.clientY - rect.top) * sY;
       const ease = findCameraKey(cameraKeysRef.current, lockedTime) ? undefined : camEaseRef.current;
       if (mode === "move") {
-        dispatchProject({ type: "CAMERA_SET_KEY", t: lockedTime, patch: { x: cam0.x + (mx - mx0), y: cam0.y + (my - my0) }, ease });
+        let dx = mx - mx0, dy = my - my0;
+        // Tahan Shift: gerak dikunci lurus horizontal ATAU vertikal (mengikuti arah yang lebih dominan).
+        if (ev.shiftKey) { if (Math.abs(dx) >= Math.abs(dy)) dy = 0; else dx = 0; }
+        dispatchProject({ type: "CAMERA_SET_KEY", t: lockedTime, patch: { x: cam0.x + dx, y: cam0.y + dy }, ease });
       } else {
         const sc = clamp(cam0.scale * (Math.hypot(mx - bcx, my - bcy) / startDist), 0.1, 8);
         dispatchProject({ type: "CAMERA_SET_KEY", t: lockedTime, patch: { scale: Math.round(sc * 1000) / 1000 }, ease });
@@ -5876,16 +5908,38 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
   // situ, dan preventDefault supaya halaman tidak ikut ter-scroll seperti
   // perilaku bawaan tombol spasi di browser.
   useEffect(() => {
-    const onSpaceKey = (e) => {
-      if (e.code !== "Space" && e.key !== " ") return;
-      const tag = e.target?.tagName;
-      const isEditable = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || e.target?.isContentEditable;
-      if (isEditable) return;
+    // Hanya kolom ketik sungguhan (teks/angka/area teks) yang mempertahankan spasi. Slider, tombol, centang,
+    // dropdown, dll. TIDAK: spasi tetap hanya putar/jeda, tanpa ikut menekan tombol yang sedang terfokus.
+    const isTextEntry = (el) => {
+      if (!el) return false;
+      if (el.isContentEditable) return true;
+      if (el.tagName === "TEXTAREA") return true;
+      if (el.tagName === "INPUT") {
+        const t = (el.type || "text").toLowerCase();
+        return !["range", "checkbox", "radio", "button", "submit", "reset", "file", "color", "image"].includes(t);
+      }
+      return false;
+    };
+    const isSpace = (e) => e.code === "Space" || e.key === " ";
+    const onKeyDown = (e) => {
+      if (!isSpace(e) || e.ctrlKey || e.metaKey || e.altKey || isTextEntry(e.target)) return;
       e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      const ae = document.activeElement;
+      if (ae && ae !== document.body && !isTextEntry(ae) && typeof ae.blur === "function") ae.blur();
       togglePlayback();
     };
-    window.addEventListener("keydown", onSpaceKey);
-    return () => window.removeEventListener("keydown", onSpaceKey);
+    const onKeyUp = (e) => {
+      if (!isSpace(e) || isTextEntry(e.target)) return;
+      e.preventDefault(); // cegah "klik" bawaan tombol terfokus saat spasi dilepas
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+    };
   }, [togglePlayback]);
 
   const camKeys = project.camera?.keys || [];
@@ -6817,6 +6871,7 @@ const RightInspector = React.memo(function RightInspector({ project, dispatch: d
       ) : (
         <>
           {isVideo && <VideoBgRemoveControl clip={clip} dispatch={dispatch} />}
+          {isVideo && <AutoCaptionControl clip={clip} dispatch={dispatch} />}
           <AnimationControls clip={clip} dispatch={dispatch} updateSelected={updateSelected} />
         </>
       )}
@@ -6901,9 +6956,7 @@ const TimelineClipBlock = React.memo(function TimelineClipBlock({ clip, row, col
         <span className="mfs-clip-name">{clip.type === "text" ? (clip.text.split("\n")[0] || clip.name) : clip.name}</span>
       </div>
       <div className="mfs-clip-handle right" onPointerDown={(e) => onClipMouseDown(e, clip, "resize-right")} />
-      {selected && (
-        <button type="button" className="mfs-clip-del" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(clip.id); }}><Trash2 size={14} /></button>
-      )}
+      <button type="button" className="mfs-clip-del" title="Hapus klip" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(clip.id); }}><Trash2 size={13} /></button>
     </div>
   );
 });
@@ -7423,14 +7476,19 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
                 if (e.dataTransfer.dropEffect === "none") deleteTransitionSlot(slot.id);
               }}
             >
-              <span>{transition.name}</span>
-              <span
-                className="mfs-transition-del"
-                onClick={(e) => { e.stopPropagation(); deleteTransitionSlot(slot.id); }}
+              <span className="mfs-transition-name">{transition.name}</span>
+              <button
+                type="button"
+                className="mfs-clip-del"
+                draggable={false}
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteTransitionSlot(slot.id); }}
                 title="Hapus transisi"
               >
-                <Trash2 size={10} />
-              </span>
+                <Trash2 size={13} />
+              </button>
             </div>
           );
         })}

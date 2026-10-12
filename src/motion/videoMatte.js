@@ -28,8 +28,7 @@ async function ensureModel(onProgress) {
           if (p?.status === "progress" && typeof p.progress === "number") onProgress?.("Mengunduh model penghapus latar…", (p.progress / 100) * 0.15);
         },
       });
-      const processor = await tf.AutoProcessor.from_pretrained("Xenova/modnet");
-      ModelBundle = { tf, model, processor };
+      ModelBundle = { tf, model };
       return ModelBundle;
     })().catch((err) => { modelPromise = null; throw err; });
   }
@@ -71,53 +70,136 @@ async function openVideo(src, file) {
   }
 }
 
+/* ---------------- Pool worker (paralel) ---------------- */
+
+function poolSize() {
+  const cores = navigator.hardwareConcurrency || 4;
+  const tablet = typeof document !== "undefined" && document.documentElement.dataset.tablet === "true";
+  return Math.max(1, Math.min(tablet ? 2 : 4, cores - 1));
+}
+
+function spawnWorker() {
+  const w = new Worker(new URL("./matteWorker.js", import.meta.url), { type: "module" });
+  const state = { w, pending: new Map(), onProgress: null, ready: null };
+  w.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === "progress") state.onProgress?.(m.value);
+    else if (m.type === "ready") state.ready?.resolve();
+    else if (m.type === "result") { const p = state.pending.get(m.id); state.pending.delete(m.id); p?.resolve(m); }
+    else if (m.type === "error") {
+      if (m.id != null) { const p = state.pending.get(m.id); state.pending.delete(m.id); p?.reject(new Error(m.message)); }
+      else state.ready?.reject(new Error(m.message));
+    }
+  };
+  w.onerror = (ev) => { const err = new Error(ev.message || "Worker gagal"); state.ready?.reject(err); state.pending.forEach((p) => p.reject(err)); state.pending.clear(); };
+  state.init = () => new Promise((resolve, reject) => { state.ready = { resolve, reject }; w.postMessage({ type: "init" }); });
+  state.run = (id, rgb, iw, ih) => new Promise((resolve, reject) => { state.pending.set(id, { resolve, reject }); w.postMessage({ type: "frame", id, rgb, w: iw, h: ih }, [rgb.buffer]); });
+  return state;
+}
+
+async function startPool(onProgress) {
+  const n = poolSize();
+  const first = spawnWorker();
+  first.onProgress = (v) => onProgress?.("Mengunduh model penghapus latar…", v * 0.15);
+  try {
+    await first.init(); // unduh + cache sekali dulu; worker lain memuat dari cache
+    const rest = Array.from({ length: n - 1 }, () => spawnWorker());
+    const results = await Promise.allSettled(rest.map((r) => r.init()));
+    const ok = [first];
+    rest.forEach((r, i) => { if (results[i].status === "fulfilled") ok.push(r); else r.w.terminate(); });
+    return ok;
+  } catch (err) {
+    first.w.terminate();
+    throw err;
+  }
+}
+
 /**
  * @returns {Promise<{fps:number,w:number,h:number,frames:Uint8Array[]}>}
  */
 export async function computeVideoMatte({ src, file, durationMs, onProgress, signal }) {
   onProgress?.("Menyiapkan model…", 0.01);
-  const { tf, model, processor } = await ensureModel(onProgress);
+  let pool = null;
+  try { pool = await startPool(onProgress); } catch (err) { pool = null; }
   const { video, revoke } = await openVideo(src, file);
+  const main = pool ? null : await ensureModel(onProgress);
   try {
     const dur = Math.max(0.2, Math.min(video.duration || durationMs / 1000, (durationMs || 1e9) / 1000 + 0.05));
     const fps = Math.max(6, Math.min(24, Math.floor(150 / dur)));
     const total = Math.max(1, Math.ceil(dur * fps));
     const long = 512;
     const ratio = Math.min(1, long / Math.max(video.videoWidth, video.videoHeight));
-    const iw = Math.max(32, Math.round(video.videoWidth * ratio)), ih = Math.max(32, Math.round(video.videoHeight * ratio));
+    // Kelipatan 32 (syarat MODNet), tanpa pembesaran: ±2× lebih cepat dari jalur AutoProcessor dengan hasil nyaris identik.
+    const snap32 = (v) => Math.max(32, Math.round(v / 32) * 32);
+    const iw = snap32(video.videoWidth * ratio), ih = snap32(video.videoHeight * ratio);
     const canvas = document.createElement("canvas");
     canvas.width = iw; canvas.height = ih;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    const frames = [];
-    let mw = 0, mh = 0;
-    for (let i = 0; i < total; i++) {
-      if (signal?.aborted) throw new DOMException("Dibatalkan", "AbortError");
-      const t = Math.min(dur - 0.001, i / fps);
-      video.currentTime = Math.max(0, t);
-      await waitEvent(video, "seeked", 6000);
+    const frames = new Array(total);
+    let mw = 0, mh = 0, done = 0;
+    const report = () => onProgress?.(`Memproses frame ${done}/${total}…${pool ? ` (${pool.length} jalur paralel)` : ""}`, 0.15 + 0.85 * (done / total));
+    const grab = async (i) => {
+      const target = Math.max(0, Math.min(dur - 0.001, i / fps));
+      // Bila posisinya sudah sama, event "seeked" tidak akan muncul — jangan menunggu timeout.
+      if (Math.abs(video.currentTime - target) > 0.0005 || video.readyState < 2) {
+        video.currentTime = target;
+        await waitEvent(video, "seeked", 6000);
+      }
       ctx.drawImage(video, 0, 0, iw, ih);
       const rgba = ctx.getImageData(0, 0, iw, ih).data;
       const rgb = new Uint8ClampedArray(iw * ih * 3);
       for (let p = 0, q = 0; p < rgba.length; p += 4, q += 3) { rgb[q] = rgba[p]; rgb[q + 1] = rgba[p + 1]; rgb[q + 2] = rgba[p + 2]; }
-      const image = new tf.RawImage(rgb, iw, ih, 3);
-      const { pixel_values } = await processor(image);
-      const { output } = await model({ input: pixel_values });
-      const dims = output.dims;
-      const oh = dims[dims.length - 2], ow = dims[dims.length - 1];
-      const data = output.data;
+      return rgb;
+    };
+    const store = (i, ow, oh, a) => {
       if (!mw) { mw = ow; mh = oh; }
-      const a = new Uint8Array(mw * mh);
-      if (ow === mw && oh === mh) {
-        for (let p = 0; p < a.length; p++) a[p] = Math.max(0, Math.min(255, Math.round(data[p] * 255)));
-      } else {
-        for (let y = 0; y < mh; y++) {
-          const sy = Math.min(oh - 1, Math.floor((y / mh) * oh));
-          for (let x = 0; x < mw; x++) a[y * mw + x] = Math.max(0, Math.min(255, Math.round(data[sy * ow + Math.min(ow - 1, Math.floor((x / mw) * ow))] * 255)));
-        }
+      if (ow !== mw || oh !== mh) { // ukuran keluaran berbeda → samakan (jarang terjadi)
+        const b = new Uint8Array(mw * mh);
+        for (let y = 0; y < mh; y++) { const sy = Math.min(oh - 1, Math.floor((y / mh) * oh)); for (let x = 0; x < mw; x++) b[y * mw + x] = a[sy * ow + Math.min(ow - 1, Math.floor((x / mw) * ow))]; }
+        a = b;
       }
-      frames.push(a);
-      onProgress?.(`Memproses frame ${i + 1}/${total}…`, 0.15 + 0.85 * ((i + 1) / total));
-      await new Promise((r) => setTimeout(r, 0)); // beri napas ke UI
+      frames[i] = a; done++; report();
+    };
+
+    if (pool) {
+      // Seek berurutan di thread utama (cepat), inferensi paralel di worker; maksimal 1 frame antre per worker.
+      const idle = pool.slice();
+      const waiters = [];
+      const acquire = () => (idle.length ? Promise.resolve(idle.pop()) : new Promise((r) => waiters.push(r)));
+      const release = (wk) => { const w = waiters.shift(); if (w) w(wk); else idle.push(wk); };
+      const jobs = [];
+      let failure = null;
+      for (let i = 0; i < total; i++) {
+        if (signal?.aborted) throw new DOMException("Dibatalkan", "AbortError");
+        if (failure) throw failure;
+        const wk = await acquire();
+        const rgb = await grab(i);
+        jobs.push(
+          wk.run(i, rgb, iw, ih)
+            .then((r) => { store(i, r.w, r.h, r.data); })
+            .catch((err) => { failure = failure || err; })
+            .finally(() => release(wk)),
+        );
+      }
+      await Promise.all(jobs);
+      if (failure) throw failure;
+      if (signal?.aborted) throw new DOMException("Dibatalkan", "AbortError");
+    } else {
+      const { tf, model } = main;
+      for (let i = 0; i < total; i++) {
+        if (signal?.aborted) throw new DOMException("Dibatalkan", "AbortError");
+        const rgb = await grab(i);
+        const n = iw * ih;
+        const f = new Float32Array(3 * n);
+        for (let i = 0, q = 0; i < n; i++, q += 3) { f[i] = (rgb[q] - 127.5) / 127.5; f[n + i] = (rgb[q + 1] - 127.5) / 127.5; f[2 * n + i] = (rgb[q + 2] - 127.5) / 127.5; }
+        const { output } = await model({ input: new tf.Tensor("float32", f, [1, 3, ih, iw]) });
+        const dims = output.dims;
+        const oh = dims[dims.length - 2], ow = dims[dims.length - 1];
+        const a = new Uint8Array(ow * oh);
+        for (let p = 0; p < a.length; p++) a[p] = Math.max(0, Math.min(255, Math.round(output.data[p] * 255)));
+        store(i, ow, oh, a);
+        await new Promise((r) => setTimeout(r, 0));
+      }
     }
     // Haluskan terhadap waktu: bobot frame sebelumnya mengecil bila piksel berubah drastis (gerakan cepat).
     for (let i = 1; i < frames.length; i++) {
@@ -130,6 +212,7 @@ export async function computeVideoMatte({ src, file, durationMs, onProgress, sig
     }
     return { fps, w: mw, h: mh, frames };
   } finally {
+    pool?.forEach((wk) => wk.w.terminate());
     try { video.removeAttribute("src"); video.load(); } catch (e) { /* abaikan */ }
     revoke?.();
   }
