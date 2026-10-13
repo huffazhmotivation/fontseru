@@ -107,7 +107,10 @@ export function loadImageFile(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => resolve(img);
+    img.onload = () => {
+      resolve(img);
+      URL.revokeObjectURL(url); // gambar sudah ter-decode; lepaskan referensi File
+    };
     img.onerror = () => {
       URL.revokeObjectURL(url);
       reject(new TraceError("Gagal memuat gambar. Pastikan file berupa PNG atau JPG yang valid."));

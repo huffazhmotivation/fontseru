@@ -53,8 +53,18 @@ export function DesignStudio({ active, theme }: { active: boolean; theme: string
       (nav.deviceMemory !== undefined && nav.deviceMemory < 4);
     let timer = 0;
     let idleId = 0;
+    // Muat iframe hanya saat pengguna benar-benar diam (tanpa sentuhan/ketikan ±2,5 dtk) supaya jeda ±300 ms saat iframe
+    // diparse tidak jatuh di tengah goresan; kalau terus aktif, coba lagi (maks. 20 kali) — sisanya dimuat saat tab Design didekati.
+    let lastInput = Date.now();
+    const onInput = () => { lastInput = Date.now(); };
+    window.addEventListener("pointerdown", onInput, true);
+    window.addEventListener("keydown", onInput, true);
+    let tries = 0;
     const start = () => setStarted(true);
     const arm = () => {
+      // Jangan memuat saat mode Motion sedang dipakai (memutar video) — jeda parse iframe terasa sebagai patah-patah.
+      const busy = Date.now() - lastInput < 2500 || useAppModeStore.getState().appMode === "motion";
+      if (busy && tries++ < 20) { timer = window.setTimeout(arm, 2500); return; }
       const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
       if (ric) idleId = ric(start, { timeout: 4000 });
       else start();
@@ -64,6 +74,8 @@ export function DesignStudio({ active, theme }: { active: boolean; theme: string
     window.addEventListener("fontseru:warm-design", warm);
     return () => {
       clearTimeout(timer);
+      window.removeEventListener("pointerdown", onInput, true);
+      window.removeEventListener("keydown", onInput, true);
       if (idleId) (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(idleId);
       window.removeEventListener("fontseru:warm-design", warm);
     };

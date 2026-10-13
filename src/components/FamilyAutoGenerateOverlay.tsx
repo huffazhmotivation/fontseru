@@ -197,12 +197,14 @@ export function FamilyAutoGenerateOverlay() {
   // Full A–Z live preview strip: every Uppercase Regular glyph, sorted by
   // codepoint, so the preview reflects the whole alphabet instead of a
   // single sampled character.
-  const upperRegularGlyphs = useMemo(
+  // Panel tetap ter-mount setelah pernah dibuka (agar pengaturannya tersimpan), jadi semua perhitungan berat di bawah
+  // hanya dijalankan saat panel terbuka — kalau tidak, tiap goresan menghitung ulang bold/italic semua huruf tanpa terlihat.
+  const upperRegularGlyphs = useMemo<Glyph[]>(
     () =>
-      Object.values(glyphsByStyle.regular)
+      !open ? [] : Object.values(glyphsByStyle.regular)
         .filter((g) => g.category === "upper")
         .sort((a, b) => a.unicode - b.unicode),
-    [glyphsByStyle.regular]
+    [open, glyphsByStyle.regular]
   );
   const hasUpperVectors = useMemo(() => upperRegularGlyphs.some(hasOutline), [upperRegularGlyphs]);
 

@@ -1534,7 +1534,7 @@ function spliceSfntTable(buffer: ArrayBuffer, tag: string, data: Uint8Array): Ar
   const newData = tag === "head" && data.length >= 12 ? data.slice() : data;
   if (newData !== data) newData.fill(0, 8, 12);
   tables.push({ tag, data: newData });
-  tables.sort((a, b) => a.tag.localeCompare(b.tag));
+  tables.sort((a, b) => (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0));
 
   const count = tables.length;
   const maxPow2 = 2 ** Math.floor(Math.log2(count));
@@ -1860,7 +1860,7 @@ export function injectKernTable(buffer: ArrayBuffer, pairs: KerningPairs, glyphI
     tables.push({ tag, data });
   }
   tables.push({ tag: "kern", data: kern });
-  tables.sort((a, b) => a.tag.localeCompare(b.tag));
+  tables.sort((a, b) => (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0));
 
   const count = tables.length;
   const maxPow2 = 2 ** Math.floor(Math.log2(count));

@@ -1315,11 +1315,14 @@ export function GlyphMultiEditCanvas() {
     function onKeyUp(e: KeyboardEvent) {
       if (e.code === "Space") spacePanRef.current = false;
     }
+    const onBlur = () => { spacePanRef.current = false; };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
     };
   }, [editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, tool]);
 
