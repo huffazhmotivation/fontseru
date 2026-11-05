@@ -11,7 +11,8 @@ alter table public.profiles enable row level security;
 
 -- 1) A signed-in user can read their own profile (used to show Free/Pro
 --    status in the account menu after login).
-create policy if not exists "profiles: read own row"
+drop policy if exists "profiles: read own row" on public.profiles;
+create policy "profiles: read own row"
 on public.profiles for select
 to authenticated
 using (auth.uid() = id);
@@ -19,7 +20,8 @@ using (auth.uid() = id);
 -- 2) A signed-in user may create their own row exactly once, and only ever
 --    as 'free'. This is the safety net the app uses right after a brand-new
 --    user's first magic-link login, in case no DB trigger already does it.
-create policy if not exists "profiles: insert own row as free"
+drop policy if exists "profiles: insert own row as free" on public.profiles;
+create policy "profiles: insert own row as free"
 on public.profiles for insert
 to authenticated
 with check (auth.uid() = id and plan = 'free');
@@ -32,10 +34,11 @@ with check (auth.uid() = id and plan = 'free');
 --    DEFINER RPC function (e.g. `is_pro_email(email text) returns boolean`)
 --    and call `supabase.rpc('is_pro_email', { email })` from
 --    src/auth/AuthProvider.tsx instead.
-create policy if not exists "profiles: anon can check plan by email"
-on public.profiles for select
-to anon
-using (true);
+-- UPDATE: the app now uses the `check_pro_email` SECURITY DEFINER RPC
+-- (src/auth/AuthProvider.tsx), so this policy is no longer needed — and it
+-- let anyone holding the public key read every row's email + plan. It is
+-- dropped here. Make sure the `check_pro_email` function exists first.
+drop policy if exists "profiles: anon can check plan by email" on public.profiles;
 
 -- Never grant anon/authenticated UPDATE or DELETE on this table from the
 -- client — plan changes (free -> pro) should only happen from a trusted

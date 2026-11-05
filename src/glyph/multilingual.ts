@@ -324,7 +324,74 @@ function composeOne(base: Glyph, mark: Glyph, recipe: DiacriticRecipe, metrics: 
     rsb: base.rsb,
     outline: { objects: [...baseObjects, ...markObjects] },
     components: [recipe.base, recipe.mark],
+    linked: true,
   };
+}
+
+/** The accent recipe that builds `char`, if any. */
+export function recipeFor(char: string): { base: string; mark: string } | null {
+  const r = RECIPES.find((x) => x.char === char);
+  return r ? { base: r.base, mark: r.mark } : null;
+}
+
+let recipesBySource: Map<string, DiacriticRecipe[]> | null = null;
+function recipesUsing(char: string): DiacriticRecipe[] {
+  if (!recipesBySource) {
+    recipesBySource = new Map();
+    for (const r of RECIPES) {
+      for (const src of new Set([r.base, r.mark])) {
+        const list = recipesBySource.get(src) ?? [];
+        list.push(r);
+        recipesBySource.set(src, list);
+      }
+    }
+  }
+  return recipesBySource.get(char) ?? [];
+}
+
+/** Re-composes one accented glyph from its current base + mark (null when either has no ink). */
+export function recomposeGlyph(char: string, glyphs: GlyphMap, metrics: FontMetrics): Glyph | null {
+  const recipe = RECIPES.find((x) => x.char === char);
+  if (!recipe) return null;
+  const base = glyphs[recipe.base];
+  const mark = glyphs[recipe.mark];
+  if (!base || !mark || !hasOutline(base) || !hasOutline(mark)) return null;
+  return composeOne(base, mark, recipe, metrics);
+}
+
+/**
+ * Keeps linked composites in step with their sources. Given the glyph map
+ * before and after an edit: a linked composite whose base or mark changed is
+ * re-composed; one that was edited directly (without its sources changing)
+ * is unlinked so the user's hand work is never overwritten. Returns `next`
+ * itself when nothing needed to change.
+ */
+export function syncLinkedComposites(prev: GlyphMap, next: GlyphMap, metrics: FontMetrics): GlyphMap {
+  let out: GlyphMap | null = null;
+  const changed: string[] = [];
+  for (const k in next) if (prev[k] !== next[k]) changed.push(k);
+  if (changed.length === 0) return next;
+  const changedSet = new Set(changed);
+  const seen = new Set<string>();
+  const consider = (r: DiacriticRecipe) => {
+    if (seen.has(r.char)) return;
+    seen.add(r.char);
+    const c = next[r.char];
+    if (!c || !c.linked) return;
+    const sourceChanged = changedSet.has(r.base) || changedSet.has(r.mark);
+    if (sourceChanged) {
+      const re = recomposeGlyph(r.char, next, metrics);
+      if (re) (out ??= { ...next })[r.char] = re;
+    } else if (changedSet.has(r.char) && prev[r.char]?.outline !== c.outline) {
+      (out ??= { ...next })[r.char] = { ...c, linked: false };
+    }
+  };
+  for (const k of changed) {
+    for (const r of recipesUsing(k)) consider(r);
+    const own = next[k];
+    if (own?.linked) { const rc = RECIPES.find((x) => x.char === k); if (rc) consider(rc); }
+  }
+  return out ?? next;
 }
 
 /**

@@ -8,7 +8,10 @@ import {
   suggestLigatureName,
   suggestAlternateName,
   suggestSwashName,
+  SUBSTITUTION_FEATURES,
+  isValidFeatureTag,
 } from "@/types/opentypeFeatures";
+import { configToFea, parseFea } from "@/utils/feaCode";
 
 /** Label shown for a glyph key in pickers/lists — mirrors the "SP" special
  * case already used elsewhere (e.g. Family Auto Generate) for the space
@@ -69,6 +72,9 @@ export function FeatureBuilderOverlay() {
   const removeAlternateRule = useAppStore((s) => s.removeAlternateRule);
   const setSwashRule = useAppStore((s) => s.setSwashRule);
   const removeSwashRule = useAppStore((s) => s.removeSwashRule);
+  const addSubstitutionRule = useAppStore((s) => s.addSubstitutionRule);
+  const removeSubstitutionRule = useAppStore((s) => s.removeSubstitutionRule);
+  const replaceFeatureConfig = useAppStore((s) => s.replaceFeatureConfig);
 
   const chars = useMemo(() => getOrderedChars(glyphs), [glyphs]);
 
@@ -95,6 +101,25 @@ export function FeatureBuilderOverlay() {
   const [swashPreview, setSwashPreview] = useState(false);
   const swashTargetName = swashTarget || (swashBase ? suggestSwashName(swashBase) : "");
   const swashTargetExists = Boolean(swashTargetName && glyphs[swashTargetName]);
+
+  // --- Substitution (smcp / onum / ss01 / calt …) form state ---
+  const [subTag, setSubTag] = useState("smcp");
+  const [subFrom, setSubFrom] = useState("");
+  const [subTo, setSubTo] = useState("");
+  const [subBefore, setSubBefore] = useState("");
+  const [subAfter, setSubAfter] = useState("");
+  const subTagOk = isValidFeatureTag(subTag.trim());
+  const subContext = Boolean(subBefore || subAfter);
+
+  // --- .fea editor state: follows the config until the user edits the text ---
+  const generatedFea = useMemo(() => configToFea(config), [config]);
+  const [feaText, setFeaText] = useState(generatedFea);
+  const [feaDirty, setFeaDirty] = useState(false);
+  const [feaErrors, setFeaErrors] = useState<string[]>([]);
+  const [feaNote, setFeaNote] = useState("");
+  useEffect(() => {
+    if (!feaDirty) setFeaText(generatedFea);
+  }, [generatedFea, feaDirty]);
 
   useEffect(() => {
     if (!open) return;
@@ -354,6 +379,126 @@ export function FeatureBuilderOverlay() {
                   </button>
                 </div>
               ))}
+            </div>
+          </section>
+
+          {/* Substitutions: smcp / onum / ss01 / calt … */}
+          <section className="fm-feature-section">
+            <div className="fm-section-title">Substitusi (smcp, onum, ss01, calt …)</div>
+            <div className="fm-feature-form">
+              <input
+                className="fm-feature-input"
+                style={{ width: 90 }}
+                list="fm-feature-tags"
+                value={subTag}
+                onChange={(e) => setSubTag(e.target.value)}
+                placeholder="tag"
+                spellCheck={false}
+                aria-label="Tag fitur OpenType"
+              />
+              <datalist id="fm-feature-tags">
+                {SUBSTITUTION_FEATURES.map((f) => <option key={f.tag} value={f.tag}>{f.label}</option>)}
+              </datalist>
+              <GlyphPicker value={subBefore} onChange={setSubBefore} chars={chars} placeholder="Sebelum (opsional)" />
+              <GlyphPicker value={subFrom} onChange={setSubFrom} chars={chars} placeholder="Glyph asal" />
+              <GlyphPicker value={subAfter} onChange={setSubAfter} chars={chars} placeholder="Sesudah (opsional)" />
+              <span className="fm-feature-arrow">→</span>
+              <GlyphPicker value={subTo} onChange={setSubTo} chars={chars} placeholder="Diganti jadi" />
+              <button
+                className="fm-feature-btn fm-feature-btn-primary"
+                disabled={!subTagOk || !subFrom || !subTo}
+                onClick={() => {
+                  addSubstitutionRule({ feature: subTag.trim(), from: subFrom, to: subTo, before: subBefore || undefined, after: subAfter || undefined });
+                  setSubFrom(""); setSubTo(""); setSubBefore(""); setSubAfter("");
+                }}
+              >
+                Add
+              </button>
+            </div>
+            {!subTagOk && <div className="fm-feature-empty">Tag harus 4 karakter huruf/angka, mis. smcp atau ss01.</div>}
+            {subContext && <div className="fm-feature-empty">Konteks aktif: berlaku hanya bila glyph asal berada di antara glyph sebelum/sesudah yang dipilih.</div>}
+            <div className="fm-feature-rule-list">
+              {(config.substitutions ?? []).length === 0 && <div className="fm-feature-empty">Belum ada substitusi.</div>}
+              {(config.substitutions ?? []).map((rule) => (
+                <div className="fm-feature-rule-row" key={rule.id}>
+                  <span className="fm-feature-rule-label" style={{ minWidth: 48 }}>{rule.feature}</span>
+                  {rule.before && <RuleGlyph char={rule.before} glyphs={glyphs} />}
+                  <RuleGlyph char={rule.from} glyphs={glyphs} />
+                  {rule.after && <RuleGlyph char={rule.after} glyphs={glyphs} />}
+                  <span className="fm-feature-arrow">→</span>
+                  <RuleGlyph char={rule.to} glyphs={glyphs} />
+                  <div className="fm-spacer" />
+                  <button className="fm-feature-remove" onClick={() => removeSubstitutionRule(rule.id)} title="Remove">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* .fea code editor */}
+          <section className="fm-feature-section">
+            <div className="fm-section-title">Kode fitur (.fea)</div>
+            <textarea
+              className="fm-feature-input"
+              style={{ width: "100%", minHeight: 160, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12 }}
+              value={feaText}
+              spellCheck={false}
+              aria-label="Kode fitur .fea"
+              data-testid="fea-textarea"
+              onChange={(e) => { setFeaText(e.target.value); setFeaDirty(true); setFeaNote(""); }}
+            />
+            <div className="fm-feature-form" style={{ marginTop: 8 }}>
+              <button
+                className="fm-feature-btn fm-feature-btn-primary"
+                disabled={!feaDirty}
+                data-testid="fea-apply"
+                onClick={() => {
+                  const res = parseFea(feaText, (k) => Boolean(glyphs[k]));
+                  setFeaErrors(res.errors);
+                  if (res.config) {
+                    replaceFeatureConfig(res.config);
+                    setFeaDirty(false);
+                    setFeaNote("Kode diterapkan.");
+                  } else setFeaNote("");
+                }}
+              >
+                Terapkan
+              </button>
+              <button
+                className="fm-feature-btn fm-feature-btn-ghost"
+                disabled={!feaDirty}
+                onClick={() => { setFeaText(generatedFea); setFeaDirty(false); setFeaErrors([]); setFeaNote(""); }}
+              >
+                Batalkan perubahan
+              </button>
+              <button
+                className="fm-feature-btn fm-feature-btn-ghost"
+                onClick={() => { void navigator.clipboard?.writeText(feaText).then(() => setFeaNote("Disalin."), () => setFeaNote("Gagal menyalin.")); }}
+              >
+                Salin
+              </button>
+              <button
+                className="fm-feature-btn fm-feature-btn-ghost"
+                onClick={() => {
+                  const url = URL.createObjectURL(new Blob([feaText], { type: "text/plain" }));
+                  const a = document.createElement("a");
+                  a.href = url; a.download = "features.fea"; a.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                }}
+              >
+                Unduh .fea
+              </button>
+            </div>
+            {feaNote && <div className="fm-feature-empty" role="status">{feaNote}</div>}
+            {feaErrors.length > 0 && (
+              <div className="fm-feature-empty" role="alert" style={{ color: "#e5484d" }}>
+                {feaErrors.slice(0, 8).map((e, i) => <div key={i}>{e}</div>)}
+                {feaErrors.length > 8 && <div>… dan {feaErrors.length - 8} lainnya</div>}
+              </div>
+            )}
+            <div className="fm-feature-empty">
+              Didukung: <code>sub a by a.sc;</code> · <code>sub f f by f_f;</code> · <code>sub a from [a.alt1 a.alt2];</code> · konteks <code>sub a b' by b.alt;</code>. Glyph non-nama ditulis <code>uniXXXX</code>.
             </div>
           </section>
         </div>

@@ -22,6 +22,8 @@ export interface LigatureRule {
   components: FeatureGlyphRef[];
   /** The single glyph the components are replaced with. */
   target: FeatureGlyphRef;
+  /** OpenType feature tag; absent means "liga". Other choices: "dlig", "clig", "rlig". */
+  feature?: string;
 }
 
 export interface AlternateRule {
@@ -40,10 +42,55 @@ export interface SwashRule {
   swash: FeatureGlyphRef;
 }
 
+/**
+ * One-to-one glyph substitution under any feature tag — small caps (smcp,
+ * c2sc), figures (onum, lnum, pnum, tnum, zero), case (case), superior/
+ * inferior (sups, subs), stylistic sets (ss01–ss20) and contextual
+ * alternates (calt). When `before` and/or `after` is set the substitution
+ * only applies with that glyph immediately before/after `from`.
+ */
+export interface SubstitutionRule {
+  id: string;
+  /** OpenType feature tag, e.g. "smcp", "ss01", "calt". */
+  feature: string;
+  from: FeatureGlyphRef;
+  to: FeatureGlyphRef;
+  before?: FeatureGlyphRef;
+  after?: FeatureGlyphRef;
+}
+
+/** Feature tags offered in the UI (any valid 4-character tag is also accepted). */
+export const SUBSTITUTION_FEATURES: { tag: string; label: string }[] = [
+  { tag: "smcp", label: "smcp — Small caps" },
+  { tag: "c2sc", label: "c2sc — Capitals to small caps" },
+  { tag: "onum", label: "onum — Oldstyle figures" },
+  { tag: "lnum", label: "lnum — Lining figures" },
+  { tag: "pnum", label: "pnum — Proportional figures" },
+  { tag: "tnum", label: "tnum — Tabular figures" },
+  { tag: "zero", label: "zero — Slashed zero" },
+  { tag: "case", label: "case — Case-sensitive forms" },
+  { tag: "sups", label: "sups — Superscript" },
+  { tag: "subs", label: "subs — Subscript" },
+  { tag: "calt", label: "calt — Contextual alternates" },
+  ...Array.from({ length: 20 }, (_, i) => {
+    const tag = `ss${String(i + 1).padStart(2, "0")}`;
+    return { tag, label: `${tag} — Stylistic set ${i + 1}` };
+  }),
+];
+
+export const LIGATURE_FEATURES = ["liga", "dlig", "clig", "rlig"] as const;
+
+/** Valid OpenType tag: 4 printable ASCII characters (we also forbid spaces for simplicity). */
+export function isValidFeatureTag(tag: string): boolean {
+  return /^[A-Za-z0-9]{4}$/.test(tag);
+}
+
 export interface FeatureBuilderConfig {
   ligatures: LigatureRule[];
   alternates: AlternateRule[];
   swashes: SwashRule[];
+  /** Optional so older saved projects (without it) keep loading unchanged. */
+  substitutions?: SubstitutionRule[];
 }
 
 export function emptyFeatureConfig(): FeatureBuilderConfig {
@@ -54,7 +101,7 @@ export function emptyFeatureConfig(): FeatureBuilderConfig {
  * entirely on export so fonts with no Feature Builder use are unaffected. */
 export function isFeatureConfigEmpty(config: FeatureBuilderConfig | null | undefined): boolean {
   if (!config) return true;
-  return config.ligatures.length === 0 && config.alternates.length === 0 && config.swashes.length === 0;
+  return config.ligatures.length === 0 && config.alternates.length === 0 && config.swashes.length === 0 && (config.substitutions?.length ?? 0) === 0;
 }
 
 let ruleIdCounter = 0;

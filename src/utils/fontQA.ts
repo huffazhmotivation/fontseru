@@ -279,6 +279,11 @@ function checkFeatures(config: FeatureBuilderConfig | undefined, glyphs: GlyphMa
     if (!glyphs[rule.base]) missing.push(`swash base "${rule.base}" tidak ada`);
     if (!glyphs[rule.swash]) missing.push(`swash "${rule.swash}" tidak ada`);
   }
+  for (const rule of config.substitutions ?? []) {
+    for (const key of [rule.from, rule.to, rule.before, rule.after]) {
+      if (key && !glyphs[key]) missing.push(`${rule.feature} "${key}" tidak ada`);
+    }
+  }
   if (missing.length > 0) {
     push(issues, {
       id: "features.missing-glyph",

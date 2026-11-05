@@ -8,6 +8,9 @@ import type { Glyph } from "@/types/glyph";
 import { unicodeHex } from "@/utils/unicode";
 import { findNode, retypeNode, retypeNodes, deleteNodes, moveNodesBy, setHandlePoint } from "@/editor/nodeOps";
 import { objectsBounds, skewObject } from "@/editor/objectOps";
+import { recipeFor } from "@/glyph/multilingual";
+import { ANCHOR_NAMES, normalizeAnchorName } from "@/glyph/anchors";
+import { reverseObjects, correctDirections, addExtremes } from "@/editor/pathCommands";
 import type { NodeType, PathNode, StrokeCap, VectorObject } from "@/types/geometry";
 import { BRUSH_ORDER, BRUSH_PRESETS } from "@/brushes/presets";
 import { taperFactor } from "@/brushes/strokeToOutline";
@@ -129,6 +132,7 @@ export function RightPanel() {
       {tool === "home" && !drawMode && (
         <>
           <GlyphMetricsSection char={activeChar} glyph={glyph} />
+          <AnchorsSection char={activeChar} glyph={glyph} />
           <FontMetricsSection />
           <GhostGlyphSection />
         </>
@@ -270,6 +274,7 @@ function SelectPanel({ glyph, selectedObjectIds }: { glyph: Glyph; selectedObjec
           <Scissors size={14} /> Expand Stroke{strokeObjs.length > 1 ? "s" : ""}
         </button>
       )}
+      <PathCommandsRow char={glyph.char} glyph={glyph} objectIds={selectedObjectIds} />
       <InfoTip>
         Drag to move · corner/edge handles resize (Shift = proportional) · top handle rotates (Shift = 15°). Cmd/Ctrl+G groups · Cmd/Ctrl+U ungroups.
       </InfoTip>
@@ -445,6 +450,104 @@ function GlyphPanel({ char, glyph }: { char: string; glyph: Glyph }) {
   return null;
 }
 
+/**
+ * Anchors: named attachment points for OpenType mark positioning. Base
+ * letters carry "top"/"bottom"; marks carry "_top"/"_bottom" (where they
+ * attach). Exported as GPOS mark/mkmk + GDEF so accents land correctly in
+ * any app — including stacked Vietnamese marks.
+ */
+function AnchorsSection({ char, glyph }: { char: string; glyph: Glyph }) {
+  const setGlyphAnchors = useAppStore((s) => s.setGlyphAnchors);
+  const autoAnchorsAll = useAppStore((s) => s.autoAnchorsAll);
+  const [newName, setNewName] = useState<string>("top");
+  const [note, setNote] = useState("");
+  const anchors = glyph.anchors ?? [];
+  const patch = (i: number, p: Partial<{ name: string; x: number; y: number }>) =>
+    setGlyphAnchors(char, anchors.map((a, j) => (j === i ? { ...a, ...p } : a)));
+  return (
+    <Section title="Anchors" defaultOpen={anchors.length > 0}>
+      {anchors.length === 0 && <InfoTip>Belum ada anchor. Tambahkan, atau buat otomatis untuk semua huruf dan tanda.</InfoTip>}
+      {anchors.map((a, i) => (
+        <div className="fm-node-handle-row" key={`${a.name}-${i}`} data-testid={`anchor-row-${a.name}`}>
+          <span className="fm-node-handle-label" style={{ minWidth: 56 }}>{a.name}</span>
+          <NumericInput value={Math.round(a.x)} onChange={(x: number) => patch(i, { x })} aria-label={`Anchor ${a.name} X`} />
+          <NumericInput value={Math.round(a.y)} onChange={(y: number) => patch(i, { y })} aria-label={`Anchor ${a.name} Y`} />
+          <button type="button" className="fm-iconbtn" aria-label={`Hapus anchor ${a.name}`} onClick={() => setGlyphAnchors(char, anchors.filter((_, j) => j !== i))}>
+            <Trash2 size={13} />
+          </button>
+        </div>
+      ))}
+      <div className="fm-node-handle-row" style={{ marginTop: 8 }}>
+        <input
+          className="fm-input"
+          list="fm-anchor-names"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          aria-label="Nama anchor baru"
+          style={{ flex: 1, minWidth: 0 }}
+        />
+        <datalist id="fm-anchor-names">{ANCHOR_NAMES.map((n) => <option key={n} value={n} />)}</datalist>
+        <button
+          type="button"
+          className="fm-node-type-btn"
+          data-testid="anchor-add-btn"
+          onClick={() => {
+            const name = normalizeAnchorName(newName);
+            if (!name) return;
+            if (anchors.some((a) => a.name === name)) { setNote(`Anchor "${name}" sudah ada.`); return; }
+            setNote("");
+            setGlyphAnchors(char, [...anchors, { name, x: Math.round(glyph.advanceWidth / 2), y: 0 }]);
+          }}
+        >
+          Tambah
+        </button>
+      </div>
+      <button
+        type="button"
+        className="fm-action-btn"
+        style={{ marginTop: 8 }}
+        data-testid="anchor-auto-btn"
+        onClick={() => { const n = autoAnchorsAll(); setNote(n ? `Anchor dibuat untuk ${n} glyph.` : "Semua huruf sudah punya anchor."); }}
+      >
+        Buat anchor otomatis (semua)
+      </button>
+      {note && <div role="status" style={{ marginTop: 6, fontSize: 11, opacity: 0.75 }}>{note}</div>}
+      <InfoTip>Huruf dasar: top, bottom. Tanda: _top (titik tempel di huruf), top (untuk tumpukan tanda). Tanda kombinasi U+0300–036F otomatis jadi “mark” saat ekspor.</InfoTip>
+    </Section>
+  );
+}
+
+/** Shown on accented glyphs: link/unlink to the base letter + mark. */
+function CompositeLinkRow({ char, glyph }: { char: string; glyph: Glyph }) {
+  const setCompositeLinked = useAppStore((s) => s.setCompositeLinked);
+  const [note, setNote] = useState("");
+  const recipe = recipeFor(char);
+  if (!recipe) return null;
+  const linked = glyph.linked === true;
+  return (
+    <div className="fm-field">
+      <label>Huruf aksen</label>
+      <span className={`fm-status-pill ${linked ? "done" : ""}`}>
+        <span className="fm-status-dot" />
+        {linked ? `Terhubung: ${recipe.base} + ${recipe.mark} (ikut berubah)` : `Mandiri (tidak mengikuti ${recipe.base})`}
+      </span>
+      <button
+        className="fm-action-btn"
+        style={{ marginTop: 8 }}
+        data-testid="composite-link-btn"
+        onClick={() => {
+          if (linked) { setCompositeLinked(char, false); setNote(""); return; }
+          if (!window.confirm(`Hubungkan "${char}" ke ${recipe.base} + ${recipe.mark}? Gambar "${char}" saat ini akan diganti hasil gabungan otomatis.`)) return;
+          setNote(setCompositeLinked(char, true) ? "" : `Gambar ${recipe.base} dan ${recipe.mark} dulu.`);
+        }}
+      >
+        {linked ? "Lepas tautan" : "Hubungkan ke huruf dasar"}
+      </button>
+      {note && <div role="status" style={{ marginTop: 6, fontSize: 11, opacity: 0.75 }}>{note}</div>}
+    </div>
+  );
+}
+
 function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
   const updateGlyphMetrics = useAppStore((s) => s.updateGlyphMetrics);
   const scope = useAppStore((s) => s.glyphMetricScope);
@@ -500,6 +603,7 @@ function GlyphMetricsSection({ char, glyph }: { char: string; glyph: Glyph }) {
 
   return (
     <Section title="Glyph Metrics">
+      <CompositeLinkRow char={char} glyph={glyph} />
       <div className="fm-field">
         <label>Auto Metrik (whole font)</label>
         <div className="fm-node-type-row fm-spacing-mode" role="group" aria-label="Auto Metrik mode">
@@ -720,6 +824,52 @@ function FontMetricsSection() {
         flat default.
       </InfoTip>
     </Section>
+  );
+}
+
+/**
+ * Path commands every pro font editor has: Reverse Contour, Correct Path
+ * Direction (outer = counter-clockwise, counters opposite) and Add Extremes
+ * (on-curve points at horizontal/vertical extrema — needed for clean hinting).
+ * All of them preserve the visible shape exactly.
+ */
+function PathCommandsRow({ char, glyph, objectIds }: { char: string; glyph: Glyph; objectIds: string[] }) {
+  const commitOutline = useAppStore((s) => s.commitOutline);
+  const [note, setNote] = useState("");
+  if (objectIds.length === 0) return null;
+  const run = (fn: () => string | void) => { const m = fn(); setNote(m ?? ""); };
+  return (
+    <div className="fm-field" style={{ marginTop: 10 }}>
+      <label>Path</label>
+      <div className="fm-node-type-row">
+        <button className="fm-node-type-btn" data-testid="path-reverse-btn"
+          title="Reverse the direction of the selected contours"
+          onClick={() => run(() => { commitOutline(char, reverseObjects(glyph.outline, objectIds), { skipAutoSpacing: true }); })}>
+          Reverse
+        </button>
+        <button className="fm-node-type-btn" data-testid="path-correct-btn"
+          title="Outer contours counter-clockwise, counters clockwise"
+          onClick={() => run(() => {
+            const next = correctDirections(glyph.outline, objectIds);
+            if (next.objects.every((o, i) => o === glyph.outline.objects[i])) return "Arah path sudah benar.";
+            commitOutline(char, next, { skipAutoSpacing: true });
+            return "Arah path dikoreksi.";
+          })}>
+          Correct Dir.
+        </button>
+        <button className="fm-node-type-btn" data-testid="path-extremes-btn"
+          title="Add on-curve nodes at horizontal and vertical extremes"
+          onClick={() => run(() => {
+            const res = addExtremes(glyph.outline, objectIds);
+            if (!res.added) return "Tidak ada titik ekstrem yang kurang.";
+            commitOutline(char, res.outline, { skipAutoSpacing: true });
+            return `${res.added} titik ekstrem ditambahkan.`;
+          })}>
+          Add Extremes
+        </button>
+      </div>
+      {note && <div className="fm-hint" role="status" style={{ marginTop: 6, fontSize: 11, opacity: 0.75 }}>{note}</div>}
+    </div>
   );
 }
 

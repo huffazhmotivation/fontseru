@@ -1291,6 +1291,18 @@ export function GlyphCanvas() {
                   always has an explicit, unmistakable mark — separate from
                   the draggable, dashed LSB guide right next to it. */}
               <line x1={originXView} y1={vbY} x2={originXView} y2={vbY + vbH} className="origin-line" pointerEvents="none" />
+              {!drawMode && glyph.anchors?.map((a) => (
+                <g key={`anchor-${a.name}`} pointerEvents="none" data-testid={`anchor-mark-${a.name}`}>
+                  <path
+                    d={`M ${a.x} ${ascender - a.y - 7 / sc} L ${a.x + 7 / sc} ${ascender - a.y} L ${a.x} ${ascender - a.y + 7 / sc} L ${a.x - 7 / sc} ${ascender - a.y} Z`}
+                    fill={a.name.startsWith("_") ? "#ff8a00" : "#00b3ff"}
+                    stroke="#fff"
+                    strokeWidth={1 / sc}
+                    opacity={0.95}
+                  />
+                  <text x={a.x + 10 / sc} y={ascender - a.y - 6 / sc} fontSize={11 / sc} fill={a.name.startsWith("_") ? "#ff8a00" : "#00b3ff"}>{a.name}</text>
+                </g>
+              ))}
               <g pointerEvents="none" data-testid="glyph-origin-mark">
                 <rect x={originXView - 9 / sc} y={vbY + vbH - 20 / sc} width={18 / sc} height={16 / sc} rx={3 / sc} className="origin-flag-bg" />
                 <text x={originXView} y={vbY + vbH - 8.5 / sc} textAnchor="middle" className="origin-flag-label">0</text>

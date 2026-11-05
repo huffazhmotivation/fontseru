@@ -98,12 +98,21 @@ export const CanvasRuler = memo(function CanvasRuler({ scale, vbX, vbY, vbW, vbH
         removeGuide(d.id);
       }
     };
+    const onCancel = () => {
+      if (!draggingRef.current) return;
+      if (raf !== null) cancelAnimationFrame(raf);
+      apply();
+      setDragging(null);
+      draggingRef.current = null;
+    };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
     return () => {
       if (raf !== null) cancelAnimationFrame(raf);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
     };
   }, [dragging, ascender, scale, updateGuide, removeGuide, vbX, vbY]);
 

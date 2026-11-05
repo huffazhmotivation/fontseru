@@ -97,11 +97,18 @@ export function MultiCanvasRuler({
       if (d.axis === "h" && e.clientY < d.rect.top + MULTI_RULER_SIZE) removeGuide(d.id);
       else if (d.axis === "v" && e.clientX < d.rect.left + MULTI_RULER_SIZE) removeGuide(d.id);
     };
+    const onCancel = () => {
+      if (!draggingRef.current) return;
+      setDragging(null);
+      draggingRef.current = null;
+    };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
     };
   }, [dragging, updateGuide, removeGuide, toFontX, toFontY]);
 

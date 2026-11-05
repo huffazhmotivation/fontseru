@@ -31,7 +31,7 @@ if (framedAtDesign) {
       sessionStorage.setItem(KEY, "1");
       const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
       await Promise.all(regs.map((r) => r.unregister().catch(() => false)));
-      if ("caches" in window) await Promise.all((await caches.keys()).map((k) => caches.delete(k)));
+      if ("caches" in window) await Promise.all((await caches.keys()).filter((k) => !/transformers/i.test(k)).map((k) => caches.delete(k)));
     } catch {
       /* best effort */
     }

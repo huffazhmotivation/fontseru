@@ -27,6 +27,8 @@ import { DesignStudio } from "@/mode/DesignStudio";
 import { TabletPad } from "@/mode/TabletPad";
 import { applyTabletAttr } from "@/mode/tablet";
 import { copyAndPublish, pasteFromButton } from "@/lib/seruBridge";
+import { ChunkErrorBoundary } from "@/components/ChunkErrorBoundary";
+import { maybeAutoSnapshot } from "@/glyph/versionHistory";
 
 // Chromium currently has a much more expensive compositing path for
 // backdrop-filter over a large, live SVG surface than Safari/Firefox. Keep
@@ -238,6 +240,12 @@ export default function App() {
     };
   }, []);
 
+  // Riwayat versi: snapshot otomatis tiap 5 menit bila ada perubahan (DB terpisah, tidak menyentuh autosave).
+  useEffect(() => {
+    const id = window.setInterval(() => { if (hydratedRef.current) maybeAutoSnapshot(); }, 5 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     // Safari (macOS) renders its native overlay scrollbar's colour from the
@@ -259,9 +267,11 @@ export default function App() {
   if (appMode === "motion") {
     return (
       <>
-        <Suspense fallback={<div className="fm-motion-loading">Memuat Mode Motion…</div>}>
-          <MotionStudio />
-        </Suspense>
+        <ChunkErrorBoundary label="Mode Motion">
+          <Suspense fallback={<div className="fm-motion-loading">Memuat Mode Motion…</div>}>
+            <MotionStudio />
+          </Suspense>
+        </ChunkErrorBoundary>
         {designHost}
       </>
     );
@@ -323,13 +333,15 @@ export default function App() {
           <div className="fm-mobile-backdrop" onClick={closeMobilePanels} aria-hidden="true" />
         )}
       </div>
-      <Suspense fallback={<div className="fs-overlay-loading" role="status" aria-live="polite"><i /></div>}>
-        {testLabEverOpened.current && <TestLabOverlay />}
-        {familyEverOpened.current && <FamilyAutoGenerateOverlay />}
-        {traceEverOpened.current && <TraceImageOverlay />}
-        {featureBuilderEverOpened.current && <FeatureBuilderOverlay />}
-        {timelapseEverOpened.current && <TimelapseOverlay />}
-      </Suspense>
+      <ChunkErrorBoundary>
+        <Suspense fallback={<div className="fs-overlay-loading" role="status" aria-live="polite"><i /></div>}>
+          {testLabEverOpened.current && <TestLabOverlay />}
+          {familyEverOpened.current && <FamilyAutoGenerateOverlay />}
+          {traceEverOpened.current && <TraceImageOverlay />}
+          {featureBuilderEverOpened.current && <FeatureBuilderOverlay />}
+          {timelapseEverOpened.current && <TimelapseOverlay />}
+        </Suspense>
+      </ChunkErrorBoundary>
       <LoginModal />
       <ProductTour />
       <EmailConfirmedWelcome />

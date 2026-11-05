@@ -245,7 +245,7 @@ function refitGap(a: PathNode, between: PathNode[], b: PathNode, aSurv: PathNode
   // survivor had no handle of its own (was a corner) on that side.
   const t0 =
     (a.handleOut && unitTangent(subtract(a.handleOut, a.point))) ??
-    unitTangent(subtract(samples[0], a.point)) ??
+    unitTangent(subtract(samples[1] ?? b.point, a.point)) ??
     { x: 1, y: 0 };
   const t1 =
     (b.handleIn && unitTangent(subtract(b.handleIn, b.point))) ??

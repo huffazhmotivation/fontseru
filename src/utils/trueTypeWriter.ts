@@ -830,7 +830,7 @@ function writeU32At(bytes: Uint8Array, offset: number, value: number): void {
 }
 
 function assembleSfnt(tables: TableRecord[]): ArrayBuffer {
-  const ordered = [...tables].sort((a, b) => a.tag.localeCompare(b.tag));
+  const ordered = [...tables].sort((a, b) => (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0));
   const numTables = ordered.length;
   const maxPow2 = 2 ** Math.floor(Math.log2(Math.max(1, numTables)));
   const searchRange = maxPow2 * 16;
@@ -894,6 +894,8 @@ export function buildTrueTypeFont(input: TrueTypeFontInput): TrueTypeFontResult 
     { tag: "maxp", data: buildMaxp(built.glyphs.length, built.maxPoints, built.maxContours) },
     { tag: "name", data: buildName(input) },
     { tag: "post", data: buildPost(input) },
+    // Unhinted font: grayscale + symmetric smoothing at all sizes, no grid-fit.
+    { tag: "gasp", data: Uint8Array.from([0, 1, 0, 1, 0xff, 0xff, 0, 0x0a]) },
   ];
 
   return {

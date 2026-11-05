@@ -7,6 +7,19 @@ export type GlyphCategory = "spacing" | "upper" | "lower" | "digits" | "punct" |
  * One glyph in the working (master/Regular) font. `components` is left as
  * an architectural placeholder for composite glyphs added in a later phase.
  */
+/**
+ * Named attachment point on a glyph (font units, Y-up), used for OpenType mark
+ * positioning. Convention (same as Glyphs / FontLab): a base glyph has "top",
+ * "bottom"...; a mark glyph has "_top", "_bottom"... (where it attaches to
+ * the base's matching anchor) and may also have "top"/"bottom" so further
+ * marks can stack on it (mark-to-mark, e.g. Vietnamese).
+ */
+export interface GlyphAnchor {
+  name: string;
+  x: number;
+  y: number;
+}
+
 export interface Glyph {
   char: string;
   unicode: number;
@@ -20,6 +33,17 @@ export interface Glyph {
   rsb: number;
   outline: GlyphOutline;
   components: string[];
+  /** Mark-positioning anchors; exported as GPOS mark/mkmk + GDEF. */
+  anchors?: GlyphAnchor[];
+  /**
+   * True for an auto-composed accented glyph (see glyph/multilingual.ts) that
+   * must follow its base letter and mark: editing "a" or "´" re-composes "á"
+   * automatically. Editing the composite itself, or "Lepas tautan", sets it
+   * to false and the glyph becomes ordinary hand-edited artwork. Absent on
+   * glyphs composed before this field existed, which therefore never change
+   * on their own.
+   */
+  linked?: boolean;
 }
 
 export type GlyphMap = Record<string, Glyph>;

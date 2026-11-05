@@ -18,13 +18,15 @@ import type { ShapeKind } from "@/editor/shapeBuilder";
 import { shortId } from "@/utils/id";
 import { expandStrokeObject, normalizeBrushSettings } from "@/brushes/strokeToOutline";
 import { applyBooleanOp, type BooleanOp } from "@/editor/booleanOps";
-import { composeMultilingualGlyphs, type MultilingualResult } from "@/glyph/multilingual";
+import { suggestAnchorsForMap } from "@/glyph/anchors";
+import type { GlyphAnchor } from "@/types/glyph";
+import { composeMultilingualGlyphs, recomposeGlyph, syncLinkedComposites, type MultilingualResult } from "@/glyph/multilingual";
 import type { KerningPairs, KerningManualFlags, KerningOverridesByStyle, KerningOverrideManualByStyle, KerningContext, WordSpacingOverridesByStyle } from "@/types/kerning";
 import { kerningKey, decodeKerningKey, effectiveWordSpacing } from "@/types/kerning";
 import { suggestKerningPair, autoKernAllAvailablePairs, calibrateTargetGap } from "@/kerning/autoKern";
 import { autoSpaceAllGlyphs as computeAutoSpaceAllGlyphs, suggestGlyphSidebearings, suggestWordSpacing, applyOpticalSidebearings, type AutoSpaceResult } from "@/kerning/autoSpace";
 import type { FeatureBuilderConfig, LigatureRule, AlternateRule, SwashRule, FeatureGlyphRef } from "@/types/opentypeFeatures";
-import { emptyFeatureConfig, nextFeatureRuleId } from "@/types/opentypeFeatures";
+import { emptyFeatureConfig, nextFeatureRuleId, isValidFeatureTag, type SubstitutionRule } from "@/types/opentypeFeatures";
 import { nextFeatureGlyphUnicode, buildFeatureGlyph, isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { GlyphCategory } from "@/types/glyph";
 import type { EditorMode, GlyphFilterId } from "@/types/glyphView";
@@ -163,6 +165,7 @@ function applyGlyphMetricPatch(
       lsb: nextLsb,
       advanceWidth: Math.max(1, next.advanceWidth + dx),
       outline: { objects: next.outline.objects.map((o) => translateObject(o, dx, 0)) },
+      ...(next.anchors ? { anchors: next.anchors.map((a) => ({ ...a, x: a.x + dx })) } : {}),
     };
   }
 
@@ -597,6 +600,17 @@ interface AppState {
   expandStrokesInSelectedGlyphs: () => void;
   flipSelectedObjects: (axis: "horizontal" | "vertical") => void;
   /**
+   * Links/unlinks an accented glyph to its base letter + mark. Linking
+   * re-composes it now from the current base and mark (replacing its
+   * artwork); unlinking keeps the artwork and stops it following the base.
+   * Returns false when it can't be linked (no recipe, or base/mark undrawn).
+   */
+  setCompositeLinked: (char: string, linked: boolean) => boolean;
+  /** Replaces one glyph's mark-positioning anchors (undoable). */
+  setGlyphAnchors: (char: string, anchors: GlyphAnchor[]) => void;
+  /** Adds missing top/bottom/_top/... anchors to every drawn letter and mark of the active style. Returns glyphs changed. */
+  autoAnchorsAll: () => number;
+  /**
    * Aligns every selected object to an edge/center of the selection's own
    * combined bounding box — the same "align relative to selection" model
    * design tools like Figma use when nothing else (no page/artboard) to
@@ -755,6 +769,11 @@ interface AppState {
   removeAlternateRule: (id: string) => void;
   setSwashRule: (base: FeatureGlyphRef, swash: FeatureGlyphRef) => void;
   removeSwashRule: (id: string) => void;
+  /** One-to-one substitution under any feature tag (smcp, onum, ss01, calt …). */
+  addSubstitutionRule: (rule: Omit<SubstitutionRule, "id">) => void;
+  removeSubstitutionRule: (id: string) => void;
+  /** Replaces the whole feature config (used by the .fea editor). One undo step. */
+  replaceFeatureConfig: (config: FeatureBuilderConfig) => void;
 
   // PRO feature-locking modal ("Join PRO")
   openProModal: (feature: "tracing" | "family" | "brush" | "export" | "cloud" | "featureBuilder") => void;
@@ -783,6 +802,12 @@ function featureConfigReferencedKeys(config: FeatureBuilderConfig): Set<string> 
   for (const rule of config.swashes) {
     keys.add(rule.base);
     keys.add(rule.swash);
+  }
+  for (const rule of config.substitutions ?? []) {
+    keys.add(rule.from);
+    keys.add(rule.to);
+    if (rule.before) keys.add(rule.before);
+    if (rule.after) keys.add(rule.after);
   }
   return keys;
 }
@@ -864,8 +889,11 @@ export const useAppStore = create<AppState>()((set, get) => {
     }
     return touched ? next : null;
   }
-  function commit(nextGlyphs: GlyphMap, extra?: Partial<AppState>) {
+  function commit(nextGlyphsIn: GlyphMap, extra?: Partial<AppState>) {
     const { glyphs, glyphsByStyle, fontStyle, metrics, past, kerningPairs, kerningManual } = get();
+    // Accented glyphs composed from a base letter + mark follow edits to
+    // either source; a linked composite edited directly is unlinked instead.
+    const nextGlyphs = syncLinkedComposites(glyphs, nextGlyphsIn, metrics);
     // Inside a bracketed edit (slider drag, held arrow key, numeric field
     // typing) only the first change pushes an undo step; the rest update in place.
     if (glyphEditBracket) {
@@ -2326,6 +2354,39 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({ selectedObjectIds: [result.id] });
     },
 
+    setGlyphAnchors: (char, anchors) => {
+      const { glyphs } = get();
+      const glyph = glyphs[char];
+      if (!glyph) return;
+      const clean = anchors
+        .filter((a) => a.name && Number.isFinite(a.x) && Number.isFinite(a.y))
+        .map((a) => ({ name: a.name, x: Math.round(a.x), y: Math.round(a.y) }));
+      commit({ ...glyphs, [char]: { ...glyph, anchors: clean.length ? clean : undefined } });
+    },
+
+    autoAnchorsAll: () => {
+      const { glyphs, metrics } = get();
+      const next = suggestAnchorsForMap(glyphs, metrics);
+      let changed = 0;
+      for (const k in next) if (next[k] !== glyphs[k]) changed++;
+      if (changed) commit(next);
+      return changed;
+    },
+
+    setCompositeLinked: (char, linked) => {
+      const { glyphs, metrics } = get();
+      const glyph = glyphs[char];
+      if (!glyph) return false;
+      if (!linked) {
+        if (glyph.linked) commit({ ...glyphs, [char]: { ...glyph, linked: false } });
+        return true;
+      }
+      const re = recomposeGlyph(char, glyphs, metrics);
+      if (!re) return false;
+      commit({ ...glyphs, [char]: re });
+      return true;
+    },
+
     addMultilingualGlyphs: () => {
       finalizeLive();
       const state = get();
@@ -2346,7 +2407,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         glyphsByStyle: nextGlyphsByStyle,
         past: [
           ...state.past,
-          { glyphs: state.glyphs, metrics: state.metrics, kerningPairs: state.kerningPairs, kerningManual: state.kerningManual },
+          { glyphs: state.glyphs, glyphsByStyle: state.glyphsByStyle, fontStyle: state.fontStyle, metrics: state.metrics, kerningPairs: state.kerningPairs, kerningManual: state.kerningManual },
         ].slice(-HISTORY_LIMIT),
         future: [],
       });
@@ -3397,6 +3458,31 @@ export const useAppStore = create<AppState>()((set, get) => {
         : [...state.featureConfig.swashes, { id: nextFeatureRuleId("swsh"), base: cleanBase, swash: cleanSwash }];
       commitPatch({ featureConfig: { ...state.featureConfig, swashes } });
     },
+    addSubstitutionRule: (rule) => {
+      if (!requirePro("featureBuilder")) return;
+      const feature = rule.feature.trim();
+      if (!isValidFeatureTag(feature) || !rule.from || !rule.to) return;
+      const state = get();
+      const cur = state.featureConfig.substitutions ?? [];
+      const dup = cur.some((r) => r.feature === feature && r.from === rule.from && (r.before ?? "") === (rule.before ?? "") && (r.after ?? "") === (rule.after ?? ""));
+      if (dup) return;
+      const next: SubstitutionRule = { id: nextFeatureRuleId("sub"), feature, from: rule.from, to: rule.to };
+      if (rule.before) next.before = rule.before;
+      if (rule.after) next.after = rule.after;
+      commitPatch({ featureConfig: { ...state.featureConfig, substitutions: [...cur, next] } });
+    },
+    removeSubstitutionRule: (id) => {
+      const state = get();
+      const cur = state.featureConfig.substitutions ?? [];
+      const rule = cur.find((r) => r.id === id);
+      const nextConfig: FeatureBuilderConfig = { ...state.featureConfig, substitutions: cur.filter((r) => r.id !== id) };
+      get().deleteOrphanedFeatureGlyphs(rule ? [rule.to] : [], nextConfig);
+    },
+    replaceFeatureConfig: (config) => {
+      if (!requirePro("featureBuilder")) return;
+      commitPatch({ featureConfig: config });
+    },
+
     removeSwashRule: (id) => {
       const state = get();
       const rule = state.featureConfig.swashes.find((r) => r.id === id);

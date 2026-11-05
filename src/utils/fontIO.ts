@@ -1,3 +1,4 @@
+import { buildMarkLayout, type MarkLayout } from "@/utils/markPositioning";
 import * as opentype from "opentype.js";
 
 /**
@@ -1506,7 +1507,26 @@ function patchOtfHeadAndPost(buffer: ArrayBuffer, macStyle: number, italicAngle:
     result = spliceSfntTable(result, "post", postBytes);
   }
 
+  // `gasp` (grid-fitting and scan-conversion procedure): FontSeru fonts are
+  // unhinted, so tell Windows to use grayscale + symmetric smoothing at every
+  // size (and no grid-fitting) instead of letting the rasterizer guess.
+  // Added only when the font has none, so an imported table is never replaced.
+  if (!findSfntTable(result, "gasp")) {
+    try { result = spliceSfntTable(result, "gasp", buildGaspTable()); } catch { /* optional table */ }
+  }
+
   return result;
+}
+
+/** version 1, one range covering all sizes: DOGRAY | SYMMETRIC_SMOOTHING. */
+export function buildGaspTable(): Uint8Array {
+  const out = new Uint8Array(8);
+  const v = new DataView(out.buffer);
+  v.setUint16(0, 1, false); // version
+  v.setUint16(2, 1, false); // numRanges
+  v.setUint16(4, 0xffff, false); // rangeMaxPPEM
+  v.setUint16(6, 0x000a, false); // rangeGaspBehavior
+  return out;
 }
 
 /** Shared sfnt table-directory splicing logic: replace-or-add one table by
@@ -1534,7 +1554,7 @@ function spliceSfntTable(buffer: ArrayBuffer, tag: string, data: Uint8Array): Ar
   const newData = tag === "head" && data.length >= 12 ? data.slice() : data;
   if (newData !== data) newData.fill(0, 8, 12);
   tables.push({ tag, data: newData });
-  tables.sort((a, b) => a.tag.localeCompare(b.tag));
+  tables.sort((a, b) => (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0));
 
   const count = tables.length;
   const maxPow2 = 2 ** Math.floor(Math.log2(count));
@@ -1860,7 +1880,7 @@ export function injectKernTable(buffer: ArrayBuffer, pairs: KerningPairs, glyphI
     tables.push({ tag, data });
   }
   tables.push({ tag: "kern", data: kern });
-  tables.sort((a, b) => a.tag.localeCompare(b.tag));
+  tables.sort((a, b) => (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0));
 
   const count = tables.length;
   const maxPow2 = 2 ** Math.floor(Math.log2(count));
@@ -2136,6 +2156,36 @@ function buildScriptList(scriptTags: string[], featureIndices: number[]): Uint8A
   return w.toUint8Array();
 }
 
+/** ChainContextSubstFormat3 for a one-glyph input with optional one-glyph
+ * backtrack/lookahead, applying `singleLookupIndex` (a SingleSubst lookup)
+ * to the input glyph. */
+function buildChainContextSubstFormat3(
+  backtrack: number | null,
+  input: number,
+  lookahead: number | null,
+  singleLookupIndex: number
+): Uint8Array {
+  const covs: Uint8Array[] = [];
+  const back = backtrack != null ? [buildCoverageFormat1([backtrack])] : [];
+  const look = lookahead != null ? [buildCoverageFormat1([lookahead])] : [];
+  const inp = [buildCoverageFormat1([input])];
+  covs.push(...back, ...inp, ...look);
+  // header: format(2) + backtrackCount(2) + offsets + inputCount(2) + offsets + lookaheadCount(2) + offsets + substCount(2) + record(4)
+  const headerSize = 2 + 2 + back.length * 2 + 2 + inp.length * 2 + 2 + look.length * 2 + 2 + 4;
+  const offsets: number[] = [];
+  let cursor = headerSize;
+  for (const c of covs) { offsets.push(cursor); cursor += c.length; }
+  const w = new GsubByteWriter();
+  let k = 0;
+  w.u16(3);
+  w.u16(back.length); for (let i = 0; i < back.length; i++) w.u16(offsets[k++]);
+  w.u16(inp.length); for (let i = 0; i < inp.length; i++) w.u16(offsets[k++]);
+  w.u16(look.length); for (let i = 0; i < look.length; i++) w.u16(offsets[k++]);
+  w.u16(1).u16(0).u16(singleLookupIndex); // one SubstLookupRecord: sequenceIndex 0 → the single-subst lookup
+  for (const c of covs) w.raw(c);
+  return w.toUint8Array();
+}
+
 /**
  * Compiles a Feature Builder config into a standard GSUB table. Returns
  * null when there's nothing to generate (empty config, or none of the
@@ -2149,8 +2199,9 @@ function buildGsubTable(config: FeatureBuilderConfig, glyphIndexByChar: Map<stri
     .map((rule) => ({
       components: rule.components.map(gid),
       ligature: gid(rule.target),
+      feature: rule.feature && /^[A-Za-z0-9]{4}$/.test(rule.feature) ? rule.feature : "liga",
     }))
-    .filter((r): r is { components: number[]; ligature: number } =>
+    .filter((r): r is { components: number[]; ligature: number; feature: string } =>
       r.ligature != null && r.components.length >= 2 && r.components.every((g) => g != null)
     );
 
@@ -2165,28 +2216,73 @@ function buildGsubTable(config: FeatureBuilderConfig, glyphIndexByChar: Map<stri
     .map((rule) => ({ from: gid(rule.base), to: gid(rule.swash) }))
     .filter((r): r is { from: number; to: number } => r.from != null && r.to != null);
 
-  if (!ligatureRules.length && !alternateRules.length && !swashRules.length) return null;
+  // One-to-one substitutions (smcp, onum, ss01…, calt …). Rules without
+  // context are merged into ONE SingleSubst lookup per feature tag; a rule
+  // with a before/after glyph becomes its own chaining-context lookup.
+  const plainSubs = new Map<string, Map<number, number>>();
+  const contextSubs: Array<{ feature: string; backtrack: number | null; from: number; lookahead: number | null; to: number }> = [];
+  for (const rule of config.substitutions ?? []) {
+    if (!/^[A-Za-z0-9]{4}$/.test(rule.feature)) continue;
+    const from = gid(rule.from);
+    const to = gid(rule.to);
+    if (from == null || to == null) continue;
+    const before = rule.before ? gid(rule.before) : null;
+    const after = rule.after ? gid(rule.after) : null;
+    if ((rule.before && before == null) || (rule.after && after == null)) continue;
+    if (before != null || after != null) {
+      contextSubs.push({ feature: rule.feature, backtrack: before ?? null, from, lookahead: after ?? null, to });
+    } else {
+      const m = plainSubs.get(rule.feature) ?? new Map<number, number>();
+      if (!m.has(from)) m.set(from, to); // first rule for a glyph wins (a lookup can't map one glyph twice)
+      plainSubs.set(rule.feature, m);
+    }
+  }
+
+  if (!ligatureRules.length && !alternateRules.length && !swashRules.length && !plainSubs.size && !contextSubs.length) return null;
 
   const lookups: Uint8Array[] = [];
-  const features: Array<{ tag: string; lookupIndices: number[] }> = [];
+  const featureMap = new Map<string, number[]>();
+  const addFeature = (tag: string, indices: number[]) => {
+    featureMap.set(tag, [...(featureMap.get(tag) ?? []), ...indices]);
+  };
 
   if (ligatureRules.length) {
-    const levels = ligatureLevels(ligatureRules);
-    const ligLookupIndices: number[] = [];
-    for (const level of levels) {
-      ligLookupIndices.push(lookups.length);
-      lookups.push(buildLookup(4, [buildLigatureSubstFormat1(level)]));
+    const byTag = new Map<string, Array<{ components: number[]; ligature: number }>>();
+    for (const r of ligatureRules) byTag.set(r.feature, [...(byTag.get(r.feature) ?? []), { components: r.components, ligature: r.ligature }]);
+    for (const [tag, rules] of byTag) {
+      const levels = ligatureLevels(rules);
+      const ligLookupIndices: number[] = [];
+      for (const level of levels) {
+        ligLookupIndices.push(lookups.length);
+        lookups.push(buildLookup(4, [buildLigatureSubstFormat1(level)]));
+      }
+      addFeature(tag, ligLookupIndices);
     }
-    features.push({ tag: "liga", lookupIndices: ligLookupIndices });
   }
   if (alternateRules.length) {
-    features.push({ tag: "salt", lookupIndices: [lookups.length] });
+    addFeature("salt", [lookups.length]);
     lookups.push(buildLookup(3, [buildAlternateSubstFormat1(alternateRules)]));
   }
   if (swashRules.length) {
-    features.push({ tag: "swsh", lookupIndices: [lookups.length] });
+    addFeature("swsh", [lookups.length]);
     lookups.push(buildLookup(1, [buildSingleSubstFormat2(swashRules)]));
   }
+  for (const [tag, map] of plainSubs) {
+    addFeature(tag, [lookups.length]);
+    lookups.push(buildLookup(1, [buildSingleSubstFormat2([...map].map(([from, to]) => ({ from, to })))]));
+  }
+  for (const rule of contextSubs) {
+    const singleIndex = lookups.length;
+    lookups.push(buildLookup(1, [buildSingleSubstFormat2([{ from: rule.from, to: rule.to }])]));
+    const chainIndex = lookups.length;
+    lookups.push(buildLookup(6, [buildChainContextSubstFormat3(rule.backtrack, rule.from, rule.lookahead, singleIndex)]));
+    addFeature(rule.feature, [chainIndex]);
+  }
+
+  // FeatureList records must be sorted by tag.
+  const features = [...featureMap.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([tag, lookupIndices]) => ({ tag, lookupIndices }));
 
   const lookupListBytes = buildLookupList(lookups);
   const featureListBytes = buildFeatureList(features);
@@ -2237,21 +2333,38 @@ export function injectGsubTable(buffer: ArrayBuffer, config: FeatureBuilderConfi
  * `chunkKerningRecords`), each wrapped in an Extension Positioning
  * subtable (see `buildExtensionPosLookup`) so no pair is ever dropped
  * regardless of how large the kerning matrix gets. */
-function buildGposTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number>): Uint8Array | null {
+function buildGposTable(pairs: KerningPairs, glyphIndexByChar: Map<string, number>, marks?: MarkLayout | null): Uint8Array | null {
   const records = resolveKerningRecords(pairs ?? {}, glyphIndexByChar);
-  if (!records.length) return null;
+  const hasMarks = Boolean(marks && (marks.markToBase.length || marks.markToMark.length));
+  if (!records.length && !hasMarks) return null;
 
-  // PairPos format 1 layout: header(10) + 2*L (pairSet offsets) +
-  // coverage(4 + 2*L) + per-pair(4) — i.e. baseCost 14, +6 per new left
-  // glyph, +4 per pair. Matches buildPairPosSubtable's own byte layout.
-  const chunks = chunkKerningRecords(records, 6, 4, 14);
-  const pairPosSubtables = chunks.map(buildPairPosSubtable);
-  const extensionLookup = buildExtensionPosLookup(pairPosSubtables);
+  const lookups: Uint8Array[] = [];
+  const features: Array<{ tag: string; lookupIndices: number[] }> = [];
+  if (records.length) {
+    // PairPos format 1 layout: header(10) + 2*L (pairSet offsets) +
+    // coverage(4 + 2*L) + per-pair(4) — i.e. baseCost 14, +6 per new left
+    // glyph, +4 per pair. Matches buildPairPosSubtable's own byte layout.
+    const chunks = chunkKerningRecords(records, 6, 4, 14);
+    lookups.push(buildExtensionPosLookup(chunks.map(buildPairPosSubtable)));
+    features.push({ tag: "kern", lookupIndices: [lookups.length - 1] });
+  }
+  // Mark positioning. Feature tags stay alphabetical (kern < mark < mkmk).
+  if (marks?.markToBase.length) {
+    lookups.push(buildLookup(4, marks.markToBase));
+    features.push({ tag: "mark", lookupIndices: [lookups.length - 1] });
+  }
+  if (marks?.markToMark.length) {
+    lookups.push(buildLookup(6, marks.markToMark));
+    features.push({ tag: "mkmk", lookupIndices: [lookups.length - 1] });
+  }
 
-  const lookupListBytes = buildLookupList([extensionLookup]);
-  const featureListBytes = buildFeatureList([{ tag: "kern", lookupIndices: [0] }]);
-  const scriptListBytes = buildScriptList(["DFLT", "latn"], [0]);
+  const lookupListBytes = buildLookupList(lookups);
+  const featureListBytes = buildFeatureList(features);
+  const scriptListBytes = buildScriptList(["DFLT", "latn"], features.map((_, i) => i));
+  return assembleGpos(scriptListBytes, featureListBytes, lookupListBytes);
+}
 
+function assembleGpos(scriptListBytes: Uint8Array, featureListBytes: Uint8Array, lookupListBytes: Uint8Array): Uint8Array {
   const headerSize = 10;
   const scriptListOffset = headerSize;
   const featureListOffset = scriptListOffset + scriptListBytes.length;
@@ -2270,10 +2383,28 @@ function buildGposTable(pairs: KerningPairs, glyphIndexByChar: Map<string, numbe
  * `injectKernTable`'s legacy table — see the block comment above. Purely
  * additive and independent of the legacy `kern`/`GSUB` injection, so it
  * can be skipped on failure without affecting either. */
-export function injectGposTable(buffer: ArrayBuffer, pairs: KerningPairs, glyphIndexByChar: Map<string, number>): ArrayBuffer {
-  const gpos = buildGposTable(pairs, glyphIndexByChar);
+export function injectGposTable(
+  buffer: ArrayBuffer,
+  pairs: KerningPairs,
+  glyphIndexByChar: Map<string, number>,
+  marks?: MarkLayout | null,
+): ArrayBuffer {
+  const gpos = buildGposTable(pairs, glyphIndexByChar, marks);
   if (!gpos) return buffer.slice(0);
-  return spliceSfntTable(buffer, "GPOS", gpos);
+  let out = spliceSfntTable(buffer, "GPOS", gpos);
+  // GDEF classifies glyphs as base/mark so engines skip marks correctly.
+  if (marks?.gdef && (marks.markToBase.length || marks.markToMark.length)) out = spliceSfntTable(out, "GDEF", marks.gdef);
+  return out;
+}
+
+/** Mark positioning is an enhancement: any failure just means "no mark layout". */
+function safeMarkLayout(glyphs: Glyph[], glyphIndexByChar: Map<string, number>): MarkLayout | null {
+  try {
+    return buildMarkLayout(glyphs, glyphIndexByChar);
+  } catch (error) {
+    console.warn("[FontSeru] Mark positioning skipped.", error);
+    return null;
+  }
 }
 
 function signatureFor(buffer: ArrayBuffer): string {
@@ -2496,10 +2627,12 @@ function generateOTF(
   // one set of values) looked correct. Fixed by writing GPOS first and
   // only falling back to the legacy 'kern' table if GPOS injection fails,
   // so a real exported font never carries both at once.
-  if (Object.keys(kerningPairs ?? {}).length) {
+  const markLayout = safeMarkLayout(glyphs, base.glyphIndexByChar);
+  const hasKerning = Object.keys(kerningPairs ?? {}).length > 0;
+  if (hasKerning || markLayout) {
     let gposApplied = false;
     try {
-      const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar);
+      const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar, markLayout);
       validateGeneratedFont(withGpos, "otf", {
         familyName: info.legacyFamilyName,
         hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
@@ -2513,7 +2646,7 @@ function generateOTF(
     // Legacy 'kern' is only a fallback for apps that don't read GPOS at
     // all (virtually none left). Never write it alongside a successful
     // GPOS table — that's what caused the doubled kerning above.
-    if (!gposApplied) {
+    if (!gposApplied && hasKerning) {
       try {
         const withKerning = injectKernTable(buffer, kerningPairs, base.glyphIndexByChar);
         validateGeneratedFont(withKerning, "otf", {
@@ -2644,10 +2777,12 @@ function generateTTF(
   // adjustment versus what Test Lab previewed. GPOS is now tried first and
   // legacy 'kern' is only written when GPOS injection fails, so the two
   // are never both present at once.
-  if (Object.keys(kerningPairs ?? {}).length) {
+  const markLayout = safeMarkLayout(glyphs, base.glyphIndexByChar);
+  const hasKerning = Object.keys(kerningPairs ?? {}).length > 0;
+  if (hasKerning || markLayout) {
     let gposApplied = false;
     try {
-      const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar);
+      const withGpos = injectGposTable(buffer, kerningPairs, base.glyphIndexByChar, markLayout);
       validateGeneratedFont(withGpos, "ttf", {
         familyName: info.legacyFamilyName,
         hasUpperA: glyphs.some((glyph) => glyph.unicode === 0x41 || glyph.unicodes?.includes(0x41) === true),
@@ -2658,7 +2793,7 @@ function generateTTF(
       console.warn("[FontSeru] GPOS kerning export skipped.", error);
     }
 
-    if (!gposApplied) {
+    if (!gposApplied && hasKerning) {
       try {
         const withKerning = injectKernTable(buffer, kerningPairs, base.glyphIndexByChar);
         validateGeneratedFont(withKerning, "ttf", {

@@ -79,7 +79,7 @@ function createWindow() {
   for (const ev of ['restore', 'show', 'focus', 'enter-full-screen', 'leave-full-screen']) win.on(ev, () => setTimeout(nudge, 80));
   // tautan luar dibuka di browser bawaan sistem
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (!url.startsWith('app://')) shell.openExternal(url);
+    if (!url.startsWith('app://') && /^(https?:|mailto:)/i.test(url)) shell.openExternal(url);
     return { action: url.startsWith('app://') ? 'allow' : 'deny' };
   });
 }
@@ -89,7 +89,7 @@ app.whenReady().then(() => {
     const { pathname, search } = new URL(req.url);
     let rel = decodeURIComponent(pathname).replace(/^\/+/, '') || 'index.html';
     const file = path.normalize(path.join(DIST, rel));
-    if (!file.startsWith(DIST)) return new Response('Forbidden', { status: 403 });
+    if (file !== DIST && !file.startsWith(DIST + path.sep)) return new Response('Forbidden', { status: 403 });
     return net.fetch(pathToFileURL(file).toString());
   });
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null);

@@ -206,10 +206,32 @@ export interface RawNode { point: Point; handleIn: Point | null; handleOut: Poin
 function tokenizePathData(d: string): (string | number)[] {
   const tokens: (string | number)[] = [];
   const re = /([MmLlHhVvCcSsQqTtAaZz])|(-?\d*\.\d+(?:[eE][-+]?\d+)?|-?\d+(?:[eE][-+]?\d+)?)/g;
+  // Arc flags (A/a args #4 and #5 of every 7) are single "0"/"1" characters
+  // and minifiers (SVGO) write them without separators: "a5 5 0 0110 0"
+  // means large-arc=0, sweep=1, x=10, y=0 — not a number "0110".
+  const flagRe = /[\s,]*([01])/y;
+  let inArc = false;
+  let argIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = re.exec(d))) {
-    if (match[1]) tokens.push(match[1]);
-    else tokens.push(parseFloat(match[2]));
+    if (match[1]) {
+      tokens.push(match[1]);
+      inArc = match[1] === "A" || match[1] === "a";
+      argIndex = 0;
+      continue;
+    }
+    if (inArc && (argIndex % 7 === 3 || argIndex % 7 === 4)) {
+      flagRe.lastIndex = match.index;
+      const flag = flagRe.exec(d);
+      if (flag) {
+        tokens.push(flag[1] === "1" ? 1 : 0);
+        re.lastIndex = flagRe.lastIndex;
+        argIndex++;
+        continue;
+      }
+    }
+    tokens.push(parseFloat(match[2]));
+    argIndex++;
   }
   return tokens;
 }

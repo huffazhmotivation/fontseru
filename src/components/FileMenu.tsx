@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { Check, ChevronDown, Cloud, CloudDownload, CloudUpload, Download, FilePlus2, FileText, FolderOpen, Loader2, Lock, Save, SaveAll, ScrollText, Trash2, X, CheckCircle2, AlertTriangle, XCircle, Info, ShieldCheck } from "lucide-react";
+import { Check, ChevronDown, Cloud, CloudDownload, CloudUpload, Download, FilePlus2, FileText, FolderOpen, Loader2, Lock, Save, SaveAll, ScrollText, Trash2, X, CheckCircle2, AlertTriangle, XCircle, Info, ShieldCheck, History } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { useAuth } from "@/auth/AuthProvider";
 import { useExportUsage } from "@/hooks/useExportUsage";
@@ -34,6 +34,7 @@ import type { ExportFontFormat } from "@/utils/fontIO";
 import { effectiveKerningPairs, effectiveWordSpacing } from "@/types/kerning";
 import { createZipBlob } from "@/utils/zip";
 import { Toast, type ToastKind, type ToastMessage } from "@/components/Toast";
+import { VersionHistoryDialog } from "@/components/VersionHistory/VersionHistoryDialog";
 import { InfoTip } from "@/components/InfoTip";
 import { runFontQA, type QAIssue, type QAReport, type QASeverity } from "@/utils/fontQA";
 
@@ -326,6 +327,7 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
   // taller than the bar itself.
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   // Real progress for the Export button: one step per selected style's font
   // generation, plus one final step for zipping the result — not a fake
@@ -1343,6 +1345,7 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
             <div className="fm-filemenu-sep" />
             <button onClick={save}><Save size={14} /> Save <kbd>⌘S</kbd></button>
             <button onClick={saveAs}><SaveAll size={14} /> Save As…</button>
+            <button onClick={() => { setOpen(false); setVersionsOpen(true); }}><History size={14} /> Riwayat Versi…</button>
             {cloudVisible && (
               <>
                 <div className="fm-filemenu-sep" />
@@ -1396,6 +1399,13 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
       </div>
 
       <Toast toast={toast} onClose={dismissToast} />
+
+      {versionsOpen && (
+        <VersionHistoryDialog
+          onClose={() => setVersionsOpen(false)}
+          onNotify={(msg, ok = true) => showToast(msg, ok ? "success" : "error")}
+        />
+      )}
 
       {exportOpen && (
         <div

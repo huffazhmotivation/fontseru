@@ -137,6 +137,10 @@ export function useKeyboardShortcuts() {
         const k = e.key.toLowerCase();
         if (k === "z") { e.preventDefault(); e.shiftKey ? s.redo() : s.undo(); return; }
         if (k === "y") { e.preventDefault(); s.redo(); return; }
+        // Inside a focused number field / select, Cmd/Ctrl+A/C/X/V/D must keep
+        // their native meaning (select the digits, copy/paste a value) instead
+        // of selecting/copying/pasting canvas objects.
+        if (formControl && ["a", "c", "x", "v", "d"].includes(k)) return;
         if (k === "c") { e.preventDefault(); copyAndPublish(); return; }
         if (k === "x") { e.preventDefault(); cutAndPublish(); return; }
         if (k === "v") { e.preventDefault(); void pasteSmart(); return; }

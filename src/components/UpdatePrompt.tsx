@@ -138,7 +138,7 @@ export function UpdatePrompt() {
     try {
       if ("caches" in window) {
         const keys = (await withTimeout(caches.keys(), 2500)) || [];
-        await withTimeout(Promise.all(keys.map((k) => caches.delete(k))), 3000);
+        await withTimeout(Promise.all(keys.filter((k) => !/transformers/i.test(k)).map((k) => caches.delete(k))), 3000);
       }
     } catch { /* abaikan */ }
     reloadOnce(true);

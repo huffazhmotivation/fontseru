@@ -134,6 +134,8 @@ export function applyOpticalSidebearings(glyph: Glyph, suggestion: GlyphSpacingS
     // does appear, without touching advance/outline (nothing to move).
     return { ...glyph, lsb: Math.round(suggestion.lsb), rsb: Math.round(suggestion.rsb) };
   }
+  const shiftAnchors = (dxShift: number) =>
+    glyph.anchors ? { anchors: glyph.anchors.map((a) => ({ ...a, x: a.x + dxShift })) } : {};
   const lsbWanted = Math.round(suggestion.lsb);
   const rsbWanted = Math.round(suggestion.rsb);
   const inkWidth = bounds.maxX - bounds.minX;
@@ -145,6 +147,7 @@ export function applyOpticalSidebearings(glyph: Glyph, suggestion: GlyphSpacingS
       rsb: rsbWanted,
       advanceWidth: Math.max(1, Math.round(lsbWanted + inkWidth + rsbWanted)),
       outline: { objects: glyph.outline.objects.map((o) => translateObject(o, dx, 0)) },
+      ...shiftAnchors(dx),
     };
   }
   // Pixel glyph: slide by whole cells only, and let the advance width absorb
@@ -158,6 +161,7 @@ export function applyOpticalSidebearings(glyph: Glyph, suggestion: GlyphSpacingS
     rsb: Math.round(advanceWidth - lsb - inkWidth),
     advanceWidth,
     outline: { objects: objects.map((o) => translateObject(o, dx, 0)) },
+    ...shiftAnchors(dx),
   };
 }
 
