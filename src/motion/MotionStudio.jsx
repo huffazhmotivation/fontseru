@@ -5169,7 +5169,11 @@ const CenterStage = React.forwardRef(function CenterStage({ project, playback, d
         const slots = transitionsRef.current;
         const el = clip.type === "image" || clip.type === "video" ? mediaMapRef.current[clip.type][clip.id]?.el : null;
         // Video dengan latar dihapus: pakai frame bertransparansi hasil matte.
-        const srcEl = clip.type === "video" && clip.bgRemoved && el ? (getMattedFrame(clip, el, timeMs - clip.start + (clip.mediaOffset || 0)) || el) : el;
+        // Hanya klip yang sedang aktif (menghindari menyusun matte untuk puluhan potongan di luar rentang) dan indeks matte
+        // mengikuti posisi video yang benar-benar tampil (bisa tertinggal dari playhead beberapa ratus ms).
+        const localNow = timeMs - clip.start;
+        const matteMs = el && Number.isFinite(el.currentTime) && el.readyState >= 2 ? el.currentTime * 1000 : localNow + (clip.mediaOffset || 0);
+        const srcEl = clip.type === "video" && clip.bgRemoved && el && localNow >= 0 && localNow <= clip.duration ? (getMattedFrame(clip, el, matteMs) || el) : el;
         const draw = (target) => (clip.type === "text"
           ? drawTextClip(target, offCtx, offCanvas, clip, timeMs, w, h, blurCanvas, blurCtx, slots)
           : drawMediaVisual(target, srcEl, clip, timeMs, w, h, blurCanvas, blurCtx, slots));
@@ -6470,6 +6474,7 @@ function VideoBgRemoveControl({ clip, dispatch }) {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const abortRef = useRef(null);
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
   const [, force] = useState(0);
   const ready = hasMatte(clip);
   const update = (patch) => dispatch({ type: "UPDATE_CLIP", id: clip.id, patch });
@@ -7411,6 +7416,7 @@ function ClipTimeline({ project, playback, dispatchProject, dispatchPlayback, pl
         const isMedia = clip.type === "video" || clip.type === "audio";
         // Potong kiri video/audio: bagian awal sumber dibuang (mediaOffset), isi tidak ikut bergeser.
         if (isMedia) newStart = Math.max(newStart, startStart - startMediaOffset);
+        newStart = Math.min(newStart, startStart + startDuration - 150); // jangan melewati ujung kanan klip
         const newDuration = Math.max(150, Math.round(startDuration - (newStart - startStart)));
         const patch = { start: newStart, duration: newDuration };
         if (isMedia) patch.mediaOffset = Math.max(0, Math.round(startMediaOffset + (newStart - startStart)));

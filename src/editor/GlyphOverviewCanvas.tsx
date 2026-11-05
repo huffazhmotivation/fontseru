@@ -299,11 +299,14 @@ export function GlyphOverviewCanvas() {
     const up = (e: KeyboardEvent) => {
       if (e.code === "Space") spacePanRef.current = false;
     };
+    const blur = () => { spacePanRef.current = false; };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
     return () => {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
     };
   }, []);
 
