@@ -1,4 +1,4 @@
-import { despeckleBinary, loadImageFile, objectsBoundsPx, traceBinaryImage } from "@/trace/imageTrace";
+import { despeckleBinary, loadImageFile, loadTracer, objectsBoundsPx, traceBinaryImage } from "@/trace/imageTrace";
 import { getWorksheetTemplates } from "@/worksheet/templates/registry";
 import { pageFractionToSource } from "@/worksheet/homography";
 import type { WorksheetCellResult, WorksheetDetectionResult, WorksheetGridSpec, WorksheetTemplate } from "@/worksheet/types";
@@ -180,6 +180,7 @@ function computeGlobalInkThreshold(cellGrays: Uint8ClampedArray[], rowMask: Uint
 }
 
 async function loadSourceGray(file: File): Promise<{ gray: Uint8ClampedArray; width: number; height: number }> {
+  await loadTracer();
   const img = await loadImageFile(file);
   const w = img.naturalWidth || img.width;
   const h = img.naturalHeight || img.height;

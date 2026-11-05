@@ -7406,3 +7406,18 @@ html[data-tablet="true"] body .mfs-root .mfs-export-btn { height: 34px; padding:
 /* Tombol tutup (×) Test Lab sempat mengecil jadi titik di iPad (aturan ukuran ikon tablet ikut mengenainya). */
 [data-testid="lab-close-btn"] { width: 36px; height: 36px; min-width: 36px; display: inline-flex; align-items: center; justify-content: center; }
 [data-testid="lab-close-btn"] svg { width: 18px !important; height: 18px !important; }
+
+/* Safari/Firefox (desktop): backdrop-filter over the live, constantly
+   repainting glyph canvas forces a re-blur on every frame of a drag, zoom or
+   stroke — the same cost the Chromium and tablet rules above already avoid.
+   Same opaque panel surface, same layout; only the blur is dropped. */
+.fm-root:not([data-browser="chromium"]) .fm-floating-toolbar,
+.fm-root:not([data-browser="chromium"]) .fm-sketch-toolbar,
+.fm-root:not([data-browser="chromium"]) .fm-glyph-stepper,
+.fm-root:not([data-browser="chromium"]) .fm-glyph-sidenav-btn,
+.fm-root:not([data-browser="chromium"]) .fm-glyphview-bar,
+.fm-root:not([data-browser="chromium"]) .fm-glyphview-mode {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--panel);
+}

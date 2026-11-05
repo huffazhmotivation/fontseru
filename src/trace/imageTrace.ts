@@ -1,5 +1,11 @@
-import ImageTracer from "imagetracerjs";
 import type { Tracedata, TracePath } from "imagetracerjs";
+
+// imagetracerjs is loaded on demand (see loadTracer) so it is not part of the
+// startup bundle — only SVG import/paste code reaches this module at boot.
+let ImageTracer: typeof import("imagetracerjs").default | null = null;
+export async function loadTracer(): Promise<void> {
+  if (!ImageTracer) ImageTracer = (await import("imagetracerjs")).default;
+}
 import type { Contour, GlyphOutline, PathNode, Point, VectorObject } from "@/types/geometry";
 import type { FontMetrics } from "@/types/font";
 import { shortId } from "@/utils/id";
@@ -540,6 +546,7 @@ function pathsToVectorObjects(paths: TracePath[]): VectorObject[] {
 /** Runs imagetracer against already-binarized (pure black/white) ImageData and returns the ink shapes, in raw pixel space (Y-down, origin top-left). */
 export function traceBinaryImage(imgd: ImageData, detail: TraceDetail, scaleBack = 1): VectorObject[] {
   const preset = DETAIL_PRESETS[detail];
+  if (!ImageTracer) throw new TraceError("Mesin trace belum dimuat. Coba lagi.");
   const tracedata: Tracedata = ImageTracer.imagedataToTracedata(imgd, {
     ltres: preset.ltres,
     qtres: preset.qtres,
@@ -829,6 +836,7 @@ export async function traceImageFile(
   file: File,
   settings: TraceSettings
 ): Promise<{ objects: VectorObject[]; letters: TraceLetterGroup[]; canvas: HTMLCanvasElement }> {
+  await loadTracer();
   const img = await loadImageFile(file);
   // Display/preview canvas is always in source-pixel space (the coordinate
   // system every traced object is ultimately reported in).

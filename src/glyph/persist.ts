@@ -63,6 +63,19 @@ type SplitMeta = Omit<ProjectSnapshot, "glyphs" | "glyphsByStyle"> & {
   glyphIndex: Record<string, string[]>;
 };
 
+/**
+ * The big kerning maps (100k+ pairs after a full Auto Kern) live in their own
+ * record so an ordinary autosave — one glyph changed — no longer re-clones
+ * them on the main thread. The record is rewritten only when one of the maps
+ * actually changed (maps are replaced, never mutated, so identity is enough).
+ * Both records are written in the same transaction; a project saved in the
+ * older layout (kerning inside the metadata record) still loads as before.
+ */
+const KERN_KEY = "kern";
+const KERN_FIELDS = ["kerningPairs", "kerningManual", "kerningOverridesByStyle", "kerningOverrideManualByStyle"] as const;
+type KernRecord = Pick<ProjectSnapshot, (typeof KERN_FIELDS)[number]>;
+let lastKern: Partial<Record<(typeof KERN_FIELDS)[number], unknown>> | null = null;
+
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDB(): Promise<IDBDatabase> {
@@ -113,6 +126,7 @@ export async function loadProject(): Promise<ProjectSnapshot | null> {
       const tx = db.transaction(STORE, "readonly");
       const store = tx.objectStore(STORE);
       const metaReq = store.get(KEY);
+      const kernReq = store.get(KERN_KEY);
       let keys: IDBValidKey[] = [];
       let values: unknown[] = [];
       const keysReq = store.getAllKeys(GLYPH_RANGE);
@@ -122,6 +136,12 @@ export async function loadProject(): Promise<ProjectSnapshot | null> {
       tx.oncomplete = () => {
         const meta = metaReq.result as (ProjectSnapshot & Partial<SplitMeta>) | undefined;
         if (!meta) return resolve(null);
+        // Kerning stored in its own record wins over (older) copies in the metadata.
+        const kern = kernReq.result as KernRecord | undefined;
+        if (kern) Object.assign(meta, kern);
+        // Unknown what the stored kerning record holds relative to the store's
+        // objects after hydrate → the first save rewrites it, later ones diff.
+        lastKern = null;
         if (!meta.split) {
           // Legacy single-record layout: there are no glyph records yet, so
           // the diff baseline must stay unknown (null) — the next save then
@@ -176,8 +196,13 @@ async function writeProject(snapshot: ProjectSnapshot): Promise<void> {
     const db = await openDB();
     // The Drawing Mode scratch sketch must never reach disk.
     const byStyle = familyWithoutDrawGlyph((snapshot.glyphsByStyle ?? { regular: snapshot.glyphs }) as unknown as Record<string, GlyphMap>);
-    const { glyphs: _g, glyphsByStyle: _gs, ...rest } = snapshot;
+    const { glyphs: _g, glyphsByStyle: _gs, ...restAll } = snapshot;
     void _g; void _gs;
+    const rest: Omit<typeof restAll, (typeof KERN_FIELDS)[number]> = { ...restAll };
+    for (const f of KERN_FIELDS) delete (rest as Record<string, unknown>)[f];
+    const kernRecord: KernRecord = {};
+    for (const f of KERN_FIELDS) (kernRecord as Record<string, unknown>)[f] = restAll[f];
+    const kernChanged = !lastKern || KERN_FIELDS.some((f) => lastKern![f] !== restAll[f]);
     const glyphIndex: Record<string, string[]> = {};
     for (const [style, map] of Object.entries(byStyle)) glyphIndex[style] = Object.keys(map);
     const meta: SplitMeta = { ...rest, split: SPLIT_VERSION, glyphIndex };
@@ -203,11 +228,15 @@ async function writeProject(snapshot: ProjectSnapshot): Promise<void> {
         }
       }
       store.put(meta, KEY);
+      if (kernChanged) store.put(kernRecord, KERN_KEY);
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => resolve(false);
       tx.onabort = () => resolve(false);
     });
-    if (ok) rememberSaved(byStyle);
+    if (ok) {
+      rememberSaved(byStyle);
+      if (kernChanged) lastKern = { kerningPairs: restAll.kerningPairs, kerningManual: restAll.kerningManual, kerningOverridesByStyle: restAll.kerningOverridesByStyle, kerningOverrideManualByStyle: restAll.kerningOverrideManualByStyle };
+    }
   } catch {
     /* storage unavailable — editing still works in-session */
   }

@@ -2,7 +2,8 @@ import { memo, useMemo } from "react";
 import { ghostOutlineFor, useGhostFont } from "./ghostFont";
 import { ghostCenterX } from "./ghostRef";
 import { useAppStore } from "@/glyph/store";
-import { hasOutline, type GlyphMap } from "@/types/glyph";
+import type { GlyphMap } from "@/types/glyph";
+import { hasOutlineCached } from "./outlineCache";
 import type { KerningPairs } from "@/types/kerning";
 import { effectiveWordSpacing } from "@/types/kerning";
 import { layoutLine } from "./textLayout";
@@ -109,7 +110,7 @@ function GlyphRunView({
           const g = glyphs[char];
           const glyphColor = colorForIndex?.(i, char) ?? color;
 
-          if (g && hasOutline(g)) {
+          if (g && hasOutlineCached(g)) {
             const paths = getGlyphPaths(g, ascender);
             return (
               <g key={i} transform={`translate(${x} 0)`} fill={glyphColor} stroke={glyphColor}>

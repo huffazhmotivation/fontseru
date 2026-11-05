@@ -56,8 +56,17 @@ export function effectiveKerningPairs(
   style: FontStyle
 ): KerningPairs {
   const override = overridesByStyle[style];
-  return override && Object.keys(override).length ? { ...shared, ...override } : shared;
+  if (!override || !Object.keys(override).length) return shared;
+  // Merging copies every pair (100k+ with a full auto-kern), and callers ask
+  // for it once per style on every render. Cache by the identity of the two
+  // maps: maps are replaced, never mutated, so identity equals content.
+  let perShared = mergedKerningCache.get(shared);
+  if (!perShared) { perShared = new WeakMap(); mergedKerningCache.set(shared, perShared); }
+  let merged = perShared.get(override);
+  if (!merged) { merged = { ...shared, ...override }; perShared.set(override, merged); }
+  return merged;
 }
+const mergedKerningCache = new WeakMap<object, WeakMap<object, KerningPairs>>();
 
 export function kerningKey(left: string, right: string): string {
   // URI-encoding keeps the legacy "A|V" form for ordinary glyphs while

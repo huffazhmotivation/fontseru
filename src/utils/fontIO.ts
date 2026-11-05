@@ -2899,7 +2899,11 @@ export async function generateFontFiles(
   // plain .ttf export produces — since that's the most broadly compatible
   // choice for web fonts and only needs generating once for both.
   let ttfBuffer: ArrayBuffer | null = null;
+  // Each build below is one long synchronous stretch; yielding in between lets
+  // the progress UI repaint instead of freezing for the whole export.
+  const breathe = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
   if (wanted.has("ttf") || wanted.has("woff") || wanted.has("woff2")) {
+    await breathe();
     try {
       ttfBuffer = generateTTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
     } catch (error) {
@@ -2912,6 +2916,7 @@ export async function generateFontFiles(
   }
 
   if (wanted.has("otf")) {
+    await breathe();
     let otf: ArrayBuffer | null = null;
     try {
       otf = generateOTF(data.glyphs, data.metrics, data.info, data.kerningPairs, featureConfig);
@@ -2933,6 +2938,7 @@ export async function generateFontFiles(
   }
 
   if (wanted.has("woff")) {
+    await breathe();
     try {
       const { woffEncode } = await import("woff-lib/woff/encode");
       const woff = await woffEncode(new Uint8Array(ttfBuffer as ArrayBuffer));
@@ -2944,6 +2950,7 @@ export async function generateFontFiles(
   }
 
   if (wanted.has("woff2")) {
+    await breathe();
     try {
       const { woff2Encode } = await import("woff-lib/woff2/encode");
       const woff2 = woff2Encode(new Uint8Array(ttfBuffer as ArrayBuffer));
