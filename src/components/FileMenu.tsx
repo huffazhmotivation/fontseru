@@ -31,6 +31,7 @@ import {
 // make everyone pay for opentype.js + jspdf on every app load. The type-only
 // import has no runtime cost, so it stays static.
 import type { ExportFontFormat } from "@/utils/fontIO";
+import { planVariableAxes } from "@/utils/variableFont";
 import { effectiveKerningPairs, effectiveWordSpacing } from "@/types/kerning";
 import { createZipBlob } from "@/utils/zip";
 import { Toast, type ToastKind, type ToastMessage } from "@/components/Toast";
@@ -339,7 +340,7 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
   // Set once `runExport` finishes successfully; drives the same style of
   // confirmation dialog as `cloudSaveSuccess` below instead of an easy-to-
   // miss toast, since a font export is a heavier action worth confirming.
-  const [exportSuccess, setExportSuccess] = useState<{ zipName: string; styleCount: number } | null>(null);
+  const [exportSuccess, setExportSuccess] = useState<{ zipName: string; styleCount: number; variable?: string } | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const toastId = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -641,6 +642,8 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
   // a family almost always wants; can be turned off to keep every style as
   // its own independent family.
   const [combineFamily, setCombineFamily] = useState(true);
+  // One extra variable-font file (Regular + the other selected styles as masters).
+  const [variableFont, setVariableFont] = useState(false);
 
   // Which style's rename inputs are currently expanded. Overrides are hidden
   // behind a small "Rename" toggle so the Styles panel stays clean by
@@ -1084,7 +1087,10 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
 
     // One progress step per selected style's font generation, plus one for
     // the final zip packaging (manifests + PDF + zip encoding).
-    const totalExportSteps = styles.length + 1;
+    const variableAxes = variableFont && isPro && styles.includes("regular")
+      ? planVariableAxes(styles.map((st) => styleNameOverrides[st]?.styleName.trim() || fontStyleLabel(st, useAppStore.getState().customFamilies)))
+      : null;
+    const totalExportSteps = styles.length + 1 + (variableAxes ? 1 : 0);
     let completedExportSteps = 0;
     const advanceExportProgress = (nextLabel?: string) => {
       completedExportSteps++;
@@ -1223,6 +1229,82 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
         advanceExportProgress();
       }
 
+      // --- Variable font (optional): Regular + the other selected styles
+      // as masters, in one extra file. A problem here never costs the
+      // static files that were already generated.
+      let variableNote = "";
+      let variableReportText = "";
+      if (variableAxes) {
+        setExportProgressLabel("Membuat variable font…");
+        try {
+          const { generateVariableFontFiles } = await import("@/utils/fontIO");
+          const regularLabel = styleLabelFor("regular") || "Regular";
+          const vfFamily = (groupAsFamily ? sharedTypographicFamily : familyName) || familyName || "Untitled Font";
+          const vfInfo: FontInfo = {
+            ...s.fontInfo,
+            familyName: vfFamily,
+            styleName: regularLabel,
+            fullName: `${vfFamily} ${regularLabel}`,
+            postscriptName: "",
+            uniqueID: "",
+            designer: designerName,
+            designerURL,
+            manufacturer: foundry,
+            manufacturerURL: website,
+            trademark,
+            copyright,
+            version,
+            license: resolvedLicense,
+            licenseURL: website,
+            italicAngle: 0,
+          };
+          const masters = styles.map((style) => {
+            const ws = effectiveWordSpacing(s.metrics.wordSpacing, s.wordSpacingOverridesByStyle, style);
+            return {
+              style,
+              styleName: styleLabelFor(style) || (style === "regular" ? "Regular" : String(style)),
+              glyphs: withoutDrawGlyph(s.glyphsByStyle[style]),
+              metrics: ws !== undefined ? { ...s.metrics, wordSpacing: ws } : s.metrics,
+            };
+          });
+          const vfFormats = formats.filter((f) => f === "woff" || f === "woff2");
+          const { files: vfFiles, report } = await generateVariableFontFiles(
+            masters,
+            vfInfo,
+            effectiveKerningPairs(s.kerningPairs, s.kerningOverridesByStyle, "regular"),
+            vfFormats,
+            s.featureConfig,
+            (fraction) => setExportProgress((completedExportSteps + fraction) / totalExportSteps),
+          );
+          for (const file of vfFiles) {
+            files.push({
+              extension: file.extension,
+              name: `${baseName}${report.fileBaseName}.${file.extension}`,
+              blob: new Blob([file.buffer], { type: file.mimeType }),
+            });
+          }
+          const axisText = report.axes
+            .map((a) => (a.tag === "wght" ? `Weight ${a.min}–${a.max}` : `Slant ${a.max}° sampai ${a.min}°`))
+            .join(" · ");
+          variableNote = axisText;
+          variableReportText = [
+            `Variable font: ${baseName}${report.fileBaseName}.ttf`,
+            `Axes: ${axisText}`,
+            `Masters: ${report.masters.map((m) => `${m.styleName} (${Object.entries(m.location).map(([k, v]) => `${k} ${v}`).join(", ")})`).join("; ")}`,
+            `Named instances: ${report.instanceNames.join(", ")}`,
+            `Glyphs: ${report.glyphCount}`,
+            ...report.skippedMasters.map((m) => `Not used as a master: ${m.styleName} — ${m.reason}`),
+            ...report.rebuiltGlyphs.map((r) => `${r.styleName}: ${r.chars.length} glyph(s) rebuilt from Regular because their points did not match: ${r.chars.slice(0, 40).join(" ")}${r.chars.length > 40 ? " …" : ""}`),
+            "Kerning, mark positioning and OpenType features come from Regular.",
+          ].join("\n") + "\n";
+        } catch (error) {
+          console.error("[FontSeru] Variable font export failed:", error);
+          const detail = error instanceof Error ? error.message : String(error);
+          showToast(`Variable font tidak dibuat: ${detail}`, "error");
+        }
+        advanceExportProgress();
+      }
+
       // --- Export Information System: manifests -----------------------
       // Bundled into the ZIP alongside the untouched TTF/OTF output.
       const creationDate = new Date().toISOString().slice(0, 10);
@@ -1273,6 +1355,7 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
         { name: "FontInfo.txt", blob: textEncoder(fontInfoText) },
         { name: "License.txt", blob: textEncoder(licenseText) },
         { name: "License Summary.pdf", blob: licensePdfBlob },
+        ...(variableReportText ? [{ name: "VariableFont.txt", blob: textEncoder(variableReportText) }] : []),
       ];
       setExportProgressLabel("Packaging ZIP…");
       const zipBlob = await createZipBlob(zipEntries);
@@ -1282,7 +1365,7 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
       if (result === "cancelled") return;
 
       setExportOpen(false);
-      setExportSuccess({ zipName, styleCount: styles.length });
+      setExportSuccess({ zipName, styleCount: styles.length, variable: variableNote || undefined });
     } catch (error) {
       console.error("[FontSeru] Export failed:", error);
       const detail = error instanceof Error ? error.message.trim() : "";
@@ -1840,6 +1923,44 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
                 </div>
               )}
 
+              {selectedStyleCount > 1 && (() => {
+                const names = selectedStyleList.map((st) => styleNameOverrides[st]?.styleName.trim() || fontStyleLabel(st, customFamilies));
+                const plan = selectedStyleList.includes("regular") ? planVariableAxes(names) : null;
+                const usable = Boolean(plan) && isPro;
+                const summary = plan
+                  ? [plan.weight ? `Weight ${plan.weight[0]}–${plan.weight[1]}` : null, plan.slant ? "Slant (italic)" : null].filter(Boolean).join(" · ")
+                  : "";
+                return (
+                  <div className="fm-export-field">
+                    <label
+                      className={`fm-export-combine-family${usable ? "" : " disabled"}`}
+                      title="Tambahkan satu file variable font: semua ketebalan (dan kemiringan) di antara style yang dipilih, dalam satu file dengan slider."
+                      onClick={(event) => {
+                        if (!isPro) { event.preventDefault(); openProModal("family"); }
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={usable && variableFont}
+                        disabled={busy || !plan}
+                        onChange={(event) => setVariableFont(event.target.checked)}
+                        data-testid="export-variable-font"
+                      />
+                      <span className="fm-export-checkmark" aria-hidden="true" />
+                      <span className="fm-export-style-name">Variable font</span>
+                      {!isPro && <Lock size={11} className="fm-lock-badge-inline" />}
+                    </label>
+                    <p className="fm-hint">
+                      {plan
+                        ? `${summary}. Satu file tambahan berisi semua gaya di antaranya; file per style tetap ikut.`
+                        : !selectedStyleList.includes("regular")
+                          ? "Centang Regular juga: Regular jadi titik awal variable font."
+                          : "Butuh style dengan ketebalan atau italic berbeda (mis. Bold, Light, Italic)."}
+                    </p>
+                  </div>
+                );
+              })()}
+
               <div className="fm-export-field">
                 <span>Format</span>
                 <div className="fm-format-segment" role="group" aria-label="Font format">
@@ -2182,6 +2303,11 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
               {exportSuccess.styleCount > 1 ? ` (${exportSuccess.styleCount} style)` : ""} dan sudah tersimpan/terunduh
               ke perangkatmu.
             </p>
+            {exportSuccess.variable && (
+              <p className="fm-cloud-success-body">
+                Termasuk <strong>variable font</strong>: {exportSuccess.variable}.
+              </p>
+            )}
             <footer className="fm-export-actions fm-cloud-success-actions">
               <button type="button" className="fm-primary-btn" onClick={() => setExportSuccess(null)} autoFocus>
                 OK, Mengerti

@@ -222,7 +222,25 @@ import type { Glyph, GlyphCategory, GlyphMap } from "@/types/glyph";
 import type { KerningPairs } from "@/types/kerning";
 import { kerningKey, parseKerningKey } from "@/types/kerning";
 import { shortId } from "@/utils/id";
-import { buildTrueTypeFont, type TrueTypeGlyphInput } from "@/utils/trueTypeWriter";
+import { buildTrueTypeFont, compatibleTrueTypeContours, type TrueTypeContourInput, type TrueTypeGlyphInput } from "@/utils/trueTypeWriter";
+import {
+  VariationModel,
+  buildFvar,
+  buildGvar,
+  buildHvar,
+  buildStat,
+  estimateShearDegrees,
+  isItalicStyleName,
+  normalizeLocation,
+  weightFromStyleName,
+  weightName,
+  type AxisTag,
+  type NamedInstance,
+  type StatValue,
+  type UserLocation,
+  type VariationAxis,
+} from "@/utils/variableFont";
+import { autoBoldOutline, autoItalicOutline } from "@/glyph/autoGenerate";
 import type { FeatureBuilderConfig } from "@/types/opentypeFeatures";
 import { isFeatureConfigEmpty } from "@/types/opentypeFeatures";
 
@@ -968,7 +986,7 @@ function sanitizeContour(contour: Contour): Contour | null {
   };
 }
 
-function exportableObjects(glyph: Glyph): VectorObject[] {
+function exportableObjects(glyph: Glyph, keepOverlaps = false): VectorObject[] {
   const objects = glyph.outline?.objects ?? [];
 
   // Step 1: turn every object into its filled representation. Shape/
@@ -1035,6 +1053,11 @@ function exportableObjects(glyph: Glyph): VectorObject[] {
   // touch union into unaffected, separate disjoint contours, so this is
   // safe to run unconditionally on every glyph, not just ones a designer
   // remembered to flatten by hand.
+  // Variable fonts keep overlaps (the standard for variable TrueType): every
+  // master must keep the point structure it was drawn with, and a boolean
+  // union/refit would restructure each master differently.
+  if (keepOverlaps) return expanded;
+
   const eligible = expanded.filter(isBooleanEligible);
   const ineligible = expanded.filter((o) => !isBooleanEligible(o));
 
@@ -1089,7 +1112,7 @@ function exportableObjects(glyph: Glyph): VectorObject[] {
   return expanded;
 }
 
-function sanitizeGlyph(glyph: Glyph, metrics: FontMetrics): Glyph | null {
+function sanitizeGlyph(glyph: Glyph, metrics: FontMetrics, keepOverlaps = false): Glyph | null {
   if (!isUnicodeScalar(glyph.unicode)) return null;
   const fallbackAdvance = Math.max(1, Math.round(metrics.unitsPerEm * 0.6));
   const rawAdvance = finiteNumber(glyph.advanceWidth);
@@ -1107,7 +1130,7 @@ function sanitizeGlyph(glyph: Glyph, metrics: FontMetrics): Glyph | null {
       : Math.max(1, Math.min(65535, Math.round(rawAdvance != null && rawAdvance > 0 ? rawAdvance : fallbackAdvance)));
   const objects: VectorObject[] = [];
 
-  for (const obj of exportableObjects(glyph)) {
+  for (const obj of exportableObjects(glyph, keepOverlaps)) {
     const sanitizedContours = (obj.contours ?? [])
       .map(sanitizeContour)
       .filter((contour): contour is Contour => contour != null);
@@ -1181,12 +1204,12 @@ function prepareGlyphs(glyphs: GlyphMap, metrics: FontMetrics): Glyph[] {
  * fail outright. Breaking the loop with periodic yields keeps the UI (and the
  * progress bar) alive; total work is the same.
  */
-async function prepareGlyphsAsync(glyphs: GlyphMap, metrics: FontMetrics): Promise<Glyph[]> {
+async function prepareGlyphsAsync(glyphs: GlyphMap, metrics: FontMetrics, keepOverlaps = false): Promise<Glyph[]> {
   const byUnicode = new Map<number, Glyph>();
   const entries = Object.values(glyphs ?? {});
   const YIELD_EVERY = 8;
   for (let i = 0; i < entries.length; i++) {
-    const clean = sanitizeGlyph(entries[i], metrics);
+    const clean = sanitizeGlyph(entries[i], metrics, keepOverlaps);
     if (clean && !byUnicode.has(clean.unicode)) byUnicode.set(clean.unicode, clean);
     if ((i + 1) % YIELD_EVERY === 0) await new Promise((resolve) => setTimeout(resolve, 0));
   }
@@ -3048,6 +3071,403 @@ function parseOpenTypeKerning(font: any, charByGid: Map<number, string>): Kernin
   }
   return out;
 }
+
+// ==========================================================================
+// Variable font export (TrueType outlines + gvar)
+// ==========================================================================
+
+export interface VariableMasterInput {
+  /** FontSeru style id ("regular", "bold", "italic", custom id). */
+  style: string;
+  /** Display name, used to place the master: "Bold" → wght 700, "Italic" → slnt. */
+  styleName: string;
+  glyphs: GlyphMap;
+  metrics: FontMetrics;
+}
+
+export interface VariableFontReport {
+  fileBaseName: string;
+  axes: VariationAxis[];
+  masters: Array<{ styleName: string; location: UserLocation }>;
+  skippedMasters: Array<{ styleName: string; reason: string }>;
+  instanceNames: string[];
+  glyphCount: number;
+  /** Glyphs whose drawing in a master did not match Regular point-for-point;
+   *  that master's version was rebuilt from Regular so the font still works. */
+  rebuiltGlyphs: Array<{ styleName: string; chars: string[] }>;
+}
+
+/** Turn the selected family styles into one variable font (TTF, plus WOFF /
+ *  WOFF2 when those formats are selected). Regular is the default master. */
+export async function generateVariableFontFiles(
+  masters: VariableMasterInput[],
+  info: FontInfo,
+  kerningPairs: KerningPairs,
+  formats: ExportFontFormat[],
+  featureConfig?: FeatureBuilderConfig,
+  onProgress?: (fraction: number) => void,
+): Promise<{ files: GeneratedFontFile[]; report: VariableFontReport }> {
+  const breathe = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+  const defaultIndex = masters.findIndex((m) => m.style === "regular");
+  if (defaultIndex < 0) throw new Error("Variable font needs the Regular style as its default master.");
+  const ordered = [masters[defaultIndex], ...masters.filter((_, i) => i !== defaultIndex)];
+  const metrics = normalizeFontMetrics(ordered[0].metrics);
+
+  // 1. Export-ready outlines for every master, twice: with the static
+  //    export's overlap removal ("clean") and with overlaps kept ("raw").
+  //    Per glyph, the first variant that matches across all masters wins.
+  const aligned = alignMasterSources(ordered.map((m) => m.glyphs));
+  const prepared: Glyph[][] = [];
+  const preparedRaw: Glyph[][] = [];
+  for (let mi = 0; mi < ordered.length; mi++) {
+    const m = { ...ordered[mi], glyphs: aligned[mi] };
+    prepared.push(await prepareGlyphsAsync(m.glyphs, normalizeFontMetrics(m.metrics)));
+    onProgress?.(((mi + 0.5) / ordered.length) * 0.5);
+    preparedRaw.push(await prepareGlyphsAsync(m.glyphs, normalizeFontMetrics(m.metrics), true));
+    onProgress?.(((mi + 1) / ordered.length) * 0.5);
+    await breathe();
+  }
+  const base = prepared[0];
+  const byUnicode = prepared.map((list) => new Map(list.map((g) => [g.unicode, g])));
+  const byUnicodeRaw = preparedRaw.map((list) => new Map(list.map((g) => [g.unicode, g])));
+  const structure = (g: Glyph | undefined) => (g ? glyphToTrueTypeInput(g).contours : []);
+  const sameStructure = (a: TrueTypeContourInput[], b: TrueTypeContourInput[]) =>
+    a.length === b.length && a.every((c, i) => c.nodes.length === b[i].nodes.length);
+
+  // 2. Measure each master against Regular: slant (shear) and weight offset,
+  //    from the glyphs that already match point-for-point.
+  const params = ordered.map((_, mi) => {
+    if (mi === 0) return { shearDeg: 0, offset: 0, areaRatio: 1 };
+    const basePts: Array<{ x: number; y: number }> = [];
+    const masterPts: Array<{ x: number; y: number }> = [];
+    let areaBase = 0, areaMaster = 0;
+    for (const g of base) {
+      const m = byUnicode[mi].get(g.unicode);
+      const a = structure(g), b = structure(m);
+      if (!a.length || !sameStructure(a, b)) continue;
+      a.forEach((c, ci) => c.nodes.forEach((n, ni) => { basePts.push(n.point); masterPts.push(b[ci].nodes[ni].point); }));
+      areaBase += Math.abs(glyphArea(a));
+      areaMaster += Math.abs(glyphArea(b));
+      if (basePts.length > 40000) break;
+    }
+    const shearDeg = basePts.length ? estimateShearDegrees(basePts, masterPts) : 0;
+    const shear = Math.tan((shearDeg * Math.PI) / 180);
+    const residuals = basePts.map((p, i) => Math.hypot(masterPts[i].x - p.x - shear * p.y, masterPts[i].y - p.y)).sort((x, y) => x - y);
+    const magnitude = residuals.length ? residuals[Math.floor(residuals.length / 2)] : 0;
+    const areaRatio = areaBase > 0 ? areaMaster / areaBase : 1;
+    return { shearDeg, offset: areaRatio >= 1 ? magnitude : -magnitude, areaRatio };
+  });
+
+  // 3. Place masters in the design space.
+  const regularWeight = weightFromStyleName(ordered[0].styleName);
+  const skippedMasters: VariableFontReport["skippedMasters"] = [];
+  const placed: Array<{ mi: number; location: UserLocation }> = [{ mi: 0, location: { wght: regularWeight, slnt: 0 } }];
+  for (let mi = 1; mi < ordered.length; mi++) {
+    const name = ordered[mi].styleName;
+    const wght = weightFromStyleName(name);
+    const slanted = isItalicStyleName(name) || Math.abs(params[mi].shearDeg) >= 3;
+    const angle = Math.abs(params[mi].shearDeg) >= 2 ? params[mi].shearDeg : 12;
+    const slnt = slanted ? -Math.round(angle * 10) / 10 : 0;
+    const location = { wght, slnt };
+    if (placed.some((p) => p.location.wght === wght && p.location.slnt === slnt)) {
+      skippedMasters.push({ styleName: name, reason: wght === regularWeight && !slanted ? "namanya tidak menunjukkan ketebalan (mis. Light, Bold) atau italic" : "posisinya sama dengan gaya lain" });
+      continue;
+    }
+    placed.push({ mi, location });
+  }
+  const wghts = placed.map((p) => p.location.wght!);
+  const slnts = placed.map((p) => p.location.slnt!);
+  const axes: VariationAxis[] = [];
+  if (Math.min(...wghts) !== Math.max(...wghts)) {
+    axes.push({ tag: "wght", name: "Weight", min: Math.min(...wghts), defaultValue: regularWeight, max: Math.max(...wghts) });
+  }
+  if (slnts.some((v) => v !== 0)) {
+    axes.push({ tag: "slnt", name: "Slant", min: Math.min(0, ...slnts), defaultValue: 0, max: Math.max(0, ...slnts) });
+  }
+  if (!axes.length || placed.length < 2) {
+    throw new Error("Variable font butuh minimal dua gaya yang berbeda ketebalan atau kemiringannya, misalnya Regular + Bold.");
+  }
+
+  // 4. Per glyph: every placed master must match Regular point-for-point. A
+  //    master glyph that doesn't (hand-edited, or reshaped by remove-overlap)
+  //    is rebuilt from Regular with that master's measured offset + slant.
+  const tolerance = Math.max(0.5, metrics.unitsPerEm / 2048);
+  const rebuilt = new Map<number, string[]>();
+  const ttGlyphs: TrueTypeGlyphInput[] = [];
+  const perGlyphMasters: Array<{ contours: Array<Array<Array<{ x: number; y: number; onCurve: boolean }>>>; advances: number[] }> = [];
+  const ext = { xMin: 0, yMin: 0, xMax: 0, yMax: 0, maxAdvance: 0 };
+  for (let gi = 0; gi < base.length; gi++) {
+    const cleanBase = base[gi];
+    // Prefer the cleaned outline when every master's cleaned version matches;
+    // otherwise keep overlaps if that makes them match.
+    const rawBase = byUnicodeRaw[0].get(cleanBase.unicode);
+    const allMatch = (maps: Array<Map<number, Glyph>>, ref: Glyph | undefined) => {
+      const refC = structure(ref);
+      return placed.every(({ mi }) => mi === 0 || sameStructure(refC, structure(maps[mi].get(cleanBase.unicode))));
+    };
+    const useRaw = !allMatch(byUnicode, cleanBase) && !!rawBase && allMatch(byUnicodeRaw, rawBase);
+    const g = useRaw ? rawBase! : cleanBase;
+    const source = useRaw ? byUnicodeRaw : byUnicode;
+    const baseInput = glyphToTrueTypeInput(g);
+    const masterContours: TrueTypeContourInput[][] = [];
+    const advances: number[] = [];
+    for (const { mi } of placed) {
+      if (mi === 0) { masterContours.push(baseInput.contours); advances.push(baseInput.advanceWidth); continue; }
+      const own = source[mi].get(g.unicode);
+      const ownContours = structure(own);
+      if (own && sameStructure(baseInput.contours, ownContours)) {
+        masterContours.push(ownContours);
+        advances.push(own.advanceWidth);
+        continue;
+      }
+      const synthetic = { ...g, outline: autoItalicOutline(autoBoldOutline(g.outline, params[mi].offset), params[mi].shearDeg) };
+      const synthContours = glyphToTrueTypeInput(synthetic).contours;
+      masterContours.push(sameStructure(baseInput.contours, synthContours) ? synthContours : baseInput.contours);
+      advances.push(own?.advanceWidth ?? g.advanceWidth);
+      if (baseInput.contours.length) {
+        const list = rebuilt.get(mi) ?? [];
+        list.push(g.char);
+        rebuilt.set(mi, list);
+      }
+    }
+    const converted = compatibleTrueTypeContours(masterContours, tolerance)
+      ?? masterContours.map(() => compatibleTrueTypeContours([baseInput.contours], tolerance)![0]);
+    for (const contours of converted) for (const contour of contours) for (const p of contour) {
+      ext.xMin = Math.min(ext.xMin, p.x); ext.yMin = Math.min(ext.yMin, p.y);
+      ext.xMax = Math.max(ext.xMax, p.x); ext.yMax = Math.max(ext.yMax, p.y);
+    }
+    for (const a of advances) ext.maxAdvance = Math.max(ext.maxAdvance, a);
+    ttGlyphs.push({ ...baseInput, ttContours: converted[0] });
+    perGlyphMasters.push({ contours: converted, advances });
+    if (gi % 400 === 399) { onProgress?.(0.5 + 0.35 * (gi / base.length)); await breathe(); }
+  }
+
+  // 5. Interpolation model + variation tables.
+  const model = new VariationModel(placed.map((p) => normalizeLocation(p.location, axes)));
+  const glyphDeltas: Array<Array<{ x: number[]; y: number[] }>> = [];
+  const advanceDeltas: number[][] = [];
+  const tupleCount = model.supports.length - 1;
+  const zeroTuples = (points: number) => Array.from({ length: tupleCount }, () => ({ x: new Array(points).fill(0), y: new Array(points).fill(0) }));
+  glyphDeltas.push(zeroTuples(4)); // .notdef
+  advanceDeltas.push(new Array(tupleCount).fill(0));
+  for (const { contours, advances } of perGlyphMasters) {
+    const flat = contours.map((cs) => cs.flat());
+    const pointCount = flat[0].length;
+    // All points + 4 phantom points: (0,0), (advance,0), and two vertical ones.
+    const xs = flat.map((pts, k) => [...pts.map((p) => p.x), 0, advances[k], 0, 0]);
+    const ys = flat.map((pts) => [...pts.map((p) => p.y), 0, 0, 0, 0]);
+    const tuples = zeroTuples(pointCount + 4);
+    for (let i = 0; i < pointCount + 4; i++) {
+      const dx = model.getDeltas(xs.map((arr) => arr[i]));
+      const dy = model.getDeltas(ys.map((arr) => arr[i]));
+      for (let t = 0; t < tupleCount; t++) { tuples[t].x[i] = Math.round(dx[t + 1]); tuples[t].y[i] = Math.round(dy[t + 1]); }
+    }
+    glyphDeltas.push(tuples);
+    const da = model.getDeltas(advances);
+    advanceDeltas.push(da.slice(1).map(Math.round));
+  }
+
+  // Names: axes, named instances (every standard weight in range, upright and
+  // italic) and STAT labels.
+  const names: Array<[number, string]> = [];
+  const nameIdFor = (() => {
+    const pool = new Map<string, number>();
+    return (text: string) => {
+      const found = pool.get(text);
+      if (found) return found;
+      const id = 256 + pool.size;
+      pool.set(text, id);
+      names.push([id, text]);
+      return id;
+    };
+  })();
+  const axisNameIDs = axes.map((a) => nameIdFor(a.name));
+  const wAxis = axes.find((a) => a.tag === "wght");
+  const sAxis = axes.find((a) => a.tag === "slnt");
+  const weightStops = wAxis
+    ? [...new Set([...[100, 200, 300, 400, 500, 600, 700, 800, 900].filter((w) => w >= wAxis.min && w <= wAxis.max), ...placed.map((p) => p.location.wght!)])].sort((a, b) => a - b)
+    : [regularWeight];
+  const slantStops = sAxis ? [0, sAxis.min !== 0 ? sAxis.min : sAxis.max] : [0];
+  const instances: NamedInstance[] = [];
+  const instanceNames: string[] = [];
+  for (const slnt of slantStops) {
+    for (const wght of weightStops) {
+      const wn = weightName(wght);
+      const label = slnt !== 0 ? (wn === "Regular" ? "Italic" : `${wn} Italic`) : wn;
+      const location: UserLocation = {};
+      if (wAxis) location.wght = wght;
+      if (sAxis) location.slnt = slnt;
+      instances.push({ nameID: nameIdFor(label), location });
+      instanceNames.push(label);
+    }
+  }
+  const statValues: StatValue[] = [];
+  axes.forEach((axis, axisIndex) => {
+    if (axis.tag === "wght") {
+      for (const w of weightStops) statValues.push({ axisIndex, value: w, nameID: nameIdFor(weightName(w)), elidable: w === regularWeight });
+    } else {
+      statValues.push({ axisIndex, value: 0, nameID: nameIdFor("Upright"), elidable: true });
+      statValues.push({ axisIndex, value: slantStops[1], nameID: nameIdFor("Italic"), elidable: false });
+    }
+  });
+
+  const familyName = (info?.familyName || "Untitled Font").trim() || "Untitled Font";
+  const vfInfo = normalizeFontMetadata({ ...info, familyName, styleName: "Regular", fullName: `${familyName} Regular`, postscriptName: "", uniqueID: "" }, familyName);
+  names.push([25, vfInfo.postscriptName.replace(/-.*$/, "")]);
+
+  const extraTables = [
+    { tag: "fvar", data: buildFvar(axes, axisNameIDs, instances) },
+    { tag: "gvar", data: buildGvar(axes, model.supports, glyphDeltas) },
+    { tag: "HVAR", data: buildHvar(axes, model.supports, advanceDeltas) },
+    { tag: "STAT", data: buildStat(axes, axisNameIDs, statValues, 2) },
+  ];
+  onProgress?.(0.85);
+  await breathe();
+
+  const built = buildTrueTypeFont({
+    unitsPerEm: metrics.unitsPerEm,
+    ascender: metrics.ascender,
+    descender: metrics.descender,
+    capHeight: metrics.capHeight,
+    xHeight: metrics.xHeight,
+    metadata: {
+      familyName: vfInfo.legacyFamilyName,
+      subfamilyName: vfInfo.legacySubfamilyName,
+      typographicFamilyName: vfInfo.familyName,
+      typographicSubfamilyName: vfInfo.styleName,
+      fullName: vfInfo.fullName,
+      postScriptName: vfInfo.postscriptName,
+      version: vfInfo.version,
+      creator: vfInfo.designer || "FontSeru",
+      designerURL: vfInfo.designerURL,
+      manufacturer: vfInfo.manufacturer || "FontSeru",
+      manufacturerURL: vfInfo.manufacturerURL,
+      trademark: vfInfo.trademark,
+      uniqueID: vfInfo.uniqueID,
+      copyright: vfInfo.copyright,
+      description: vfInfo.description,
+      license: vfInfo.license,
+      licenseURL: vfInfo.licenseURL,
+      weightClass: regularWeight,
+      fsSelection: 0x0040,
+      macStyle: 0,
+      italicAngle: 0,
+    },
+    glyphs: ttGlyphs,
+    extraNames: names,
+    extraTables,
+    variationExtents: ext,
+  });
+
+  // Kerning, mark positioning and OpenType features come from Regular (the
+  // default master); like everything else they are enhancements and never a
+  // reason to lose the font.
+  let buffer = built.buffer;
+  const glyphIndexByChar = new Map<string, number>();
+  for (const glyph of base) {
+    const gid = built.glyphIndexByUnicode.get(glyph.unicode);
+    if (gid != null) glyphIndexByChar.set(glyph.char, gid);
+  }
+  const markLayout = safeMarkLayout(base, glyphIndexByChar);
+  if (Object.keys(kerningPairs ?? {}).length || markLayout) {
+    try { buffer = injectGposTable(buffer, kerningPairs ?? {}, glyphIndexByChar, markLayout); } catch (error) { console.warn("[FontSeru] Variable font: GPOS skipped.", error); }
+  }
+  if (featureConfig && !isFeatureConfigEmpty(featureConfig)) {
+    try { buffer = injectGsubTable(buffer, featureConfig, glyphIndexByChar); } catch (error) { console.warn("[FontSeru] Variable font: GSUB skipped.", error); }
+  }
+  try { validateGeneratedFont(buffer, "ttf", { familyName: vfInfo.legacyFamilyName }); } catch (error) { console.warn("[FontSeru] Variable font verification note:", error); }
+
+  const files: GeneratedFontFile[] = [{ extension: "ttf", mimeType: "font/ttf", buffer }];
+  const wanted = new Set(formats);
+  if (wanted.has("woff")) {
+    const { woffEncode } = await import("woff-lib/woff/encode");
+    files.push({ extension: "woff", mimeType: "font/woff", buffer: toArrayBuffer(await woffEncode(new Uint8Array(buffer))) });
+  }
+  if (wanted.has("woff2")) {
+    const { woff2Encode } = await import("woff-lib/woff2/encode");
+    files.push({ extension: "woff2", mimeType: "font/woff2", buffer: toArrayBuffer(woff2Encode(new Uint8Array(buffer))) });
+  }
+  onProgress?.(1);
+
+  const axisSuffix = axes.map((a) => a.tag).sort().join(",");
+  return {
+    files,
+    report: {
+      fileBaseName: `[${axisSuffix}]`,
+      axes,
+      masters: placed.map((p) => ({ styleName: ordered[p.mi].styleName, location: p.location })),
+      skippedMasters,
+      instanceNames,
+      glyphCount: base.length,
+      rebuiltGlyphs: [...rebuilt.entries()].map(([mi, chars]) => ({ styleName: ordered[mi].styleName, chars })),
+    },
+  };
+}
+
+/**
+ * Export cleanup drops a node that sits exactly on the previous one, and a
+ * closing node that repeats the start (imported fonts are full of these). In
+ * Regular such a node is a duplicate, but in a generated Bold it has already
+ * been pushed out to a slightly different spot, so cleanup would drop it in
+ * one master and keep it in the other and the masters would no longer match.
+ * Decide those drops once, from Regular, and apply them to every master
+ * whose drawing has the same structure.
+ */
+function alignMasterSources(maps: GlyphMap[]): GlyphMap[] {
+  const out = maps.map((m) => ({ ...m }));
+  const base = maps[0];
+  for (const [char, glyph] of Object.entries(base ?? {})) {
+    const objects = glyph?.outline?.objects ?? [];
+    const peers = maps.map((m) => m[char]);
+    const sameShape = peers.every((p) =>
+      p && p.outline.objects.length === objects.length
+      && p.outline.objects.every((o, oi) => o.contours.length === objects[oi].contours.length
+        && o.contours.every((c, ci) => c.nodes.length === objects[oi].contours[ci].nodes.length)),
+    );
+    if (!sameShape) continue;
+    // Node indexes to drop, per object/contour, judged on Regular.
+    const drops = objects.map((o) => o.contours.map((c) => {
+      const keep: number[] = [];
+      const nodes = c.nodes ?? [];
+      nodes.forEach((n, i) => {
+        const prev = keep.length ? nodes[keep[keep.length - 1]] : null;
+        if (prev && samePoint(prev.point, n.point) && !n.handleIn && !n.handleOut) return;
+        keep.push(i);
+      });
+      if (keep.length > 1 && samePoint(nodes[keep[0]].point, nodes[keep[keep.length - 1]].point)) keep.pop();
+      return keep.length === nodes.length ? null : new Set(keep);
+    }));
+    if (!drops.some((o) => o.some(Boolean))) continue;
+    maps.forEach((m, mi) => {
+      const g = m[char];
+      out[mi][char] = {
+        ...g,
+        outline: {
+          ...g.outline,
+          objects: g.outline.objects.map((o, oi) => ({
+            ...o,
+            contours: o.contours.map((c, ci) => {
+              const keep = drops[oi][ci];
+              return keep ? { ...c, nodes: c.nodes.filter((_, ni) => keep.has(ni)) } : c;
+            }),
+          })),
+        },
+      };
+    });
+  }
+  return out;
+}
+
+function glyphArea(contours: TrueTypeContourInput[]): number {
+  let area = 0;
+  for (const c of contours) {
+    const pts = c.nodes.map((n) => n.point);
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) area += pts[j].x * pts[i].y - pts[i].x * pts[j].y;
+  }
+  return area / 2;
+}
+
+export type { AxisTag };
 
 export function importOpenType(buffer: ArrayBuffer): ImportedFontProject {
   const font = parseFontSafely(buffer);

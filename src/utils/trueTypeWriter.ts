@@ -19,6 +19,17 @@ export interface TrueTypeGlyphInput {
   unicodes: number[];
   advanceWidth: number;
   contours: TrueTypeContourInput[];
+  /** Already-converted quadratic contours (variable fonts: every master must
+   *  share one point structure, see `compatibleTrueTypeContours`). When set,
+   *  `contours` is ignored for this glyph. */
+  ttContours?: TrueTypeOutlinePoint[][];
+}
+
+/** One point of a converted TrueType contour (integer font units). */
+export interface TrueTypeOutlinePoint {
+  x: number;
+  y: number;
+  onCurve: boolean;
 }
 
 export interface TrueTypeMetadata {
@@ -60,6 +71,13 @@ export interface TrueTypeFontInput {
   xHeight: number;
   metadata: TrueTypeMetadata;
   glyphs: TrueTypeGlyphInput[];
+  /** Additional name records (e.g. variable-font axis/instance names, IDs ≥ 25). */
+  extraNames?: Array<[number, string]>;
+  /** Additional sfnt tables written as-is (e.g. fvar, gvar, STAT, HVAR). */
+  extraTables?: Array<{ tag: string; data: Uint8Array }>;
+  /** Variable fonts: the bounding box / widest advance over every master, so
+   *  head and hhea cover the whole design space, not only the default. */
+  variationExtents?: { xMin: number; yMin: number; xMax: number; yMax: number; maxAdvance: number };
 }
 
 export interface TrueTypeFontResult {
@@ -233,6 +251,110 @@ function contourToTrueType(contour: TrueTypeContourInput, tolerance: number): TT
   }
 
   return points.length >= 2 ? points : [];
+}
+
+/**
+ * Convert several masters of ONE glyph to quadratic TrueType contours that
+ * share exactly the same point structure, as variable fonts (gvar) require.
+ *
+ * The regular writer adapts the number of quadratic pieces per curve to each
+ * outline and drops duplicate points — fine for one static font, but two
+ * masters of the same glyph could then end up with different point counts.
+ * Here every decision is made once for all masters: a segment is a curve if
+ * it is a curve in any master, it is split into the same number of
+ * equal-parameter pieces everywhere (the most any master needs to stay
+ * within `tolerance`), and nothing is dropped. Returns null when the masters
+ * do not have the same contours/nodes to begin with.
+ */
+export function compatibleTrueTypeContours(
+  masters: TrueTypeContourInput[][],
+  tolerance: number,
+): TrueTypeOutlinePoint[][][] | null {
+  if (!masters.length) return [];
+  const contourCount = masters[0].length;
+  if (masters.some((m) => m.length !== contourCount)) return null;
+  for (let c = 0; c < contourCount; c++) {
+    const n = masters[0][c].nodes.length;
+    if (masters.some((m) => m[c].nodes.length !== n)) return null;
+    if (masters.some((m) => m[c].nodes.some((node) => !isFinitePoint(node?.point)))) return null;
+  }
+
+  const out: TrueTypeOutlinePoint[][][] = masters.map(() => []);
+  for (let c = 0; c < contourCount; c++) {
+    const n = masters[0][c].nodes.length;
+    if (n < 2) continue;
+    const contoursOut: TrueTypeOutlinePoint[][] = masters.map(() => []);
+    const push = (mi: number, p: TrueTypePoint, onCurve: boolean) => {
+      contoursOut[mi].push({ x: clampI16(p.x), y: clampI16(p.y), onCurve });
+    };
+    masters.forEach((m, mi) => push(mi, m[c].nodes[0].point, true));
+
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const closing = i === n - 1;
+      const isCurve = masters.some((m) => isFinitePoint(m[c].nodes[i].handleOut) || isFinitePoint(m[c].nodes[j].handleIn));
+      if (!isCurve) {
+        if (!closing) masters.forEach((m, mi) => push(mi, m[c].nodes[j].point, true));
+        continue;
+      }
+      const cubics = masters.map((m) => {
+        const from = m[c].nodes[i];
+        const to = m[c].nodes[j];
+        const p0 = from.point;
+        const p3 = to.point;
+        return [p0, isFinitePoint(from.handleOut) ? from.handleOut : p0, isFinitePoint(to.handleIn) ? to.handleIn : p3, p3] as const;
+      });
+      let pieces = 1;
+      for (const cubic of cubics) {
+        let k = 1;
+        while (k < 16 && uniformQuadraticError(cubic[0], cubic[1], cubic[2], cubic[3], k) > tolerance) k++;
+        pieces = Math.max(pieces, k);
+      }
+      cubics.forEach((cubic, mi) => {
+        const segments = uniformQuadratics(cubic[0], cubic[1], cubic[2], cubic[3], pieces);
+        segments.forEach((segment, q) => {
+          push(mi, segment.control, false);
+          if (!(closing && q === segments.length - 1)) push(mi, segment.end, true);
+        });
+      });
+    }
+    contoursOut.forEach((contour, mi) => out[mi].push(contour));
+  }
+  return out;
+}
+
+function splitCubicAt(p0: TrueTypePoint, p1: TrueTypePoint, p2: TrueTypePoint, p3: TrueTypePoint, t: number) {
+  const lerp = (a: TrueTypePoint, b: TrueTypePoint) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const a = lerp(p0, p1), b = lerp(p1, p2), c = lerp(p2, p3);
+  const d = lerp(a, b), e = lerp(b, c), f = lerp(d, e);
+  return { left: [p0, a, d, f] as const, right: [f, e, c, p3] as const };
+}
+
+/** Split a cubic into `pieces` equal-parameter parts, each approximated by the
+ *  quadratic that matches it at its midpoint (same rule as approximateCubic). */
+function uniformQuadratics(p0: TrueTypePoint, p1: TrueTypePoint, p2: TrueTypePoint, p3: TrueTypePoint, pieces: number): QuadraticSegment[] {
+  const out: QuadraticSegment[] = [];
+  let rest: readonly [TrueTypePoint, TrueTypePoint, TrueTypePoint, TrueTypePoint] = [p0, p1, p2, p3];
+  for (let k = pieces; k >= 1; k--) {
+    const part = k === 1 ? { left: rest, right: rest } : splitCubicAt(rest[0], rest[1], rest[2], rest[3], 1 / k);
+    const [a, b, c, d] = part.left;
+    out.push({ control: { x: (3 * b.x + 3 * c.x - a.x - d.x) / 4, y: (3 * b.y + 3 * c.y - a.y - d.y) / 4 }, end: d });
+    rest = part.right;
+  }
+  return out;
+}
+
+function uniformQuadraticError(p0: TrueTypePoint, p1: TrueTypePoint, p2: TrueTypePoint, p3: TrueTypePoint, pieces: number): number {
+  let error = 0;
+  let rest: readonly [TrueTypePoint, TrueTypePoint, TrueTypePoint, TrueTypePoint] = [p0, p1, p2, p3];
+  for (let k = pieces; k >= 1; k--) {
+    const part = k === 1 ? { left: rest, right: rest } : splitCubicAt(rest[0], rest[1], rest[2], rest[3], 1 / k);
+    const [a, b, c, d] = part.left;
+    const control = { x: (3 * b.x + 3 * c.x - a.x - d.x) / 4, y: (3 * b.y + 3 * c.y - a.y - d.y) / 4 };
+    for (const t of [0.25, 0.75]) error = Math.max(error, distance(cubicAt(a, b, c, d, t), quadraticAt(a, control, d, t)));
+    rest = part.right;
+  }
+  return error;
 }
 
 class ByteWriter {
@@ -413,9 +535,11 @@ function buildGlyphs(input: TrueTypeFontInput): {
   glyphs.push(encodeSimpleGlyph([], Math.round(input.unitsPerEm * 0.5)));
 
   input.glyphs.forEach((glyph, index) => {
-    const contours = (glyph.contours ?? [])
-      .map((contour) => contourToTrueType(contour, tolerance))
-      .filter((contour) => contour.length >= 2);
+    const contours = glyph.ttContours
+      ? glyph.ttContours.map((contour) => contour.map((p) => ({ x: clampI16(p.x), y: clampI16(p.y), onCurve: p.onCurve })))
+      : (glyph.contours ?? [])
+        .map((contour) => contourToTrueType(contour, tolerance))
+        .filter((contour) => contour.length >= 2);
     glyphs.push(encodeSimpleGlyph(contours, glyph.advanceWidth));
     const gid = index + 1;
     for (const cp of glyph.unicodes ?? []) {
@@ -509,7 +633,10 @@ function buildHead(input: TrueTypeFontInput, bbox: BBox): Uint8Array {
 
 function buildHhea(input: TrueTypeFontInput, glyphs: EncodedGlyph[]): Uint8Array {
   const writer = new ByteWriter();
-  const maxAdvance = glyphs.reduce((max, glyph) => Math.max(max, glyph.advanceWidth), 0);
+  const maxAdvance = Math.max(
+    glyphs.reduce((max, glyph) => Math.max(max, glyph.advanceWidth), 0),
+    input.variationExtents?.maxAdvance ?? 0,
+  );
   const minLsb = glyphs.reduce((min, glyph) => Math.min(min, glyph.lsb), 0);
   const minRsb = glyphs.reduce((min, glyph) => {
     const rsb = glyph.advanceWidth - glyph.bbox.xMax;
@@ -630,6 +757,8 @@ function buildName(input: TrueTypeFontInput): Uint8Array {
   if (typographicFamily !== meta.familyName || typographicSubfamily !== meta.subfamilyName) {
     entries.push([16, typographicFamily], [17, typographicSubfamily]);
   }
+
+  for (const extra of input.extraNames ?? []) entries.push(extra);
 
   const values = entries.filter(([, value]) => typeof value === "string" && value.length > 0);
 
@@ -883,11 +1012,20 @@ export function buildTrueTypeFont(input: TrueTypeFontInput): TrueTypeFontResult 
   }
 
   const built = buildGlyphs(input);
+  const ext = input.variationExtents;
+  const headBBox = ext
+    ? {
+        xMin: clampI16(Math.min(built.globalBBox.xMin, ext.xMin)),
+        yMin: clampI16(Math.min(built.globalBBox.yMin, ext.yMin)),
+        xMax: clampI16(Math.max(built.globalBBox.xMax, ext.xMax)),
+        yMax: clampI16(Math.max(built.globalBBox.yMax, ext.yMax)),
+      }
+    : built.globalBBox;
   const tables: TableRecord[] = [
     { tag: "OS/2", data: buildOS2(input, built.glyphs, built.glyphIndexByUnicode) },
     { tag: "cmap", data: buildCmap(built.glyphIndexByUnicode) },
     { tag: "glyf", data: built.glyf },
-    { tag: "head", data: buildHead(input, built.globalBBox) },
+    { tag: "head", data: buildHead(input, headBBox) },
     { tag: "hhea", data: buildHhea(input, built.glyphs) },
     { tag: "hmtx", data: buildHmtx(built.glyphs) },
     { tag: "loca", data: buildLoca(built.locaOffsets) },
@@ -897,6 +1035,9 @@ export function buildTrueTypeFont(input: TrueTypeFontInput): TrueTypeFontResult 
     // Unhinted font: grayscale + symmetric smoothing at all sizes, no grid-fit.
     { tag: "gasp", data: Uint8Array.from([0, 1, 0, 1, 0xff, 0xff, 0, 0x0a]) },
   ];
+  for (const extra of input.extraTables ?? []) {
+    if (!tables.some((t) => t.tag === extra.tag)) tables.push({ tag: extra.tag, data: extra.data });
+  }
 
   return {
     buffer: assembleSfnt(tables),

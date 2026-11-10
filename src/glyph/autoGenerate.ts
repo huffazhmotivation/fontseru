@@ -93,7 +93,7 @@ export function contourOffsetLimit(contour: Contour): number {
  * for why two independent sweeps drift apart into an uneven ring width on
  * curves.
  */
-export function offsetClosedContour(contour: Contour, amount: number, isHole: boolean): Contour {
+export function offsetClosedContour(contour: Contour, amount: number, isHole: boolean, scaleHandles = false): Contour {
   if (!contour.closed || contour.nodes.length < 2 || amount === 0) return contour;
 
   const flattened = flattenContour(contour, 10);
@@ -111,7 +111,7 @@ export function offsetClosedContour(contour: Contour, amount: number, isHole: bo
     ? (amount >= 0 ? -Math.min(amount, limit) : Math.min(-amount, limit))
     : (amount >= 0 ? amount : -Math.min(-amount, limit));
 
-  return {
+  const moved = {
     ...contour,
     nodes: contour.nodes.map((node, index, nodes) => {
       const inNormal = outwardNormal(nodeTangentIn(nodes, index), orientation);
@@ -125,7 +125,15 @@ export function offsetClosedContour(contour: Contour, amount: number, isHole: bo
       // A true line offset intersects adjacent offset edges at distance /
       // dot(miter, normal). Clamp acute joins to avoid runaway spikes and the
       // self-intersections they tend to create.
-      const dot = Math.abs(miter.x * outNormal.x + miter.y * outNormal.y);
+      //
+      // A side with no direction (the neighbouring node sits on the same spot
+      // and there's no handle — imported fonts split every curve extreme into
+      // two such nodes) must not take part: its zero normal made dot 0 and
+      // pushed the node ~3× too far, which is what grew spikes all around
+      // round letters in auto-generated Bold.
+      const outLen = Math.hypot(outNormal.x, outNormal.y);
+      const refNormal = outLen > 1e-9 ? outNormal : inNormal;
+      const dot = Math.abs(miter.x * refNormal.x + miter.y * refNormal.y);
       const scale = Math.min(Math.abs(distance) * 3, Math.abs(distance) / Math.max(0.34, dot));
       const signedScale = distance < 0 ? -scale : scale;
       const delta = { x: miter.x * signedScale, y: miter.y * signedScale };
@@ -142,6 +150,37 @@ export function offsetClosedContour(contour: Contour, amount: number, isHole: bo
       };
     }),
   };
+  if (!scaleHandles) return moved;
+
+  // Family Bold/Light: a curve that moves outward gets longer (and one that
+  // moves inward shorter). Translating its handles unchanged leaves the
+  // offset curve too flat between nodes, which shows up as bumps and notches
+  // on round letters. Scale each segment's handles by how much its chord
+  // grew, around their own node, so tangents stay exactly as drawn.
+  const src = contour.nodes;
+  const out = moved.nodes.map((n) => ({ ...n }));
+  for (let i = 0; i < src.length; i++) {
+    const j = (i + 1) % src.length;
+    const a = src[i], b = src[j];
+    if (!a.handleOut && !b.handleIn) continue;
+    const oldChord = Math.hypot(b.point.x - a.point.x, b.point.y - a.point.y);
+    const newChord = Math.hypot(out[j].point.x - out[i].point.x, out[j].point.y - out[i].point.y);
+    if (oldChord < 1e-6) continue;
+    const ratio = Math.max(0.25, Math.min(4, newChord / oldChord));
+    if (a.handleOut) {
+      out[i].handleOut = {
+        x: out[i].point.x + (a.handleOut.x - a.point.x) * ratio,
+        y: out[i].point.y + (a.handleOut.y - a.point.y) * ratio,
+      };
+    }
+    if (b.handleIn) {
+      out[j].handleIn = {
+        x: out[j].point.x + (b.handleIn.x - b.point.x) * ratio,
+        y: out[j].point.y + (b.handleIn.y - b.point.y) * ratio,
+      };
+    }
+  }
+  return { ...moved, nodes: out };
 }
 
 function cloneGeneratedObject(source: VectorObject): VectorObject {
@@ -151,7 +190,7 @@ function cloneGeneratedObject(source: VectorObject): VectorObject {
     : cloned;
 }
 
-function offsetFilledObject(source: VectorObject, amount: number): VectorObject {
+function offsetFilledObject(source: VectorObject, amount: number, scaleHandles = true): VectorObject {
   const cloned = cloneGeneratedObject(source);
   const polygons = cloned.contours.map((contour) => flattenContour(contour, 10));
 
@@ -167,7 +206,7 @@ function offsetFilledObject(source: VectorObject, amount: number): VectorObject 
         if (other === index || polygons[other].length < 3) continue;
         if (pointInPolygon(probe, polygons[other])) nestingDepth++;
       }
-      return offsetClosedContour(contour, amount, nestingDepth % 2 === 1);
+      return offsetClosedContour(contour, amount, nestingDepth % 2 === 1, scaleHandles);
     }),
   };
 }
