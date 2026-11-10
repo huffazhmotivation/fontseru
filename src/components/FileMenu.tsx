@@ -986,8 +986,9 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
         useAppStore.getState().setFontName(derivedName);
         showToast("Project opened");
       } else if (ext === "ttf" || ext === "otf") {
-        const { importOpenType } = await import("@/utils/fontIO");
-        const imported = importOpenType(await file.arrayBuffer());
+        const { importOpenTypeAsync } = await import("@/utils/fontIO");
+        // Chunked import: large fonts (thousands of glyphs) no longer freeze the page.
+        const imported = await importOpenTypeAsync(await file.arrayBuffer());
         useAppStore.getState().hydrate({
           glyphs: imported.glyphs,
           fontName: derivedName,

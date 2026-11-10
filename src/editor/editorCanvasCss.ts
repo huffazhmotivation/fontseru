@@ -80,6 +80,13 @@ function buildEditorCanvasCss(u: (n: number) => string, px: (n: number) => strin
           .guide-label { fill: var(--text-dim); font-size: ${px(10.5)}; font-family: var(--mono); }
           .guide-value { fill: var(--text-dim); opacity: 0.7; font-size: ${px(10.5)}; font-family: var(--mono); }
           .guide-dot { fill: var(--text-dim); }
+          .anchor-mark { cursor: move; }
+          .anchor-diamond { fill: var(--canvas); stroke: var(--m-descender); stroke-width: ${u(1.4)}; }
+          .anchor-mark.mark .anchor-diamond { stroke: var(--sb); }
+          .anchor-mark:hover .anchor-diamond, .anchor-mark.dragging .anchor-diamond { fill: var(--m-descender); }
+          .anchor-mark.mark:hover .anchor-diamond, .anchor-mark.mark.dragging .anchor-diamond { fill: var(--sb); }
+          .anchor-label { fill: var(--m-descender); font-size: ${px(10.5)}; font-family: var(--mono); pointer-events: none; }
+          .anchor-mark.mark .anchor-label { fill: var(--sb); }
           .metric-guide-label.metric-ascender .guide-dot { fill: var(--m-ascender); }
           .metric-guide-label.metric-cap .guide-dot { fill: var(--m-cap); }
           .metric-guide-label.metric-xheight .guide-dot { fill: var(--m-xheight); }

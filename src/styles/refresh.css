@@ -141,3 +141,88 @@
 .fm-bottombar button.on { color: var(--text); background: var(--panel-3); }
 .fm-bottombar button.on svg { color: var(--accent); }
 .fm-zoom-value, .fm-upm { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------- node type chip */
+/* The popup after clicking a node: a compact icon chip instead of a panel. */
+.fm-nodepop { padding: 3px; border-radius: 10px; border-color: var(--line); box-shadow: 0 10px 26px -14px rgba(0, 0, 0, 0.6); }
+.fm-nodepop-title { display: none; }
+.fm-nodepop-row { gap: 2px; }
+.fm-nodepop-btn { flex-direction: row; min-width: 0; padding: 4px 6px; gap: 0; border: 0; border-radius: 7px; background: transparent; }
+.fm-nodepop-btn span { display: none; }
+.fm-nodepop-btn svg { width: 22px; height: 14px; }
+.fm-nodepop-btn:hover { background: var(--panel-2); border-color: transparent; }
+.fm-nodepop-btn.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+@media (pointer: coarse) { .fm-nodepop-btn { min-width: 40px; padding: 8px 8px; justify-content: center; } }
+
+/* ==========================================================================
+   v0.8.1 — "floating studio" look (desktop & laptop, not the iPad layout).
+   Nothing moves: the same panels, buttons and floating tool bar, now set as
+   soft cards on a dark ground so the canvas reads as the stage. Easier on the
+   eyes (fewer hard divider lines, more breathing room) and clearly new.
+   ========================================================================== */
+@media (min-width: 1024px) {
+  html:not([data-tablet="true"]) .fm-root:not(.fm-design-shell) .fm-body {
+    gap: 8px;
+    padding: 8px;
+    background: var(--bg);
+  }
+  html:not([data-tablet="true"]) .fm-root:not(.fm-design-shell) .fm-glyphnav,
+  html:not([data-tablet="true"]) .fm-root:not(.fm-design-shell) .fm-rightpanel {
+    border: 1px solid var(--line-soft);
+    border-radius: 14px;
+    overflow: hidden;
+    overflow-y: auto;
+  }
+  html:not([data-tablet="true"]) .fm-root:not(.fm-design-shell) .fm-glyphnav { overflow-y: hidden; }
+  html:not([data-tablet="true"]) .fm-root:not(.fm-design-shell) .fm-canvas-wrap {
+    border: 1px solid var(--line-soft);
+    border-radius: 14px;
+    overflow: hidden;
+    background: var(--canvas);
+  }
+  html:not([data-tablet="true"]) .fm-root:not(.fm-design-shell) .fm-canvas-area { padding: 0; }
+  html:not([data-tablet="true"]) .fm-root:not(.fm-design-shell) .fm-canvas-frame {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  html:not([data-tablet="true"]) .fm-root:not(.fm-design-shell) .fm-bottombar {
+    background: var(--panel);
+    border-top: 1px solid var(--line-soft);
+  }
+
+  /* Top bar: the long icon row is grouped into quiet "islands" so the eye
+     finds undo · clipboard · align · combine · object actions at a glance. */
+  html:not([data-tablet="true"]) .fm-topbar .fm-topbtn-group,
+  html:not([data-tablet="true"]) .fm-topbar .fm-align-group {
+    padding: 2px;
+    gap: 1px;
+    border-radius: 10px;
+    background: var(--panel);
+    border: 1px solid var(--line-soft);
+  }
+  html:not([data-tablet="true"]) .fm-topbar .fm-align-divider { background: transparent; width: 4px; }
+  html:not([data-tablet="true"]) .fm-topbar .fm-align-group .fm-align-divider { width: 1px; height: 14px; background: var(--line); margin: 0 2px; }
+  html:not([data-tablet="true"]) .fm-topbar .fm-align-btn { border-radius: 8px; }
+  html:not([data-tablet="true"]) .fm-topbar .fm-align-btn:hover:not(:disabled) { background: var(--panel-3); }
+}
+
+/* Glyph tiles: proper little cards, the drawn glyph clearly readable. */
+.fm-tile { border-radius: 10px; transition: background .12s ease, border-color .12s ease; }
+.fm-tile.done { background: var(--panel-2); border-color: var(--line-soft); }
+.fm-tile.done .fm-tile-thumb { color: var(--text); }
+.fm-tile:hover { border-color: var(--line); background: var(--panel-2); }
+.fm-tile.active,
+.fm-tile.active.done { background: var(--accent-soft); border-color: var(--accent); }
+.fm-tile.active .fm-tile-thumb { color: var(--text); }
+
+/* Floating tool bar: same place, softer pill, clearer active tool. */
+.fm-floating-toolbar { border-radius: 16px; padding: 6px; background: var(--panel); }
+.fm-tool { border-radius: 10px; }
+.fm-tool.active { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.fm-tool.active svg { color: var(--accent-ink); }
+
+/* Right panel: glyph header as a card, sections with more air. */
+.fm-rightpanel .fm-panel-header { padding: 14px; }
+.fm-section-head { padding-top: 14px; padding-bottom: 10px; }
+.fm-section-body { padding-bottom: 16px; }

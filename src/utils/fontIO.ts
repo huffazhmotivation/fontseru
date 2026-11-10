@@ -3054,12 +3054,45 @@ export function importOpenType(buffer: ArrayBuffer): ImportedFontProject {
   const glyphs: GlyphMap = {};
   const charByGid = new Map<number, string>();
   const count = (font as any).glyphs.length;
+  for (let gid = 0; gid < count; gid++) importOneGlyph(font, gid, glyphs, charByGid);
+  return finishImport(font, glyphs, charByGid);
+}
+
+/**
+ * Same result as `importOpenType`, but yields to the browser every few dozen
+ * glyphs. Reading each glyph's outline is the expensive part (opentype.js
+ * parses outlines lazily), and doing ~3,000 of them in one go froze the UI
+ * for seconds on large fonts; chunked, the page stays responsive and
+ * `onProgress` can drive a progress label.
+ */
+export async function importOpenTypeAsync(
+  buffer: ArrayBuffer,
+  onProgress?: (done: number, total: number) => void,
+): Promise<ImportedFontProject> {
+  const font = parseFontSafely(buffer);
+  const glyphs: GlyphMap = {};
+  const charByGid = new Map<number, string>();
+  const count = (font as any).glyphs.length;
+  let sliceStart = performance.now();
   for (let gid = 0; gid < count; gid++) {
+    importOneGlyph(font, gid, glyphs, charByGid);
+    if (performance.now() - sliceStart > 12) {
+      onProgress?.(gid + 1, count);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      sliceStart = performance.now();
+    }
+  }
+  onProgress?.(count, count);
+  return finishImport(font, glyphs, charByGid);
+}
+
+function importOneGlyph(font: any, gid: number, glyphs: GlyphMap, charByGid: Map<number, string>): void {
+  {
     const og: any = (font as any).glyphs.get(gid);
     const unicodes: number[] = Array.isArray(og.unicodes) && og.unicodes.length
       ? [...new Set<number>(og.unicodes.filter((u: unknown): u is number => typeof u === "number" && Number.isFinite(u)))]
       : (Number.isFinite(og.unicode) ? [Number(og.unicode)] : []);
-    if (!unicodes.length) continue; // current editor navigation is Unicode-centric
+    if (!unicodes.length) return; // current editor navigation is Unicode-centric
     const cp = unicodes[0];
     const char = String.fromCodePoint(cp);
     const contours = commandContours(og.path?.commands ?? []);
@@ -3077,6 +3110,9 @@ export function importOpenType(buffer: ArrayBuffer): ImportedFontProject {
     };
     charByGid.set(gid, char);
   }
+}
+
+function finishImport(font: any, glyphs: GlyphMap, charByGid: Map<number, string>): ImportedFontProject {
   if (!Object.keys(glyphs).length) throw new Error("The font has no Unicode-mapped glyphs that FontSeru can edit.");
 
   const names: unknown = (font as any).names ?? {};

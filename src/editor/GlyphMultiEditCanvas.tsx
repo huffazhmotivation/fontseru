@@ -1400,9 +1400,14 @@ export function GlyphMultiEditCanvas() {
   );
 
   // ------------------------------------------------------------ render
+  // Until the frame has been measured (first render), the fallback viewBox is
+  // the WHOLE plane — culling against it mounted every cell of the font at
+  // once (≈1 s freeze + heavy GC with a few thousand glyphs) only to throw
+  // them away a frame later. Render no cells until the real size is known.
+  const measured = viewSize.w > 0 && viewSize.h > 0;
   const visible = useMemo(
-    () => visibleCellIndices(layout, { x: vbX, y: vbY, w: vbW, h: vbH }, 1),
-    [layout, vbX, vbY, vbW, vbH]
+    () => (measured ? visibleCellIndices(layout, { x: vbX, y: vbY, w: vbW, h: vbH }, 1) : []),
+    [measured, layout, vbX, vbY, vbW, vbH]
   );
   const activeIndex = useMemo(() => chars.indexOf(activeChar), [chars, activeChar]);
   // On-screen size of one cell, in CSS pixels. Everything cosmetic keys

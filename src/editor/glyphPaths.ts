@@ -22,20 +22,6 @@ export type GlyphPathEntry =
 
 const glyphPathCache = new WeakMap<Glyph, Map<number, GlyphPathEntry[]>>();
 
-/** Standard ray-casting point-in-polygon test, used to classify a resolved
- * ring as outer vs. hole by actual geometric nesting — see the doc comment
- * on the classification loop in mergeOutlineBrushStrokes below for why this
- * replaced a winding-sign comparison. */
-function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: number }[]): boolean {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i];
-    const b = poly[j];
-    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y || 1e-9) + a.x) inside = !inside;
-  }
-  return inside;
-}
-
 /**
  * Outline Brush is a hollow ring: two independent strokes crossing each
  * still render as their OWN separate SVG path (see VectorObject's doc
@@ -135,59 +121,32 @@ export function mergeOutlineBrushStrokes(objects: VectorObject[]): { contours: C
       continue;
     }
 
-    // BUG FIX (one continuous self-crossing stroke erasing its own inner
-    // border): a single touch whose CENTERLINE loops back over its own
-    // earlier path — e.g. a bowl+leg letterform like "R"/"a" drawn in one
-    // motion — makes BOTH this stroke's outer boundary and its inner hole
-    // self-intersect, not just the outer one. Bucketing the raw outer and
-    // raw hole separately (as before) and only normalizing each one's
-    // self-crossing later, independently, inside `unionShapes` is wrong for
-    // the hole: a plain self-union ADDS a self-crossing ring's overlapping
-    // loops together into one bigger solid hole blob instead of resolving
-    // them with the even-odd/counter fill rule the rest of the app uses for
-    // one object's own overlapping contours (e.g. an "O"'s counter). Where
-    // the tube crosses itself, that swallows the thin ink bridge that
-    // should stay solid there, and the subtract step below then cuts it
-    // away entirely — the "inner line kehapus semua" bug. Resolving this
-    // stroke's OWN outer+hole pair together, first, through the same
-    // even-odd normalizer (`normalizeSelfIntersectingContours`) fixes that
-    // stroke's self-crossing correctly before it ever reaches the
-    // cross-stroke union/subtract below — which still needs outer and hole
-    // kept in separate pools.
-    // BUG FIX (crossing not fusing / nearby ink vanishing): this used to
-    // classify each resolved ring as outer-vs-hole by comparing its winding
-    // SIGN against `contours[0]`'s (the RAW, pre-normalization outer body's)
-    // sign. But `normalizeSelfIntersectingContours` rebuilds every ring
-    // through `multiPolygonToContours`, which reorients each ring by its
-    // OWN nesting depth (even depth vs. odd depth) — a convention that has
-    // no reason to line up with whatever arbitrary winding the raw,
-    // un-normalized stroke geometry happened to have. When the two
-    // conventions disagreed, the comparison silently swapped outer and
-    // hole: a piece that was actually solid ink (e.g. right where a
-    // self-crossing loop rejoins itself, or wherever this stroke sits near
-    // another one) got bucketed as a hole and subtracted away — reading as
-    // "the crossing never fuses" or "everything nearby disappeared",
-    // depending on which piece got mislabeled.
-    //
-    // Fix: classify by actual geometric NESTING within this stroke's own
-    // resolved set instead of by sign. A ring contained inside an ODD
-    // number of the other resolved rings is a hole (it's punched through
-    // by whatever directly encloses it); contained in an even number
-    // (including zero) it's ink. This only looks at the rings' real shape,
-    // so it can't be thrown off by a winding-convention mismatch, and it
-    // naturally handles a self-crossing loop resolving into more than just
-    // one outer + one hole.
-    const resolved = normalizeSelfIntersectingContours(contours).filter((c) => c.nodes.length > 0);
-    const ringPoints = resolved.map((c) => c.nodes.map((n) => n.point));
-    for (let i = 0; i < resolved.length; i++) {
-      let containedCount = 0;
-      for (let j = 0; j < resolved.length; j++) {
-        if (i === j) continue;
-        if (pointInPolygon(ringPoints[i][0], ringPoints[j])) containedCount++;
-      }
-      const isHole = containedCount % 2 === 1;
-      (isHole ? innerContours : outerContours).push([resolved[i]]);
+    // Two contours = [outerBody, innerHole] (see outlineBrushOutlineContours).
+    // Resolve each boundary's OWN self-crossing separately — a nonzero
+    // self-union, i.e. "the band unioned with itself" — and keep each result
+    // WHOLE: the outer pool gets this stroke's full silhouette, the hole
+    // pool its full hollow. When one gesture loops around and crosses
+    // itself, its silhouette is itself a ring (the enclosed area is a hole
+    // of the silhouette, not part of the hollow), so the subtract below
+    // keeps BOTH edges of the band: the outer contour plus the inner ring
+    // around the loop, with the crossing merged like two separate crossing
+    // strokes. BUG FIX ("loop turns into one big hole"): this used to
+    // XOR-resolve the pair and push every resulting ring into a pool as its
+    // own SOLID shape by nesting parity. That flattens the nesting — the
+    // hollow's outer edge (depth 1) became a solid disc in the hole pool
+    // that covered the deeper inner ink ring (depth 2), so the band's inner
+    // edge was subtracted away and hollow + enclosed area read as one
+    // shape. A stroke that doesn't self-cross passes through both
+    // normalizer calls untouched, exactly as before.
+    if (contours.length === 2) {
+      outerContours.push(normalizeSelfIntersectingContours([contours[0]]));
+      innerContours.push(normalizeSelfIntersectingContours([contours[1]]));
+      continue;
     }
+    // Defensive (brush tools always emit one centerline per object): with
+    // no known outer/hole pairing, keep the object's even-odd-resolved ink
+    // as ONE shape so its own nesting can't be flattened.
+    outerContours.push(normalizeSelfIntersectingContours(contours));
   }
   if (outerContours.length < 1) return null;
 

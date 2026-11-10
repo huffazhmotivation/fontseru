@@ -197,6 +197,50 @@ export function GlyphCanvas() {
   const lastUpRef = useRef<{ x: number; y: number } | null>(null);
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
   const closeNodePopup = useCallback(() => { setNodePopup(null); editor.clearNodeClick(); }, [editor]);
+
+  // ── anchor dragging (Node tool) ─────────────────────────────────────────
+  // Live position is local state; the store is written once, on release, so
+  // a drag is exactly one undo step and never re-renders the glyph list.
+  const setGlyphAnchors = useAppStore((s) => s.setGlyphAnchors);
+  const [anchorDrag, setAnchorDrag] = useState<{ index: number; x: number; y: number; moved: boolean } | null>(null);
+  const anchorDragRef = useRef(anchorDrag);
+  anchorDragRef.current = anchorDrag;
+  const beginAnchorDrag = useCallback((e: ReactPointerEvent<SVGGElement>, index: number) => {
+    const svg = svgRef.current;
+    const g = useAppStore.getState().glyphs[useAppStore.getState().activeChar];
+    const anchor = g?.anchors?.[index];
+    if (!svg || !g || !anchor) return;
+    const p = clientToFontPoint(svg, e.clientX, e.clientY, useAppStore.getState().metrics.ascender);
+    const tol = 7 / scRef.current;
+    // A node under the pointer wins: let the event reach the node tool.
+    for (const obj of g.outline.objects) for (const c of obj.contours) for (const n of c.nodes) {
+      if (Math.abs(n.point.x - p.x) <= tol && Math.abs(n.point.y - p.y) <= tol) return;
+    }
+    e.stopPropagation();
+    e.preventDefault();
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    setAnchorDrag({ index, x: anchor.x, y: anchor.y, moved: false });
+  }, []);
+  const moveAnchorDrag = useCallback((e: ReactPointerEvent<SVGGElement>) => {
+    const d = anchorDragRef.current;
+    const svg = svgRef.current;
+    if (!d || !svg) return;
+    e.stopPropagation();
+    const p = clientToFontPoint(svg, e.clientX, e.clientY, useAppStore.getState().metrics.ascender);
+    setAnchorDrag({ ...d, x: Math.round(p.x), y: Math.round(p.y), moved: true });
+  }, []);
+  const endAnchorDrag = useCallback((e: ReactPointerEvent<SVGGElement>) => {
+    const d = anchorDragRef.current;
+    if (!d) return;
+    e.stopPropagation();
+    setAnchorDrag(null);
+    if (!d.moved) return;
+    const s = useAppStore.getState();
+    const g = s.glyphs[s.activeChar];
+    if (!g?.anchors) return;
+    setGlyphAnchors(s.activeChar, g.anchors.map((a, i) => (i === d.index ? { ...a, x: d.x, y: d.y } : a)));
+  }, [setGlyphAnchors]);
+  const cancelAnchorDrag = useCallback(() => setAnchorDrag(null), []);
   // Live brush/pencil previews are published to small subscribed preview
   // components (BrushStrokePreview / PencilStrokePreview below) instead of
   // React state here, so a drawing frame doesn't re-render the full canvas.
@@ -1312,18 +1356,32 @@ export function GlyphCanvas() {
                   always has an explicit, unmistakable mark — separate from
                   the draggable, dashed LSB guide right next to it. */}
               <line x1={originXView} y1={vbY} x2={originXView} y2={vbY + vbH} className="origin-line" pointerEvents="none" />
-              {!drawMode && glyph.anchors?.map((a) => (
-                <g key={`anchor-${a.name}`} pointerEvents="none" data-testid={`anchor-mark-${a.name}`}>
-                  <path
-                    d={`M ${a.x} ${ascender - a.y - 7 / sc} L ${a.x + 7 / sc} ${ascender - a.y} L ${a.x} ${ascender - a.y + 7 / sc} L ${a.x - 7 / sc} ${ascender - a.y} Z`}
-                    fill={a.name.startsWith("_") ? "#ff8a00" : "#00b3ff"}
-                    stroke="#fff"
-                    strokeWidth={1 / sc}
-                    opacity={0.95}
-                  />
-                  <text x={a.x + 10 / sc} y={ascender - a.y - 6 / sc} fontSize={11 / sc} fill={a.name.startsWith("_") ? "#ff8a00" : "#00b3ff"}>{a.name}</text>
-                </g>
-              ))}
+              {!drawMode && glyph.anchors?.map((anchor, i) => {
+                // Anchors behave like nodes in a pro editor: with the Node
+                // tool they can be grabbed and dragged (one undo step on
+                // release). A real node under the pointer always wins, so a
+                // bottom anchor sitting on an "o"'s bottom node never steals
+                // the node click.
+                const a = anchorDrag?.index === i ? { ...anchor, x: anchorDrag.x, y: anchorDrag.y } : anchor;
+                const draggable = tool === "node";
+                const isMark = a.name.startsWith("_");
+                const s = 6 / sc;
+                return (
+                  <g
+                    key={`anchor-${a.name}-${i}`}
+                    className={`anchor-mark ${isMark ? "mark" : ""} ${anchorDrag?.index === i ? "dragging" : ""}`}
+                    pointerEvents={draggable ? "all" : "none"}
+                    data-testid={`anchor-mark-${a.name}`}
+                    onPointerDown={draggable ? (e) => beginAnchorDrag(e, i) : undefined}
+                    onPointerMove={draggable ? moveAnchorDrag : undefined}
+                    onPointerUp={draggable ? endAnchorDrag : undefined}
+                    onPointerCancel={draggable ? cancelAnchorDrag : undefined}
+                  >
+                    <path className="anchor-diamond" d={`M ${a.x} ${ascender - a.y - s} L ${a.x + s} ${ascender - a.y} L ${a.x} ${ascender - a.y + s} L ${a.x - s} ${ascender - a.y} Z`} />
+                    <text className="anchor-label" x={a.x + 10 / sc} y={ascender - a.y - 7 / sc}>{a.name}</text>
+                  </g>
+                );
+              })}
               <g pointerEvents="none" data-testid="glyph-origin-mark">
                 <rect x={originXView - 9 / sc} y={vbY + vbH - 20 / sc} width={18 / sc} height={16 / sc} rx={3 / sc} className="origin-flag-bg" />
                 <text x={originXView} y={vbY + vbH - 8.5 / sc} textAnchor="middle" className="origin-flag-label">0</text>

@@ -50,12 +50,38 @@ export function flattenContour(contour: Contour, steps = 16): Point[] {
 }
 
 export function objectBounds(obj: VectorObject): Bounds {
-  let b = emptyBounds();
+  // Same sample points as flattenContour(c) (16 steps per curve), but
+  // without allocating a point array and a fresh bounds object per sample —
+  // this runs for every glyph thumbnail, overview cell and auto-spacing pass,
+  // which with thousands of imported glyphs made it a top CPU/GC cost.
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const add = (x: number, y: number) => {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  };
   for (const c of obj.contours) {
-    for (const p of flattenContour(c)) {
-      b = { minX: Math.min(b.minX, p.x), minY: Math.min(b.minY, p.y), maxX: Math.max(b.maxX, p.x), maxY: Math.max(b.maxY, p.y) };
+    const n = c.nodes.length;
+    if (n === 0) continue;
+    add(c.nodes[0].point.x, c.nodes[0].point.y);
+    const segCount = c.closed ? n : n - 1;
+    for (let i = 0; i < segCount; i++) {
+      const from = c.nodes[i];
+      const to = c.nodes[(i + 1) % n];
+      if (from.handleOut || to.handleIn) {
+        const c1 = from.handleOut ?? from.point;
+        const c2 = to.handleIn ?? to.point;
+        for (let k = 1; k <= 16; k++) {
+          const q = cubicPoint(from.point, c1, c2, to.point, k / 16);
+          add(q.x, q.y);
+        }
+      } else {
+        add(to.point.x, to.point.y);
+      }
     }
   }
+  let b: Bounds = minX === Infinity ? emptyBounds() : { minX, minY, maxX, maxY };
   // pad strokes by half their width so the selection box wraps the ink
   if ((obj.kind === "line" || obj.kind === "brush") && obj.strokeWidth) {
     const h = obj.strokeWidth / 2;
