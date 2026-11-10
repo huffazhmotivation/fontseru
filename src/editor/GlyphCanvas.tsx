@@ -1236,7 +1236,7 @@ export function GlyphCanvas() {
                   onDoubleClick={(e) => focusGuideMetric(key, e)}
                   data-metric={key}
                 />
-                <text x={labelX} y={y - 6 / sc} className="guide-label" pointerEvents="none">{label}</text>
+                {drawMode && <text x={labelX} y={y - 6 / sc} className="guide-label" pointerEvents="none">{label}</text>}
                 {active && (
                   <g pointerEvents="none" data-testid="metric-drag-value">
                     <rect x={labelX} y={y + 5 / sc} width={72 / sc} height={20 / sc} rx={4 / sc} className="metric-guide-value-bg" />
@@ -1248,6 +1248,27 @@ export function GlyphCanvas() {
           })}
         </>
         </g>
+
+        {/* Metric labels sit in the canvas's left margin, outside the em-box
+            clip, so they never collide with the LSB guide or the outline:
+            a colour dot (same hue as its line), the name, and the value. */}
+        {!drawMode && (
+          <g pointerEvents="none" className="metric-guide-labels" data-testid="metric-guide-labels">
+            {metricGuides.filter(({ key }) => key === "baseline" || showGuides).map(({ key, label, value, className }) => {
+              const marginY = 20 / sc;
+              const y = Math.min(vbY + vbH - marginY, Math.max(vbY + marginY, toY(value)));
+              // just right of the ruler strip
+              const x = vbX + 34 / sc;
+              return (
+                <g key={key} className={`metric-guide-label ${className}`}>
+                  <circle cx={x} cy={y - 9.5 / sc} r={3 / sc} className="guide-dot" />
+                  <text x={x + 8 / sc} y={y - 6 / sc} className="guide-label">{label}</text>
+                  <text x={x + (16 + label.length * 6.6) / sc} y={y - 6 / sc} className="guide-value">{Math.round(value)}</text>
+                </g>
+              );
+            })}
+          </g>
+        )}
 
         {/* LSB/Advance/RSB handles render OUTSIDE the main-canvas clip and
             get their on-screen x clamped to the current viewport (not the

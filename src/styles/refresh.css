@@ -1,0 +1,143 @@
+/* ==========================================================================
+   FontSeru v0.8 — visual refresh layer
+   --------------------------------------------------------------------------
+   Loaded AFTER app.css (see main.tsx). Everything the refresh changes lives
+   here, so the previous look is one import away and app.css stays intact.
+
+   What it does:
+   - Geist / Geist Mono instead of Inter / JetBrains Mono. No serif.
+   - FontSeru's own colours, unchanged. Lime is used sparingly: the primary
+     action (Export) and whatever is active right now.
+   - Quiet chrome: no glows, fewer borders, neutral segmented controls.
+   What it deliberately does NOT do: move, hide or regroup any button. Every
+   top-bar icon stays where it was and the tool bar stays floating at the
+   bottom of the canvas.
+   ========================================================================== */
+
+:root {
+  --sans: "Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.fm-root { font-family: var(--sans); }
+
+/* ---------------------------------------------------------------- top bar */
+.fm-topbar { background: var(--bg); }
+.fm-logo-name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.fm-logo .mark { box-shadow: none; }
+
+.fm-topbar .fm-mode-tabs { background: transparent; border-color: transparent; }
+.fm-topbar .fm-mode-tab { font-weight: 500; letter-spacing: -0.005em; }
+.fm-topbar .fm-mode-tab.active { background: var(--panel-3); border-color: transparent; box-shadow: none; }
+.fm-topbar .fm-mode-tab.active svg { color: var(--accent); }
+
+.fm-topbar .fm-topbtn { font-weight: 500; }
+.fm-topbar .fm-fontname {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  background: transparent;
+  border-color: transparent;
+}
+.fm-topbar .fm-fontname:hover { border-color: var(--line); background: var(--panel-2); }
+.fm-topbar .fm-fontname:focus { border-color: var(--accent); background: var(--panel-2); }
+
+/* Export = the one primary action on screen (same size/position as before) */
+.fm-topbar .fm-export-nav { background: var(--accent); color: var(--accent-ink); }
+.fm-topbar .fm-export-nav:hover:not(:disabled) { background: var(--accent-2); color: var(--accent-ink); }
+.fm-topbar .fm-export-nav svg { color: var(--accent-ink); }
+
+.fm-theme-toggle:hover { border-color: var(--line); color: var(--text); }
+
+/* ------------------------------------------------------------ glyph list */
+.fm-glyphnav { background: var(--panel); }
+.fm-panel-eyebrow { font-weight: 500; letter-spacing: 0.09em; }
+.fm-glyph-count-badge { font-family: var(--mono); background: transparent; border-color: transparent; color: var(--text-dim); }
+
+.fm-family-tabs { background: var(--bg); border: 1px solid var(--line-soft); border-radius: 9px; padding: 2px; gap: 2px; }
+.fm-family-tabs button { border: 0; border-radius: 7px; font-weight: 500; color: var(--text-dim); background: transparent; box-shadow: none; }
+.fm-family-tabs button.active { background: var(--panel-3); color: var(--text); border-color: transparent; box-shadow: none; }
+
+.fm-glyphnav .fm-family-add-btn {
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.fm-glyphnav .fm-family-add-btn:hover { color: var(--text); border-color: var(--text-faint); background: transparent; }
+.fm-glyphnav .fm-search input { font-family: var(--sans); }
+
+.fm-group-label { font-weight: 500; letter-spacing: 0.06em; }
+.fm-group-count { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.fm-group-bar { height: 2px; margin: 0 2px 8px; border-radius: 2px; background: var(--line-soft); overflow: hidden; }
+.fm-group-bar > i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+
+.fm-tile { border-color: transparent; background: transparent; }
+.fm-tile.done { background: var(--panel-2); border-color: var(--line-soft); }
+.fm-tile.active { box-shadow: none; }
+.fm-tile .fm-tile-dot { display: none; }
+/* Undrawn glyphs show their reference letter quietly; drawn ones in full ink. */
+.fm-tile:not(.done) .fm-thumb-char { color: var(--text-dim); opacity: 0.55; }
+.fm-tile.active:not(.done) .fm-thumb-char { color: var(--text); opacity: 1; }
+
+.fm-glyphnav-foot .fm-action-btn.accent {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+  font-weight: 500;
+}
+.fm-glyphnav-foot .fm-action-btn.accent:hover { background: var(--panel-2); }
+.fm-glyphnav-foot .fm-action-btn.accent svg { color: var(--text-dim); }
+
+/* ---------------------------------------------------------------- canvas */
+.fm-canvas-frame {
+  background: var(--canvas);
+  box-shadow: none;
+}
+
+/* Floating controls keep their place; only the accent glow/border goes. */
+.fm-sketch-toggle,
+.fm-glyphview-mode,
+.fm-glyphview-bar,
+.fm-floating-toolbar,
+.fm-sketch-toolbar {
+  border-color: var(--line);
+  box-shadow: 0 16px 40px -22px rgba(0, 0, 0, 0.55);
+}
+.fm-tool.active { border-color: transparent; }
+.fm-glyphview-mode button { font-weight: 500; }
+.fm-glyphview-mode button.on { background: var(--panel-3); color: var(--text); }
+.fm-sketch-toggle { font-weight: 500; }
+
+.fm-glyph-sidenav-btn {
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  background: var(--panel);
+  box-shadow: none;
+}
+.fm-glyph-sidenav-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-faint);
+  box-shadow: none;
+}
+.fm-glyph-sidenav-btn:active:not(:disabled) { background: var(--panel-3); color: var(--text); }
+
+/* ---------------------------------------------------------- right panel */
+.fm-rightpanel { background: var(--panel); }
+.fm-panel-cat { color: var(--text-dim); font-weight: 500; }
+.fm-section-title { font-weight: 500; letter-spacing: 0.09em; }
+.fm-status-pill.done { color: var(--text); background: var(--panel-2); border-color: var(--line); }
+.fm-node-type-btn { font-weight: 500; }
+.fm-node-type-btn.active { border-color: var(--line); color: var(--text); background: var(--panel-3); }
+.fm-action-btn { font-weight: 500; }
+.fm-rightpanel .fm-action-btn.accent { background: var(--panel-3); color: var(--text); border-color: var(--line); }
+.fm-rightpanel .fm-action-btn.accent:hover { background: var(--panel-2); }
+.fm-field input[type="number"],
+.fm-field input.fm-slider-number { font-family: var(--mono); }
+
+/* ------------------------------------------------------------ bottom bar */
+.fm-bottombar { background: var(--bg); }
+.fm-bottombar button { font-weight: 500; }
+.fm-bottombar button.on { color: var(--text); background: var(--panel-3); }
+.fm-bottombar button.on svg { color: var(--accent); }
+.fm-zoom-value, .fm-upm { font-family: var(--mono); font-variant-numeric: tabular-nums; }

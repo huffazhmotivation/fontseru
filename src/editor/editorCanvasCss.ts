@@ -48,16 +48,17 @@ function buildEditorCanvasCss(u: (n: number) => string, px: (n: number) => strin
           .grid-major { stroke: var(--grid-major); stroke-width: ${u(1)}; }
           .guide-line { stroke: var(--guide); stroke-width: ${u(1)}; stroke-dasharray: ${u(5)} ${u(5)}; }
           .metric-guide { opacity: 0.72; transition: opacity 120ms ease; }
-          .metric-guide .metric-guide-line { stroke-width: ${u(1)}; stroke-dasharray: ${u(5)} ${u(5)}; }
-          .metric-guide.metric-ascender .metric-guide-line { stroke: var(--m-ascender); stroke-width: ${u(1.3)}; }
-          .metric-guide.metric-cap .metric-guide-line { stroke: var(--m-cap); stroke-width: ${u(1.3)}; }
-          .metric-guide.metric-xheight .metric-guide-line { stroke: var(--m-xheight); stroke-width: ${u(1.3)}; stroke-dasharray: ${u(2)} ${u(4)}; }
-          .metric-guide.metric-baseline .metric-guide-line { stroke: var(--accent); stroke-width: ${u(1.5)}; }
+          .metric-guide .metric-guide-line { stroke-width: ${u(1)}; }
+          .metric-guide.metric-ascender .metric-guide-line { stroke: var(--m-ascender); }
+          .metric-guide.metric-cap .metric-guide-line { stroke: var(--m-cap); }
+          .metric-guide.metric-xheight .metric-guide-line { stroke: var(--m-xheight); }
+          .metric-guide.metric-baseline .metric-guide-line { stroke: var(--text-dim); stroke-width: ${u(1.2)}; }
           .metric-guide.metric-descender .metric-guide-line { stroke: var(--m-descender); }
           /* Each metric now carries its own hue (see --m-* tokens above), so
              every guide is legible at a glance instead of reading as "one
              faint gray line" the way a shared --guide/--guide-2 did. */
-          .metric-guide { opacity: 0.85; }
+          .metric-guide { opacity: 0.55; }
+          .metric-guide.metric-baseline { opacity: 0.8; }
           .metric-guide:hover, .metric-guide.active { opacity: 1; }
           .metric-guide:hover .metric-guide-line, .metric-guide.active .metric-guide-line { stroke-width: ${u(2)}; }
           .metric-guide-hit { stroke: transparent; stroke-width: ${u(12)}; cursor: ns-resize; pointer-events: stroke; }
@@ -66,22 +67,28 @@ function buildEditorCanvasCss(u: (n: number) => string, px: (n: number) => strin
           .metric-guide-value-bg { fill: var(--canvas); stroke: var(--accent); stroke-width: ${u(1)}; opacity: 0.96; }
           .metric-guide-value { fill: var(--text); font-size: ${px(11)}; font-family: var(--mono); font-weight: 600; }
           .lsb-line, .rsb-line { stroke: var(--sb); stroke-width: ${u(1.1)}; opacity: 0.85; }
-          .glyph-metric-guide-line { stroke: var(--sb); stroke-width: ${u(1.1)}; stroke-dasharray: ${u(5)} ${u(5)}; opacity: 0.85; }
-          .glyph-metric-guide-line.advance { stroke: var(--accent); stroke-width: ${u(1.4)}; }
-          .glyph-metric-handle { fill: var(--canvas); stroke: var(--sb); stroke-width: ${u(1.25)}; cursor: ew-resize; }
+          .glyph-metric-guide-line { stroke: var(--text-dim); stroke-width: ${u(1)}; stroke-dasharray: ${u(2)} ${u(6)}; opacity: 0.7; }
+          .glyph-metric-guide-line.advance { stroke: var(--text-dim); }
+          .glyph-metric-handle { fill: var(--canvas); stroke: var(--line); stroke-width: ${u(1.25)}; cursor: ew-resize; }
           .glyph-metric-handle.locked { opacity: 0.55; pointer-events: none; cursor: default; }
-          .glyph-metric-handle.advance { stroke: var(--accent); }
+          .glyph-metric-handle.advance { stroke: var(--line); }
           .glyph-metric-handle.active { fill: var(--sb-soft); stroke: var(--sb); stroke-width: ${u(1.7)}; }
           .glyph-metric-handle.advance.active { fill: var(--accent-soft); stroke: var(--accent); }
           .glyph-metric-handle.auto { fill: var(--auto-soft); stroke: var(--auto-2); }
           .glyph-metric-label { fill: var(--text); font-size: ${px(10.5)}; font-family: var(--mono); font-weight: 600; pointer-events: none; }
           .glyph-metric-auto-dot { fill: var(--auto-2); }
-          .guide-label { fill: var(--text-dim); font-size: ${px(11)}; font-family: var(--mono); }
+          .guide-label { fill: var(--text-dim); font-size: ${px(10.5)}; font-family: var(--mono); }
+          .guide-value { fill: var(--text-dim); opacity: 0.7; font-size: ${px(10.5)}; font-family: var(--mono); }
+          .guide-dot { fill: var(--text-dim); }
+          .metric-guide-label.metric-ascender .guide-dot { fill: var(--m-ascender); }
+          .metric-guide-label.metric-cap .guide-dot { fill: var(--m-cap); }
+          .metric-guide-label.metric-xheight .guide-dot { fill: var(--m-xheight); }
+          .metric-guide-label.metric-descender .guide-dot { fill: var(--m-descender); }
           /* Origin (x=0): the left boundary every LSB value is measured
              from. Drawn as a solid, brighter line (never dashed, never
              draggable) with its own "0" flag so it can never be mistaken
              for the LSB guide sitting right next to it. */
-          .origin-line { stroke: var(--origin); stroke-width: ${u(1.4)}; opacity: 0.9; }
+          .origin-line { stroke: var(--origin); stroke-width: ${u(1.2)}; opacity: 0.45; }
           .origin-tick { stroke: var(--origin); stroke-width: ${u(1.4)}; }
           .origin-flag-bg { fill: var(--origin-soft); stroke: var(--origin); stroke-width: ${u(1)}; }
           .origin-flag-label { fill: var(--origin); font-size: ${px(10)}; font-family: var(--mono); font-weight: 700; pointer-events: none; }

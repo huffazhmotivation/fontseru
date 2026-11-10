@@ -283,6 +283,22 @@ export function GlyphNavInner() {
     })).filter((g) => g.chars.length > 0);
   }, [deferredQuery, allGroups, deferredGlyphs]);
 
+  // Per-group progress ("12/26" + a thin bar under each group label). Counts
+  // the whole group, not just the search matches, and reuses the per-outline
+  // hasOutline cache, so it only walks outlines that actually changed.
+  const groupProgress = useMemo(() => {
+    const m = new Map<string, { done: number; total: number }>();
+    for (const g of allGroups) {
+      let done = 0;
+      for (const ch of g.chars) {
+        const glyph = deferredGlyphs[ch];
+        if (glyph && hasOutlineCached(glyph)) done++;
+      }
+      m.set(`${g.id}:${g.label}`, { done, total: g.chars.length });
+    }
+    return m;
+  }, [allGroups, deferredGlyphs]);
+
   // ---------------------------------------------------- virtualization
   const listRef = useRef<HTMLDivElement>(null);
   const probeRef = useRef<HTMLDivElement>(null);
@@ -559,8 +575,10 @@ export function GlyphNavInner() {
             <div className="fm-glyphlist-header">
               <div className="fm-group-label-row">
                 <div className="fm-group-label">Aa</div>
+                <span className="fm-group-count">0/0</span>
                 {glyphSelectMode && <button type="button" className="fm-group-select-all" tabIndex={-1}>Pilih semua</button>}
               </div>
+              <div className="fm-group-bar"><i /></div>
             </div>
             <div className="fm-grid fm-grid-row">
               <button type="button" className="fm-tile" tabIndex={-1} />
@@ -571,10 +589,13 @@ export function GlyphNavInner() {
               const g = row.group;
               const groupChars = g.chars;
               const allInGroupSelected = glyphSelectMode && groupChars.length > 0 && groupChars.every((ch) => selectedSet.has(ch));
+              const progress = groupProgress.get(`${g.id}:${g.label}`);
+              const pct = progress && progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
               return (
                 <div key={row.key} className="fm-glyphlist-header" style={{ top: row.top, height: row.height }}>
                   <div className="fm-group-label-row">
                     <div className="fm-group-label">{g.label}</div>
+                    {progress && <span className="fm-group-count" title={`${progress.done} dari ${progress.total} sudah digambar`}>{progress.done}/{progress.total}</span>}
                     {glyphSelectMode && groupChars.length > 0 && (
                       <button
                         type="button"
@@ -592,6 +613,7 @@ export function GlyphNavInner() {
                       </button>
                     )}
                   </div>
+                  <div className="fm-group-bar" aria-hidden="true"><i style={{ width: `${pct}%` }} /></div>
                 </div>
               );
             }

@@ -7,6 +7,8 @@ import { PrayerReminder } from "./prayer/PrayerReminder";
 import { applyTabletAttr } from "./mode/tablet";
 import "./styles/app.css";
 import "./mode/modeTabs.css";
+// v0.8 visual refresh — loaded last so it layers over app.css (see the file header).
+import "./styles/refresh.css";
 
 // Tandai tablet + ukur layar penuh (PWA iPad) sebelum React menggambar, supaya frame pertama sudah pas.
 applyTabletAttr();
