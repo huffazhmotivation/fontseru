@@ -226,3 +226,77 @@
 .fm-rightpanel .fm-panel-header { padding: 14px; }
 .fm-section-head { padding-top: 14px; padding-bottom: 10px; }
 .fm-section-body { padding-bottom: 16px; }
+
+/* ==========================================================================
+   Small laptops & iPad portrait — every button stays visible
+   --------------------------------------------------------------------------
+   Below ~1366px the one-row top bar used to push Login, theme, fullscreen,
+   then Export and Test Lab off the right edge, and the bottom bar cut off
+   Fit / Reset. Nothing moves and nothing is hidden: labels that already
+   have an icon and a tooltip drop to icon-only, the logo shows just its
+   mark, and inputs get a little narrower — only as far as the width needs.
+   ========================================================================== */
+@media (min-width: 721px) and (max-width: 1365px) {
+  html:not([data-tablet="true"]) .fm-topbar .fm-mode-tab span { display: none; }
+  html:not([data-tablet="true"]) .fm-topbar .fm-mode-tab { padding: 0 8px; gap: 0; }
+  html:not([data-tablet="true"]) .fm-topbar .fm-auth-login-btn { font-size: 0; gap: 0; padding: 6px 7px; }
+}
+@media (min-width: 721px) and (max-width: 1180px) {
+  html:not([data-tablet="true"]) .fm-topbar .fm-logo-image { width: 24px; height: 24px; object-fit: cover; object-position: left center; }
+  html:not([data-tablet="true"]) .fm-topbar .fm-filemenu-wrap > .fm-topbtn { font-size: 0; gap: 2px; }
+  html:not([data-tablet="true"]) .fm-topbar .fm-fontname { width: 56px; min-width: 48px; flex: 0 1 56px; }
+  html:not([data-tablet="true"]) .fm-topbar .fm-topbtn-group,
+  html:not([data-tablet="true"]) .fm-topbar .fm-align-group { padding: 0; }
+}
+/* iPad: landscape already fits except Login at 1024px; portrait (below 901px,
+   where the bar used to clip Export, Test Lab and more with no way to scroll)
+   gets two rows. */
+@media (min-width: 901px) and (max-width: 1100px) {
+  html[data-tablet="true"] .fm-topbar .fm-auth-login-btn { font-size: 0; gap: 0; }
+  html[data-tablet="true"] .fm-topbar .fm-mode-tab span { display: none; }
+  html[data-tablet="true"] .fm-topbar .fm-mode-tab { gap: 0; }
+}
+/* iPad portrait: two short rows, like the phone layout — logo / modes / File /
+   font name on top, every action button centred on the row below. */
+@media (min-width: 600px) and (max-width: 900px) {
+  /* same prefix as the tablet rule in app.css that pins the bar to one row */
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar { flex-wrap: wrap; row-gap: 6px; min-height: 0; padding-top: 6px; padding-bottom: 6px; }
+  html[data-tablet="true"] .fm-topbar .fm-topbar-row2 { display: flex; flex-basis: 100%; width: 100%; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; row-gap: 4px; }
+  html[data-tablet="true"] .fm-topbar .fm-topbar-row2 .fm-spacer { flex: 0 0 0; width: 0; }
+  html[data-tablet="true"] .fm-root:not(.fm-design-shell) .fm-topbar .fm-fontname { flex: 1 1 140px; max-width: 220px; }
+}
+/* Smallest laptop windows (1024–1100px): a little more room for the canvas
+   column so the bottom bar's Fit / Reset fit too. */
+@media (min-width: 721px) and (max-width: 1100px) {
+  html:not([data-tablet="true"]) .fm-topbar { gap: 1px; }
+  html:not([data-tablet="true"]) .fm-glyphnav { width: 200px; }
+  html:not([data-tablet="true"]) .fm-rightpanel { width: 236px; }
+  html:not([data-tablet="true"]) .fm-bottombar,
+  html:not([data-tablet="true"]) .fm-bottombar.fm-bottombar { padding-left: 4px; padding-right: 4px; }
+}
+
+/* Bottom bar: it sits in the canvas column, so it is sized by its own width. */
+@media (min-width: 721px) {
+  html:not([data-tablet="true"]) .fm-bottombar { overflow-x: auto; scrollbar-width: none; }
+}
+@container fmbottom (max-width: 760px) {
+  html:not([data-tablet="true"]) .fm-bottombar { gap: 1px; }
+  html:not([data-tablet="true"]) .fm-bottombar button { padding: 6px 5px; }
+  html:not([data-tablet="true"]) .fm-bottombar .fm-grid-shape-select { width: 68px; }
+  html:not([data-tablet="true"]) .fm-bottombar .fm-grid-size-input { width: 42px; }
+  html:not([data-tablet="true"]) .fm-bottombar .fm-zoom-controls input[type="range"] { width: 40px; }
+  html:not([data-tablet="true"]) .fm-bottombar .fm-zoom-value { min-width: 36px; }
+  html:not([data-tablet="true"]) .fm-bottombar .fm-upm { font-size: 10px; margin-left: 2px; }
+}
+@container fmbottom (max-width: 600px) {
+  /* UPM is also shown in Font Metrics; here it gives way before any button does */
+  html:not([data-tablet="true"]) .fm-bottombar .fm-upm { display: none !important; }
+  html:not([data-tablet="true"]) .fm-bottombar .fm-zoom-controls input[type="range"] { width: 24px; }
+  html:not([data-tablet="true"]) .fm-bottombar .fm-grid-shape-select { width: 54px; padding-left: 6px; }
+}
+
+/* Glyph list header: the count and the Select button wrap under the title
+   instead of being clipped when the panel is narrow or the count is long. */
+.fm-glyphnav-eyebrow-row { flex-wrap: wrap; row-gap: 6px; min-width: 0; }
+.fm-glyphnav-eyebrow-right { min-width: 0; margin-left: auto; }
+.fm-glyphnav .fm-glyph-count-badge { padding: 2px 4px; }

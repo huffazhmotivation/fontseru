@@ -121,6 +121,8 @@ export function AuthWidget() {
       type="button"
       className="fm-topbtn fm-auth-login-btn"
       onClick={() => openLoginModal()}
+      title="Login"
+      aria-label="Login"
       data-testid="auth-login-btn"
     >
       <LogIn size={15} /> Login

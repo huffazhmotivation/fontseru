@@ -1313,6 +1313,8 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
           className="fm-topbtn"
           onClick={() => (open ? setOpen(false) : openMenu())}
           aria-expanded={open}
+          title="File"
+          aria-label="File"
           data-testid="file-menu-btn"
         >
           {/* Leading icon added so this button stays recognizable on
