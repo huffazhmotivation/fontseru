@@ -83,6 +83,13 @@ export interface GhostSettings {
 
 interface HistoryEntry {
   glyphs: GlyphMap;
+  /** Horizontal view shift (font units) applied when moving from this entry
+   * to the state after it, on glyph `panChar` — set when Live Auto Spacing
+   * re-positioned a freshly drawn glyph and the editor slid the view along
+   * so the ink stayed under the pen. Undo/redo replay it so the drawing
+   * never jumps on screen either way. */
+  panDx?: number;
+  panChar?: string;
   /** Present only for atomic operations that mutate a non-active family style. */
   glyphsByStyle?: GlyphFamily;
   metrics: FontMetrics;
@@ -889,7 +896,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     }
     return touched ? next : null;
   }
-  function commit(nextGlyphsIn: GlyphMap, extra?: Partial<AppState>) {
+  function commit(nextGlyphsIn: GlyphMap, extra?: Partial<AppState>, viewShift?: { dx: number; char: string }) {
     const { glyphs, glyphsByStyle, fontStyle, metrics, past, kerningPairs, kerningManual } = get();
     // Accented glyphs composed from a base letter + mark follow edits to
     // either source; a linked composite edited directly is unlinked instead.
@@ -906,10 +913,13 @@ export const useAppStore = create<AppState>()((set, get) => {
     }
     // Efficiently append to history without creating intermediate arrays:
     // directly build the final capped array to avoid [spread].slice() cost.
+    const entry: HistoryEntry = viewShift
+      ? { glyphs, metrics, kerningPairs, kerningManual, panDx: viewShift.dx, panChar: viewShift.char }
+      : { glyphs, metrics, kerningPairs, kerningManual };
     const nextPast = past.length >= HISTORY_LIMIT
-      ? (past.length === HISTORY_LIMIT ? [...past.slice(1), { glyphs, metrics, kerningPairs, kerningManual }]
-        : [...past, { glyphs, metrics, kerningPairs, kerningManual }])
-      : [...past, { glyphs, metrics, kerningPairs, kerningManual }];
+      ? (past.length === HISTORY_LIMIT ? [...past.slice(1), entry]
+        : [...past, entry])
+      : [...past, entry];
     set({
       ...extra,
       glyphs: nextGlyphs,
@@ -2097,12 +2107,27 @@ export const useAppStore = create<AppState>()((set, get) => {
       // been rendered, so pointer-move frames never run this optical pass.
       // Keeping the calculation synchronous preserves the existing commit
       // ordering and guarantees the saved glyph is immediately fully spaced.
+      let viewPatch: Partial<AppState> = {};
+      let viewShift: { dx: number; char: string } | undefined;
       if (autoSpacingEnabled && !opts?.skipAutoSpacing && !isScratch) {
         const suggestion = suggestGlyphSidebearings(nextGlyph, metrics);
-        if (suggestion) nextGlyph = applyOpticalSidebearings(nextGlyph, suggestion);
+        if (suggestion) {
+          const drawn = outlineBounds(nextGlyph.outline);
+          nextGlyph = applyOpticalSidebearings(nextGlyph, suggestion);
+          // Re-spacing slides the whole outline sideways. On the glyph being
+          // edited, slide the view by the same amount so the ink stays put
+          // under the pen and only the origin/advance lines move — otherwise
+          // every finished stroke makes everything already drawn jump.
+          const spaced = drawn && char === get().activeChar && get().editorMode === "single" ? outlineBounds(nextGlyph.outline) : null;
+          const dx = drawn && spaced ? spaced.minX - drawn.minX : 0;
+          if (dx && Number.isFinite(dx)) {
+            viewPatch = { pan: { x: get().pan.x + dx, y: get().pan.y } };
+            viewShift = { dx, char };
+          }
+        }
       }
       const nextGlyphs = { ...glyphs, [char]: nextGlyph };
-      commit(nextGlyphs, { liveOutline: null });
+      commit(nextGlyphs, { liveOutline: null, ...viewPatch }, viewShift);
     },
 
     setLiveOutline: (outline) => set({ liveOutline: outline }),
@@ -2550,7 +2575,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const {
         past, future, glyphs, glyphsByStyle, fontStyle, metrics, kerningPairs, kerningManual,
         kerningOverridesByStyle, kerningOverrideManualByStyle, wordSpacingOverridesByStyle,
-        fontName, fontInfo, customFamilies, featureConfig, activeChar, drawingContourId,
+        fontName, fontInfo, customFamilies, featureConfig, activeChar, drawingContourId, pan,
       } = get();
       if (past.length === 0) return;
       const prev = past[past.length - 1];
@@ -2579,8 +2604,11 @@ export const useAppStore = create<AppState>()((set, get) => {
         fontInfo: prev.fontInfo ?? fontInfo,
         customFamilies: prev.customFamilies ?? customFamilies,
         featureConfig: prev.featureConfig ?? featureConfig,
+        ...(prev.panDx && prev.panChar === nextActiveChar ? { pan: { x: pan.x - prev.panDx, y: pan.y } } : {}),
         past: past.slice(0, -1),
         future: [{
+          panDx: prev.panDx,
+          panChar: prev.panChar,
           glyphs,
           glyphsByStyle: familyTransaction ? glyphsByStyle : undefined,
           fontStyle,
@@ -2609,7 +2637,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const {
         past, future, glyphs, glyphsByStyle, fontStyle, metrics, kerningPairs, kerningManual,
         kerningOverridesByStyle, kerningOverrideManualByStyle, wordSpacingOverridesByStyle,
-        fontName, fontInfo, customFamilies, featureConfig, activeChar, drawingContourId,
+        fontName, fontInfo, customFamilies, featureConfig, activeChar, drawingContourId, pan,
       } = get();
       if (future.length === 0) return;
       const next = future[0];
@@ -2634,8 +2662,11 @@ export const useAppStore = create<AppState>()((set, get) => {
         fontInfo: next.fontInfo ?? fontInfo,
         customFamilies: next.customFamilies ?? customFamilies,
         featureConfig: next.featureConfig ?? featureConfig,
+        ...(next.panDx && next.panChar === nextActiveChar ? { pan: { x: pan.x + next.panDx, y: pan.y } } : {}),
         future: future.slice(1),
         past: [...past, {
+          panDx: next.panDx,
+          panChar: next.panChar,
           glyphs,
           glyphsByStyle: familyTransaction ? glyphsByStyle : undefined,
           fontStyle,

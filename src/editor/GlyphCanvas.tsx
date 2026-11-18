@@ -4,11 +4,11 @@ import { useAppStore, type GlyphMetricKey } from "@/glyph/store";
 import { useGlyphEditor } from "./useGlyphEditor";
 import { useBrushTool, type BrushPreview } from "./useBrushTool";
 import { useBrushNodeTool } from "./useBrushNodeTool";
-import { usePencilTool } from "./usePencilTool";
+import { usePencilTool, PENCIL_PREVIEW_ID } from "./usePencilTool";
 import { useSelectTool, handlePositions, type HandleId, type SkewHandleId } from "./useSelectTool";
 import { useSketchGestures } from "./useSketchGestures";
 import { clientToFontPoint } from "./coords";
-import { objectFillPath, objectStrokePath, toSvgPoint, contourToPath } from "./pathBuilder";
+import { objectFillPath, objectStrokePath, toSvgPoint, contourToPath, appendPolylinePath } from "./pathBuilder";
 import { outlineBounds, pointHitsObject, selectionUnitIds } from "./objectOps";
 import { getCornerHandles } from "./nodeOps";
 import { hitTestSegments } from "./segmentHitTest";
@@ -2194,16 +2194,40 @@ const PencilStrokePreview = memo(function PencilStrokePreview({
   store: PreviewStore<Contour | null>; ascender: number; hitScale: number;
 }) {
   const contour = usePreviewValue(store);
-  if (!contour) return null;
+  // The live stroke (id PENCIL_PREVIEW_ID) is a polyline whose points are final
+  // once captured, so its path string is extended with just the new tail each
+  // frame instead of re-formatting the whole stroke twice (fill + line).
+  const cache = useRef<{ first: Point | null; n: number; asc: number; d: string }>({ first: null, n: 0, asc: NaN, d: "" });
+  if (!contour) {
+    cache.current = { first: null, n: 0, asc: NaN, d: "" };
+    return null;
+  }
+  let open: string;
+  let closed: string;
+  if (contour.id === PENCIL_PREVIEW_ID) {
+    const pts = contour.nodes.map((n) => n.point);
+    const c = cache.current;
+    if (!(pts.length > 0 && c.first === pts[0] && c.asc === ascender && pts.length >= c.n)) {
+      cache.current = { first: pts[0] ?? null, n: 0, asc: ascender, d: "" };
+    }
+    const cc = cache.current;
+    cc.d = appendPolylinePath(cc.d, pts, cc.n, ascender);
+    cc.n = pts.length;
+    open = cc.d;
+    closed = open ? `${open} Z` : "";
+  } else {
+    open = contourToPath({ ...contour, closed: false }, ascender);
+    closed = contourToPath({ ...contour, closed: true }, ascender);
+  }
   return (
     <>
       <path
-        d={contourToPath({ ...contour, closed: true }, ascender)}
+        d={closed}
         className="pencil-preview-fill"
         fillRule="nonzero"
       />
       <path
-        d={contourToPath({ ...contour, closed: false }, ascender)}
+        d={open}
         className="pencil-preview"
         strokeWidth={2 * hitScale}
         strokeLinecap="round"

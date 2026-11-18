@@ -29,6 +29,22 @@ function isFinitePoint(p: Point | null | undefined): boolean {
   return !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
 }
 
+/**
+ * Appends straight segments for `points[from..]` to an existing polyline `d`
+ * (or starts one with "M" when `d` is empty). Used by the live Pencil preview,
+ * whose captured points never change once recorded, so each frame only formats
+ * the new tail instead of the whole stroke. Non-finite points are skipped.
+ */
+export function appendPolylinePath(d: string, points: readonly Point[], from: number, ascender: number): string {
+  let out = d;
+  for (let i = from; i < points.length; i++) {
+    const p = points[i];
+    if (!isFinitePoint(p)) continue;
+    out += `${out ? " L" : "M"} ${fmt(p.x)} ${fmt(ascender - p.y)}`;
+  }
+  return out;
+}
+
 /** Builds the `d` attribute for a single contour, in SVG (Y-down) coordinates. */
 export function contourToPath(contour: Contour, ascender: number): string {
   if (contour.nodes.length === 0) return "";

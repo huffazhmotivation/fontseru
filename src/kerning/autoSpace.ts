@@ -39,6 +39,29 @@ const SIDE_MARGIN_RATIO = 0.07; // comfortable single-side optical margin, as a 
 const MIN_MARGIN_RATIO = 0.015; // never squeeze a margin away entirely
 const OPTICAL_SAMPLES: number = 16;
 const OPTICAL_COMPENSATION = 0.6; // how much of the recession to trade back
+/**
+ * Letters are measured inside their case's REFERENCE ZONE only — baseline to
+ * x-height for lowercase, baseline to cap height for capitals — the zone the
+ * eye compares neighbouring letters in (the Tracy / HT Letterspacer
+ * approach). Measuring over the glyph's own full height let ascenders and
+ * descenders count as "recess": the bowl side of d/q/b/p came out ~2.5% UPM
+ * tighter than o, where every professional font keeps them equal. The zone
+ * is inset a little at both ends so overshoots and shoulder joins at the
+ * very top/bottom don't count either.
+ */
+const ZONE_INSET = 0.06;
+/** A single scanline's recess never counts for more than this (fraction of
+ *  UPM), so very open sides (T, L, r, y) aren't squeezed to the minimum. */
+const RECESS_DEPTH_CAP = 0.12;
+
+/** "lower" / "upper" for cased letters (accented ones too), else null. */
+function letterCase(ch: string): "lower" | "upper" | null {
+  if (!ch || [...ch].length !== 1) return null;
+  const lo = ch.toLowerCase();
+  const up = ch.toUpperCase();
+  if (lo === up) return null;
+  return ch === lo ? "lower" : ch === up ? "upper" : null;
+}
 
 export interface GlyphSpacingSuggestion {
   lsb: number;
@@ -200,7 +223,7 @@ const spacingSuggestionCache = new WeakMap<GlyphOutline, Map<string, GlyphSpacin
 
 export function suggestGlyphSidebearings(glyph: Glyph, metrics: FontMetrics): GlyphSpacingSuggestion | null {
   if (!hasOutline(glyph)) return null;
-  const cacheKey = `${metrics.unitsPerEm}|${metrics.baseline}|${metrics.italicAngle ?? 0}`;
+  const cacheKey = `${metrics.unitsPerEm}|${metrics.baseline}|${metrics.xHeight}|${metrics.capHeight}|${metrics.italicAngle ?? 0}|${glyph.char}`;
   let byMetrics = spacingSuggestionCache.get(glyph.outline);
   if (!byMetrics) {
     byMetrics = new Map();
@@ -233,16 +256,37 @@ export function suggestGlyphSidebearings(glyph: Glyph, metrics: FontMetrics): Gl
   // Kern also touches in the same combined pass isn't resolved twice.
   const index = cachedInkIndex(measureOutline, SPACING_FLATTEN_STEPS);
 
+  // Scanline range: the letter's reference zone (see ZONE_INSET), clipped to
+  // its ink; anything else — figures, punctuation, symbols, or a letter
+  // whose ink barely reaches into its zone — uses its own full height.
+  let y0 = bounds.minY;
+  let y1 = bounds.maxY;
+  let capped = false;
+  const kind = letterCase(glyph.char);
+  if (kind) {
+    const top = kind === "lower" ? metrics.xHeight : metrics.capHeight;
+    const zoneH = top - metrics.baseline;
+    const lo = Math.max(bounds.minY, metrics.baseline);
+    const hi = Math.min(bounds.maxY, top);
+    if (zoneH > 0 && hi - lo >= zoneH * 0.3) {
+      const inset = (hi - lo) * ZONE_INSET;
+      y0 = lo + inset;
+      y1 = hi - inset;
+      capped = true;
+    }
+  }
+  const depthCap = capped ? metrics.unitsPerEm * RECESS_DEPTH_CAP : Infinity;
+
   let leftRecessSum = 0;
   let rightRecessSum = 0;
   let samples = 0;
   for (let i = 0; i < OPTICAL_SAMPLES; i++) {
     const t = OPTICAL_SAMPLES === 1 ? 0.5 : i / (OPTICAL_SAMPLES - 1);
-    const y = bounds.minY + t * (bounds.maxY - bounds.minY);
+    const y = y0 + t * (y1 - y0);
     const ink = inkExtentAtYIndexed(index, y);
     if (!ink) continue;
-    leftRecessSum += Math.max(0, ink.min - bounds.minX);
-    rightRecessSum += Math.max(0, bounds.maxX - ink.max);
+    leftRecessSum += Math.min(depthCap, Math.max(0, ink.min - bounds.minX));
+    rightRecessSum += Math.min(depthCap, Math.max(0, bounds.maxX - ink.max));
     samples++;
   }
 

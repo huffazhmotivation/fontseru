@@ -56,27 +56,46 @@ export function DesignStudio({ active, theme }: { active: boolean; theme: string
     let idleId = 0;
     // Muat iframe hanya saat pengguna benar-benar diam (tanpa sentuhan/ketikan ±2,5 dtk) supaya jeda ±300 ms saat iframe
     // diparse tidak jatuh di tengah goresan; kalau terus aktif, coba lagi (maks. 20 kali) — sisanya dimuat saat tab Design didekati.
+    // Goresan pensil/brush yang panjang hanya punya SATU pointerdown di awal: tanpa melacak "masih ditekan" + gerakan,
+    // goresan >2,5 dtk dianggap diam dan iframe (boot DesignSeru ±300 ms) dimuat persis di tengah goresan.
     let lastInput = Date.now();
+    let pressed = 0;
     const onInput = () => { lastInput = Date.now(); };
-    window.addEventListener("pointerdown", onInput, true);
+    const onDown = () => { pressed++; lastInput = Date.now(); };
+    const onUp = () => { pressed = Math.max(0, pressed - 1); lastInput = Date.now(); };
+    const onMove = (e: PointerEvent) => { if (e.buttons) lastInput = Date.now(); };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onUp, true);
+    window.addEventListener("pointermove", onMove, { capture: true, passive: true });
     window.addEventListener("keydown", onInput, true);
+    window.addEventListener("wheel", onInput, { capture: true, passive: true });
     let tries = 0;
-    const start = () => setStarted(true);
+    // Jangan memuat saat mode Motion sedang dipakai (memutar video) — jeda parse iframe terasa sebagai patah-patah.
+    const isBusy = () => pressed > 0 || Date.now() - lastInput < 2500 || useAppModeStore.getState().appMode === "motion";
     const arm = () => {
-      // Jangan memuat saat mode Motion sedang dipakai (memutar video) — jeda parse iframe terasa sebagai patah-patah.
-      const busy = Date.now() - lastInput < 2500 || useAppModeStore.getState().appMode === "motion";
-      if (busy && tries++ < 20) { timer = window.setTimeout(arm, 2500); return; }
+      if (isBusy() && tries++ < 20) { timer = window.setTimeout(arm, 2500); return; }
       const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
       if (ric) idleId = ric(start, { timeout: 4000 });
       else start();
+    };
+    // Dicek lagi saat callback idle jatuh: pengguna bisa saja mulai menggores di antara keduanya.
+    const start = () => {
+      idleId = 0;
+      if (isBusy() && tries++ < 20) { timer = window.setTimeout(arm, 2500); return; }
+      setStarted(true);
     };
     if (!weak) timer = window.setTimeout(arm, 8000);
     const warm = () => setStarted(true);
     window.addEventListener("fontseru:warm-design", warm);
     return () => {
       clearTimeout(timer);
-      window.removeEventListener("pointerdown", onInput, true);
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
+      window.removeEventListener("pointermove", onMove, true);
       window.removeEventListener("keydown", onInput, true);
+      window.removeEventListener("wheel", onInput, true);
       if (idleId) (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(idleId);
       window.removeEventListener("fontseru:warm-design", warm);
     };

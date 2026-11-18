@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Contour, Point, VectorObject } from "@/types/geometry";
+import type { Contour, PathNode, Point, VectorObject } from "@/types/geometry";
 import { useAppStore } from "@/glyph/store";
 import { shortId } from "@/utils/id";
-import { simplifyPolyline } from "@/utils/simplify";
-import { smoothStroke } from "@/brushes/strokeSmoothing";
+import { fitFreehandClosed } from "@/utils/fitCurve";
 import { centerlineToContour } from "@/brushes/strokeToOutline";
 import { detectQuickShape, quickShapePolyline, QUICK_SHAPE_HOLD_MS, type QuickShapeResult } from "./quickShape";
 import { createPreviewStore, type PreviewStore } from "./previewStore";
@@ -21,26 +20,56 @@ export interface PencilToolOptions {
 const MIN_RAW_POINTS = 3;
 /** A fitted contour needs at least a triangle's worth of on-curve nodes to
  * read as a real shape once closed. */
-const MIN_SHAPE_NODES = 3;
-/** Extra RDP tolerance (screen px) applied once, only to the final
- * committed shape — see the comment above its use in pointerUp. Chosen a
- * bit above the live pass's own upper bound (13.5px worth of effective
- * tolerance) so it only ever removes points the live pass left behind for
- * responsiveness, not ones that were load-bearing for the curve's shape. */
-const FINAL_SIMPLIFY_TOLERANCE_PX = 3.5;
+const MIN_SHAPE_NODES = 2;
 
-/**
- * Thin, Pencil-flavored wrapper around the shared `smoothStroke` engine
- * (see `brushes/strokeSmoothing.ts`) — kept as its own export so the rest
- * of this file (and its comments below) can keep talking about "Pencil
- * points" specifically, and so existing call sites don't need to change.
- * The Brush tool calls `smoothStroke` directly for the same reason: both
- * tools now run through the exact same algorithm, just with their own
- * setting value and epsilon scale.
+/*
+ * Pencil model (adapted from DesignSeru's Pencil):
+ *  - While drawing, every sample goes through a "rope" stabilizer: the pen
+ *    tip trails the pointer on a string of `Stabilizer × 28` screen px and
+ *    only moves once the string is taut. Each captured point is FINAL the
+ *    moment it is recorded — the live preview draws exactly those points,
+ *    so nothing already drawn ever shifts while the stroke grows. (The old
+ *    pencil re-smoothed and re-fitted the WHOLE stroke on every frame, so
+ *    earlier parts kept wobbling, then jumped again on release.)
+ *  - On release the captured points are curve-fitted once (Schneider) with
+ *    a tolerance of `0.9 + Smoothing × 4.5` screen px, sharp turns kept as
+ *    corners. The result hugs what was on screen, with few nodes.
  */
-export function smoothPencilPoints(rawPoints: Point[], smoothing: number, hitScale: number): Point[] {
-  return smoothStroke(rawPoints, smoothing, hitScale);
+/** Rope length at Stabilizer 100%, in screen px. */
+const ROPE_PX_AT_FULL = 28;
+/** Captured points closer than this (screen px) are not recorded. */
+const MIN_STEP_PX = 0.6;
+/** Ends closer than this (screen px) are joined as one smooth loop. */
+const CLOSE_GAP_PX = 12;
+
+const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/** Rope stabilizer step: the tip only follows once the pointer is more
+ *  than `radius` away from it. */
+function rope(pos: Point, target: Point, radius: number): Point {
+  const d = dist(pos, target);
+  if (d <= radius) return pos;
+  const k = (d - radius) / d;
+  return { x: pos.x + (target.x - pos.x) * k, y: pos.y + (target.y - pos.y) * k };
 }
+
+/** Error tolerance for the final fit, in font units. */
+export function pencilFitError(postSmoothing: number, hitScale: number): number {
+  return (0.9 + Math.max(0, Math.min(1, postSmoothing)) * 4.5) * hitScale;
+}
+
+/** The finished, closed Pencil contour for a captured stroke (null = too small). */
+export function fitPencilContour(points: Point[], postSmoothing: number, hitScale: number): Contour | null {
+  if (points.length < 2) return null;
+  const nodes = fitFreehandClosed(points, pencilFitError(postSmoothing, hitScale), 0.3 * hitScale, CLOSE_GAP_PX * hitScale);
+  if (nodes.length < MIN_SHAPE_NODES) return null;
+  // Two nodes only close into a shape when at least one segment is curved.
+  if (nodes.length === 2 && !nodes.some((n) => n.handleIn || n.handleOut)) return null;
+  return { id: shortId("c"), nodes, closed: true };
+}
+
+/** Contour id of the live Pencil stroke preview (a plain polyline). */
+export const PENCIL_PREVIEW_ID = "pencil-preview";
 
 export function usePencilTool(hitScale: number, options?: PencilToolOptions) {
   const externalPreview = options?.externalPreview === true;
@@ -50,7 +79,11 @@ export function usePencilTool(hitScale: number, options?: PencilToolOptions) {
   const pencilSmoothing = useAppStore((s) => s.pencilSmoothing);
   const pencilPostSmoothing = useAppStore((s) => s.pencilPostSmoothing);
 
+  /** Stabilized, final points of the stroke in progress. */
   const rawPointsRef = useRef<Point[]>([]);
+  /** Rope tip (last stabilized position) and the real pointer position. */
+  const tipRef = useRef<Point | null>(null);
+  const pointerRef = useRef<Point | null>(null);
   const [previewContourState, setPreviewContourState] = useState<Contour | null>(null);
   const previewStoreRef = useRef<PreviewStore<Contour | null> | null>(null);
   if (!previewStoreRef.current) previewStoreRef.current = createPreviewStore<Contour | null>(null);
@@ -60,13 +93,15 @@ export function usePencilTool(hitScale: number, options?: PencilToolOptions) {
     else setPreviewContourState(next);
   }, [externalPreview, previewStore]);
   const previewContour = externalPreview ? null : previewContourState;
+  /** Preview nodes, appended as points arrive — never rebuilt mid-stroke. */
+  const previewNodesRef = useRef<PathNode[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   // Synchronous mirror of isDrawing (coalesced samples can arrive before the
   // re-render that follows pointerDown/pointerUp).
   const isDrawingRef = useRef(false);
-  // The live preview (smoothing + curve fit over the WHOLE stroke so far) is
-  // rebuilt at most once per animation frame, no matter how many pointer
-  // samples arrived in between — every sample is still recorded.
+  // The live preview (the captured points, drawn as-is) is rebuilt at most
+  // once per animation frame, no matter how many pointer samples arrived in
+  // between — every sample is still recorded.
   const previewRafRef = useRef<number | null>(null);
   const cancelScheduledPreview = useCallback(() => {
     if (previewRafRef.current !== null) {
@@ -95,6 +130,9 @@ export function usePencilTool(hitScale: number, options?: PencilToolOptions) {
 
   const pointerDown = useCallback((p: Point) => {
     rawPointsRef.current = [p];
+    previewNodesRef.current = [];
+    tipRef.current = p;
+    pointerRef.current = p;
     isDrawingRef.current = true;
     setIsDrawing(true);
     cancelScheduledPreview();
@@ -106,9 +144,12 @@ export function usePencilTool(hitScale: number, options?: PencilToolOptions) {
     previewRafRef.current = null;
     const pts = rawPointsRef.current;
     if (!isDrawingRef.current || pts.length < 2 || quickShapeRef.current) return;
-    const smoothed = smoothPencilPoints(pts, pencilSmoothing, hitScale);
-    setPreviewContour(centerlineToContour(smoothed, true, true));
-  }, [pencilSmoothing, hitScale, setPreviewContour]);
+    const nodes = previewNodesRef.current;
+    for (let i = nodes.length; i < pts.length; i++) nodes.push({ id: `pv${i}`, point: pts[i], handleIn: null, handleOut: null, type: "corner" });
+    // New wrapper each frame (the preview store compares by identity); the
+    // node array itself is shared and only ever grows during a stroke.
+    setPreviewContour({ id: PENCIL_PREVIEW_ID, closed: true, nodes });
+  }, [setPreviewContour]);
 
   const pointerMove = useCallback(
     (p: Point) => {
@@ -120,9 +161,11 @@ export function usePencilTool(hitScale: number, options?: PencilToolOptions) {
       if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
       const pts = rawPointsRef.current;
       const last = pts[pts.length - 1];
-      const minMove = Math.max(0.8, 1.2 * hitScale);
-      if (Math.hypot(p.x - last.x, p.y - last.y) < minMove) return;
-      pts.push(p);
+      pointerRef.current = p;
+      const tip = rope(tipRef.current ?? last, p, Math.max(0, Math.min(1, pencilSmoothing)) * ROPE_PX_AT_FULL * hitScale);
+      if (dist(tip, last) < MIN_STEP_PX * hitScale) return;
+      tipRef.current = tip;
+      pts.push(tip);
       // Real movement happened: any shape recognized while previously
       // holding still no longer applies, and the wait for the next hold
       // starts over from here.
@@ -139,7 +182,7 @@ export function usePencilTool(hitScale: number, options?: PencilToolOptions) {
       if (pts.length < 2) return;
       if (previewRafRef.current === null) previewRafRef.current = requestAnimationFrame(flushPreview);
     },
-    [hitScale, flushPreview, cancelScheduledPreview, setPreviewContour]
+    [hitScale, pencilSmoothing, flushPreview, cancelScheduledPreview, setPreviewContour]
   );
 
   const pointerUp = useCallback(() => {
@@ -148,7 +191,11 @@ export function usePencilTool(hitScale: number, options?: PencilToolOptions) {
     setIsDrawing(false);
     const raw = rawPointsRef.current;
     const heldShape = quickShapeRef.current;
+    const pointer = pointerRef.current;
     rawPointsRef.current = [];
+    previewNodesRef.current = [];
+    tipRef.current = null;
+    pointerRef.current = null;
     cancelScheduledPreview();
     setPreviewContour(null);
     clearQuickShapeHold();
@@ -165,42 +212,26 @@ export function usePencilTool(hitScale: number, options?: PencilToolOptions) {
       return;
     }
 
-    // pointerUp uses pencilPostSmoothing (user-controlled "result" slider)
-    // not the live pencilSmoothing baseline — so drawing never self-steers
-    // but the committed shape gets as much cleanup as the user asked for.
-    let smoothed = smoothPencilPoints(raw, pencilPostSmoothing, hitScale);
-    // Second, more aggressive cleanup pass on the COMMITTED shape only
-    // (never on the live preview, so the stroke still tracks the pointer
-    // 1:1 while drawing). The Brush tool gets an equivalent second pass
-    // for free because it simplifies twice — once on the raw centerline,
-    // once again on the offset outline edges (see strokeToOutline.ts) —
-    // but Pencil only ever produces a single centerline-turned-contour, so
-    // without this it kept noticeably more nodes than a Brush stroke of
-    // similar shape for the same `smoothing` setting. Epsilon here is
-    // deliberately independent of `smoothing` (unlike the live pass): a
-    // shape that's just been finished should always get this final
-    // node-count cleanup, even with the smoothing slider low.
-    smoothed = simplifyPolyline(smoothed, FINAL_SIMPLIFY_TOLERANCE_PX * hitScale);
-    // Pencil always finishes as a closed, filled shape — standard
-    // professional-app Pencil behavior (Illustrator/Affinity): releasing
-    // the pointer auto-closes the path even when the stroke's start and
-    // end never actually met. `closeSmoothly=true` fits the closing seam
-    // the same way as every other node on the stroke (smooth tangent when
-    // the gesture's curvature calls for it, a real corner only when the
-    // seam is a genuinely sharp turn) instead of always forcing a straight
-    // line across the gap.
-    const contour = centerlineToContour(smoothed, true, true);
-    if (!contour || contour.nodes.length < MIN_SHAPE_NODES) return;
+    // With a light stabilizer the stroke should end where the pointer was
+    // lifted, not a rope-length short of it (DesignSeru does the same).
+    if (pointer && pencilSmoothing < 0.6 && dist(pointer, raw[raw.length - 1]) > 0.5 * hitScale) raw.push(pointer);
+    // Pencil always finishes as a closed, filled shape (Illustrator/Affinity
+    // Pencil behaviour) — see fitFreehandClosed for how the seam is made.
+    const contour = fitPencilContour(raw, pencilPostSmoothing, hitScale);
+    if (!contour) return;
 
     const obj: VectorObject = { id: shortId("obj"), kind: "shape", contours: [contour] };
     commitOutline(activeChar, { objects: [...glyph.outline.objects, obj] });
     // Deliberately stays on the Pencil tool (matching Brush) rather than
     // hopping to Select — freehand sketching is almost always several
     // strokes in a row (e.g. an outer contour, then an inner counter).
-  }, [glyph, activeChar, commitOutline, pencilPostSmoothing, hitScale, clearQuickShapeHold, cancelScheduledPreview, setPreviewContour]);
+  }, [glyph, activeChar, commitOutline, pencilSmoothing, pencilPostSmoothing, hitScale, clearQuickShapeHold, cancelScheduledPreview, setPreviewContour]);
 
   const cancel = useCallback(() => {
     rawPointsRef.current = [];
+    previewNodesRef.current = [];
+    tipRef.current = null;
+    pointerRef.current = null;
     isDrawingRef.current = false;
     setIsDrawing(false);
     cancelScheduledPreview();
