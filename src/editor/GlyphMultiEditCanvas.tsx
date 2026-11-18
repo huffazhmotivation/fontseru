@@ -17,6 +17,7 @@ import { contourToPath, toSvgPoint } from "./pathBuilder";
 import { pointHitsObject } from "./objectOps";
 import { hitTestSegments } from "./segmentHitTest";
 import { EDITOR_CANVAS_CSS_SCALED_BY_VAR } from "./editorCanvasCss";
+import { useCanvasOutline } from "./outlineView";
 import { GhostGlyph } from "./GhostGlyph";
 import { ghostSampleAvailable, useGhostFont } from "./ghostFont";
 import { familyGhostOrder, ghostCenterX, matchingFamilyGlyph } from "./ghostRef";
@@ -1434,6 +1435,7 @@ export function GlyphMultiEditCanvas() {
     [selBounds, selectTool.rotateOffset, selectTool.skewOffset]
   );
 
+  const outlineView = useCanvasOutline((s) => s.on);
   const cursorClass =
     panDragRef.current ? "cursor-hand"
     : tool === "pen" ? "cursor-pen"
@@ -1465,7 +1467,7 @@ export function GlyphMultiEditCanvas() {
         width="100%"
         height="100%"
         viewBox={`${vbX} ${vbY} ${Math.max(1e-3, vbW)} ${Math.max(1e-3, vbH)}`}
-        className={cursorClass}
+        className={outlineView ? `${cursorClass} outline-view` : cursorClass}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endGesture}

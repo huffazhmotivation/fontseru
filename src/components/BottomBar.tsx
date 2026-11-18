@@ -1,6 +1,7 @@
 import React from "react";
-import { Grid3x3, Ruler, Ghost, Magnet, Wand2, Maximize2, RotateCcw, Minus, Plus, Eye, AlignCenter, SlidersHorizontal, Info } from "lucide-react";
+import { Grid3x3, Ruler, Ghost, Magnet, Wand2, Maximize2, RotateCcw, Minus, Plus, Eye, AlignCenter, SlidersHorizontal, Info, SquareDashed } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
+import { useCanvasOutline } from "@/editor/outlineView";
 import { NumericInput } from "./NumericInput";
 import { GridControls } from "./GridControls";
 import { AboutModal } from "@/components/AboutModal";
@@ -73,6 +74,8 @@ export function BottomBar() {
   const setAutoSpacingEnabled = useAppStore((s) => s.setAutoSpacingEnabled);
   const productionPreviewOpen = useAppStore((s) => s.productionPreviewOpen);
   const toggleProductionPreview = useAppStore((s) => s.toggleProductionPreview);
+  const outlineView = useCanvasOutline((s) => s.on);
+  const toggleOutlineView = useCanvasOutline((s) => s.toggle);
   const fitGlyph = useAppStore((s) => s.fitGlyph);
   const resetView = useAppStore((s) => s.resetView);
 
@@ -112,6 +115,15 @@ export function BottomBar() {
       >
         <Wand2 size={13} /> Auto Metrik
       </button>}
+      <button
+        className={`fm-bottombar-more-hide ${outlineView ? "on" : ""}`}
+        onClick={toggleOutlineView}
+        aria-pressed={outlineView}
+        title="Outline view: tampilkan glyph sebagai garis kontur tipis tanpa isi (seperti mode outline di app desain pro) — overlap & kurva jadi kelihatan jelas."
+        data-testid="toggle-outline-view"
+      >
+        <SquareDashed size={13} /> Outline
+      </button>
 
       {/* Deliberately NOT `fm-bottombar-more-hide` — unlike Grid/Ruler/
           Guides/Ghost/Snap/Auto Metrik, Preview stays on the main bar at
@@ -185,6 +197,9 @@ export function BottomBar() {
                 title="Auto Metrik: posisi, LSB, RSB & advance width tiap glyph mengikuti bentuk outline-nya sendiri secara otomatis setiap kali digambar/diedit."
               >
                 <Wand2 size={14} /> Auto Metrik
+              </button>
+              <button className={outlineView ? "on" : ""} onClick={toggleOutlineView} aria-pressed={outlineView} title="Outline view: tampilkan glyph sebagai garis kontur tipis tanpa isi (seperti mode outline di app desain pro) — overlap & kurva jadi kelihatan jelas.">
+                <SquareDashed size={14} /> Outline
               </button>
             </div>
           </>

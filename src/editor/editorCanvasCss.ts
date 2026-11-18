@@ -111,6 +111,15 @@ function buildEditorCanvasCss(u: (n: number) => string, px: (n: number) => strin
           .obj-stroke { fill: none; stroke: var(--ink); }
           .obj-stroke-overlap { stroke: var(--overlap-canvas); opacity: 0.88; }
           .obj-sel-outline { fill: none; stroke: var(--accent); stroke-width: ${u(1.5)}; opacity: 0.9; }
+          /* Outline view (bottom bar toggle, see outlineView.ts): ink drawn as
+             a 1 px hairline of every contour, no fill — overrides the
+             per-object strokeWidth attribute of line/monoline strokes too, so
+             they show as their path like in pro apps' outline mode. */
+          .outline-view .obj-fill,
+          .outline-view .fm-mx-ink-fill { fill: none; stroke: var(--ink); stroke-width: ${u(1)}; stroke-linejoin: round; opacity: 1; }
+          .outline-view .obj-fill.obj-fill-overlap { stroke: var(--overlap-canvas); }
+          .outline-view .obj-stroke,
+          .outline-view .fm-mx-ink { stroke-width: ${u(1)}; }
           .brush-preview { fill: none; stroke: var(--accent); opacity: 0.85; }
           .pencil-preview { fill: none; stroke: var(--accent); opacity: 0.9; }
           .pencil-preview-fill { fill: var(--accent); opacity: 0.16; }

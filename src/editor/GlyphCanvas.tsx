@@ -19,6 +19,7 @@ import { GhostGlyph } from "./GhostGlyph";
 import { familyGhostOrder, ghostCenterX as ghostCenterXFor, matchingFamilyGlyph } from "./ghostRef";
 import { CanvasRuler, RulerGuideLines, RULER_SIZE } from "./CanvasRuler";
 import { EDITOR_CANVAS_CSS_SCALED_BY_VAR } from "./editorCanvasCss";
+import { useCanvasOutline } from "./outlineView";
 import { GridLayer } from "./GridLayer";
 import { useLongPress } from "./useLongPress";
 import { CanvasContextMenu, type CanvasMenuPos } from "@/components/CanvasContextMenu";
@@ -1117,6 +1118,7 @@ export function GlyphCanvas() {
     [selBounds, selectTool.rotateOffset, selectTool.skewOffset]
   );
 
+  const outlineView = useCanvasOutline((s) => s.on);
   const cursorClass =
     isNodeBrush ? "cursor-pen"
     : tool === "pen" ? "cursor-pen"
@@ -1161,7 +1163,7 @@ export function GlyphCanvas() {
         width="100%"
         height="100%"
         viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`}
-        className={cursorClass}
+        className={outlineView ? `${cursorClass} outline-view` : cursorClass}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
