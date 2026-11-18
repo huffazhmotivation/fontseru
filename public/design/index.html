@@ -15,7 +15,7 @@
     <meta name="apple-mobile-web-app-title" content="DesignSeru" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=Poppins:wght@400;500;600;700&amp;family=Montserrat:wght@400;500;600;700&amp;family=DM+Sans:wght@400;500;700&amp;family=Playfair+Display:wght@400;600;700&amp;family=Lora:wght@400;600;700&amp;family=DM+Serif+Display&amp;family=Bebas+Neue&amp;family=Space+Mono:wght@400;700&amp;family=Caveat:wght@400;600;700&amp;family=Pacifico&amp;family=Cairo:wght@400;500;600;700&amp;family=Tajawal:wght@400;500;700&amp;family=Amiri:wght@400;700&amp;family=Noto+Naskh+Arabic:wght@400;500;600;700&amp;family=Stack+Sans+Notch&amp;display=swap" media="print" onload="this.media='all'" />
-    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=Poppins:wght@400;500;600;700&amp;family=Montserrat:wght@400;500;600;700&amp;family=DM+Sans:wght@400;500;700&amp;family=Playfair+Display:wght@400;600;700&amp;family=Lora:wght@400;600;700&amp;family=DM+Serif+Display&amp;family=Bebas+Neue&amp;family=Space+Mono:wght@400;700&amp;family=Caveat:wght@400;600;700&amp;family=Pacifico&amp;family=Cairo:wght@400;500;600;700&amp;family=Tajawal:wght@400;500;700&amp;family=Amiri:wght@400;700&amp;family=Noto+Naskh+Arabic:wght@400;500;600;700&amp;family=Stack+Sans+Notch&amp;display=swap" media="print" onload="this.media='all'" /></noscript>
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=Poppins:wght@400;500;600;700&amp;family=Montserrat:wght@400;500;600;700&amp;family=DM+Sans:wght@400;500;700&amp;family=Playfair+Display:wght@400;600;700&amp;family=Lora:wght@400;600;700&amp;family=DM+Serif+Display&amp;family=Bebas+Neue&amp;family=Space+Mono:wght@400;700&amp;family=Caveat:wght@400;600;700&amp;family=Pacifico&amp;family=Cairo:wght@400;500;600;700&amp;family=Tajawal:wght@400;500;700&amp;family=Amiri:wght@400;700&amp;family=Noto+Naskh+Arabic:wght@400;500;600;700&amp;family=Stack+Sans+Notch&amp;display=swap" /></noscript>
     <style>
       html, body { background: #16161a; }
       @media (prefers-color-scheme: light) { html, body { background: #f4f4f5; } }
@@ -25,12 +25,41 @@
       #ds-recover button { display: block; width: 100%; margin-top: 10px; padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(128,128,128,.4); background: transparent; color: inherit; font: inherit; }
       #ds-recover button.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
     </style>
-    <script type="module" crossorigin src="./assets/index-DcVU_wwk.js"></script>
+    <script>
+      // FontSeru: aset pustaka dimuat relatif dari folder ini (/design/)
+      window.__DS_BASE__ = new URL("./", document.baseURI).href;
+      // FontSeru: salinan SVG Design juga dikirim ke tab Font, supaya Tempel di Font tidak butuh izin baca clipboard
+      (function () {
+        if (window.parent === window) return;
+        var c = navigator.clipboard;
+        var send = function (t) {
+          if (typeof t !== "string" || t.indexOf("<svg") < 0) return;
+          var m = /<!--\s*designseru-clip:([a-z0-9]+)\s*-->/.exec(t.slice(0, 4096));
+          try { window.parent.postMessage({ type: "seru:clip", from: "design", id: m ? m[1] : "d" + Date.now().toString(36), ts: Date.now(), svg: t }, location.origin); } catch (e) {}
+        };
+        if (c && c.write) {
+          var w = c.write.bind(c);
+          c.write = function (items) {
+            try {
+              var it = items && items[0];
+              if (it && it.types && it.types.indexOf("text/plain") >= 0) it.getType("text/plain").then(function (b) { return b.text(); }).then(send, function () {});
+            } catch (e) {}
+            return w(items);
+          };
+        }
+        if (c && c.writeText) {
+          var wt = c.writeText.bind(c);
+          c.writeText = function (t) { send(t); return wt(t); };
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-wCIdZmwQ.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/vendor-react-C0bWE8EL.js">
-    <link rel="modulepreload" crossorigin href="./assets/vendor-ui-icons-CX0muxgg.js">
+    <link rel="modulepreload" crossorigin href="./assets/vendor-ui-icons-UlvuoHMj.js">
     <link rel="modulepreload" crossorigin href="./assets/vendor-paper-vQrwSdCq.js">
-    <link rel="modulepreload" crossorigin href="./assets/elements-DTQ6HGt5.js">
-    <link rel="stylesheet" crossorigin href="./assets/index-BtaN0cOe.css">
+    <link rel="modulepreload" crossorigin href="./assets/illustrations-BMiL4fbw.js">
+    <link rel="modulepreload" crossorigin href="./assets/elements-meta-CzrCRUEf.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-qJ4z5Ro1.css">
   </head>
   <body>
     <div id="root"></div>

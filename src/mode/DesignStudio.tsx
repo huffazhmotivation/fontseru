@@ -12,7 +12,8 @@ import { isTabletDevice } from "@/mode/tablet";
  * An iframe (rather than merging the code) is deliberate: DesignSeru ships
  * its own Tailwind reset, global styles, keyboard shortcuts and storage, and
  * none of that may leak into — or be broken by — the font editor. Rebuild it
- * with `scripts/build-design.sh` when the design app changes.
+ * with `scripts/build-design.sh` from DesignSeru source, or install a finished
+ * DesignSeru web build with `scripts/design-patches/embed-build.mjs`.
  *
  * Always mounted (hidden while another mode is active) and started shortly
  * after the app is idle, so by the time the user opens Design mode it is

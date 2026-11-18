@@ -1289,7 +1289,7 @@ export function GlyphCanvas() {
 
         <g clipPath="url(#fontseru-main-canvas)">
         <>
-          {metricGuides.filter(({ key }) => key === "baseline" || (showGuides && !drawMode)).map(({ key, label, value, className }) => {
+          {metricGuides.filter(({ key }) => key === "baseline" || showGuides || drawMode).map(({ key, label, value, className }) => {
             const trueY = toY(value);
             // Same visual clamp as Advance/LSB/RSB below: if the guide is
             // dragged above/below the current viewport, pin its rendered
@@ -1319,7 +1319,6 @@ export function GlyphCanvas() {
                   onDoubleClick={(e) => focusGuideMetric(key, e)}
                   data-metric={key}
                 />
-                {drawMode && <text x={labelX} y={y - 6 / sc} className="guide-label" pointerEvents="none">{label}</text>}
                 {active && (
                   <g pointerEvents="none" data-testid="metric-drag-value">
                     <rect x={labelX} y={y + 5 / sc} width={72 / sc} height={20 / sc} rx={4 / sc} className="metric-guide-value-bg" />
@@ -1332,26 +1331,33 @@ export function GlyphCanvas() {
         </>
         </g>
 
-        {/* Metric labels sit in the canvas's left margin, outside the em-box
-            clip, so they never collide with the LSB guide or the outline:
-            a colour dot (same hue as its line), the name, and the value. */}
-        {!drawMode && (
-          <g pointerEvents="none" className="metric-guide-labels" data-testid="metric-guide-labels">
-            {metricGuides.filter(({ key }) => key === "baseline" || showGuides).map(({ key, label, value, className }) => {
-              const marginY = 20 / sc;
-              const y = Math.min(vbY + vbH - marginY, Math.max(vbY + marginY, toY(value)));
-              // just right of the ruler strip
-              const x = vbX + 34 / sc;
-              return (
-                <g key={key} className={`metric-guide-label ${className}`}>
-                  <circle cx={x} cy={y - 9.5 / sc} r={3 / sc} className="guide-dot" />
-                  <text x={x + 8 / sc} y={y - 6 / sc} className="guide-label">{label}</text>
-                  <text x={x + (16 + label.length * 6.6) / sc} y={y - 6 / sc} className="guide-value">{Math.round(value)}</text>
-                </g>
-              );
-            })}
-          </g>
-        )}
+        {/* Metric labels sit just left of where each line starts, outside the
+            em-box clip, so they never collide with the LSB guide or the
+            outline: a colour dot (same hue as its line), the name, the value. */}
+        <g pointerEvents="none" className="metric-guide-labels" data-testid="metric-guide-labels">
+          {metricGuides.filter(({ key }) => key === "baseline" || showGuides || drawMode).map(({ key, label, value, className }) => {
+            const marginY = 20 / sc;
+            const y = Math.min(vbY + vbH - marginY, Math.max(vbY + marginY, toY(value)));
+            const val = String(Math.round(value));
+            // dot + name + value, measured with the mono advance (~6.6px at 10.5px)
+            const w = (19 + (label.length + val.length) * 6.6) / sc;
+            // Never closer to the left edge than the ruler strip.
+            const minX = vbX + 34 / sc;
+            // Like Glyphs/RoboFont, the name sits on its own line: right-aligned
+            // just left of the origin (x=0), where the line starts, and pinned to
+            // the left edge once the origin scrolls out of view. In Drawing mode
+            // the lines span the whole view, so the label sits at the left edge.
+            const start = drawMode ? minX : Math.max(minX, -14 / sc - w);
+            const x = start + 3 / sc;
+            return (
+              <g key={key} className={`metric-guide-label ${className}`}>
+                <circle cx={x} cy={y - 9.5 / sc} r={3 / sc} className="guide-dot" />
+                <text x={x + 8 / sc} y={y - 6 / sc} className="guide-label">{label}</text>
+                <text x={x + (16 + label.length * 6.6) / sc} y={y - 6 / sc} className="guide-value">{val}</text>
+              </g>
+            );
+          })}
+        </g>
 
         {/* LSB/Advance/RSB handles render OUTSIDE the main-canvas clip and
             get their on-screen x clamped to the current viewport (not the
