@@ -44,7 +44,16 @@ interface GlyphRunProps {
    * canvas, thumbnails, etc.) renders exactly as it always has.
    */
   ghostEmpty?: boolean;
+  /**
+   * Outline (wireframe) view, Test Lab only: contours drawn as a hairline
+   * that stays OUTLINE_VIEW_PX wide at any size, with no fill — overlaps and
+   * the exact gap between neighbours stay visible while kerning.
+   */
+  outline?: boolean;
 }
+
+/** Hairline width of Outline view, in screen px (non-scaling stroke). */
+const OUTLINE_VIEW_PX = 1.1;
 
 function GlyphRunView({
   text,
@@ -56,6 +65,7 @@ function GlyphRunView({
   glyphsOverride,
   kerningPairsOverride,
   ghostEmpty = false,
+  outline = false,
 }: GlyphRunProps) {
   const storeGlyphs = useAppStore((s) => s.glyphs);
   const metrics = useAppStore((s) => s.metrics);
@@ -115,7 +125,17 @@ function GlyphRunView({
             return (
               <g key={i} transform={`translate(${x} 0)`} fill={glyphColor} stroke={glyphColor}>
                 {paths.map((entry) =>
-                  entry.kind === "stroke" ? (
+                  outline ? (
+                    <path
+                      key={entry.id}
+                      d={entry.d}
+                      fill="none"
+                      stroke={glyphColor}
+                      strokeWidth={OUTLINE_VIEW_PX}
+                      vectorEffect="non-scaling-stroke"
+                      strokeLinejoin="round"
+                    />
+                  ) : entry.kind === "stroke" ? (
                     <path
                       key={entry.id}
                       d={entry.d}
@@ -179,9 +199,11 @@ function GlyphRunView({
               <path
                 d={ref.d}
                 transform={`translate(${boxCenter} ${ascender}) scale(${k}) translate(${-ref.centerX} 0)`}
-                fill={glyphColor}
+                fill={outline ? "none" : glyphColor}
                 fillRule="nonzero"
-                stroke="none"
+                stroke={outline ? glyphColor : "none"}
+                strokeWidth={outline ? OUTLINE_VIEW_PX : undefined}
+                vectorEffect={outline ? "non-scaling-stroke" : undefined}
               />
             </g>
           );

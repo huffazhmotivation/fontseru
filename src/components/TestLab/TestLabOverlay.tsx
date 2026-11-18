@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { X, FlaskConical, Type, Layers3 } from "lucide-react";
+import { X, FlaskConical, Type, Layers3, SquareDashed } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { SpecimenPanel } from "./SpecimenPanel";
+import { useLabView } from "./labView";
 
 export function TestLabOverlay() {
   const open = useAppStore((s) => s.testLabOpen);
@@ -11,6 +12,8 @@ export function TestLabOverlay() {
   // mounted (just returns null while closed) so the choice persists across
   // Test Lab opens/closes instead of resetting to Single every time.
   const [kerningMode, setKerningMode] = useState<"single" | "family">("single");
+  const outlineView = useLabView((s) => s.outline);
+  const toggleOutline = useLabView((s) => s.toggleOutline);
 
   useEffect(() => {
     if (!open) return;
@@ -47,6 +50,18 @@ export function TestLabOverlay() {
               title="Family Test"
             >
               <Layers3 size={14} /> <span>Family Test</span>
+            </button>
+          </div>
+          <div className="fm-kern-mode-toggle fm-lab-head-mode-toggle fm-lab-outline-toggle">
+            <button
+              type="button"
+              className={outlineView ? "active" : ""}
+              onClick={toggleOutline}
+              aria-pressed={outlineView}
+              data-testid="lab-outline-toggle"
+              title={outlineView ? "Outline view aktif — klik untuk kembali ke tampilan isi" : "Outline view: tampilkan huruf sebagai garis kontur (tanpa isi) agar kerning lebih presisi"}
+            >
+              <SquareDashed size={14} /> <span>Outline</span>
             </button>
           </div>
           <div className="fm-spacer" />

@@ -3214,6 +3214,8 @@ input[type="number"]::-webkit-outer-spin-button {
   padding: 0 12px;
   white-space: nowrap;
 }
+/* Outline view on/off — a single toggle, so one auto-width column. */
+.fm-lab-head-mode-toggle.fm-lab-outline-toggle { grid-template-columns: auto; }
 /* `.fm-lab-body` is shared between the Test Lab overlay (which manages its
    own internal scroll regions via `.fm-lab-stage`/`.fm-lab-side` below) and
    the Feature Builder overlay (`.fm-feature-body`, which has no nested

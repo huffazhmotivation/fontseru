@@ -6,6 +6,7 @@ import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
 import { UPPER_TEST, LOWER_TEST, NUMBERS_TEST, PUNCTUATION_TEST, SYMBOL_TEST, MULTILINGUAL_TEST } from "@/glyph/testSentences";
 import { GlyphRun } from "@/editor/GlyphRun";
+import { useLabView } from "./labView";
 import { GlyphThumbnail } from "@/components/GlyphThumbnail";
 import { caretX, fallbackAdvance, layoutLine, nearestCaretColumn, type LineLayout } from "@/editor/textLayout";
 import { useTypingCaret } from "@/editor/useTypingCaret";
@@ -129,6 +130,7 @@ function EditableStage({
   kerningContext: KerningContext;
 }) {
   const glyphs = useAppStore((s) => s.glyphsByStyle[kerningContext === "shared" ? "regular" : kerningContext] ?? s.glyphs);
+  const outlineView = useLabView((s) => s.outline);
   const sharedPairs = useAppStore((s) => s.kerningPairs);
   const overridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
   const kerningPairs = useMemo(
@@ -403,6 +405,7 @@ function EditableStage({
                 glyphsOverride={glyphs}
                 kerningPairsOverride={kerningPairs}
                 ghostEmpty
+                outline={outlineView}
                 // Only the row being dragged gets a (fresh) colour callback;
                 // every other row passes `undefined`, so GlyphRun's memo
                 // holds and untouched lines don't re-render per drag frame.
@@ -722,6 +725,7 @@ function FamilyStylePreview({
   onActiveGlyphChange: (next: FamilyActiveGlyph) => void;
   editable: boolean;
 }) {
+  const outlineView = useLabView((s) => s.outline);
   const metrics = useAppStore((s) => s.metrics);
   const sharedPairs = useAppStore((s) => s.kerningPairs);
   const overridesByStyle = useAppStore((s) => s.kerningOverridesByStyle);
@@ -1025,6 +1029,7 @@ function FamilyStylePreview({
                     glyphsOverride={glyphs}
                     kerningPairsOverride={kerningPairs}
                     ghostEmpty
+                    outline={outlineView}
                     colorForIndex={isDragging && activeIndex >= 0 ? accentAt(activeIndex) : undefined}
                   />
 
@@ -1261,6 +1266,7 @@ function FeatureSentencePreview({
   tracking: number;
   onOpenGlyph: (char: string) => void;
 }) {
+  const outlineView = useLabView((s) => s.outline);
   const metrics = useAppStore((s) => s.metrics);
   const kerningPairs = useAppStore((s) => s.kerningPairs);
   const beginKerningDrag = useAppStore((s) => s.beginKerningDrag);
@@ -1595,7 +1601,17 @@ function FeatureSentencePreview({
                     >
                       <title>{`Tarik untuk atur kerning · klik untuk buka di editor`}</title>
                       {paths.map((entry) =>
-                        entry.kind === "stroke" ? (
+                        outlineView ? (
+                          <path
+                            key={entry.id}
+                            d={entry.d}
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={1.1}
+                            vectorEffect="non-scaling-stroke"
+                            strokeLinejoin="round"
+                          />
+                        ) : entry.kind === "stroke" ? (
                           <path
                             key={entry.id}
                             d={entry.d}
