@@ -4393,20 +4393,33 @@ html[data-theme="light"] .fm-update-backdrop, html[data-theme="light"] .fm-praye
 
 /* Family generation intentionally inherits .fm-action-btn.accent so it tracks
    the Auto Kerning button treatment while remaining full-width in the glyph rail. */
+/* The overlay's `.fm-family-generate` card (padding 16px, radius 12px, see
+   further down) shares this class name, so every box property is pinned
+   here: one compact row, same height as the search field below it. */
 .fm-glyphnav .fm-family-generate {
   width: 100%;
-  min-height: 36px;
+  height: 36px;
+  min-height: 0;
   margin: 0 0 10px;
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent) 54%, transparent),
-    0 0 16px color-mix(in srgb, var(--accent) 24%, transparent);
+  padding: 0 9px;
+  gap: 6px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 18%, transparent);
   transition: background 0.14s ease, filter 0.14s ease, box-shadow 0.14s ease, transform 0.1s ease;
+}
+.fm-glyphnav .fm-family-generate > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .fm-glyphnav .fm-family-generate:hover {
   filter: brightness(1.04);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent),
-    0 0 20px color-mix(in srgb, var(--accent) 34%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 .fm-glyphnav .fm-family-generate:focus-visible {
   outline: 2px solid var(--accent);

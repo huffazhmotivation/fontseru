@@ -544,9 +544,10 @@ export function GlyphNavInner() {
             onClick={() => (isPro ? generateFromRegular() : openProModal("family"))}
             data-testid="generate-from-regular"
           >
-            <Zap size={15} fill="currentColor" />
+            {/* The rail is narrow: the PRO lock takes the bolt's place
+                instead of adding a third item to the row. */}
+            {isPro ? <Zap size={13} fill="currentColor" /> : <Lock size={12} />}
             <span>Generate From Regular</span>
-            {!isPro && <Lock size={12} className="fm-lock-badge-inline" />}
           </button>
         )}
 
