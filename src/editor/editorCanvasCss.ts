@@ -145,5 +145,18 @@ function buildEditorCanvasCss(u: (n: number) => string, px: (n: number) => strin
           .sel-rot-line { stroke: var(--accent); stroke-width: ${u(1.2)}; }
           .corner-radius-handle { fill: var(--accent); stroke: var(--panel-bg, #1e1e1e); stroke-width: ${u(1.4)}; opacity: 0.95; }
           .corner-radius-handle.rounded { fill: var(--accent); opacity: 1; }
+          /* Node tool precision overlays (NodePrecisionLayers.tsx) */
+          .np-seg-hover { fill: none; stroke: var(--sb); stroke-width: ${u(2.4)}; stroke-linecap: round; }
+          .np-measure { stroke: var(--sb); stroke-width: ${u(1.3)}; stroke-dasharray: ${u(4)} ${u(3)}; }
+          .np-measure-end { fill: var(--sb); }
+          .np-badge-bg { fill: var(--panel); stroke: var(--line); stroke-width: ${u(1)}; }
+          .np-badge-bg.accent { fill: var(--sb); stroke: none; }
+          .np-badge-text { fill: var(--text); font-family: var(--mono); font-weight: 500; }
+          .np-badge-text.accent { fill: var(--canvas); }
+          .np-tunni-line { stroke: var(--text-dim); stroke-width: ${u(1)}; stroke-dasharray: ${u(3)} ${u(3)}; }
+          .np-tunni-point { fill: var(--canvas); stroke: var(--text); stroke-width: ${u(1.5)}; }
+          .np-tunni-text { fill: var(--text-dim); font-family: var(--mono); }
+          .np-box { fill: none; stroke: var(--sb); stroke-width: ${u(1)}; }
+          .np-box-handle { fill: var(--canvas); stroke: var(--sb); stroke-width: ${u(1.4)}; }
         `;
 }

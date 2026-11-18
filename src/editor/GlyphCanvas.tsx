@@ -27,6 +27,8 @@ import { RecordingBadge } from "@/timelapse/RecordingBadge";
 import { isFeatureGlyphUnicode } from "@/glyph/featureGlyphs";
 import type { Contour, GlyphOutline, NodeType, PathNode, Point, VectorObject } from "@/types/geometry";
 import { createPreviewStore, usePreviewValue, type PreviewStore } from "./previewStore";
+import { SegmentHoverLayer, NodePrecisionLayer, DragReadout, type SegmentHoverInfo } from "./NodePrecisionLayers";
+import { measureThickness, segmentLength, segmentNormal, segmentPathD, segmentPoint } from "./precisionTools";
 import { affineToSvgMatrix, transformPreviewIsExact } from "./transformPreview";
 
 const EMPTY_ID_SET: ReadonlySet<string> = new Set<string>();
@@ -142,6 +144,12 @@ export function GlyphCanvas() {
   const hoverStoreRef = useRef<PreviewStore<Point | null> | null>(null);
   if (!hoverStoreRef.current) hoverStoreRef.current = createPreviewStore<Point | null>(null);
   const hoverStore = hoverStoreRef.current;
+  // Node tool: hovered segment + its length + stem thickness (own tiny store
+  // so pointer movement re-renders only that overlay, not the canvas).
+  const segHoverStoreRef = useRef<PreviewStore<SegmentHoverInfo | null> | null>(null);
+  if (!segHoverStoreRef.current) segHoverStoreRef.current = createPreviewStore<SegmentHoverInfo | null>(null);
+  const segHoverStore = segHoverStoreRef.current;
+  useEffect(() => { segHoverStore.set(null); }, [tool, segHoverStore]);
   const panDragRef = useRef<{ startClient: Point; startPan: Point } | null>(null);
   const pendingPointerMoveRef = useRef<PointerMoveSample | null>(null);
   const pointerMoveRafRef = useRef<number | null>(null);
@@ -453,6 +461,34 @@ export function GlyphCanvas() {
       // Hover is only rendered for Pen's rubber-band. Select's handle hover
       // has its own change guard in useSelectTool.
       if (tool === "pen" || isNodeBrush) hoverStore.set(p);
+      if (tool === "node") {
+        const h = !panDragRef.current && !editor.isDragging() ? editor.hoverSegmentAt(p) : null;
+        if (!h) segHoverStore.set(null);
+        else {
+          const prev = segHoverStore.get();
+          const d = segmentPathD(h.seg, ascender);
+          const normal = segmentNormal(h.seg, h.t);
+          const mid = segmentPoint(h.seg, 0.5);
+          const midNormal = segmentNormal(h.seg, 0.5);
+          // Length tag sits just off the curve; on a selected curve, park it
+          // beyond the Tunni point so the two never overlap.
+          let badgeOffset = 16 * hitScale;
+          if (h.selected && h.seg.isCurve) {
+            const tx = (h.seg.c1.x + h.seg.c2.x) / 2 - mid.x, ty = (h.seg.c1.y + h.seg.c2.y) / 2 - mid.y;
+            const along = tx * midNormal.x + ty * midNormal.y;
+            if (along > -12 * hitScale) badgeOffset = Math.max(badgeOffset, along + 22 * hitScale);
+          }
+          segHoverStore.set({
+            key: `${h.ref.contourId}:${h.ref.fromIndex}`,
+            d,
+            length: prev && prev.d === d ? prev.length : segmentLength(h.seg),
+            mid,
+            normal: midNormal,
+            badgeOffset,
+            thick: measureThickness(editor.outline, h.point, normal, upm * 1.5),
+          });
+        }
+      }
       if (panDragRef.current) {
         setPan({
           x: panDragRef.current.startPan.x - (sample.clientX - panDragRef.current.startClient.x) / sc,
@@ -465,7 +501,7 @@ export function GlyphCanvas() {
       if (tool === "select") return selectTool.pointerMove(p, sample.shiftKey, sample.pointerType, sample.metaKey);
       editor.pointerMove(p, sample.shiftKey, sample.altKey);
     },
-    [sketchGestures, getFontPoint, tool, setPan, sc, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, editor, hoverStore]
+    [sketchGestures, getFontPoint, tool, setPan, sc, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, editor, hoverStore, segHoverStore, ascender, upm, hitScale]
   );
   pointerMoveProcessorRef.current = processPointerMove;
 
@@ -596,13 +632,14 @@ export function GlyphCanvas() {
         panDragRef.current = { startClient: { x: e.clientX, y: e.clientY }, startPan: pan };
         return;
       }
+      segHoverStore.set(null);
       if (tool === "zoom") return applyZoomAt(zoom * (e.shiftKey ? 0.8 : 1.25), e.clientX, e.clientY);
       if (tool === "brush") return isNodeBrush ? brushNodeTool.pointerDown(p) : brushTool.pointerDown(p, e);
       if (tool === "pencil") return pencilTool.pointerDown(p);
       if (tool === "select") return selectTool.pointerDown(p, e.shiftKey, e.metaKey || e.ctrlKey || (drawMode && e.altKey));
       editor.pointerDown(p, e.shiftKey, e.altKey, e.metaKey || e.ctrlKey);
     },
-    [getFontPoint, tool, editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, pan, zoom, applyZoomAt, usingHandPan, sketchGestures, flushPointerMove, longPress]
+    [getFontPoint, tool, editor, brushTool, brushNodeTool, isNodeBrush, pencilTool, selectTool, pan, zoom, applyZoomAt, usingHandPan, sketchGestures, flushPointerMove, longPress, segHoverStore]
   );
 
   const onPointerMove = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
@@ -703,6 +740,7 @@ export function GlyphCanvas() {
       }
 
       if (tool !== "node") return;
+      if (editor.balanceTunniAt(p)) return;
       const hitR = 12 * hitScale;
       // Only the active (selected) object's nodes/segments are live in Node
       // mode — editor.nodeableOutline is already filtered to that, so a
@@ -1129,6 +1167,7 @@ export function GlyphCanvas() {
         onPointerUp={onPointerUp}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
+        onPointerLeave={() => segHoverStore.set(null)}
         style={{
           touchAction: "none",
           // Zoom-dependent CSS sizes read this variable (see the static
@@ -1527,8 +1566,8 @@ export function GlyphCanvas() {
               {x !== null && <line x1={svgP.x} y1={vbY} x2={svgP.x} y2={vbY + vbH} className="handle-snap-line" />}
               {y !== null && <line x1={vbX} y1={svgP.y} x2={vbX + vbW} y2={svgP.y} className="handle-snap-line" />}
               <circle cx={svgP.x} cy={svgP.y} r={2.6 / sc} className="handle-snap-dot" />
-              <rect x={lx} y={ly - 15 / sc} width={w} height={19 / sc} rx={4 / sc} className="metric-guide-value-bg" />
-              <text x={lx + 6 / sc} y={ly - 2 / sc} className="metric-guide-value">{text}</text>
+              {!editor.dragReadout && <rect x={lx} y={ly - 15 / sc} width={w} height={19 / sc} rx={4 / sc} className="metric-guide-value-bg" />}
+              {!editor.dragReadout && <text x={lx + 6 / sc} y={ly - 2 / sc} className="metric-guide-value">{text}</text>}
             </g>
           );
         })()}
@@ -1597,6 +1636,16 @@ export function GlyphCanvas() {
              other tools. Purely visual: no pointer events, so it never
              competes with whatever the active tool is doing. */
           <SkeletonGuideLayer objects={objects} ascender={ascender} />
+        )}
+
+        {/* Node tool precision overlays: Tunni lines + transform box for the
+            selection, the hovered segment's length/thickness, live numbers. */}
+        {tool === "node" && (
+          <>
+            <NodePrecisionLayer outline={editor.nodeableOutline} selectedNodes={editor.selectedNodes} ascender={ascender} hitScale={hitScale} hoverStore={segHoverStore} />
+            <SegmentHoverLayer store={segHoverStore} ascender={ascender} hitScale={hitScale} />
+            <DragReadout readout={editor.dragReadout} ascender={ascender} hitScale={hitScale} />
+          </>
         )}
 
         {/* Ruler guides: user-dragged dashed lines from ruler strips */}

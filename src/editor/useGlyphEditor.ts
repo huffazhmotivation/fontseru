@@ -21,13 +21,39 @@ import {
   NODE_TYPE_ORDER,
 } from "./nodeOps";
 import { findObjectOfContour } from "@/types/geometry";
+import {
+  reshapeSegment,
+  tunniOf,
+  selectedCurveSegments,
+  scaleSegmentTension,
+  tunniScaleFor,
+  balanceSegment,
+  selectionBox,
+  boxHandles,
+  BOX_PAD_PX,
+  BOX_ROTATE_GAP_PX,
+  BOX_HANDLE_HIT_PX,
+  boxTransform,
+  transformNodes,
+  nodeGuideTargets,
+  nearestGuide,
+  segmentOf,
+  type Box,
+  type BoxHandle,
+  type GuideTargets,
+  type SegmentRef,
+  type TunniInfo,
+} from "./precisionTools";
 import { buildShapeContour } from "./shapeBuilder";
 
 export interface Rect { x: number; y: number; w: number; h: number; }
 
 type DragState =
   | { mode: "pen-place"; contourId: string; nodeId: string }
-  | { mode: "move-selection"; refs: NodeRef[]; origin: Point; clickRef?: NodeRef }
+  | { mode: "move-selection"; refs: NodeRef[]; origin: Point; clickRef?: NodeRef; refStart?: Point; guides?: GuideTargets }
+  | { mode: "reshape"; ref: SegmentRef; t: number; offset: Point; origin: Point }
+  | { mode: "tunni"; ref: SegmentRef; base: TunniInfo; p0: Point; p3: Point }
+  | { mode: "box"; refs: NodeRef[]; box: Box; handle: BoxHandle; start: Point }
   | {
       mode: "move-handle";
       contourId: string;
@@ -149,6 +175,9 @@ export function useGlyphEditor(hitScale: number) {
    * the line(s) that are real (a handle can snap on one axis, both, or
    * neither). Cleared as soon as the drag ends. */
   const [handleSnapGuide, setHandleSnapGuide] = useState<{ point: Point; x: number | null; y: number | null } | null>(null);
+  /** Live numbers next to the pointer while dragging in the Node tool:
+   *  node position, handle length/angle, curve tension, scale %, angle. */
+  const [dragReadout, setDragReadout] = useState<{ point: Point; text: string } | null>(null);
 
   const outline: GlyphOutline = liveOutline ?? glyph?.outline ?? EMPTY_OUTLINE;
   const hitRadius = 12 * hitScale;
@@ -341,6 +370,59 @@ export function useGlyphEditor(hitScale: number) {
   );
 
   /* ----------------------------------------------------------- NODE */
+  /** Smart-guide targets for dragging `refs`: every other node, the font's
+   *  vertical metrics and this glyph's side bearings. */
+  const guideTargetsFor = useCallback((refs: NodeRef[]): GuideTargets => {
+    const st = useAppStore.getState();
+    const m = st.metrics;
+    const adv = st.glyphs[st.activeChar]?.advanceWidth ?? 0;
+    return nodeGuideTargets(
+      outline,
+      new Set(refs.map(refKey)),
+      [0, m.xHeight, m.capHeight, m.ascender, m.descender].filter((v) => Number.isFinite(v)),
+      [0, adv].filter((v) => Number.isFinite(v)),
+    );
+  }, [outline]);
+
+  /** Tunni points of the selected curve segments (both nodes selected). */
+  const selectedTunnis = useCallback((): TunniInfo[] => {
+    if (selectedNodes.length < 2) return [];
+    const keys = new Set(selectedNodes.map(refKey));
+    return selectedCurveSegments(nodeableOutline, keys)
+      .map((ref) => tunniOf(nodeableOutline, ref))
+      .filter((t): t is TunniInfo => t !== null);
+  }, [selectedNodes, nodeableOutline]);
+
+  /** Tunni point under the pointer — only when it is nearer than the curve
+   *  itself, so pressing a selected segment still reshapes it even where its
+   *  Tunni point sits a few pixels away. */
+  const tunniAt = useCallback((p: Point): TunniInfo | null => {
+    const tunnis = selectedTunnis();
+    if (!tunnis.length) return null;
+    let best: TunniInfo | null = null;
+    let bestD = hitRadius * 0.8;
+    for (const t of tunnis) {
+      const d = length(subtract(t.mid, p));
+      if (d <= bestD) { best = t; bestD = d; }
+    }
+    if (!best) return null;
+    const seg = hitTestSegments(nodeableOutline, p, bestD);
+    return seg && length(subtract(seg.point, p)) < bestD ? null : best;
+  }, [selectedTunnis, hitRadius, nodeableOutline]);
+
+  /** Transform-box handle under the pointer (2+ nodes selected). */
+  const boxHandleAt = useCallback((p: Point) => {
+    if (selectedNodes.length < 2) return null;
+    const box = selectionBox(nodeableOutline, selectedNodes);
+    if (!box) return null;
+    let best: { box: Box; handle: BoxHandle; d: number } | null = null;
+    for (const h of boxHandles(box, BOX_PAD_PX * hitScale, BOX_ROTATE_GAP_PX * hitScale)) {
+      const d = length(subtract(h.p, p));
+      if (d <= BOX_HANDLE_HIT_PX * hitScale && (!best || d < best.d)) best = { box, handle: h.id, d };
+    }
+    return best;
+  }, [selectedNodes, nodeableOutline, hitScale]);
+
   const nodePointerDown = useCallback(
     (p: Point, shiftKey: boolean, altKey: boolean, cmdKey: boolean) => {
       // Figma-style corner-round handle: clicking+dragging the inset icon
@@ -381,6 +463,32 @@ export function useGlyphEditor(hitScale: number) {
       }
 
       const hit = hitTestOutline(nodeableOutline, p, hitRadius);
+
+      // Transform-box handles and Tunni points can sit within a node's hit
+      // radius (e.g. an O's extreme nodes lie on the box edges): whichever
+      // target is nearest to the pointer wins.
+      let hitD = Infinity;
+      if (hit) {
+        const hn = findNode(nodeableOutline, hit.contourId, hit.nodeId);
+        const hp = hn ? (hit.part === "point" ? hn.point : hit.part === "handleIn" ? hn.handleIn : hn.handleOut) : null;
+        if (hp) hitD = length(subtract(hp, p));
+      }
+      const boxHit = boxHandleAt(p);
+      if (boxHit && boxHit.d < hitD) {
+        baseOutlineRef.current = outline;
+        dragRef.current = { mode: "box", refs: selectedNodes, box: boxHit.box, handle: boxHit.handle, start: p };
+        return;
+      }
+      const tunni = tunniAt(p);
+      if (tunni && length(subtract(tunni.mid, p)) < hitD) {
+        const contour = findContour(outline, tunni.ref.contourId);
+        const seg = contour ? segmentOf(contour, tunni.ref.fromIndex) : null;
+        if (seg) {
+          baseOutlineRef.current = outline;
+          dragRef.current = { mode: "tunni", ref: tunni.ref, base: tunni, p0: seg.p0, p3: seg.p3 };
+          return;
+        }
+      }
 
       if (hit && hit.part === "point") {
         // Cmd/Ctrl+drag directly on a sharp corner rounds it instead of
@@ -440,7 +548,14 @@ export function useGlyphEditor(hitScale: number) {
         }
         baseOutlineRef.current = outline;
         nodeMovedRef.current = false;
-        dragRef.current = { mode: "move-selection", refs: nextSelection, origin: p, clickRef: shiftKey ? undefined : ref };
+        dragRef.current = {
+          mode: "move-selection",
+          refs: nextSelection,
+          origin: p,
+          clickRef: shiftKey ? undefined : ref,
+          refStart: hitNode ? { ...hitNode.point } : undefined,
+          guides: guideTargetsFor(nextSelection),
+        };
         return;
       }
 
@@ -472,6 +587,7 @@ export function useGlyphEditor(hitScale: number) {
         return;
       }
 
+
       // Cmd/Ctrl + drag on a segment -> bend into a Bézier curve.
       const segHit = hitTestSegments(nodeableOutline, p, segmentRadius * 1.6);
       if (cmdKey && segHit) {
@@ -487,13 +603,43 @@ export function useGlyphEditor(hitScale: number) {
         return;
       }
 
+      // Plain press on a segment: selects it (its two nodes). Dragging a curve
+      // reshapes it with its handle angles kept; dragging a straight segment
+      // moves it — like Illustrator's Direct Selection, Glyphs and FontLab.
+      const segPlain = segHit && segHit.distance <= segmentRadius ? segHit : null;
+      if (segPlain) {
+        const contour = findContour(outline, segPlain.contourId);
+        const seg = contour ? segmentOf(contour, segPlain.fromIndex) : null;
+        if (contour && seg) {
+          const n = contour.nodes.length;
+          const ends: NodeRef[] = [
+            { contourId: contour.id, nodeId: contour.nodes[segPlain.fromIndex].id },
+            { contourId: contour.id, nodeId: contour.nodes[(segPlain.fromIndex + 1) % n].id },
+          ];
+          const keys = new Set(selectedNodes.map(refKey));
+          const nextSelection = shiftKey
+            ? [...selectedNodes, ...ends.filter((r) => !keys.has(refKey(r)))]
+            : ends;
+          selectNodes(nextSelection);
+          baseOutlineRef.current = outline;
+          nodeMovedRef.current = false;
+          if (seg.isCurve) {
+            dragRef.current = { mode: "reshape", ref: { contourId: contour.id, fromIndex: segPlain.fromIndex }, t: segPlain.t, offset: subtract(segPlain.point, p), origin: p };
+          } else {
+            const start = contour.nodes[segPlain.fromIndex].point;
+            dragRef.current = { mode: "move-selection", refs: ends, origin: p, refStart: { ...start }, guides: guideTargetsFor(ends) };
+          }
+          return;
+        }
+      }
+
       if (!shiftKey) clearSelection();
       dragRef.current = { mode: "marquee", origin: p, additive: shiftKey };
       const initialRect = { x: p.x, y: p.y, w: 0, h: 0 };
       marqueeRectRef.current = initialRect;
       setMarqueeRect(initialRect);
     },
-    [outline, nodeableOutline, hitRadius, segmentRadius, cornerHandleInset, cornerHandleHitRadius, selectedNodes, selectNodes, toggleNodeSelection, clearSelection, setSelectedHandle, activeChar, commitOutline, setLiveOutline]
+    [outline, nodeableOutline, hitRadius, hitScale, segmentRadius, cornerHandleInset, cornerHandleHitRadius, selectedNodes, selectNodes, toggleNodeSelection, clearSelection, setSelectedHandle, activeChar, commitOutline, setLiveOutline, guideTargetsFor, tunniAt, boxHandleAt]
   );
 
   const nodePointerMove = useCallback(
@@ -513,7 +659,64 @@ export function useGlyphEditor(hitScale: number) {
         const rawDelta = subtract(p, drag.origin);
         // More than ~4 screen px of travel = a real drag, not a click.
         if (length(rawDelta) > 4 * hitScale) nodeMovedRef.current = true;
-        setLiveOutline(moveNodesBy(base, drag.refs, shiftKey ? axisLock(rawDelta) : rawDelta));
+        let delta = shiftKey ? axisLock(rawDelta) : rawDelta;
+        // Whole font units: the grabbed node lands exactly on the grid.
+        delta = { x: Math.round(delta.x), y: Math.round(delta.y) };
+        // Smart guides: with Snap on the grabbed node pulls onto another
+        // node's x/y or a metric line; with Snap off the line only appears
+        // when it's exactly aligned.
+        let guideLine: { point: Point; x: number | null; y: number | null } | null = null;
+        if (drag.refStart && drag.guides) {
+          const at = add(drag.refStart, delta);
+          const near = nearestGuide(at, drag.guides, snapEnabled ? 6 * hitScale : 0.5);
+          if (snapEnabled) {
+            if (near.x !== null && !(shiftKey && delta.x === 0)) delta = { ...delta, x: Math.round(near.x - drag.refStart.x) };
+            if (near.y !== null && !(shiftKey && delta.y === 0)) delta = { ...delta, y: Math.round(near.y - drag.refStart.y) };
+          }
+          const final = add(drag.refStart, delta);
+          if (near.x !== null || near.y !== null) guideLine = { point: final, x: near.x, y: near.y };
+          if (nodeMovedRef.current) {
+            setDragReadout({ point: final, text: `${Math.round(final.x)}, ${Math.round(final.y)}   Δ ${delta.x}, ${delta.y}` });
+          }
+        }
+        setHandleSnapGuide(guideLine);
+        setLiveOutline(moveNodesBy(base, drag.refs, delta));
+        return;
+      }
+      if (drag.mode === "reshape") {
+        // Under ~4 screen px of travel it's still a click (select only).
+        if (!nodeMovedRef.current) {
+          if (length(subtract(p, drag.origin)) <= 4 * hitScale) return;
+          nodeMovedRef.current = true;
+        }
+        const next = reshapeSegment(base, drag.ref, drag.t, add(p, drag.offset));
+        const info = tunniOf(next, drag.ref);
+        setDragReadout(info && info.tension1 != null && info.tension2 != null
+          ? { point: p, text: `tension ${Math.round(info.tension1 * 100)}% · ${Math.round(info.tension2 * 100)}%` }
+          : null);
+        setLiveOutline(next);
+        return;
+      }
+      if (drag.mode === "tunni") {
+        const k = tunniScaleFor(drag.base, drag.p0, drag.p3, p);
+        const next = scaleSegmentTension(base, drag.ref, k);
+        const info = tunniOf(next, drag.ref);
+        setDragReadout(info && info.tension1 != null && info.tension2 != null
+          ? { point: p, text: `tension ${Math.round(info.tension1 * 100)}% · ${Math.round(info.tension2 * 100)}%` }
+          : { point: p, text: `${Math.round(k * 100)}%` });
+        setLiveOutline(next);
+        return;
+      }
+      if (drag.mode === "box") {
+        const { map, label, identity } = boxTransform(drag.box, drag.handle, drag.start, p, {
+          uniform: shiftKey,
+          fromCenter: altKey,
+          snapAngle: shiftKey,
+        });
+        setDragReadout({ point: p, text: label });
+        // Back at 0° / 100%: show the untouched outline, so releasing there
+        // adds no empty undo step.
+        setLiveOutline(identity ? null : transformNodes(base, drag.refs, map));
         return;
       }
       if (drag.mode === "curve") {
@@ -557,6 +760,12 @@ export function useGlyphEditor(hitScale: number) {
           );
         } else {
           setHandleSnapGuide(null);
+        }
+        draggedPoint = { x: Math.round(draggedPoint.x), y: Math.round(draggedPoint.y) };
+        {
+          const v = subtract(draggedPoint, node.point);
+          const deg = Math.round(((Math.atan2(v.y, v.x) * 180) / Math.PI) * 10) / 10;
+          setDragReadout({ point: draggedPoint, text: `${Math.round(length(v))} · ${deg}°` });
         }
         const breakConstraint = altKey;
         if (drag.part === "handleOut") {
@@ -653,6 +862,7 @@ export function useGlyphEditor(hitScale: number) {
     const liveOutline = useAppStore.getState().liveOutline;
     setRoundCornerLabel(null);
     setHandleSnapGuide(null);
+    setDragReadout(null);
     if (drag.mode === "marquee") {
       finishMarquee(drag);
       dragRef.current = null;
@@ -689,6 +899,12 @@ export function useGlyphEditor(hitScale: number) {
       baseOutlineRef.current = null;
       return;
     }
+    if (drag.mode === "reshape" && !nodeMovedRef.current) {
+      // Plain click on a curve: its two nodes are already selected.
+      if (liveOutline) setLiveOutline(null);
+      baseOutlineRef.current = null;
+      return;
+    }
     if (drag.mode === "move-selection" && drag.clickRef && !nodeMovedRef.current) {
       // Plain click on a node (no drag): drop any sub-threshold jitter and
       // let the canvas pop up the node-type chooser.
@@ -722,6 +938,7 @@ export function useGlyphEditor(hitScale: number) {
     setMarqueeRect(null);
     setRoundCornerLabel(null);
     setHandleSnapGuide(null);
+    setDragReadout(null);
     if (drag && drag.mode !== "marquee" && useAppStore.getState().liveOutline) setLiveOutline(null);
   }, [setLiveOutline]);
 
@@ -737,6 +954,7 @@ export function useGlyphEditor(hitScale: number) {
     setMarqueeRect(null);
     setRoundCornerLabel(null);
     setHandleSnapGuide(null);
+    setDragReadout(null);
   }, []);
 
   const finishOpenContour = useCallback(() => {
@@ -782,16 +1000,50 @@ export function useGlyphEditor(hitScale: number) {
 
   const findObjectOfContourInOutline = useCallback((cid: string) => findObjectOfContour(outline, cid), [outline]);
 
+  /** Double-click on a selected curve's Tunni point: equalize its two tensions. */
+  const balanceTunniAt = useCallback((p: Point): boolean => {
+    const tunni = tunniAt(p);
+    if (!tunni) return false;
+    const next = balanceSegment(outline, tunni.ref);
+    if (next !== outline) commitOutline(activeChar, next, { skipAutoSpacing: true });
+    return true;
+  }, [tunniAt, outline, activeChar, commitOutline]);
+
+  /** What the pointer is over in the Node tool when nothing is being dragged:
+   *  a segment (for the hover highlight / measurements), or nothing when a
+   *  node, handle, Tunni point or box handle has priority. */
+  const hoverSegmentAt = useCallback((p: Point) => {
+    if (dragRef.current) return null;
+    if (hitTestOutline(nodeableOutline, p, hitRadius)) return null;
+    if (tunniAt(p) || boxHandleAt(p)) return null;
+    const hit = hitTestSegments(nodeableOutline, p, segmentRadius);
+    if (!hit) return null;
+    const contour = findContour(nodeableOutline, hit.contourId);
+    const seg = contour ? segmentOf(contour, hit.fromIndex) : null;
+    if (!contour || !seg) return null;
+    const a = contour.nodes[hit.fromIndex], b = contour.nodes[(hit.fromIndex + 1) % contour.nodes.length];
+    const isSel = (id: string) => selectedNodes.some((r) => r.contourId === contour.id && r.nodeId === id);
+    return {
+      ref: { contourId: hit.contourId, fromIndex: hit.fromIndex },
+      t: hit.t,
+      point: hit.point,
+      seg,
+      /** Both ends selected: its Tunni point is on screen. */
+      selected: isSel(a.id) && isSel(b.id),
+    };
+  }, [nodeableOutline, hitRadius, segmentRadius, tunniAt, boxHandleAt, selectedNodes]);
+  const isDragging = useCallback(() => dragRef.current !== null, []);
+
   // Stable identity unless something in it actually changed, so consumers
   // (GlyphCanvas callbacks, window listeners) aren't recreated every render.
   return useMemo(() => ({
-    outline, nodeableOutline, selectedNodes, selectedHandle, drawingContourId, marqueeRect, roundCornerLabel, handleSnapGuide,
+    outline, nodeableOutline, selectedNodes, selectedHandle, drawingContourId, marqueeRect, roundCornerLabel, handleSnapGuide, dragReadout,
     pointerDown, pointerMove, pointerUp, cancel, reset, cycleNodeType, insertNodeAt, nodeClick, clearNodeClick,
-    deleteSelectedNodes, nudgeNodes, finishOpenContour, isCurrentEndpoint,
+    deleteSelectedNodes, nudgeNodes, finishOpenContour, isCurrentEndpoint, balanceTunniAt, hoverSegmentAt, isDragging,
     findObjectOfContour: findObjectOfContourInOutline,
   }), [
-    outline, nodeableOutline, selectedNodes, selectedHandle, drawingContourId, marqueeRect, roundCornerLabel, handleSnapGuide,
+    outline, nodeableOutline, selectedNodes, selectedHandle, drawingContourId, marqueeRect, roundCornerLabel, handleSnapGuide, dragReadout,
     pointerDown, pointerMove, pointerUp, cancel, reset, cycleNodeType, insertNodeAt, nodeClick, clearNodeClick,
-    deleteSelectedNodes, nudgeNodes, finishOpenContour, isCurrentEndpoint, findObjectOfContourInOutline,
+    deleteSelectedNodes, nudgeNodes, finishOpenContour, isCurrentEndpoint, balanceTunniAt, hoverSegmentAt, isDragging, findObjectOfContourInOutline,
   ]);
 }
