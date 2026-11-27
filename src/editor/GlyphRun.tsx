@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useReducer } from "react";
 import { ghostOutlineFor, useGhostFont } from "./ghostFont";
 import { ghostCenterX } from "./ghostRef";
 import { useAppStore } from "@/glyph/store";
@@ -7,7 +7,7 @@ import { hasOutlineCached } from "./outlineCache";
 import type { KerningPairs } from "@/types/kerning";
 import { effectiveWordSpacing } from "@/types/kerning";
 import { layoutLine } from "./textLayout";
-import { getGlyphPaths } from "./glyphPaths";
+import { buildGlyphPathsWithinBudget, warmGlyphPaths, type GlyphPathEntry } from "./glyphPaths";
 
 // Kerning edits (dragging a glyph in the Test Lab) only change glyph X
 // positions, not outlines, but every kerning update used to force every
@@ -102,6 +102,28 @@ function GlyphRunView({
   );
   const totalAdvance = Math.max(1, rawAdvance);
 
+  // Paths come from the shared cache; glyphs not built yet (textured brush
+  // strokes take 100+ ms each) are built in the background — off-thread for
+  // heavy ones — and this run re-renders as they land, instead of freezing
+  // Test Lab / Kamus Kerning while every glyph is outlined synchronously.
+  const [, bump] = useReducer((n: number) => n + 1, 0);
+  const pathsByChar = new Map<string, GlyphPathEntry[] | null>();
+  const missing: string[] = [];
+  for (const { char } of placed) {
+    if (pathsByChar.has(char)) continue;
+    const g = glyphs[char];
+    if (!g || !hasOutlineCached(g)) continue;
+    const p = buildGlyphPathsWithinBudget(g, ascender);
+    pathsByChar.set(char, p);
+    if (!p) missing.push(char);
+  }
+  const missingKey = missing.join("");
+  useEffect(() => {
+    if (!missingKey) return;
+    const cancels = [...missingKey].map((ch) => (glyphs[ch] ? warmGlyphPaths(glyphs[ch], ascender, bump) : () => {}));
+    return () => cancels.forEach((c) => c());
+  }, [missingKey, glyphs, ascender]);
+
   const pxPerUnit = fontSizePx / unitsPerEm;
   const width = Math.max(1, totalAdvance * pxPerUnit);
   const height = Math.max(1, totalH * pxPerUnit);
@@ -121,7 +143,8 @@ function GlyphRunView({
           const glyphColor = colorForIndex?.(i, char) ?? color;
 
           if (g && hasOutlineCached(g)) {
-            const paths = getGlyphPaths(g, ascender);
+            const paths = pathsByChar.get(char);
+            if (!paths) return null; // still being built in the background
             return (
               <g key={i} transform={`translate(${x} 0)`} fill={glyphColor} stroke={glyphColor}>
                 {paths.map((entry) =>

@@ -1710,6 +1710,31 @@ interface SpecimenPanelProps {
   setKerningMode: (mode: "single" | "family") => void;
 }
 
+/* "Is there any (manual) pair at all?" — asked on every render of the panel.
+ * Object.keys / Object.values over a 100k-pair table cost tens of ms per
+ * render on big fonts; these stop at the first hit and are cached per map
+ * (maps are replaced, never mutated). */
+const anyTrueCache = new WeakMap<object, boolean>();
+function anyTrue(map: Record<string, boolean> | undefined): boolean {
+  if (!map) return false;
+  const hit = anyTrueCache.get(map);
+  if (hit !== undefined) return hit;
+  let res = false;
+  for (const k in map) if (map[k]) { res = true; break; }
+  anyTrueCache.set(map, res);
+  return res;
+}
+const anyKeyCache = new WeakMap<object, boolean>();
+function anyKey(map: Record<string, unknown> | undefined): boolean {
+  if (!map) return false;
+  const hit = anyKeyCache.get(map);
+  if (hit !== undefined) return hit;
+  let res = false;
+  for (const _k in map) { res = true; break; }
+  anyKeyCache.set(map, res);
+  return res;
+}
+
 export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProps) {
   const glyphs = useAppStore((s) => s.glyphs);
   const featureConfig = useAppStore((s) => s.featureConfig);
@@ -1857,15 +1882,15 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
   // Whether the currently active kerning layer has ANY manually-set
   // pair — used to grey out "Reset All" when nothing to reset.
   const hasAnyManualKerningInScope = (() => {
-    if (familyContext === "shared") return Object.values(kerningManual).some(Boolean);
-    return Object.values(kerningOverrideManualByStyle[familyContext] ?? {}).some(Boolean);
+    if (familyContext === "shared") return anyTrue(kerningManual);
+    return anyTrue(kerningOverrideManualByStyle[familyContext]);
   })();
 
   // Broader than hasAnyManualKerningInScope: true if there's ANY pair at
   // all in scope (auto-computed or manual) — used to enable "Clear All".
   const hasAnyKerningInScope = (() => {
-    if (familyContext === "shared") return Object.keys(kerningPairs).length > 0;
-    return Object.keys(kerningOverridesByStyle[familyContext] ?? {}).length > 0;
+    if (familyContext === "shared") return anyKey(kerningPairs);
+    return anyKey(kerningOverridesByStyle[familyContext]);
   })();
 
   const handleResetAllKerning = useCallback(async () => {

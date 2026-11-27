@@ -15,7 +15,8 @@ import { getCornerHandles } from "./nodeOps";
 import { hitTestSegments } from "./segmentHitTest";
 import { findOverlappingObjectIds } from "./overlapDetect";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
-import { mergeOutlineBrushStrokes } from "./glyphPaths";
+import { mergeOutlineBrushStrokes, peekObjectPath, prefetchObjectPaths } from "./glyphPaths";
+import { getOrderedChars } from "@/glyph/defaultGlyphs";
 import { GhostGlyph } from "./GhostGlyph";
 import { familyGhostOrder, ghostCenterX as ghostCenterXFor, matchingFamilyGlyph } from "./ghostRef";
 import { CanvasRuler, RulerGuideLines, RULER_SIZE } from "./CanvasRuler";
@@ -121,6 +122,19 @@ export function GlyphCanvas() {
   const glyph = useAppStore((s) => s.glyphs[s.activeChar]);
   const liveOutline = useAppStore((s) => s.liveOutline);
   const activeChar = useAppStore((s) => s.activeChar);
+  // Get the textured brush strokes of the neighbouring glyphs outlined in the
+  // background, so stepping with Tab / Prev / Next lands on ready paths.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      const st = useAppStore.getState();
+      const order = getOrderedChars(st.glyphs);
+      const i = order.indexOf(st.activeChar);
+      if (i < 0) return;
+      const near = [1, -1, 2, -2, 3].map((d) => st.glyphs[order[(i + d + order.length) % order.length]]).filter(Boolean);
+      prefetchObjectPaths(near, st.metrics.ascender);
+    }, 150);
+    return () => window.clearTimeout(id);
+  }, [activeChar]);
   const ghost = useAppStore((s) => s.ghost);
   // Only subscribe to the two specific ghost styles needed for preview,
   // not the entire glyphsByStyle map which would re-render on any
@@ -2034,7 +2048,8 @@ const ObjectShape = memo(function ObjectShape({
 
   const variableBrushD = useMemo(() => {
     if (!isVariableBrush) return "";
-    return contoursToPathCached(brushOutlineContours(obj), ascender);
+    // Prefetched off-thread for neighbouring glyphs (see prefetchObjectPaths).
+    return peekObjectPath(obj, ascender) ?? contoursToPathCached(brushOutlineContours(obj), ascender);
   }, [obj, ascender, isVariableBrush]);
 
   // Node tool dimming wraps whichever branch below fires in a <g> with

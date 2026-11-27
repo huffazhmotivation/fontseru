@@ -29,6 +29,26 @@ interface Item {
   dev: number;
 }
 
+/* One shared analysis worker (falls back to the main thread when Workers
+ * are unavailable). Only the newest request's messages are used. */
+type DictMsg = { id: number; progress?: number; entries?: [string, PairResult][] };
+let dictWorker: Worker | null | undefined;
+let dictSeq = 0;
+let dictListener: ((d: DictMsg) => void) | null = null;
+function getDictWorker(): Worker | null {
+  if (dictWorker !== undefined) return dictWorker;
+  try {
+    if (typeof Worker === "undefined") return (dictWorker = null);
+    const w = new Worker(new URL("../../kerning/kerningDictWorker.ts", import.meta.url), { type: "module" });
+    w.onmessage = (e: MessageEvent<DictMsg>) => dictListener?.(e.data);
+    w.onerror = () => { dictWorker = null; };
+    dictWorker = w;
+  } catch {
+    dictWorker = null;
+  }
+  return dictWorker;
+}
+
 export interface DictPair {
   left: string;
   right: string;
@@ -80,6 +100,17 @@ export function KerningDictionary({
     const signal = { cancelled: false };
     setProgress(0);
     const t = window.setTimeout(() => {
+      const worker = getDictWorker();
+      if (worker) {
+        const id = ++dictSeq;
+        dictListener = (data) => {
+          if (data.id !== id || signal.cancelled) return;
+          if (typeof data.progress === "number") setProgress(data.progress);
+          if (data.entries) setResults(new Map(data.entries));
+        };
+        worker.postMessage({ id, glyphs, metrics, groups });
+        return;
+      }
       void analyseDictionary(glyphs, metrics, groups, (d, n) => setProgress(n ? d / n : 1), signal).then((r) => {
         if (r && !signal.cancelled) setResults(r);
       });

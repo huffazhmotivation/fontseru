@@ -291,12 +291,28 @@ function isHeavyGlyph(glyph: Glyph): boolean {
 let pathWorker: Worker | null | undefined;
 let workerSeq = 0;
 const workerJobs = new Map<number, WarmTask>();
+/* Single brush objects prefetched for the editing canvas (see
+ * prefetchObjectPaths): their render path, keyed by object + ascender. */
+const objectPathCache = new WeakMap<VectorObject, Map<number, string>>();
+const objectJobs = new Map<number, { obj: VectorObject; ascender: number }>();
+const objectInFlight = new WeakSet<VectorObject>();
 function getPathWorker(): Worker | null {
   if (pathWorker !== undefined) return pathWorker;
   try {
     if (typeof Worker === "undefined" || typeof window === "undefined") return (pathWorker = null);
     const w = new Worker(new URL("./glyphPathsWorker.ts", import.meta.url), { type: "module" });
-    w.onmessage = (e: MessageEvent<{ id: number; entries?: GlyphPathEntry[]; error?: string }>) => {
+    w.onmessage = (e: MessageEvent<{ id: number; entries?: GlyphPathEntry[]; d?: string; error?: string }>) => {
+      const objJob = objectJobs.get(e.data.id);
+      if (objJob) {
+        objectJobs.delete(e.data.id);
+        objectInFlight.delete(objJob.obj);
+        if (typeof e.data.d === "string") {
+          let m = objectPathCache.get(objJob.obj);
+          if (!m) { m = new Map(); objectPathCache.set(objJob.obj, m); }
+          m.set(objJob.ascender, e.data.d);
+        }
+        return;
+      }
       const task = workerJobs.get(e.data.id);
       workerJobs.delete(e.data.id);
       if (!task) return;
@@ -449,4 +465,57 @@ export function warmGlyphPaths(glyph: Glyph, ascender: number, onReady: () => vo
   return () => {
     t.callbacks.delete(onReady);
   };
+}
+
+/** Render path of one brush object if it was prefetched (see below). */
+export function peekObjectPath(obj: VectorObject, ascender: number): string | null {
+  return objectPathCache.get(obj)?.get(ascender) ?? null;
+}
+
+/**
+ * Builds the render paths of these glyphs' textured brush objects in the
+ * worker ahead of time. The editing canvas calls it for the glyphs next to
+ * the active one, so stepping with Tab / the arrows finds them ready instead
+ * of outlining every stroke on the main thread (100–600 ms on brush fonts).
+ */
+// Its own worker, so prefetching for the canvas never queues behind the
+// (possibly long) glyph-list / Multi-view warm-up running in the main one.
+let prefetchWorker: Worker | null | undefined;
+function getPrefetchWorker(): Worker | null {
+  if (prefetchWorker !== undefined) return prefetchWorker;
+  if (!getPathWorker()) return (prefetchWorker = null);
+  try {
+    const w = new Worker(new URL("./glyphPathsWorker.ts", import.meta.url), { type: "module" });
+    w.onmessage = (e: MessageEvent<{ id: number; d?: string }>) => {
+      const job = objectJobs.get(e.data.id);
+      if (!job) return;
+      objectJobs.delete(e.data.id);
+      objectInFlight.delete(job.obj);
+      if (typeof e.data.d === "string") {
+        let m = objectPathCache.get(job.obj);
+        if (!m) { m = new Map(); objectPathCache.set(job.obj, m); }
+        m.set(job.ascender, e.data.d);
+      }
+    };
+    w.onerror = () => { prefetchWorker = null; };
+    prefetchWorker = w;
+  } catch {
+    prefetchWorker = null;
+  }
+  return prefetchWorker;
+}
+
+export function prefetchObjectPaths(glyphs: Glyph[], ascender: number): void {
+  const worker = getPrefetchWorker();
+  if (!worker) return;
+  for (const g of glyphs) {
+    for (const obj of g.outline.objects) {
+      if (obj.kind !== "brush" || HEAVY_BRUSH_FREE.has(obj.brushType ?? "monoline")) continue;
+      if (objectInFlight.has(obj) || objectPathCache.get(obj)?.has(ascender)) continue;
+      objectInFlight.add(obj);
+      const id = ++workerSeq;
+      objectJobs.set(id, { obj, ascender });
+      worker.postMessage({ id, obj, ascender });
+    }
+  }
 }
