@@ -718,6 +718,10 @@ interface AppState {
   beginFamilyKerningDrag: (context: KerningContext) => void;
   setFamilyKerningPairLive: (context: KerningContext, left: string, right: string, value: number) => void;
   endFamilyKerningDrag: () => void;
+  /** Sets many pairs at once (manual) as ONE store update and ONE undo step.
+   * Setting them one by one copied the whole pair table per pair — on a font
+   * with 100k+ pairs, "apply all suggestions" froze the app. */
+  setFamilyKerningPairsBulk: (context: KerningContext, entries: [string, string, number][]) => void;
 
   // Family word spacing — same Shared + sparse Style Override layering as
   // family kerning above, so Family Test's "Kerning Context" picker also
@@ -3220,6 +3224,43 @@ export const useAppStore = create<AppState>()((set, get) => {
           [context]: { ...(state.kerningOverrideManualByStyle[context] ?? {}), [key]: true },
         },
       }));
+    },
+
+    setFamilyKerningPairsBulk: (context, entries) => {
+      if (!entries.length) return;
+      const state = get();
+      const pastEntry = {
+        glyphs: state.glyphs,
+        metrics: state.metrics,
+        kerningPairs: state.kerningPairs,
+        kerningManual: state.kerningManual,
+        kerningOverridesByStyle: state.kerningOverridesByStyle,
+        kerningOverrideManualByStyle: state.kerningOverrideManualByStyle,
+      };
+      const history = { past: [...state.past, pastEntry].slice(-HISTORY_LIMIT), future: [] };
+      if (context === "shared") {
+        const pairs = { ...state.kerningPairs };
+        const manual = { ...state.kerningManual };
+        for (const [l, r, v] of entries) {
+          const key = kerningKey(l, r);
+          pairs[key] = Math.round(v);
+          manual[key] = true;
+        }
+        set({ kerningPairs: pairs, kerningManual: manual, ...history });
+        return;
+      }
+      const pairs = { ...(state.kerningOverridesByStyle[context] ?? {}) };
+      const manual = { ...(state.kerningOverrideManualByStyle[context] ?? {}) };
+      for (const [l, r, v] of entries) {
+        const key = kerningKey(l, r);
+        pairs[key] = Math.round(v);
+        manual[key] = true;
+      }
+      set({
+        kerningOverridesByStyle: { ...state.kerningOverridesByStyle, [context]: pairs },
+        kerningOverrideManualByStyle: { ...state.kerningOverrideManualByStyle, [context]: manual },
+        ...history,
+      });
     },
 
     endFamilyKerningDrag: () => {

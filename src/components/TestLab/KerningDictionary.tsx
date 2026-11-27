@@ -62,9 +62,7 @@ export function KerningDictionary({
   const reviewed = useAppStore((s) => s.kerningReviewed);
   const setReviewed = useAppStore((s) => s.setKerningReviewed);
   const setPair = useAppStore((s) => s.setFamilyKerningPair);
-  const beginBulk = useAppStore((s) => s.beginFamilyKerningDrag);
-  const setPairLive = useAppStore((s) => s.setFamilyKerningPairLive);
-  const endBulk = useAppStore((s) => s.endFamilyKerningDrag);
+  const setPairsBulk = useAppStore((s) => s.setFamilyKerningPairsBulk);
 
   const pairs: KerningPairs = useMemo(() => effectiveKerningPairs(sharedPairs, overrides, styleKey), [sharedPairs, overrides, styleKey]);
   const [extended, setExtended] = useState(false);
@@ -155,11 +153,10 @@ export function KerningDictionary({
   useEffect(() => setShown(PAGE), [groupId, filter, query, extended]);
 
   const applyAll = () => {
-    const list = groupItems.filter((it) => it.warn && !it.ok);
+    const list = groupItems.filter((it) => it.warn && !it.ok && it.res.suggest !== it.cur);
     if (!list.length) return;
-    beginBulk(context);
-    for (const it of list) setPairLive(context, it.l, it.r, it.res.suggest);
-    endBulk(); // one undo step for the whole batch
+    // One store update + one undo step for the whole batch.
+    setPairsBulk(context, list.map((it) => [it.l, it.r, it.res.suggest] as [string, string, number]));
   };
 
   const frame = group?.frames[0] ?? ["", ""];
@@ -233,7 +230,7 @@ export function KerningDictionary({
 
       {filter === "warn" && !busy && (
         <p className="fm-kdict-note">
-          Jarak pasangan ini menyimpang dari spasi normal huruf-hurufnya. Klik untuk mengatur di panel kanan, pakai saran, lalu tandai ✓ kalau sudah pas.
+          Jarak pasangan ini menyimpang dari spasi normal huruf-hurufnya. Geser huruf kanan ke kiri/kanan untuk mengatur jaraknya, atau pakai saran, lalu tandai ✓ kalau sudah pas.
         </p>
       )}
 
@@ -250,10 +247,10 @@ export function KerningDictionary({
               frame={frame}
               glyphs={glyphs}
               pairs={pairs}
+              upm={metrics.unitsPerEm}
               selected={!!selected && selected.left === it.l && selected.right === it.r}
               onSelect={() => onSelect({ left: it.l, right: it.r })}
-              onNudge={(d) => setPair(context, it.l, it.r, it.cur + d)}
-              onApply={() => setPair(context, it.l, it.r, it.res.suggest)}
+              onSet={(v) => setPair(context, it.l, it.r, v)}
               onToggleOk={() => setReviewed([reviewKey(it.l, it.r)], !it.ok)}
             />
           ))}
@@ -267,50 +264,118 @@ export function KerningDictionary({
   );
 }
 
+const SPEC_PX = 52;
+
 const PairCard = memo(function PairCard({
   item,
   frame,
   glyphs,
   pairs,
+  upm,
   selected,
   onSelect,
-  onNudge,
-  onApply,
+  onSet,
   onToggleOk,
 }: {
   item: Item;
   frame: [string, string];
   glyphs: GlyphMap;
   pairs: KerningPairs;
+  upm: number;
   selected: boolean;
   onSelect: () => void;
-  onNudge: (delta: number) => void;
-  onApply: () => void;
+  onSet: (value: number) => void;
   onToggleOk: () => void;
 }) {
   const text = `${frame[0]}${item.l}${item.r}${frame[1]}`;
+  const chars = useMemo(() => [...text], [text]);
   const ctrlL = [...frame[0]].length;
+  const key = kerningKey(item.l, item.r);
+
+  // Drag to kern: grab the pair and slide — the right-hand glyph follows the
+  // pointer. While dragging only this card re-renders (a tiny local pair map,
+  // no store writes); the value is saved once on release.
+  const [drag, setDrag] = useState<{ id: number; x0: number; v0: number; v: number; moved: boolean } | null>(null);
+  const value = drag ? drag.v : item.cur;
+  const localPairs = useMemo(() => {
+    const out: KerningPairs = {};
+    for (let i = 0; i + 1 < chars.length; i++) {
+      const k = kerningKey(chars[i], chars[i + 1]);
+      const v = pairs[k];
+      if (v !== undefined) out[k] = v;
+    }
+    if (drag) out[key] = drag.v;
+    return out;
+  }, [chars, pairs, drag, key]);
+
   // Control letters are drawn dimmer so the pair itself reads first.
   const dim = useCallback(
     (index: number) => (index < ctrlL || index >= ctrlL + 2 ? "color-mix(in srgb, currentColor 32%, transparent)" : undefined),
     [ctrlL]
   );
+  // Half speed: the glyph moves half as far as the pointer, so ~10 units per
+  // screen px at this size — fine enough to place by finger on iPad.
+  const unitsPerPx = (upm / SPEC_PX) * 0.5;
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDrag({ id: e.pointerId, x0: e.clientX, v0: item.cur, v: item.cur, moved: false });
+    onSelect();
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x0;
+    const moved = drag.moved || Math.abs(dx) > 2;
+    if (!moved) return;
+    // Hold Shift (or Alt) for 1-unit steps; otherwise snap to 5 units.
+    const raw = drag.v0 + dx * unitsPerPx;
+    const step = e.shiftKey || e.altKey ? 1 : 5;
+    const v = Math.round(raw / step) * step;
+    if (v !== drag.v || !drag.moved) setDrag({ ...drag, v, moved: true });
+  };
+  const finish = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const { moved, v, v0 } = drag;
+    setDrag(null);
+    if (moved && v !== v0) onSet(v);
+  };
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    e.stopPropagation();
+    const step = e.shiftKey ? NUDGE : 1;
+    onSet(item.cur + (e.key === "ArrowLeft" ? -step : step));
+  };
+
   const showSuggest = item.warn && !item.ok && item.res.suggest !== item.cur;
   const fmt = (v: number) => (v > 0 ? `+${v}` : `${v}`);
   return (
-    <div className={`fm-kdict-card ${selected ? "selected" : ""} ${item.ok ? "done" : ""}`} data-testid={`kdict-card-${item.l}${item.r}`}>
-      <button type="button" className="fm-kdict-spec" onClick={onSelect} title="Pilih pasangan ini untuk diatur di panel kanan">
-        <GlyphRun text={text} fontSizePx={44} glyphsOverride={glyphs} kerningPairsOverride={pairs} colorForIndex={dim} ghostEmpty />
-      </button>
+    <div className={`fm-kdict-card ${selected ? "selected" : ""} ${item.ok ? "done" : ""} ${drag?.moved ? "dragging" : ""}`} data-testid={`kdict-card-${item.l}${item.r}`}>
+      <div
+        className="fm-kdict-spec"
+        role="slider"
+        tabIndex={0}
+        aria-label={`Kerning ${item.l}${item.r}`}
+        aria-valuenow={value}
+        title="Geser ke kiri/kanan untuk mengatur jarak (Shift = halus). Panah ← → juga bisa."
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={finish}
+        onPointerCancel={finish}
+        onKeyDown={onKeyDown}
+        data-testid={`kdict-spec-${item.l}${item.r}`}
+      >
+        <GlyphRun text={text} fontSizePx={SPEC_PX} glyphsOverride={glyphs} kerningPairsOverride={localPairs} colorForIndex={dim} ghostEmpty />
+      </div>
       <div className="fm-kdict-row">
         <span className="fm-kdict-pair">{item.l}{item.r}</span>
         <span className="fm-kdict-nudge">
-          <button type="button" onClick={() => onNudge(-NUDGE)} aria-label="Rapatkan 10 unit" title="Rapatkan 10"><Minus size={11} /></button>
-          <span className="v">{fmt(item.cur)}</span>
-          <button type="button" onClick={() => onNudge(NUDGE)} aria-label="Renggangkan 10 unit" title="Renggangkan 10"><Plus size={11} /></button>
+          <button type="button" onClick={() => onSet(item.cur - NUDGE)} aria-label="Rapatkan 10 unit" title="Rapatkan 10"><Minus size={11} /></button>
+          <span className="v">{fmt(value)}</span>
+          <button type="button" onClick={() => onSet(item.cur + NUDGE)} aria-label="Renggangkan 10 unit" title="Renggangkan 10"><Plus size={11} /></button>
         </span>
-        {showSuggest && (
-          <button type="button" className="fm-kdict-suggest" onClick={onApply} title="Pakai nilai saran">
+        {showSuggest && !drag?.moved && (
+          <button type="button" className="fm-kdict-suggest" onClick={() => onSet(item.res.suggest)} title="Pakai nilai saran">
             saran {fmt(item.res.suggest)}
           </button>
         )}

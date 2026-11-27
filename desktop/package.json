@@ -1,7 +1,7 @@
 {
   "name": "fontseru-desktop",
   "productName": "FontSeru",
-  "version": "0.9.9",
+  "version": "0.9.10",
   "description": "FontSeru \u2014 studio font, desain & motion (offline)",
   "author": "FontSeru",
   "main": "main.cjs",
