@@ -10,6 +10,7 @@ import { useGlyphPaths } from "./useGlyphPaths";
 import { filterGlyphChars } from "./glyphFilter";
 import { useGlyphEditor } from "./useGlyphEditor";
 import { useBrushTool } from "./useBrushTool";
+import { LiveBrushFill } from "./LiveBrushFill";
 import { useBrushNodeTool } from "./useBrushNodeTool";
 import { usePencilTool } from "./usePencilTool";
 import { useSelectTool, handlePositions, type HandleId, type SkewHandleId } from "./useSelectTool";
@@ -1643,14 +1644,7 @@ export function GlyphMultiEditCanvas() {
                     overlappingIds={EMPTY_ID_SET}
                   />
 
-                  {brushTool.previewOutline.length > 0 && (
-                    <path
-                      d={brushTool.previewOutline.map((c) => contourToPath(c, ascender)).join(" ")}
-                      className="obj-fill"
-                      fillRule="nonzero"
-                      opacity={0.9}
-                    />
-                  )}
+                  <LiveBrushFill outline={brushTool.previewOutline} frozen={brushTool.previewFrozen} ascender={ascender} />
                   {brushTool.previewCenterline && (
                     <path
                       d={contourToPath(brushTool.previewCenterline, ascender)}

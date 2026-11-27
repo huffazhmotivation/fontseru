@@ -1,10 +1,11 @@
-import { despeckleBinary, loadImageFile, loadTracer, objectsBoundsPx, traceBinaryImage } from "@/trace/imageTrace";
+import { loadImageFile, objectsBoundsPx } from "@/trace/imageTrace";
+import { blurField, cleanField, traceField } from "@/trace/precisionTrace";
 import { getWorksheetTemplates } from "@/worksheet/templates/registry";
 import { pageFractionToSource } from "@/worksheet/homography";
 import type { WorksheetCellResult, WorksheetDetectionResult, WorksheetGridSpec, WorksheetTemplate } from "@/worksheet/types";
 import { detectFiducials, orderFiducialsForTemplate, decodeDotCountFromRaster } from "./fiducials";
 import { luminanceGrid } from "./binaryOps";
-import { clearBinaryImageDataBorder, grayToBinaryImageData, rectifyRegionToGray } from "./rectify";
+import { rectifyRegionToGray } from "./rectify";
 
 /** Caps the working resolution for fiducial search + rectification — large enough to keep the small page marker legible, small enough to stay fast for a full-page photo. */
 const MAX_SOURCE_DIMENSION = 2600;
@@ -180,7 +181,7 @@ function computeGlobalInkThreshold(cellGrays: Uint8ClampedArray[], rowMask: Uint
 }
 
 async function loadSourceGray(file: File): Promise<{ gray: Uint8ClampedArray; width: number; height: number }> {
-  await loadTracer();
+
   const img = await loadImageFile(file);
   const w = img.naturalWidth || img.width;
   const h = img.naturalHeight || img.height;
@@ -262,13 +263,17 @@ function tryTemplate(
   template.slots.forEach((gridSlot, i) => {
     const cellRaster = cellRasters[i];
     eraseGuideLineBands(cellRaster.gray, cellRaster.width, rowMask, GUIDE_LINE_PALE_CUTOFF);
-    const binaryImgd = grayToBinaryImageData(cellRaster.gray, cellRaster.width, cellRaster.height, threshold);
-    clearBinaryImageDataBorder(binaryImgd, BORDER_CLEAR_PX);
-    despeckleBinary(binaryImgd, CELL_DESPECKLE_MIN_AREA);
-    // "high" gives imagetracer the tightest curve-fit tolerance, so the
-    // traced outline hugs the actual binarized ink as closely as possible
-    // instead of smoothing/rounding it toward a coarser approximation.
-    const objects = traceBinaryImage(binaryImgd, "high");
+    // Precision engine (see trace/precisionTrace.ts): the edge is taken
+    // from the greyscale cell at sub-pixel accuracy and fitted with the
+    // fewest Bézier curves, nodes on extremes — same engine as Trace Image.
+    const cw = cellRaster.width;
+    const ch = cellRaster.height;
+    const field = new Float32Array(cw * ch);
+    for (let k = 0; k < field.length; k++) field[k] = threshold - cellRaster.gray[k];
+    blurField(field, cw, ch, 1);
+    clearFieldBorder(field, cw, ch, BORDER_CLEAR_PX);
+    cleanField(field, cw, ch, CELL_DESPECKLE_MIN_AREA, CELL_DESPECKLE_MIN_AREA);
+    const objects = traceField(field, cw, ch, { tolerance: 0.45, cornerAngle: 45 }).objects;
 
     if (objects.length === 0) {
       cells.push({ slot: gridSlot, status: "missing", objects: [], bounds: { minX: 0, minY: 0, maxX: 0, maxY: 0 } });
@@ -296,4 +301,17 @@ export async function detectRasterWorksheet(file: File): Promise<WorksheetDetect
   }
   if (!best || best.confidence < MIN_DETECTED_FRACTION) return null;
   return best;
+}
+
+/** Forces a band around the cell's edge to background (guide border, a neighbour's ink). */
+function clearFieldBorder(f: Float32Array, w: number, h: number, bandPx: number): void {
+  const band = Math.max(0, Math.min(bandPx, Math.floor(Math.min(w, h) / 2)));
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (x < band || y < band || x >= w - band || y >= h - band) {
+        const i = y * w + x;
+        f[i] = Math.min(f[i], -1);
+      }
+    }
+  }
 }

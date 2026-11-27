@@ -1,6 +1,6 @@
 import type { Glyph } from "@/types/glyph";
 import type { Contour, VectorObject } from "@/types/geometry";
-import { objectFillPath, objectStrokePath, contourToPath } from "./pathBuilder";
+import { objectFillPath, objectStrokePath, contourToPath, contoursToPathCached } from "./pathBuilder";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { applyBooleanOp, normalizeSelfIntersectingContours, resolveTexturedBrushFill, TIGHT_CURVE_FIDELITY_SCALE } from "./booleanOps";
 
@@ -217,7 +217,7 @@ export function getGlyphPaths(glyph: Glyph, ascender: number): GlyphPathEntry[] 
       entries.push({
         kind: "brushFill",
         id: obj.id,
-        d: resolved.map((c) => contourToPath(c, ascender)).join(" "),
+        d: contoursToPathCached(resolved, ascender),
       });
       continue;
     }

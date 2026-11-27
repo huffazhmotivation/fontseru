@@ -77,6 +77,44 @@ export function taperFactor(
   return Math.min(fStart, fEnd);
 }
 
+/** Taper length per unit of taper setting, in multiples of the brush size
+ * (taperMode "length"): Taper 15% on a size-26 brush ramps over 39 units. */
+export const TAPER_LENGTH_PER_SIZE = 10;
+
+/**
+ * Width multiplier from the taper ramps at arc distance `dist` along a
+ * stroke of `totalLength`. Legacy strokes (no taperMode) keep the old
+ * fraction-of-length taper exactly; taperMode "length" uses fixed-length
+ * ramps that only shrink (proportionally) when a short stroke can't fit
+ * both, and — while the stroke is live — leaves the tip under the pen at
+ * full width until pen-up.
+ */
+export function taperAt(settings: BrushSettings, dist: number, totalLength: number): number {
+  const opts = { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd };
+  if (settings.taperMode !== "length") {
+    return taperFactor(totalLength > 0 ? dist / totalLength : 0, settings.taperStart, settings.taperEnd, opts);
+  }
+  let ls = Math.max(0, settings.taperStart) * TAPER_LENGTH_PER_SIZE * settings.size;
+  let le = settings.liveTip ? 0 : Math.max(0, settings.taperEnd) * TAPER_LENGTH_PER_SIZE * settings.size;
+  if (!settings.liveTip && ls + le > totalLength * 0.9 && ls + le > 0) {
+    const k = (totalLength * 0.9) / (ls + le);
+    ls *= k;
+    le *= k;
+  }
+  const startFloor = settings.sharpStart ? 0 : 0.08;
+  const endFloor = settings.sharpEnd ? 0 : 0.08;
+  let f = 1;
+  if (ls > 0 && dist < ls) {
+    const t = Math.max(0, dist / ls);
+    f = Math.max(startFloor, t * t * (3 - 2 * t));
+  }
+  if (le > 0 && totalLength - dist < le) {
+    const t = Math.max(0, (totalLength - dist) / le);
+    f = Math.min(f, Math.max(endFloor, t * t * (3 - 2 * t)));
+  }
+  return f;
+}
+
 /** Deterministic pseudo-noise in [-1,1] — same seed always gives the same value, so a stroke's rough edge doesn't flicker on re-render. */
 function pseudoNoise(seed: number): number {
   const x = Math.sin(seed * 12.9898) * 43758.5453;
@@ -117,6 +155,23 @@ function oilEdgeOffset(s: number, edgeSeed: number, amplitude: number): number {
   const lobesPerLength = 5.5;
   const n = coherentNoise1D(s * lobesPerLength, edgeSeed);
   const endFactor = 1 + 1.6 * Math.max(0, 0.22 - Math.min(s, 1 - s)) / 0.22;
+  return n * amplitude * endFactor;
+}
+
+/**
+ * Same torn edge for taperMode "length" strokes, keyed to ABSOLUTE distance
+ * (one lobe every ~2.4 × size) so the scallops already on screen never
+ * reshuffle while the stroke keeps growing, and the frayed ends cover a
+ * fixed length instead of 22% of the stroke. The end under a live pen is
+ * left alone until pen-up, like the end taper.
+ */
+function oilEdgeOffsetAbs(dist: number, total: number, size: number, live: boolean, edgeSeed: number, amplitude: number): number {
+  const lobe = Math.max(1, size * 2.4);
+  const n = coherentNoise1D(dist / lobe, edgeSeed);
+  const reach = size * 3;
+  const fromEnd = live ? Infinity : total - dist;
+  const endDist = Math.min(dist, fromEnd);
+  const endFactor = 1 + 1.6 * Math.max(0, reach - endDist) / reach;
   return n * amplitude * endFactor;
 }
 
@@ -533,6 +588,33 @@ function catmullRomPoint(p0: StrokeSample, p1: StrokeSample, p2: StrokeSample, p
 }
 
 /**
+ * Centripetal Catmull-Rom (α = ½, Barry–Goldman form). Unlike the uniform
+ * version it never overshoots or loops when neighbouring points are spaced
+ * very unevenly — e.g. a long simplified run next to the dense points right
+ * under the pen — so the curve between two points depends far less on where
+ * the NEXT point lands. Used for taperMode "length" strokes.
+ */
+function centripetalCatmullRomPoint(p0: StrokeSample, p1: StrokeSample, p2: StrokeSample, p3: StrokeSample, t: number): StrokeSample {
+  const knot = (a: StrokeSample, b: StrokeSample) => Math.max(1e-6, Math.sqrt(Math.hypot(b.x - a.x, b.y - a.y)));
+  const t0 = 0;
+  const t1 = t0 + (p0 === p1 ? 1e-6 : knot(p0, p1));
+  const t2 = t1 + knot(p1, p2);
+  const t3 = t2 + (p2 === p3 ? 1e-6 : knot(p2, p3));
+  const u = t1 + (t2 - t1) * t;
+  const lerp = (a: { x: number; y: number }, b: { x: number; y: number }, ta: number, tb: number) => {
+    const w = (u - ta) / (tb - ta || 1e-12);
+    return { x: a.x + (b.x - a.x) * w, y: a.y + (b.y - a.y) * w };
+  };
+  const A1 = lerp(p0, p1, t0, t1);
+  const A2 = lerp(p1, p2, t1, t2);
+  const A3 = lerp(p2, p3, t2, t3);
+  const B1 = lerp(A1, A2, t0, t2);
+  const B2 = lerp(A2, A3, t1, t3);
+  const C = lerp(B1, B2, t1, t2);
+  return { x: C.x, y: C.y, pressure: p1.pressure + (p2.pressure - p1.pressure) * t };
+}
+
+/**
  * Resample a (typically sparse, RDP-simplified) centerline into a dense,
  * evenly-spaced curve using Catmull-Rom interpolation.
  *
@@ -559,7 +641,7 @@ function catmullRomPoint(p0: StrokeSample, p1: StrokeSample, p2: StrokeSample, p
  */
 const HARD_CORNER_ANGLE = (80 * Math.PI) / 180;
 
-export function catmullRomResample(points: StrokeSample[], spacing: number): StrokeSample[] {
+export function catmullRomResample(points: StrokeSample[], spacing: number, centripetal = false): StrokeSample[] {
   if (points.length < 2 || spacing <= 0) return points;
   // A straight gesture is commonly reduced to exactly two centerline
   // samples. Returning those two points made Rough's coherent edge texture
@@ -615,7 +697,7 @@ export function catmullRomResample(points: StrokeSample[], spacing: number): Str
     if (segLen === 0) continue;
     const steps = Math.max(1, Math.round(segLen / spacing));
     for (let s = 1; s <= steps; s++) {
-      out.push(catmullRomPoint(p0, p1, p2, p3, s / steps));
+      out.push(centripetal ? centripetalCatmullRomPoint(p0, p1, p2, p3, s / steps) : catmullRomPoint(p0, p1, p2, p3, s / steps));
     }
   }
   return out;
@@ -781,7 +863,8 @@ export function centerlineToOutline(
           // them (the RDP pass below thins the straight runs back out).
           : settings.type === "strong"
             ? Math.max(0.5, settings.size * 0.028)
-            : Math.max(0.6, settings.size * 0.06)
+            : Math.max(0.6, settings.size * 0.06),
+        settings.taperMode === "length"
       );
   if (pts.length < 2) return null;
 
@@ -983,7 +1066,7 @@ export function centerlineToOutline(
     const sensitivity = settings.pressureSensitivity ?? 0;
     const widthFromPressure = settings.size * (1 - sensitivity * (1 - pressure));
     const s = cumulative[i] / totalLength;
-    const taper = taperFactor(s, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd });
+    const taper = taperAt(settings, cumulative[i], totalLength);
     const halfWidthBase = (widthFromPressure / 2) * taper;
     const scale = halfWidthBase / Math.max(0.001, semiMajor);
     let { x: vx, y: vy } = ellipseSupportVector(normalAngle, nibAngleRad, semiMajor * scale, semiMinor * scale);
@@ -1035,7 +1118,11 @@ export function centerlineToOutline(
       settings.type !== "rough" &&
       settings.type !== "grunge" &&
       settings.type !== "strong" &&
-      settings.type !== "tape"
+      settings.type !== "tape" &&
+      // Spray's `jitter` is its halo DENSITY, not edge noise: wobbling the
+      // core made the live preview's solid core narrower in places, leaving
+      // holes in the stipple band that the saved stroke doesn't have.
+      settings.type !== "sprayBrush"
     ) {
       const n1 = pseudoNoise(i * 12.37);
       const n2 = pseudoNoise(i * 7.91 + 100);
@@ -1108,8 +1195,9 @@ export function centerlineToOutline(
       const ux = vx / mag;
       const uy = vy / mag;
       const amp = (settings.jitter ?? 0) * semiMajor * 0.45;
-      const leftOff = oilEdgeOffset(s, 7.3, amp);
-      const rightOff = oilEdgeOffset(s, 61.9, amp);
+      const absEdge = settings.taperMode === "length";
+      const leftOff = absEdge ? oilEdgeOffsetAbs(cumulative[i], totalLength, settings.size, !!settings.liveTip, 7.3, amp) : oilEdgeOffset(s, 7.3, amp);
+      const rightOff = absEdge ? oilEdgeOffsetAbs(cumulative[i], totalLength, settings.size, !!settings.liveTip, 61.9, amp) : oilEdgeOffset(s, 61.9, amp);
       // Same fix as Pencil above: floor scales down with the taper so a
       // needle-sharp end can actually reach 0 width instead of being
       // clamped open by this floor.
@@ -1390,8 +1478,15 @@ export function centerlineToOutline(
   // parallel; single-boundary callers are unaffected since the override is
   // optional and falls back to the old per-call calculation.
   const edgeSimplifyEpsilon = edgeSimplifyEpsilonOverride ?? Math.max(0.5, Math.min(3, semiMajor * 0.055));
-  const simplifiedLeft = SELF_CLEAN_SKIP.includes(settings.type) ? cleanedLeft : simplifyPolyline(cleanedLeft, edgeSimplifyEpsilon);
-  const simplifiedRight = SELF_CLEAN_SKIP.includes(settings.type) ? cleanedRight : simplifyPolyline(cleanedRight, edgeSimplifyEpsilon);
+  // taperMode "length" strokes simplify each edge greedily from the stroke's
+  // START: the points kept along an edge depend only on what comes before
+  // them, so the edge already on screen never re-picks its points (and
+  // re-bows its fitted curves) as the stroke grows. Plain RDP decides from
+  // the whole chain at once, so moving the far end could shift edges
+  // hundreds of units behind the pen.
+  const simplifyEdge = settings.taperMode === "length" ? greedySimplify : simplifyPolyline;
+  const simplifiedLeft = SELF_CLEAN_SKIP.includes(settings.type) ? cleanedLeft : simplifyEdge(cleanedLeft, edgeSimplifyEpsilon);
+  const simplifiedRight = SELF_CLEAN_SKIP.includes(settings.type) ? cleanedRight : simplifyEdge(cleanedRight, edgeSimplifyEpsilon);
 
   const polygon = [...simplifiedLeft, ...endCapPts, ...simplifiedRight.reverse(), ...startCapPts];
   if (polygon.length < 3) return null;
@@ -2199,7 +2294,7 @@ function strongBrushOutlineContours(centerline: StrokeSample[], settings: BrushS
   const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
   const holeSign = outerSign >= 0 ? -1 : 1;
 
-  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06));
+  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06), settings.taperMode === "length");
   if (dense.length < 2) return [main];
 
   const cumulative: number[] = [0];
@@ -2280,7 +2375,7 @@ function tapeBrushOutlineContours(centerline: StrokeSample[], settings: BrushSet
   const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
   const holeSign = outerSign >= 0 ? -1 : 1;
 
-  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06));
+  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06), settings.taperMode === "length");
   if (dense.length < 2) return [main];
 
   const cumulative: number[] = [0];
@@ -2322,7 +2417,9 @@ function tapeBrushOutlineContours(centerline: StrokeSample[], settings: BrushSet
   const dashCount = Math.max(1, Math.floor(usable / step));
   // Re-center the run of dashes in the usable span so both lanes' dashes
   // read as evenly inset from the torn ends rather than flush to one side.
-  const start = margin + (usable - (dashCount * step - gapLen)) / 2;
+  // taperMode "length" strokes start the run at a fixed distance instead,
+  // so dashes already on screen don't slide while the strip is drawn.
+  const start = settings.taperMode === "length" ? margin : margin + (usable - (dashCount * step - gapLen)) / 2;
 
   for (let laneIdx = 0; laneIdx < lanes.length; laneIdx++) {
     const lat = lanes[laneIdx] * hw;
@@ -2362,7 +2459,7 @@ function tapeBrushOutlineContours(centerline: StrokeSample[], settings: BrushSet
  * bigger eaten-away voids on top — rather than a uniform field of
  * same-sized dots.
  */
-function roughBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
+function roughBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings, fast = false): Contour[] {
   // BASE SHAPE: the Rough brush's silhouette should read exactly like the
   // Monoline / round-pen stroke of the SAME centerline — clean, consistent
   // round outer corners and round caps — and get its "rough" character purely
@@ -2375,7 +2472,12 @@ function roughBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   // round-pen union the Monoline export uses, so the base shape matches the
   // clean style 1:1. Variable-width rough strokes (taper/pressure) still use
   // the legacy builder so their width profile is preserved.
+  // While a stroke is being drawn (`fast`), the per-segment disc union is
+  // too slow to rebuild every frame on a long stroke; the offset builder
+  // gives the same constant-width body (only sharp turns differ slightly)
+  // and the exact union runs once when the stroke is saved.
   const constantWidth =
+    !fast &&
     (settings.taperStart ?? 0) <= 0 &&
     (settings.taperEnd ?? 0) <= 0 &&
     (!settings.pressureEnabled || (settings.pressureSensitivity ?? 0) === 0);
@@ -2416,7 +2518,7 @@ function roughBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   const outerSign = Math.sign(signedArea(largestBody.nodes.map((n) => n.point))) || 1;
   const holeSign = outerSign >= 0 ? -1 : 1;
 
-  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06));
+  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06), settings.taperMode === "length");
   if (dense.length < 2) return bodyContours;
 
   const cumulative: number[] = [0];
@@ -2432,19 +2534,27 @@ function roughBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   // 95) so the count scales up sharply with density/length, capped well
   // above the old 28 so a full glyph reads as heavily corroded rather than
   // a light, sparse scatter.
-  const holeCount = totalLength <= margin * 2 ? 0 : Math.max(0, Math.min(220, Math.round((totalLength / 18) * density)));
+  // taperMode "length" strokes anchor every hole to a fixed slot of
+  // ABSOLUTE distance (slot k always holds the same hole), so the pitting
+  // already on screen never reshuffles while the stroke keeps growing.
+  // Legacy strokes keep the original length-proportional spread exactly.
+  const anchored = settings.taperMode === "length";
+  const fixedSlot = 18 / Math.max(0.05, density);
+  const holeCount = anchored
+    ? Math.max(0, Math.min(400, Math.floor(Math.max(0, totalLength - margin * 2) / fixedSlot)))
+    : totalLength <= margin * 2 ? 0 : Math.max(0, Math.min(220, Math.round((totalLength / 18) * density)));
 
   const baseRadius = halfWidth * (settings.holeSize ?? 0.16);
   const holes: Contour[] = [];
   for (let h = 0; h < holeCount; h++) {
-    const seed = h * 971.31 + totalLength * 0.013;
+    const seed = anchored ? h * 971.31 + 17.17 : h * 971.31 + totalLength * 0.013;
     // Evenly-spaced anchor per hole index, with a jitter of its own slot
     // width — "merata" (evenly spread) coverage along the stroke rather
     // than pure-random placement, which tends to clump and leave empty
     // stretches. The jitter fraction is wider than before so the result
     // doesn't read as a mechanically regular row once density is high.
     const span = Math.max(1, totalLength - margin * 2);
-    const slot = span / holeCount;
+    const slot = anchored ? fixedSlot : span / holeCount;
     const tTarget = margin + (h + 0.5) * slot + pseudoNoise(seed + 5.3) * slot * 0.55;
     let idx = 1;
     while (idx < cumulative.length - 1 && cumulative[idx] < tTarget) idx++;
@@ -2454,7 +2564,7 @@ function roughBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
     const tLen = Math.hypot(tangent.x, tangent.y) || 1;
     const normal = { x: -tangent.y / tLen, y: tangent.x / tLen };
     const s = totalLength > 0 ? tTarget / totalLength : 0.5;
-    const taper = taperFactor(s, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd });
+    const taper = settings.taperMode === "length" ? taperAt(settings, tTarget, totalLength) : taperFactor(s, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd });
     const edgeGuard = Math.max(1.4, halfWidth * 0.2);
     const usableHalf = Math.max(1, halfWidth * taper - edgeGuard);
     // Bimodal size: rand01 is uniform, raising it to a power skews most
@@ -2542,7 +2652,7 @@ function makeStreakSliver(
  */
 function grungeBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings): Contour[] {
   const step = grungeStep(settings);
-  const pts = catmullRomResample(centerline, step);
+  const pts = catmullRomResample(centerline, step, settings.taperMode === "length");
   if (pts.length < 2) return [];
   const cumulative: number[] = [0];
   for (let i = 1; i < pts.length; i++) {
@@ -2587,7 +2697,7 @@ function grungeBrushOutlineContours(centerline: StrokeSample[], settings: BrushS
     const n = { x: -t.y, y: t.x };
     const pressure = settings.pressureEnabled ? a.pressure + (b.pressure - a.pressure) * f : 1;
     const widthFromPressure = settings.size * (1 - sensitivity * (1 - pressure));
-    const taper = taperFactor(d / totalLength, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd });
+    const taper = taperAt(settings, d, totalLength);
     const scale = ((widthFromPressure / 2) * taper) / semiMajor;
     const v = ellipseSupportVector(Math.atan2(n.y, n.x), nibAngleRad, semiMajor * scale, semiMinor * scale);
     return { p, n, t, half: Math.hypot(v.x, v.y) };
@@ -2745,7 +2855,7 @@ function oilBrushOutlineContours(centerline: StrokeSample[], settings: BrushSett
   const outerSign = Math.sign(signedArea(main.nodes.map((n) => n.point))) || 1;
   const holeSign = outerSign >= 0 ? -1 : 1;
 
-  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06));
+  const dense = catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06), settings.taperMode === "length");
   if (dense.length < 2) return [main];
 
   const cumulative: number[] = [0];
@@ -2767,13 +2877,16 @@ function oilBrushOutlineContours(centerline: StrokeSample[], settings: BrushSett
     const frac = (clamped - cumulative[idx - 1]) / segLen;
     const p = { x: p0.x + (p1.x - p0.x) * frac, y: p0.y + (p1.y - p0.y) * frac };
     const tangent = { x: p1.x - p0.x, y: p1.y - p0.y };
-    const s = totalLength > 0 ? clamped / totalLength : 0;
-    return { p, tangent, taper: taperFactor(s, settings.taperStart, settings.taperEnd, { sharpStart: settings.sharpStart, sharpEnd: settings.sharpEnd }) };
+    return { p, tangent, taper: taperAt(settings, clamped, totalLength) };
   };
   const normalOf = (tangent: Point): Point => {
     const len = Math.hypot(tangent.x, tangent.y) || 1;
     return { x: -tangent.y / len, y: tangent.x / len };
   };
+  // taperMode "length": streaks and spatter sit at fixed distances along the
+  // stroke (see the anchored branches below) so they never slide while the
+  // stroke is still being drawn; tail spatter appears at pen-up.
+  const anchored = settings.taperMode === "length";
 
   // Bristle comb streaks: a handful of lanes across the nib's width, each
   // broken into a few dash segments running lengthwise — the parallel light
@@ -2784,10 +2897,16 @@ function oilBrushOutlineContours(centerline: StrokeSample[], settings: BrushSett
   for (let lane = 0; lane < laneCount; lane++) {
     const laneFrac = (lane + 0.5) / laneCount - 0.5; // -0.42 .. 0.42
     const laneSeed = lane * 133.7 + 4.1;
-    const dashCount = 3 + Math.round(((pseudoNoise(laneSeed) + 1) / 2) * 3);
+    const slotLen = halfWidth * 8;
+    const dashCount = anchored
+      ? Math.max(0, Math.floor((totalLength - margin * 2) / slotLen))
+      : 3 + Math.round(((pseudoNoise(laneSeed) + 1) / 2) * 3);
     for (let d = 0; d < dashCount; d++) {
       const seed = laneSeed + d * 57.3;
-      const tCenter = margin + ((pseudoNoise(seed) + 1) / 2) * (totalLength - margin * 2);
+      if (anchored && pseudoNoise(seed + 2.2) < -0.25) continue; // ~60% of slots carry a streak
+      const tCenter = anchored
+        ? margin + (d + (pseudoNoise(seed) + 1) / 2) * slotLen
+        : margin + ((pseudoNoise(seed) + 1) / 2) * (totalLength - margin * 2);
       const dashLen = Math.max(4, halfWidth * (1.6 + ((pseudoNoise(seed + 8.8) + 1) / 2) * 2.4));
       const { p, tangent, taper } = at(tCenter);
       if (taper < 0.35) continue; // stay clear of the already-frayed taper zones
@@ -2806,15 +2925,18 @@ function oilBrushOutlineContours(centerline: StrokeSample[], settings: BrushSett
   // scattered outward beyond the main silhouette — the fine spray a loaded
   // brush leaves as it's dragged and lifted.
   const speckles: Contour[] = [];
-  const speckleCount = Math.max(4, Math.min(16, Math.round(totalLength / 40)));
+  const speckleCount = anchored ? 10 : Math.max(4, Math.min(16, Math.round(totalLength / 40)));
   for (let k = 0; k < speckleCount; k++) {
     const seed = k * 213.5 + 71.9;
     // Weighted toward the tail (s near 1), a little toward the head too.
     const towardTail = pseudoNoise(seed) > -0.3;
-    const s = towardTail
-      ? 0.82 + ((pseudoNoise(seed + 5) + 1) / 2) * 0.28
-      : ((pseudoNoise(seed + 5) + 1) / 2) * 0.12;
-    const { p, tangent, taper } = at(s * totalLength);
+    if (anchored && towardTail && settings.liveTip) continue;
+    const r01 = (pseudoNoise(seed + 5) + 1) / 2;
+    const s = towardTail ? 0.82 + r01 * 0.28 : r01 * 0.12;
+    const dist = anchored
+      ? towardTail ? totalLength - settings.size * 2.4 + r01 * settings.size * 3.2 : r01 * settings.size * 1.6
+      : s * totalLength;
+    const { p, tangent, taper } = at(dist);
     const normal = normalOf(tangent);
     const side = pseudoNoise(seed + 11) > 0 ? 1 : -1;
     const reach = halfWidth * taper * (1.05 + ((pseudoNoise(seed + 17) + 1) / 2) * 0.9);
@@ -2864,6 +2986,14 @@ export interface SpraySpeckCache {
   specks: Contour[];
   /** Halo cells already finalized into `specks` (see sprayBrushOutlineContours). */
   doneCells?: Set<number>;
+  /** Halo cells found EMPTY (inside the core or beyond the halo) once the
+   * tip had moved away; skipped until the tip comes back within reach. */
+  doneEmpty?: Set<number>;
+  /** Coarse blocks whose every halo cell is finalized (painted or empty). */
+  doneCoarse?: Set<number>;
+  /** When true, the returned contours leave out `specks` (the caller draws
+   * that append-only list itself, see BrushStrokePreview). */
+  separate?: boolean;
 }
 
 // Halo density model. `x` is the distance beyond the stroke's NOMINAL edge
@@ -2931,7 +3061,13 @@ function sprayCircle(c: Point, r: number, sign: number): Contour {
 /** One paint dot: a near-round polygon (a softly irregular droplet for a
  * fleck), wound to `sign` so it adds ink under nonzero fill. Tiny dots are
  * plain corner polygons — identical on screen, far cheaper to draw. */
-function makeSprayDot(cx: number, cy: number, r: number, rand: () => number, sign: number, fleck: boolean): Contour {
+// Spray dots are throwaway derived geometry (rebuilt from the stroke, never
+// stored or edited), so they share one id instead of minting a unique id
+// per node — a long stroke has ~50,000 of them.
+const LIVE_DOT_ID = "spray-live";
+
+function makeSprayDot(cx: number, cy: number, r: number, rand: () => number, sign: number, fleck: boolean, throwaway = false): Contour {
+  const nid = throwaway ? () => LIVE_DOT_ID : () => shortId("node");
   const sides = fleck ? 9 : r < 1.1 ? 5 : r < 2 ? 6 : 8;
   const wobble = fleck ? 0.34 : 0.14;
   const stretch = fleck ? 0.65 + rand() * 0.7 : 0.85 + rand() * 0.3;
@@ -2952,16 +3088,16 @@ function makeSprayDot(cx: number, cy: number, r: number, rand: () => number, sig
   for (let i = 0; i < sides; i++) {
     const p = pts[i];
     if (!smooth) {
-      nodes[i] = { id: shortId("node"), point: p, handleIn: null, handleOut: null, type: "corner" };
+      nodes[i] = { id: nid(), point: p, handleIn: null, handleOut: null, type: "corner" };
       continue;
     }
     const prev = pts[(i - 1 + sides) % sides];
     const next = pts[(i + 1) % sides];
     const hx = (next.x - prev.x) / 6;
     const hy = (next.y - prev.y) / 6;
-    nodes[i] = { id: shortId("node"), point: p, handleIn: { x: p.x - hx, y: p.y - hy }, handleOut: { x: p.x + hx, y: p.y + hy }, type: "smooth" };
+    nodes[i] = { id: nid(), point: p, handleIn: { x: p.x - hx, y: p.y - hy }, handleOut: { x: p.x + hx, y: p.y + hy }, type: "smooth" };
   }
-  return { id: shortId("contour"), closed: true, nodes };
+  return { id: throwaway ? LIVE_DOT_ID : shortId("contour"), closed: true, nodes };
 }
 
 function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSettings, fast = false, liveCache?: SpraySpeckCache): Contour[] {
@@ -3051,7 +3187,11 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   const rBase = Math.max(0.8, h * 0.03);
   const g = Math.max(1.5, h * 0.13); // halo cell size
   // Candidates deeper than this are inside the solid core already.
-  const dMin = -(1 - SPRAY_CORE + 0.02) * h;
+  // The live preview's core is the faster offset outline, whose simplified
+  // edge can sit up to ~1 unit inside the exact one on curves; start its
+  // stipple a little deeper so no dark sliver shows between core and dots
+  // (the extra dots are hidden under the core).
+  const dMin = -(1 - SPRAY_CORE + (liveCache ? 0.18 : 0.02)) * h;
   const reachAbs = SPRAY_REACH * unit * 1.25;
   const rMax = h * (SPRAY_BULB + 0.05);
   // Coarse grid for nearest-centerline queries; one cell spans the whole
@@ -3073,8 +3213,56 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
     }
   }
 
+  // Segment data in flat typed arrays: the halo asks for the distance to
+  // the stroke a few hundred thousand times per stroke, so the hot loop
+  // below avoids object reads, closures and per-segment square roots.
+  const segAx = new Float64Array(nSeg);
+  const segAy = new Float64Array(nSeg);
+  const segDx = new Float64Array(nSeg);
+  const segDy = new Float64Array(nSeg);
+  const segL2 = new Float64Array(nSeg);
+  for (let i = 0; i < nSeg; i++) {
+    segAx[i] = pts[i].x;
+    segAy[i] = pts[i].y;
+    segDx[i] = pts[i + 1].x - pts[i].x;
+    segDy[i] = pts[i + 1].y - pts[i].y;
+    segL2[i] = segDx[i] * segDx[i] + segDy[i] * segDy[i];
+  }
+  const bulbCx = bulbs.map((b) => b.c.x);
+  const bulbCy = bulbs.map((b) => b.c.y);
+  const bulbR = bulbs.map((b) => b.r);
+
   // Distance from p to the stroke's nominal edge (negative inside).
   const coreDistance = (px: number, py: number): number => {
+    if (constantWidth) {
+      // Constant radius: the nearest edge is the nearest centerline point
+      // minus h, so only squared distances are needed until the very end.
+      let best2 = nSeg === 0 ? (px - pts[0].x) ** 2 + (py - pts[0].y) ** 2 : Infinity;
+      const cx0 = coarseOf(px);
+      const cy0 = coarseOf(py);
+      for (let cx = cx0 - 1; cx <= cx0 + 1; cx++) {
+        for (let cy = cy0 - 1; cy <= cy0 + 1; cy++) {
+          const list = segGrid.get(cellKey(cx, cy));
+          if (!list) continue;
+          for (let k = 0; k < list.length; k++) {
+            const i = list[k];
+            const ax = segAx[i], ay = segAy[i], dx = segDx[i], dy = segDy[i], l2 = segL2[i];
+            let f = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+            if (f < 0) f = 0; else if (f > 1) f = 1;
+            const ex = px - ax - dx * f;
+            const ey = py - ay - dy * f;
+            const d2 = ex * ex + ey * ey;
+            if (d2 < best2) best2 = d2;
+          }
+        }
+      }
+      let best = Math.sqrt(best2) - h;
+      for (let b = 0; b < bulbR.length; b++) {
+        const d = Math.sqrt((px - bulbCx[b]) ** 2 + (py - bulbCy[b]) ** 2) - bulbR[b];
+        if (d < best) best = d;
+      }
+      return best;
+    }
     let best = nSeg === 0 ? Math.hypot(px - pts[0].x, py - pts[0].y) - coreRadiusAt(0, 0) : Infinity;
     const cx0 = coarseOf(px);
     const cy0 = coarseOf(py);
@@ -3100,13 +3288,13 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
     for (const bulb of bulbs) best = Math.min(best, Math.hypot(px - bulb.c.x, py - bulb.c.y) - bulb.r);
     return best;
   };
+  const endA = pts[0];
+  const endB = pts[pts.length - 1];
+  const endK = 1 / (2.2 * h * 2.2 * h);
   const endBoost = (px: number, py: number): number => {
-    let e = 0;
-    for (const end of [pts[0], pts[pts.length - 1]]) {
-      const q = Math.hypot(px - end.x, py - end.y) / (2.2 * h);
-      e = Math.max(e, Math.exp(-q * q));
-    }
-    return e;
+    const qa = ((px - endA.x) ** 2 + (py - endA.y) ** 2) * endK;
+    const qb = ((px - endB.x) ** 2 + (py - endB.y) ** 2) * endK;
+    return Math.exp(-Math.min(qa, qb));
   };
   // Dots near the edge are bigger (they merge into a ragged, crusty edge);
   // out in the mist they're fine. `density` = dots per unit area.
@@ -3134,6 +3322,7 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   // to the part of the stroke added since the previous frame.
   const live = !!liveCache;
   const doneCells = live ? (liveCache!.doneCells ??= new Set<number>()) : null;
+  const doneEmpty = live ? (liveCache!.doneEmpty ??= new Set<number>()) : null;
   const fromS = live ? Math.max(0, liveCache!.processedDist - 2 * C) : 0;
   const coarse = new Set<number>();
   const coarseList: [number, number][] = [];
@@ -3162,7 +3351,20 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
   const dots: Contour[] = live ? liveCache!.specks : [];
   const provisional: Contour[] = [];
   const half = g * Math.SQRT1_2;
+  const doneCoarse = live ? (liveCache!.doneCoarse ??= new Set<number>()) : null;
+  // A finished block is skipped whole while the tip is far from it (it is
+  // re-opened if the stroke comes back, so a self-crossing still gets paint).
+  const coarseReopen = finalReach + C * Math.SQRT2;
   for (const [cx, cy] of coarseList) {
+    const ckey = cellKey(cx, cy);
+    if (doneCoarse) {
+      const ccx = (cx + 0.5) * C;
+      const ccy = (cy + 0.5) * C;
+      const far = (ccx - tip.x) ** 2 + (ccy - tip.y) ** 2 > coarseReopen * coarseReopen;
+      if (far && doneCoarse.has(ckey)) continue;
+      if (!far) doneCoarse.delete(ckey);
+    }
+    let blockOpen = false;
     // Fine cells are owned by the coarse cell holding their lower-left
     // corner, so every fine cell is visited exactly once.
     const ix0 = Math.ceil((cx * C) / g);
@@ -3175,15 +3377,26 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
         if (doneCells?.has(key)) continue;
         const mx = (ix + 0.5) * g;
         const my = (iy + 0.5) * g;
-        const dc = coreDistance(mx, my);
-        if (dc - half > reachAbs || dc + half < dMin) continue;
-        const boost = endBoost(mx, my);
-        const lamMax = density(Math.max(dMin, dc - half), boost + 0.05);
-        if (lamMax <= 0) continue;
         // Live: a cell still within reach of the moving tip may yet gain
         // paint from the next frame's stroke, so it's rebuilt every frame
-        // until the tip has moved on, then finalized into the cache.
-        const finalize = live && Math.hypot(mx - tip.x, my - tip.y) > finalReach;
+        // until the tip has moved on, then finalized into the cache. Empty
+        // cells are finalized too (and only re-checked if the tip returns),
+        // so they don't cost a distance query on every frame meanwhile.
+        const finalize = live && (mx - tip.x) ** 2 + (my - tip.y) ** 2 > finalReach * finalReach;
+        if (live && !finalize) blockOpen = true;
+        if (finalize && doneEmpty!.has(key)) continue;
+        const dc = coreDistance(mx, my);
+        if (dc - half > reachAbs || dc + half < dMin) {
+          if (finalize) doneEmpty!.add(key);
+          continue;
+        }
+        const boost = endBoost(mx, my);
+        const lamMax = density(Math.max(dMin, dc - half), boost + 0.05);
+        if (lamMax <= 0) {
+          if (finalize) doneEmpty!.add(key);
+          continue;
+        }
+        if (live) doneEmpty!.delete(key);
         const target = !live || finalize ? dots : provisional;
         const rand = mulberry32(hashCell(ix, iy, strokeSeed));
         const expected = lamMax * g * g;
@@ -3203,14 +3416,25 @@ function sprayBrushOutlineContours(centerline: StrokeSample[], settings: BrushSe
           const fleck = !fast && x > 0.25 && fleckU < 0.012;
           let r = rBase * dotRadiusScale(x) * (0.6 + 0.8 * sizeU * sizeU);
           if (fleck) r *= 1.8 + (fleckU / 0.012) * 1.1;
-          target.push(makeSprayDot(px, py, r, rand, sign, fleck));
+          // Live only: a dot entirely under the solid core can't be seen —
+          // don't spend a contour (and its path text) on it.
+          if (live && d + r < coreEdge - 1.5) continue;
+          // Dots are derived geometry only (never stored or node-edited;
+          // Expand/export build fresh outlines from them), so they skip
+          // minting ~50,000 unique ids per stroke.
+          target.push(makeSprayDot(px, py, r, rand, sign, fleck, true));
         }
         if (finalize) doneCells!.add(key);
       }
     }
+    if (doneCoarse && !blockOpen) doneCoarse.add(ckey);
   }
 
   if (live) liveCache!.processedDist = total;
+  // The live preview renders the finalized dots (liveCache.specks, which
+  // only ever grows) incrementally on its own, so it asks for just the
+  // parts that change frame to frame.
+  if (live && liveCache!.separate) return [...bodyContours, ...provisional];
   return [...bodyContours, ...dots, ...provisional];
 }
 
@@ -3237,7 +3461,7 @@ function outlineBrushOutlineContours(centerline: StrokeSample[], settings: Brush
   // point. That's what showed up as a small notch left open at the ring's
   // tip instead of a clean, fully closed seam: sharing one resampling pass
   // anchors both boundaries' ends to the identical stroke endpoint.
-  const pts = settings.type === "grunge" ? centerline : catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06));
+  const pts = settings.type === "grunge" ? centerline : catmullRomResample(centerline, Math.max(0.6, settings.size * 0.06), settings.taperMode === "length");
   if (pts.length < 2) return [];
   const cumulative: number[] = [0];
   for (let i = 1; i < pts.length; i++) {
@@ -3358,7 +3582,7 @@ export function centerlineToOutlineContours(centerline: StrokeSample[], settings
       : pixelBlockOutline(centerline, settings.cellSize ?? settings.size, cellShape);
   }
   if (settings.type === "rough") {
-    return roughBrushOutlineContours(centerline, settings);
+    return roughBrushOutlineContours(centerline, settings, opts?.fast === true && settings.taperMode === "length");
   }
   if (settings.type === "strong") {
     return strongBrushOutlineContours(centerline, settings);
@@ -3442,6 +3666,7 @@ export function normalizeBrushSettings(raw: (Partial<BrushSettings> & { minSize?
     pressureSensitivity: raw.pressureSensitivity ?? migratedSensitivity ?? FALLBACK_BRUSH_SETTINGS.pressureSensitivity,
     sharpStart: raw.sharpStart ?? false,
     sharpEnd: raw.sharpEnd ?? false,
+    taperMode: raw.taperMode,
     jitter: raw.jitter,
     holeDensity: raw.holeDensity,
     holeSize: raw.holeSize,
@@ -3475,6 +3700,129 @@ export function brushSettingsForObject(obj: VectorObject): BrushSettings {
     ...base,
     size: width,
   };
+}
+
+/**
+ * Prefix-stable polyline simplification: walks from the first point and
+ * extends each run while every point in it stays within `eps` of the run's
+ * chord (runs capped at 64 points). The result for any prefix of the input
+ * is a prefix of the result, unlike RDP.
+ */
+export function greedySimplify<T extends Point>(pts: T[], eps: number): T[] {
+  const n = pts.length;
+  if (n < 3) return pts;
+  const out: T[] = [pts[0]];
+  let a = 0;
+  for (let j = 2; j < n; j++) {
+    const A = pts[a], B = pts[j];
+    const dx = B.x - A.x, dy = B.y - A.y;
+    const L2 = dx * dx + dy * dy;
+    let ok = j - a <= 64;
+    for (let k = a + 1; k < j && ok; k++) {
+      const q = pts[k];
+      const t = L2 > 0 ? Math.max(0, Math.min(1, ((q.x - A.x) * dx + (q.y - A.y) * dy) / L2)) : 0;
+      if (Math.hypot(q.x - A.x - dx * t, q.y - A.y - dy * t) > eps) ok = false;
+    }
+    if (!ok) {
+      out.push(pts[j - 1]);
+      a = j - 1;
+    }
+  }
+  out.push(pts[n - 1]);
+  return out;
+}
+
+/** RDP that keeps a point when either its position (> eps) or its pressure
+ * (> pEps, against the chord's linear interpolation) would be lost. */
+export function simplifyStrokeSamples(pts: StrokeSample[], eps: number, pEps: number): StrokeSample[] {
+  const n = pts.length;
+  if (n < 3) return pts;
+  const keep = new Uint8Array(n);
+  keep[0] = 1;
+  keep[n - 1] = 1;
+  const stack: number[] = [0, n - 1];
+  while (stack.length) {
+    const hi = stack.pop()!;
+    const lo = stack.pop()!;
+    if (hi - lo < 2) continue;
+    const a = pts[lo], b = pts[hi];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const L2 = dx * dx + dy * dy;
+    let worst = -1, worstScore = 1;
+    for (let k = lo + 1; k < hi; k++) {
+      const q = pts[k];
+      const t = L2 > 0 ? Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / L2)) : 0;
+      const d = Math.hypot(q.x - a.x - dx * t, q.y - a.y - dy * t) / eps;
+      const dp = Math.abs(q.pressure - (a.pressure + (b.pressure - a.pressure) * t)) / pEps;
+      const score = Math.max(d, dp);
+      if (score > worstScore) { worstScore = score; worst = k; }
+    }
+    if (worst >= 0) {
+      keep[worst] = 1;
+      stack.push(lo, worst, worst, hi);
+    }
+  }
+  const out: StrokeSample[] = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[i]);
+  return out;
+}
+
+/** Dense polyline of a (usually open) contour, step ≈ `step` units. */
+function flattenOpenAdaptive(c: Contour, step: number): Point[] {
+  const nodes = c.nodes;
+  if (!nodes.length) return [];
+  const out: Point[] = [{ ...nodes[0].point }];
+  const segs = c.closed ? nodes.length : nodes.length - 1;
+  for (let i = 0; i < segs; i++) {
+    const a = nodes[i];
+    const b = nodes[(i + 1) % nodes.length];
+    const c1 = a.handleOut ?? a.point;
+    const c2 = b.handleIn ?? b.point;
+    const hull = Math.hypot(c1.x - a.point.x, c1.y - a.point.y) + Math.hypot(c2.x - c1.x, c2.y - c1.y) + Math.hypot(b.point.x - c2.x, b.point.y - c2.y);
+    const curved = !!(a.handleOut || b.handleIn);
+    const steps = curved ? Math.max(4, Math.min(400, Math.ceil(hull / step))) : Math.max(1, Math.min(400, Math.ceil(hull / (step * 4))));
+    for (let k = 1; k <= steps; k++) out.push(cubicPoint(a.point, c1, c2, b.point, k / steps));
+  }
+  return out;
+}
+
+/**
+ * Pressure at every point of `poly`, interpolated by arc length from the
+ * stored samples. Each sample is located on the path by nearest-point
+ * projection, searching forward only (monotonic), so a stroke that loops
+ * over itself still reads its pressure in drawing order.
+ */
+function pressureAlongPath(poly: Point[], samples?: StrokeSample[]): number[] {
+  const n = poly.length;
+  if (!samples || samples.length === 0) return new Array(n).fill(1);
+  if (samples.length === 1) return new Array(n).fill(samples[0].pressure);
+  const cum = new Float64Array(n);
+  for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y);
+  const pos: number[] = [];
+  let from = 0;
+  samples.forEach((sm, k) => {
+    if (k === 0) { pos.push(0); return; }
+    if (k === samples.length - 1) { pos.push(cum[n - 1]); return; }
+    let best = from, bd = Infinity;
+    for (let i = from; i < n; i++) {
+      const d = (poly[i].x - sm.x) ** 2 + (poly[i].y - sm.y) ** 2;
+      if (d < bd) { bd = d; best = i; }
+      // stop once we are well past a close match
+      if (bd < 1e-6 || (d > bd * 4 + 400 && i > best + 50)) break;
+    }
+    from = best;
+    pos.push(cum[best]);
+  });
+  const out = new Array<number>(n);
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    const s = cum[i];
+    while (j < pos.length - 2 && pos[j + 1] < s) j++;
+    const s0 = pos[j], s1 = pos[j + 1];
+    const t = s1 > s0 ? Math.max(0, Math.min(1, (s - s0) / (s1 - s0))) : 0;
+    out[i] = samples[j].pressure + (samples[j + 1].pressure - samples[j].pressure) * t;
+  }
+  return out;
 }
 
 function resamplePressure(n: number, samples?: StrokeSample[]): number[] {
@@ -3586,13 +3934,49 @@ export function isMergedSprayOutline(contours: Contour[]): boolean {
 }
 
 function brushOutlineContoursUncached(obj: VectorObject): Contour[] {
-  const contours = brushOutlineContoursRaw(obj);
-  return obj.brushType === "sprayBrush" ? mergeSprayOutline(contours) : contours;
+  // Spray strokes render straight from their pieces (core + dots): the
+  // raster merge into union outlines took most of a second on a long stroke
+  // and froze the app right at pen-up, while drawing the pieces with
+  // nonzero fill looks identical. Places that need ONE clean outline
+  // (Expand, the DesignSeru bridge, export) use brushOutlineContoursMerged.
+  return brushOutlineContoursRaw(obj);
+}
+
+const mergedOutlineCache = new WeakMap<VectorObject, { key: Contour[]; result: Contour[] }>();
+
+/** Like brushOutlineContours, but a Spray stroke comes back as merged
+ * union outlines (see mergeSprayOutline) — for Expand / bridge / export. */
+export function brushOutlineContoursMerged(obj: VectorObject): Contour[] {
+  const raw = brushOutlineContours(obj);
+  if (obj.brushType !== "sprayBrush") return raw;
+  const hit = mergedOutlineCache.get(obj);
+  if (hit && hit.key === raw) return hit.result;
+  const result = mergeSprayOutline(raw);
+  mergedOutlineCache.set(obj, { key: raw, result });
+  return result;
 }
 
 export function brushOutlineContoursRaw(obj: VectorObject): Contour[] {
   const settings = brushSettingsForObject(obj);
   const contours: Contour[] = [];
+  if (settings.taperMode === "length") {
+    // Strokes from the Procreate-style pipeline (see brushes/liveStroke.ts):
+    // a few long Bézier segments, so flatten adaptively (a fixed 10 steps
+    // per segment would facet a long swash), and place pressure by where
+    // each sample actually sits ALONG the path — not by sample index — so
+    // the saved stroke's width matches what was drawn, even after node edits.
+    for (const c of obj.contours) {
+      const poly = flattenOpenAdaptive(c, Math.max(0.35, settings.size * 0.03));
+      if (poly.length < 2) continue;
+      const pressures = pressureAlongPath(poly, obj.samples);
+      const dense: StrokeSample[] = poly.map((p, i) => ({ x: p.x, y: p.y, pressure: pressures[i] }));
+      // Sparse input for the outline builders (one primitive per segment),
+      // keeping both the path (≤ ~0.4 screen px) and the pressure profile.
+      const centerline = simplifyStrokeSamples(dense, Math.max(0.4, settings.size * 0.02), 0.03);
+      contours.push(...centerlineToOutlineContours(centerline, settings));
+    }
+    return contours;
+  }
   for (const c of obj.contours) {
     const flattened = flattenContour(c, 10);
     const poly = simplifyPolyline(flattened, Math.max(0.5, settings.size * 0.025));
@@ -4549,7 +4933,7 @@ export function expandStrokeObject(obj: VectorObject): VectorObject | null {
     // Variable-profile brushes also expand from their current editable
     // centerline. brushOutlineContours resamples captured pressure onto the
     // edited path, avoiding the old "snap back to raw samples" behavior.
-    const raw = brushOutlineContours(obj);
+    const raw = brushOutlineContoursMerged(obj);
     if (raw.length === 0) return null;
     // Spray: every piece (core, end blobs, thousands of paint dots) is ink
     // of the same winding — union them, never XOR them into holes.

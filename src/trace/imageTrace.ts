@@ -9,6 +9,8 @@ export async function loadTracer(): Promise<void> {
 import type { Contour, GlyphOutline, PathNode, Point, VectorObject } from "@/types/geometry";
 import type { FontMetrics } from "@/types/font";
 import { shortId } from "@/utils/id";
+import { otsuThreshold, precisionOptionsFor, traceRGBA } from "./precisionTrace";
+import { groupLettersSmart } from "./letterGroups";
 
 export type TraceDetail = "low" | "medium" | "high" | "ultra";
 
@@ -826,41 +828,146 @@ export function fitTracedObjectsToGlyph(
   return { objects: transformedObjects };
 }
 
+// ---------------------------------------------------------------------------
+// Precision engine (see precisionTrace.ts) — what Trace Image uses.
+// ---------------------------------------------------------------------------
+
+/** Working resolution for the precision engine: big enough that thin
+ * strokes keep several pixels across, small enough to trace in well under
+ * a second. Small uploads are enlarged (smoothly) so the sub-pixel edge has
+ * enough samples to follow; the fitting tolerance is still measured in the
+ * ORIGINAL image's pixels (see precisionOptionsFor), so enlarging never adds
+ * nodes. */
+const PRECISION_CEILING = 2000;
+const PRECISION_FLOOR = 1000;
+const PRECISION_MAX_UPSCALE = 4;
+
+export function precisionCanvas(img: HTMLImageElement): { canvas: HTMLCanvasElement; upscale: number } {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  if (!w || !h) throw new TraceError("Gambar tidak valid atau kosong.");
+  const maxDim = Math.max(w, h);
+  const scale = maxDim > PRECISION_CEILING
+    ? PRECISION_CEILING / maxDim
+    : maxDim < PRECISION_FLOOR
+      ? Math.min(PRECISION_FLOOR / maxDim, PRECISION_MAX_UPSCALE)
+      : 1;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(w * scale));
+  canvas.height = Math.max(1, Math.round(h * scale));
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new TraceError("Canvas 2D tidak didukung di browser ini.");
+  ctx.imageSmoothingEnabled = true;
+  if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return { canvas, upscale: scale };
+}
+
 /**
- * End-to-end: File → binarized + despeckled canvas → traced VectorObjects,
- * in raw pixel space, plus those objects clustered into per-letter groups.
- * Fitting into a specific glyph happens separately via
- * `fitTracedObjectsToGlyph`, per letter group or across all of them.
+ * Best ink/paper split for this image (Otsu) — used to set the Threshold
+ * slider automatically when an image is uploaded, instead of a fixed 150
+ * that is too dark for pencil sketches and too light for dim photos.
+ */
+export async function autoThresholdForFile(file: File): Promise<number> {
+  const img = await loadImageFile(file);
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const k = Math.min(1, 800 / Math.max(w, h));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(w * k));
+  canvas.height = Math.max(1, Math.round(h * k));
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return DEFAULT_TRACE_SETTINGS.threshold;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return Math.round(otsuThreshold(data, canvas.width, canvas.height));
+}
+
+let traceWorker: Worker | null | undefined;
+let traceReqId = 0;
+const traceWaiters = new Map<number, { resolve: (o: VectorObject[]) => void; reject: (e: Error) => void }>();
+
+function getTraceWorker(): Worker | null {
+  if (traceWorker !== undefined) return traceWorker;
+  try {
+    traceWorker = new Worker(new URL("./traceWorker.ts", import.meta.url), { type: "module" });
+    traceWorker.onmessage = (e: MessageEvent<{ id: number; objects?: VectorObject[]; error?: string }>) => {
+      const waiter = traceWaiters.get(e.data.id);
+      if (!waiter) return;
+      traceWaiters.delete(e.data.id);
+      if (e.data.error) waiter.reject(new TraceError(e.data.error));
+      else waiter.resolve(e.data.objects ?? []);
+    };
+    traceWorker.onerror = () => {
+      // Worker unavailable (old browser / blocked): fall back to the main thread.
+      for (const [, w] of traceWaiters) w.reject(new Error("worker-failed"));
+      traceWaiters.clear();
+      traceWorker?.terminate();
+      traceWorker = null;
+    };
+  } catch {
+    traceWorker = null;
+  }
+  return traceWorker;
+}
+
+/** Fresh ids for objects that came back from the worker (its id counter is separate). */
+function reIdObjects(objects: VectorObject[]): VectorObject[] {
+  return objects.map((o) => ({
+    ...o,
+    id: shortId("trace_obj"),
+    contours: o.contours.map((c) => ({ ...c, id: shortId("trace_c"), nodes: c.nodes.map((n) => ({ ...n, id: shortId("tn") })) })),
+  }));
+}
+
+async function tracePixels(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  settings: TraceSettings,
+  upscale: number
+): Promise<VectorObject[]> {
+  const worker = getTraceWorker();
+  if (worker) {
+    try {
+      const id = ++traceReqId;
+      const copy = new Uint8ClampedArray(rgba);
+      const objects = await new Promise<VectorObject[]>((resolve, reject) => {
+        traceWaiters.set(id, { resolve, reject });
+        worker.postMessage(
+          { id, rgba: copy, width, height, detail: settings.detail, threshold: settings.threshold, invert: settings.invert, upscale },
+          [copy.buffer]
+        );
+      });
+      return reIdObjects(objects);
+    } catch (err) {
+      if (err instanceof TraceError) throw err;
+      // fall through to main-thread tracing
+    }
+  }
+  const opts = precisionOptionsFor(settings.detail, settings.threshold, settings.invert, Math.max(width, height), upscale);
+  return traceRGBA(rgba, width, height, opts).objects;
+}
+
+/**
+ * End-to-end: File → working canvas → precision trace (sub-pixel edge,
+ * fewest-node Bézier fit, nodes on extremes) → per-letter groups. Objects
+ * are in the working canvas's pixel space; fitting into a glyph happens
+ * separately via `fitTracedObjectsToGlyph`.
  */
 export async function traceImageFile(
   file: File,
   settings: TraceSettings
 ): Promise<{ objects: VectorObject[]; letters: TraceLetterGroup[]; canvas: HTMLCanvasElement }> {
-  await loadTracer();
   const img = await loadImageFile(file);
-  // Display/preview canvas is always in source-pixel space (the coordinate
-  // system every traced object is ultimately reported in).
-  const canvas = imageToCanvas(img, settings.detail);
-
-  let objects: VectorObject[];
-  if (settings.detail === "ultra") {
-    // Ultra: trace a supersampled bitmap for sub-pixel-accurate edges, then
-    // map the result back into the preview canvas's source-pixel space.
-    const { imgd, scaleBack } = binarizeSupersampled(img, settings, settings.detail);
-    despeckleBinary(imgd, DESPECKLE_MIN_AREA[settings.detail]);
-    // scaleBack is internal→source-px; the preview canvas is at
-    // imageToCanvas scale, so also fold in that ratio.
-    const previewScale = canvas.width / (img.naturalWidth || img.width);
-    objects = traceBinaryImage(imgd, settings.detail, scaleBack * previewScale);
-  } else {
-    const imgd = binarize(canvas, settings);
-    despeckleBinary(imgd, DESPECKLE_MIN_AREA[settings.detail]);
-    objects = traceBinaryImage(imgd, settings.detail);
-  }
-
+  const { canvas, upscale } = precisionCanvas(img);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new TraceError("Canvas 2D tidak didukung di browser ini.");
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const objects = await tracePixels(data, canvas.width, canvas.height, settings, upscale);
   if (objects.length === 0) {
     throw new TraceError("Tidak ada garis yang terdeteksi. Coba sesuaikan Threshold atau gunakan gambar lain.");
   }
-  const letters = groupTracedObjectsIntoLetters(objects);
+  const letters = groupLettersSmart(objects);
   return { objects, letters, canvas };
 }

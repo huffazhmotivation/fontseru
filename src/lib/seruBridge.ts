@@ -1,7 +1,7 @@
 import { useAppStore } from "@/glyph/store";
 import type { Contour, VectorObject } from "@/types/geometry";
 import { contourToPath, objectFillPath, toSvgPoint } from "@/editor/pathBuilder";
-import { brushOutlineContours } from "@/brushes/strokeToOutline";
+import { brushOutlineContours, brushOutlineContoursMerged } from "@/brushes/strokeToOutline";
 import { extractSvgMarkup, pasteSvgMarkup, pasteSvgFromSystemClipboard } from "@/trace/svgImport";
 
 /**
@@ -58,7 +58,7 @@ export function objectsToSvg(objects: VectorObject[], ascender: number, id: stri
       continue;
     }
     // shape / expanded → isi langsung; brush → outline envelope-nya (sama dengan yang dirender di kanvas)
-    const contours = o.kind === "brush" ? brushOutlineContours(o) : o.contours;
+    const contours = o.kind === "brush" ? brushOutlineContoursMerged(o) : o.contours;
     if (!contours.length) continue;
     const d = (o.kind === "brush"
       ? contours.map((c) => contourToPath(c, ascender)).join(" ")

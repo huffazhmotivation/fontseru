@@ -5170,7 +5170,8 @@ html[data-theme="light"] .fm-update-backdrop, html[data-theme="light"] .fm-praye
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 2px;
+  /* room above the artboard for the mapped-character badges */
+  padding: 24px 2px 2px;
 }
 .fm-trace-artboard {
   position: relative;
@@ -5215,6 +5216,75 @@ html[data-theme="light"] .fm-update-backdrop, html[data-theme="light"] .fm-praye
 }
 .fm-trace-artboard-item:hover .fm-trace-artboard-svg path { fill: var(--accent); opacity: 0.7; }
 .fm-trace-artboard-item.active .fm-trace-artboard-svg path { fill: var(--accent); opacity: 1; }
+
+/* Character each detected shape is mapped to via "Teks di gambar". */
+.fm-trace-map-badge {
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translate(-50%, -100%);
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-ink, #fff);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.fm-trace-map-row {
+  flex: 0 0 auto;
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.fm-trace-map-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+.fm-trace-map-input:focus { outline: none; border-color: var(--accent); }
+.fm-trace-map-row .fm-action-btn {
+  width: auto;
+  flex: 0 0 auto;
+  margin-top: 0;
+  height: 32px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+.fm-trace-threshold-auto {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.fm-trace-mini-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.fm-trace-mini-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.fm-trace-mini-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* Apply-to-glyph bar: lives next to the canvas (not the left settings rail)
    and only appears once a shape on the artboard is selected. */

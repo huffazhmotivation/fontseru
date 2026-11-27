@@ -3,12 +3,13 @@ import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent, 
 import { useAppStore, type GlyphMetricKey } from "@/glyph/store";
 import { useGlyphEditor } from "./useGlyphEditor";
 import { useBrushTool, type BrushPreview } from "./useBrushTool";
+import { LiveBrushFill } from "./LiveBrushFill";
 import { useBrushNodeTool } from "./useBrushNodeTool";
 import { usePencilTool, PENCIL_PREVIEW_ID } from "./usePencilTool";
 import { useSelectTool, handlePositions, type HandleId, type SkewHandleId } from "./useSelectTool";
 import { useSketchGestures } from "./useSketchGestures";
 import { clientToFontPoint } from "./coords";
-import { objectFillPath, objectStrokePath, toSvgPoint, contourToPath, appendPolylinePath } from "./pathBuilder";
+import { objectFillPath, objectStrokePath, toSvgPoint, contourToPath, appendPolylinePath, contoursToPathCached } from "./pathBuilder";
 import { outlineBounds, pointHitsObject, selectionUnitIds } from "./objectOps";
 import { getCornerHandles } from "./nodeOps";
 import { hitTestSegments } from "./segmentHitTest";
@@ -2020,7 +2021,7 @@ const ObjectShape = memo(function ObjectShape({
 
   const variableBrushD = useMemo(() => {
     if (!isVariableBrush) return "";
-    return brushOutlineContours(obj).map((c) => contourToPath(c, ascender)).join(" ");
+    return contoursToPathCached(brushOutlineContours(obj), ascender);
   }, [obj, ascender, isVariableBrush]);
 
   // Node tool dimming wraps whichever branch below fires in a <g> with
@@ -2166,14 +2167,7 @@ const BrushStrokePreview = memo(function BrushStrokePreview({
   const preview = usePreviewValue(store);
   return (
     <>
-      {preview.outline.length > 0 && (
-        <path
-          d={preview.outline.map((c) => contourToPath(c, ascender)).join(" ")}
-          className="obj-fill"
-          fillRule="nonzero"
-          opacity={0.9}
-        />
-      )}
+      <LiveBrushFill outline={preview.outline} frozen={preview.frozen} ascender={ascender} />
       {preview.centerline && (
         <path
           d={contourToPath(preview.centerline, ascender)}

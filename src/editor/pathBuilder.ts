@@ -21,7 +21,10 @@ function fmt(n: number): string {
   // able to flood the whole canvas in any browser, so we clamp to 0
   // rather than let it through.
   if (!Number.isFinite(n)) return "0";
-  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+  // Same 2-decimal precision as toFixed(2), without its padding — and
+  // several times faster, which matters for Spray Brush paths with tens of
+  // thousands of coordinates.
+  return String(Math.round(n * 100) / 100);
 }
 
 /** True if a point's coordinates are both finite numbers. */
@@ -48,6 +51,20 @@ export function appendPolylinePath(d: string, points: readonly Point[], from: nu
 /** Builds the `d` attribute for a single contour, in SVG (Y-down) coordinates. */
 export function contourToPath(contour: Contour, ascender: number): string {
   if (contour.nodes.length === 0) return "";
+  // Fast path for plain polygons (no handles at all) — e.g. the thousands of
+  // tiny Spray Brush paint dots: one tight loop, no intermediate objects.
+  const nodes = contour.nodes;
+  let polygon = true;
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (n.handleIn || n.handleOut || !Number.isFinite(n.point.x) || !Number.isFinite(n.point.y)) { polygon = false; break; }
+  }
+  if (polygon) {
+    let d = `M ${fmt(nodes[0].point.x)} ${fmt(ascender - nodes[0].point.y)}`;
+    for (let i = 1; i < nodes.length; i++) d += ` L ${fmt(nodes[i].point.x)} ${fmt(ascender - nodes[i].point.y)}`;
+    if (contour.closed) d += " Z";
+    return d;
+  }
   const pts = contour.nodes.map((n) => ({
     svgPoint: toSvgPoint(n.point, ascender),
     svgHandleIn: n.handleIn ? toSvgPoint(n.handleIn, ascender) : null,
@@ -93,4 +110,26 @@ export function objectFillPath(obj: VectorObject, ascender: number): string {
 /** Centerline `d` for a stroke object (open path, no auto-close). */
 export function objectStrokePath(obj: VectorObject, ascender: number): string {
   return obj.contours.map((c) => contourToPath(c, ascender)).join(" ");
+}
+
+const contoursPathCache = new WeakMap<Contour[], Map<number, string>>();
+
+/**
+ * `d` for a whole contour list, cached by the list's identity (and the
+ * ascender). Derived outlines such as brushOutlineContours() are already
+ * cached per object, so every place that draws the same stroke — the
+ * canvas, the glyph list thumbnail, the overview — shares one string
+ * instead of each re-formatting tens of thousands of Spray dot coordinates.
+ */
+export function contoursToPathCached(contours: Contour[], ascender: number): string {
+  let byAsc = contoursPathCache.get(contours);
+  if (!byAsc) {
+    byAsc = new Map();
+    contoursPathCache.set(contours, byAsc);
+  }
+  const hit = byAsc.get(ascender);
+  if (hit !== undefined) return hit;
+  const d = contours.map((c) => contourToPath(c, ascender)).join(" ");
+  byAsc.set(ascender, d);
+  return d;
 }

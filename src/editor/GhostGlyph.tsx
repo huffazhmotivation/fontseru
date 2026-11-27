@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { brushOutlineContours } from "@/brushes/strokeToOutline";
 import { hasOutline, type Glyph } from "@/types/glyph";
-import { objectFillPath, objectStrokePath, contourToPath } from "./pathBuilder";
+import { objectFillPath, objectStrokePath, contourToPath, contoursToPathCached } from "./pathBuilder";
 import { ghostOutlineFor, useGhostFont } from "./ghostFont";
 
 interface GhostGlyphProps {
@@ -163,7 +163,7 @@ export const GhostGlyph = memo(function GhostGlyph({
         ) : obj.kind === "brush" && obj.brushType !== "monoline" ? (
           <path
             key={obj.id}
-            d={brushOutlineContours(obj).map((c) => contourToPath(c, ascender)).join(" ")}
+            d={contoursToPathCached(brushOutlineContours(obj), ascender)}
             fill="currentColor"
             fillRule="nonzero"
           />

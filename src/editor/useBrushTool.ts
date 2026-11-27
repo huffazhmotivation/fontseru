@@ -3,6 +3,7 @@ import type { Contour, Point, StrokeSample, VectorObject } from "@/types/geometr
 import { useAppStore } from "@/glyph/store";
 import { samplesToCenterline, centerlineToContour, centerlineToOutlineContours, type SpraySpeckCache } from "@/brushes/strokeToOutline";
 import { StrokeStabilizer } from "@/brushes/strokeStabilizer";
+import { createLiveBrushStroke, type LiveBrushStroke } from "@/brushes/liveStroke";
 import { shortId } from "@/utils/id";
 import { gridCellCenter, type GridShape } from "./gridGeometry";
 import { detectQuickShape, quickShapePolyline, QUICK_SHAPE_HOLD_MS, type QuickShapeResult } from "./quickShape";
@@ -11,6 +12,9 @@ import { createPreviewStore, type PreviewStore } from "./previewStore";
 export interface BrushPreview {
   outline: Contour[];
   centerline: Contour | null;
+  /** Spray Brush: finished halo dots (append-only, same array all stroke) —
+   * drawn incrementally by LiveBrushFill. */
+  frozen?: Contour[];
 }
 
 const EMPTY_BRUSH_PREVIEW: BrushPreview = { outline: [], centerline: null };
@@ -96,6 +100,10 @@ export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
   // commits the same stream plus the stabilizer's end catch-up.
   const samplesRef = useRef<StrokeSample[]>([]);
   const stabilizerRef = useRef<StrokeStabilizer | null>(null);
+  // Procreate-style live stroke (see brushes/liveStroke.ts): keeps ink that
+  // is already on screen fixed, draws the StreamLine catch-up to the pen,
+  // and commits exactly the path that was shown. Null for Pixel Brush.
+  const liveRef = useRef<LiveBrushStroke | null>(null);
   // Pixel Brush only, parallel to samplesRef/rawSamplesRef: whether the
   // pointer ever reached the core of that sample's cell (see isPixelCellCore).
   const pixelCoreRef = useRef<boolean[]>([]);
@@ -112,16 +120,18 @@ export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
   // uniform for the renderer (see GlyphCanvas.tsx).
   const [previewOutline, setPreviewOutline] = useState<Contour[]>([]);
   const [previewCenterline, setPreviewCenterline] = useState<Contour | null>(null);
+  const [previewFrozen, setPreviewFrozen] = useState<Contour[] | null>(null);
   const previewStoreRef = useRef<PreviewStore<BrushPreview> | null>(null);
   if (!previewStoreRef.current) previewStoreRef.current = createPreviewStore<BrushPreview>(EMPTY_BRUSH_PREVIEW);
   const previewStore = previewStoreRef.current;
   const publishPreview = useCallback((next: BrushPreview) => {
     if (externalPreview) {
-      previewStore.set(next.outline.length === 0 && !next.centerline ? EMPTY_BRUSH_PREVIEW : next);
+      previewStore.set(next.outline.length === 0 && !next.centerline && !next.frozen?.length ? EMPTY_BRUSH_PREVIEW : next);
       return;
     }
     setPreviewCenterline(next.centerline);
     setPreviewOutline(next.outline);
+    setPreviewFrozen(next.frozen ?? null);
   }, [externalPreview, previewStore]);
   const [isDrawing, setIsDrawing] = useState(false);
   // Synchronous mirror of isDrawing: coalesced pointer samples can arrive
@@ -156,6 +166,18 @@ export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
   }, []);
 
   const buildPreview = useCallback(() => {
+    const live = liveRef.current;
+    const stab = stabilizerRef.current;
+    if (live && stab && !quickShapeRef.current) {
+      if (brush.type === "sprayBrush" && !sprayCacheRef.current) sprayCacheRef.current = { processedDist: 0, specks: [] };
+      return live.preview(stab.samples, stab.finish(), brush.type === "sprayBrush" ? sprayCacheRef.current ?? undefined : undefined);
+    }
+    if (quickShapeRef.current && !pixelSnap) {
+      // Held QuickShape: show the exact snapped geometry that will be saved.
+      const shapeSettings = { ...brush, taperMode: "length" as const };
+      if (brush.type === "monoline") return { centerline: centerlineToContour(samplesRef.current, true), outline: [] as Contour[] };
+      return { centerline: null as Contour | null, outline: centerlineToOutlineContours(samplesRef.current, shapeSettings, { fast: true }) };
+    }
     const cl = samplesToCenterline(samplesRef.current, brush, hitScale);
     if (brush.type === "monoline") {
       return { centerline: centerlineToContour(cl, true), outline: [] as Contour[] };
@@ -242,6 +264,7 @@ export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
     const sample: StrokeSample = { x: snapped.x, y: snapped.y, pressure: pressureFor(snapped, e) };
     rawSamplesRef.current = [sample];
     stabilizerRef.current = pixelSnap ? null : new StrokeStabilizer(brush.stabilizer ?? 0, hitScale, sample, e.timeStamp ?? performance.now());
+    liveRef.current = pixelSnap ? null : createLiveBrushStroke(brush, hitScale);
     samplesRef.current = stabilizerRef.current ? stabilizerRef.current.samples : [sample];
     pixelCoreRef.current = pixelSnap ? [gridShape === "square" ? isPixelCellCore(p, gridSize) : true] : [];
     // Fresh gesture: start this stroke's spray dust field over from empty
@@ -254,7 +277,7 @@ export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
     publishPreview(EMPTY_BRUSH_PREVIEW);
     clearQuickShapeHold();
     cancelScheduledPreview();
-  }, [pressureFor, pixelSnap, gridSize, gridShape, clearQuickShapeHold, cancelScheduledPreview, brush.stabilizer, hitScale, publishPreview]);
+  }, [pressureFor, pixelSnap, gridSize, gridShape, clearQuickShapeHold, cancelScheduledPreview, brush, hitScale, publishPreview]);
 
   const pointerMove = useCallback(
     (p: Point, e: PointerLike) => {
@@ -357,7 +380,27 @@ export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
     // Otherwise commit exactly the stabilized stream the preview showed,
     // plus the tip's catch-up to where the pen lifted.
     const stab = stabilizerRef.current;
+    const live = liveRef.current;
     const stabilized = stab ? [...stab.samples, ...stab.finish()] : rawSamplesRef.current;
+    if (live && !heldShape) {
+      // Procreate-style commit: the same smoothed path the preview showed,
+      // fitted with the fewest Bézier nodes (≤ ½ screen px off), end taper
+      // applied now that the pen has lifted.
+      const committed = live.commit(stabilized);
+      rawSamplesRef.current = [];
+      samplesRef.current = [];
+      stabilizerRef.current = null;
+      liveRef.current = null;
+      pixelCoreRef.current = [];
+      sprayCacheRef.current = null;
+      publishPreview(EMPTY_BRUSH_PREVIEW);
+      clearQuickShapeHold();
+      cancelScheduledPreview();
+      if (!committed || !glyph) return;
+      const obj: VectorObject = { ...committed, cap: brush.type === "monoline" ? brushCap : "round" };
+      commitOutline(activeChar, { objects: [...glyph.outline.objects, obj] });
+      return;
+    }
     const centerlineSamples = heldShape
       ? quickShapePolyline(heldShape).map((p) => ({ ...p, pressure: 1 }))
       : samplesToCenterline(stabilized, brush, hitScale);
@@ -380,6 +423,7 @@ export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
     rawSamplesRef.current = [];
     samplesRef.current = [];
     stabilizerRef.current = null;
+    liveRef.current = null;
     pixelCoreRef.current = [];
     sprayCacheRef.current = null;
     publishPreview(EMPTY_BRUSH_PREVIEW);
@@ -397,7 +441,7 @@ export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
       // Bake the grid cell size in at draw time (Pixel Brush only) so this
       // stroke's blocks stay exactly as drawn even if the canvas grid size
       // is changed later.
-      brushSettings: pixelSnap ? { ...brush, gridSnap: true, cellSize: gridSize, cellShape: gridShape } : { ...brush, gridSnap: undefined, cellShape: undefined },
+      brushSettings: pixelSnap ? { ...brush, gridSnap: true, cellSize: gridSize, cellShape: gridShape } : { ...brush, gridSnap: undefined, cellShape: undefined, taperMode: "length" },
       samples: rawSamples,
     };
     commitOutline(activeChar, { objects: [...glyph.outline.objects, obj] });
@@ -407,6 +451,7 @@ export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
     rawSamplesRef.current = [];
     samplesRef.current = [];
     stabilizerRef.current = null;
+    liveRef.current = null;
     pixelCoreRef.current = [];
     sprayCacheRef.current = null;
     isDrawingRef.current = false;
@@ -419,7 +464,7 @@ export function useBrushTool(hitScale: number, options?: BrushToolOptions) {
   }, [clearQuickShapeHold, cancelScheduledPreview, publishPreview]);
 
   return useMemo(
-    () => ({ pointerDown, pointerMove, pointerUp, cancel, previewOutline, previewCenterline, previewStore, isDrawing }),
-    [pointerDown, pointerMove, pointerUp, cancel, previewOutline, previewCenterline, previewStore, isDrawing]
+    () => ({ pointerDown, pointerMove, pointerUp, cancel, previewOutline, previewCenterline, previewFrozen, previewStore, isDrawing }),
+    [pointerDown, pointerMove, pointerUp, cancel, previewOutline, previewCenterline, previewFrozen, previewStore, isDrawing]
   );
 }

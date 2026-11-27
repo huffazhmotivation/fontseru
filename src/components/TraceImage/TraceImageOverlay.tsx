@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, MouseEvent } from "react";
-import { FileCode2, ImagePlus, Layers, Loader2, RefreshCw, Wand2, X } from "lucide-react";
+import { FileCode2, ImagePlus, Layers, Loader2, RefreshCw, Sparkles, Wand2, X } from "lucide-react";
 import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
 import { hasOutline } from "@/types/glyph";
@@ -15,6 +15,7 @@ import type { VectorObject } from "@/types/geometry";
 import {
   DEFAULT_TRACE_SETTINGS,
   TraceError,
+  autoThresholdForFile,
   fitTracedObjectsToGlyph,
   tracedObjectFillPath,
   traceImageFile,
@@ -26,6 +27,7 @@ import { SvgImportError, importSvgFile } from "@/trace/svgImport";
 import { detectWorksheet } from "@/worksheet/detectWorksheet";
 import type { WorksheetCellResult, WorksheetDetectionResult } from "@/worksheet/types";
 import { WorksheetReviewPanel } from "@/components/TraceImage/WorksheetReviewPanel";
+import { regroupToCount } from "@/trace/letterGroups";
 
 /** Debounce delay before the left-panel live preview re-traces after the image, threshold, detail, or invert setting changes — long enough to not re-run on every slider tick, short enough to feel live. */
 const LIVE_PREVIEW_DEBOUNCE_MS = 350;
@@ -134,6 +136,15 @@ export function TraceImageOverlay() {
   // debounce as the user tweaks Threshold/Detail/Invert, same as before.
   const [hasTraced, setHasTraced] = useState(false);
   const [selectedLetterId, setSelectedLetterId] = useState<string | null>(null);
+  // Extra shapes added to the selection with Shift/⌘-click — applied
+  // together with `selectedLetterId` as ONE glyph (e.g. the three pieces of
+  // "%", or a letter whose parts came apart in a rough scan).
+  const [extraLetterIds, setExtraLetterIds] = useState<string[]>([]);
+  // "Teks di gambar": the characters the image shows, in reading order.
+  // Detected shapes are matched to them one by one so a whole alphabet
+  // sheet can be applied in one go.
+  const [mapText, setMapText] = useState("");
+  const [isAutoThreshold, setIsAutoThreshold] = useState(false);
   const [draggingLetterId, setDraggingLetterId] = useState<string | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [appliedFlash, setAppliedFlash] = useState<string | null>(null);
@@ -189,11 +200,48 @@ export function TraceImageOverlay() {
     return map;
   }, [letterGroups, metrics]);
 
-  const selectedGroup = useMemo(
-    () => (selectedLetterId ? letterGroups?.find((g) => g.id === selectedLetterId) ?? null : null),
-    [letterGroups, selectedLetterId]
+  const selectedIds = useMemo(
+    () => (selectedLetterId ? [selectedLetterId, ...extraLetterIds.filter((id) => id !== selectedLetterId)] : []),
+    [selectedLetterId, extraLetterIds]
   );
-  const selectedPreviewGlyph = selectedLetterId ? letterPreviews.get(selectedLetterId) ?? null : null;
+  const selectedGroup = useMemo(() => {
+    if (!letterGroups || !selectedIds.length) return null;
+    const picked = letterGroups.filter((g) => selectedIds.includes(g.id));
+    if (!picked.length) return null;
+    if (picked.length === 1) return picked[0];
+    return {
+      id: picked.map((g) => g.id).join("+"),
+      objects: picked.flatMap((g) => g.objects),
+      bounds: {
+        minX: Math.min(...picked.map((g) => g.bounds.minX)),
+        minY: Math.min(...picked.map((g) => g.bounds.minY)),
+        maxX: Math.max(...picked.map((g) => g.bounds.maxX)),
+        maxY: Math.max(...picked.map((g) => g.bounds.maxY)),
+      },
+    } satisfies TraceLetterGroup;
+  }, [letterGroups, selectedIds]);
+  const selectedPreviewGlyph = useMemo(
+    () => (selectedGroup ? (selectedIds.length === 1 ? letterPreviews.get(selectedGroup.id) ?? null : letterPreviewGlyph(selectedGroup, metrics)) : null),
+    [selectedGroup, selectedIds, letterPreviews, metrics]
+  );
+  // Characters typed in "Teks di gambar", one per detected shape (spaces ignored).
+  const mappedChars = useMemo(() => Array.from(mapText.replace(/\s+/g, "")), [mapText]);
+  // Shapes → characters. When fewer characters are typed than shapes were
+  // found, neighbouring shapes that clearly belong together (the three
+  // pieces of "%", a letter broken in a scan) are merged until they match.
+  const mapping = useMemo(() => {
+    if (!letterGroups || !mappedChars.length) return null;
+    const sets = mappedChars.length < letterGroups.length ? regroupToCount(letterGroups, mappedChars.length) : letterGroups.map((g) => [g.id]);
+    const charOf = new Map<string, string>();
+    const firstOf = new Set<string>();
+    sets.forEach((ids, i) => {
+      const ch = mappedChars[i];
+      if (!ch) return;
+      ids.forEach((id) => charOf.set(id, ch));
+      firstOf.add(ids[0]);
+    });
+    return { sets, charOf, firstOf };
+  }, [letterGroups, mappedChars]);
 
   useEffect(() => {
     if (!open) return;
@@ -254,6 +302,7 @@ export function TraceImageOverlay() {
     setLetterGroups(null);
     setTraceCanvasSize(null);
     setSelectedLetterId(null);
+    setExtraLetterIds([]);
     setDraggingLetterId(null);
     setSelectedTarget(null);
     setHasTraced(false);
@@ -273,10 +322,23 @@ export function TraceImageOverlay() {
       return URL.createObjectURL(next);
     });
 
-    // Nothing else happens here on purpose: worksheet detection and
-    // tracing/identification both only start once the user explicitly
-    // presses "Trace Image" (see handleTrace below). Just uploading/
-    // dropping an image only shows the preview + manual controls.
+    // Worksheet detection and tracing still only start once the user
+    // presses "Trace Image" (see handleTrace below). The one thing done up
+    // front is reading the image's own ink/paper levels to set Threshold,
+    // so the very first trace already uses the right value.
+    void applyAutoThreshold(next);
+  }
+
+  async function applyAutoThreshold(target: File) {
+    setIsAutoThreshold(true);
+    try {
+      const t = await autoThresholdForFile(target);
+      setSettings((s) => ({ ...s, threshold: t }));
+    } catch {
+      // keep the current threshold
+    } finally {
+      setIsAutoThreshold(false);
+    }
   }
 
   function resetForNewImage() {
@@ -325,6 +387,7 @@ export function TraceImageOverlay() {
       setLetterGroups(letters);
       setTraceCanvasSize({ width: canvas.width, height: canvas.height });
       setSelectedLetterId(letters[0]?.id ?? null);
+      setExtraLetterIds([]);
       setHasTraced(true);
     } catch (err) {
       resetTraceResult();
@@ -411,16 +474,37 @@ export function TraceImageOverlay() {
   }
 
   function applyLetterToChar(letterId: string, ch: string) {
-    const group = letterGroups?.find((g) => g.id === letterId);
+    const group = selectedGroup && selectedGroup.id === letterId ? selectedGroup : letterGroups?.find((g) => g.id === letterId);
     const target = regularGlyphs[ch];
     if (!group || !target) return;
     const outline = fitTracedObjectsToGlyph(group.objects, metrics, target.advanceWidth);
     commitTracedGlyphOutline(ch, outline);
-    setSelectedLetterId(letterId);
+    if (!letterId.includes("+")) setSelectedLetterId(letterId);
     setSelectedTarget(ch);
     setAppliedFlash(ch);
     showToast(`Diterapkan ke glyph “${ch}”.`);
     window.setTimeout(() => setAppliedFlash((c) => (c === ch ? null : c)), 1200);
+  }
+
+  /** Applies every detected shape to the character typed for it in "Teks di gambar". */
+  function applyMappedText() {
+    if (!letterGroups || !mapping) return;
+    let applied = 0;
+    const missing: string[] = [];
+    mapping.sets.forEach((ids, i) => {
+      const ch = mappedChars[i];
+      if (!ch) return;
+      const target = regularGlyphs[ch];
+      if (!target) { missing.push(ch); return; }
+      const objects = letterGroups.filter((g) => ids.includes(g.id)).flatMap((g) => g.objects);
+      commitTracedGlyphOutline(ch, fitTracedObjectsToGlyph(objects, metrics, target.advanceWidth));
+      applied++;
+    });
+    if (applied) {
+      showToast(`${applied} glyph diterapkan sesuai teks.${missing.length ? ` Tidak ada glyph untuk: ${missing.join(" ")}` : ""}`);
+    } else {
+      showToast(missing.length ? `Glyph tidak ditemukan: ${missing.join(" ")}` : "Ketik dulu huruf yang ada di gambar, urut dari kiri ke kanan.", "info");
+    }
   }
 
   function onDropzoneDrop(e: DragEvent<HTMLDivElement>) {
@@ -594,7 +678,7 @@ export function TraceImageOverlay() {
                     </button>
                   ))}
                 </div>
-                <InfoTip>Rendah = node paling sedikit &amp; paling halus. Tinggi = mengikuti garis tipis lebih ketat. Ultra = presisi sub-pixel, 100% ikut tepi gambar asli (node paling banyak).</InfoTip>
+                <InfoTip>Semua level mengikuti tepi gambar secara sub-pixel dengan node di titik ekstrem. Rendah = node paling sedikit. Tinggi = presisi tinggi, node tetap hemat (disarankan). Ultra = paling rapat ke gambar asli.</InfoTip>
               </div>
 
               <Slider
@@ -606,7 +690,19 @@ export function TraceImageOverlay() {
                 directInput
                 onChange={(v) => setSettings((s) => ({ ...s, threshold: v }))}
               />
-              <InfoTip>Piksel lebih gelap dari nilai ini dianggap tinta (bentuk glyph).</InfoTip>
+              <div className="fm-trace-threshold-auto">
+                <button
+                  type="button"
+                  className="fm-trace-mini-btn"
+                  disabled={!file || isAutoThreshold}
+                  onClick={() => file && applyAutoThreshold(file)}
+                  data-testid="trace-threshold-auto"
+                  title="Hitung Threshold terbaik dari gambar ini"
+                >
+                  {isAutoThreshold ? <Loader2 size={12} className="fm-spin" /> : <Sparkles size={12} />} Auto
+                </button>
+                <InfoTip>Piksel lebih gelap dari nilai ini dianggap tinta. Diatur otomatis saat gambar diunggah; tekan Auto untuk menghitung ulang.</InfoTip>
+              </div>
 
               <label className="fm-checkbox-row" style={{ marginTop: 4 }}>
                 <input
@@ -658,7 +754,9 @@ export function TraceImageOverlay() {
                     data-testid="trace-artboard"
                   >
                     {letterGroups.map((g, i) => {
-                      const isActive = selectedLetterId === g.id;
+                      const isActive = selectedIds.includes(g.id);
+                      const mapped = mapping?.charOf.get(g.id);
+                      const showBadge = !!mapped && mapping!.firstOf.has(g.id);
                       const w = traceCanvasSize?.width || 1;
                       const h = traceCanvasSize?.height || 1;
                       const left = (g.bounds.minX / w) * 100;
@@ -671,16 +769,24 @@ export function TraceImageOverlay() {
                           type="button"
                           className={`fm-trace-artboard-item ${isActive ? "active" : ""}`}
                           style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` }}
-                          onClick={() => setSelectedLetterId(g.id)}
+                          onClick={(e) => {
+                            if ((e.shiftKey || e.metaKey || e.ctrlKey) && selectedLetterId && selectedLetterId !== g.id) {
+                              setExtraLetterIds((ids) => (ids.includes(g.id) ? ids.filter((x) => x !== g.id) : [...ids, g.id]));
+                            } else {
+                              setSelectedLetterId(g.id);
+                              setExtraLetterIds([]);
+                            }
+                          }}
                           draggable
                           onDragStart={(e) => {
                             e.dataTransfer.effectAllowed = "copy";
-                            e.dataTransfer.setData("text/plain", g.id);
-                            setSelectedLetterId(g.id);
-                            setDraggingLetterId(g.id);
+                            const dragId = selectedIds.length > 1 && selectedIds.includes(g.id) && selectedGroup ? selectedGroup.id : g.id;
+                            e.dataTransfer.setData("text/plain", dragId);
+                            if (dragId === g.id) { setSelectedLetterId(g.id); setExtraLetterIds([]); }
+                            setDraggingLetterId(dragId);
                           }}
                           onDragEnd={() => setDraggingLetterId(null)}
-                          title={`Bentuk #${i + 1} — seret ke glyph target atau klik untuk pilih`}
+                          title={`Bentuk #${i + 1}${mapped ? ` → “${mapped}”` : ""} — klik untuk pilih, Shift-klik untuk menggabung, seret ke glyph target`}
                           data-testid={`trace-letter-${i}`}
                         >
                           <svg
@@ -692,10 +798,35 @@ export function TraceImageOverlay() {
                               <path key={obj.id} d={tracedObjectFillPath(obj)} fillRule="nonzero" />
                             ))}
                           </svg>
+                          {showBadge && <span className="fm-trace-map-badge">{mapped}</span>}
                         </button>
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {letterGroups && letterGroups.length > 0 && (
+                <div className="fm-trace-map-row" data-testid="trace-map-row">
+                  <input
+                    type="text"
+                    className="fm-trace-map-input"
+                    value={mapText}
+                    onChange={(e) => setMapText(e.target.value)}
+                    placeholder={`Ketik huruf di gambar, urut baca — mis. ABC (${letterGroups.length} bentuk)`}
+                    spellCheck={false}
+                    data-testid="trace-map-input"
+                  />
+                  <button
+                    type="button"
+                    className="fm-action-btn"
+                    disabled={!mappedChars.length}
+                    onClick={applyMappedText}
+                    data-testid="trace-map-apply"
+                    title="Terapkan tiap bentuk ke huruf yang diketik, berurutan"
+                  >
+                    <Wand2 size={14} /> Terapkan semua
+                  </button>
                 </div>
               )}
 
@@ -721,6 +852,8 @@ export function TraceImageOverlay() {
                     <span className="fm-hint fm-trace-apply-hint">
                       {!selectedGroup
                         ? "Klik salah satu bentuk di atas untuk memilih."
+                        : selectedIds.length > 1 && !selectedTarget
+                        ? `${selectedIds.length} bentuk digabung jadi satu glyph — pilih target.`
                         : selectedTarget
                         ? `Terpilih: bentuk → “${selectedTarget}”`
                         : "Pilih glyph target di kanan, atau seret bentuk ini langsung ke sana."}
