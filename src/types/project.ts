@@ -33,6 +33,9 @@ export interface FontSeruProjectV1 {
     /** OpenType Feature Builder config. Optional so older .fs files without
      * this field still open fine. */
     featureConfig?: FeatureBuilderConfig;
+    /** Test Lab Kerning Dictionary "Sudah OK" marks (`${context}|${pairKey}`).
+     * Optional so older .fs files without it still open fine. */
+    kerningReviewed?: Record<string, true>;
     /** Raw Export-dialog form (Font Info + License Info) saved via "Save
      * Info" so it stays attached to the project. Optional so older .fs files
      * without it still open fine. */

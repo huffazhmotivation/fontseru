@@ -46,6 +46,8 @@ interface ProjectSnapshot {
   /** OpenType Feature Builder config (ligatures/alternates/swashes). Optional
    * so older saved snapshots without this field still load fine. */
   featureConfig?: FeatureBuilderConfig;
+  /** Test Lab Kerning Dictionary "Sudah OK" marks. Optional for older snapshots. */
+  kerningReviewed?: Record<string, true>;
   /** Raw Export-dialog form saved via "Save Info". Optional so older saved
    * snapshots without this field still load fine. */
   exportInfo?: ExportInfoDraft;

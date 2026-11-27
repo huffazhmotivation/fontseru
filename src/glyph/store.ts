@@ -443,6 +443,10 @@ interface AppState {
   // utils/fontIO.ts). Never touches glyph geometry/editor state directly.
   featureBuilderOpen: boolean;
   featureConfig: FeatureBuilderConfig;
+  /** Test Lab Kerning Dictionary: pairs the designer marked "Sudah OK",
+   * keyed `${context}|${kerningKey}`. Saved with the project; not in undo history. */
+  kerningReviewed: Record<string, true>;
+  setKerningReviewed: (keys: string[], reviewed: boolean) => void;
 
   // Login modal (auth UI trigger) — additive UI state only, separate from
   // feature-locking (proModalOpen/proModalFeature below). Lets the
@@ -649,7 +653,7 @@ interface AppState {
   // history / persistence
   undo: () => void;
   redo: () => void;
-  hydrate: (patch: { glyphs?: GlyphMap; glyphsByStyle?: Partial<GlyphFamily>; fontStyle?: FontStyle; customFamilies?: CustomFamily[]; fontName?: string; fontInfo?: Partial<FontInfo>; exportInfo?: ExportInfoDraft; projectFileName?: string; metrics?: Partial<FontMetrics>; kerningPairs?: KerningPairs; kerningManual?: KerningManualFlags; kerningOverridesByStyle?: KerningOverridesByStyle; kerningOverrideManualByStyle?: KerningOverrideManualByStyle; wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle; featureConfig?: FeatureBuilderConfig; activeChar?: string; gridSize?: number; gridShape?: GridShape; showGrid?: boolean; showGuides?: boolean; snapEnabled?: boolean; ghost?: Partial<GhostSettings>; brush?: BrushSettings }) => void;
+  hydrate: (patch: { glyphs?: GlyphMap; glyphsByStyle?: Partial<GlyphFamily>; fontStyle?: FontStyle; customFamilies?: CustomFamily[]; fontName?: string; fontInfo?: Partial<FontInfo>; exportInfo?: ExportInfoDraft; projectFileName?: string; metrics?: Partial<FontMetrics>; kerningPairs?: KerningPairs; kerningManual?: KerningManualFlags; kerningOverridesByStyle?: KerningOverridesByStyle; kerningOverrideManualByStyle?: KerningOverrideManualByStyle; wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle; featureConfig?: FeatureBuilderConfig; kerningReviewed?: Record<string, true>; activeChar?: string; gridSize?: number; gridShape?: GridShape; showGrid?: boolean; showGuides?: boolean; snapEnabled?: boolean; ghost?: Partial<GhostSettings>; brush?: BrushSettings }) => void;
 
   // kerning
   setKerningPair: (left: string, right: string, value: number) => void;
@@ -1238,7 +1242,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     showGuides: true,
     showRuler: true,
     rulerGuides: [],
-    snapEnabled: false,
+    snapEnabled: true,
     metrics: { ...DEFAULT_METRICS },
     metricFocus: null,
     ghost: { enabled: true, mode: "sample", opacity: 0.12, scale: 1, offsetX: 0, offsetY: 0, imageSrc: null, imageAspect: undefined },
@@ -1304,6 +1308,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     traceOpen: false,
     featureBuilderOpen: false,
     featureConfig: emptyFeatureConfig(),
+    kerningReviewed: {},
     loginModalOpen: false,
     proModalOpen: false,
     proModalFeature: null,
@@ -1414,6 +1419,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         autoSpaceLastRun: null,
         trackingApplyLastRun: null,
         featureConfig: emptyFeatureConfig(),
+        kerningReviewed: {},
         selectedObjectIds: [],
         selectedNodes: [],
         selectedHandle: null,
@@ -2755,6 +2761,7 @@ export const useAppStore = create<AppState>()((set, get) => {
           kerningOverrideManualByStyle: patch.kerningOverrideManualByStyle ?? (incomingRegular ? {} : s.kerningOverrideManualByStyle),
           wordSpacingOverridesByStyle: patch.wordSpacingOverridesByStyle ?? (incomingRegular ? {} : s.wordSpacingOverridesByStyle),
           featureConfig: patch.featureConfig ?? (incomingRegular ? emptyFeatureConfig() : s.featureConfig),
+          kerningReviewed: patch.kerningReviewed ?? (incomingRegular ? {} : s.kerningReviewed),
           activeChar,
           gridSize: patch.gridSize ?? s.gridSize,
           gridShape: patch.gridShape ? normalizeGridShape(patch.gridShape) : s.gridShape,
@@ -3056,6 +3063,18 @@ export const useAppStore = create<AppState>()((set, get) => {
       set({
         past: [...past, { glyphs, metrics: get().metrics, kerningPairs: snapshot.kerningPairs, kerningManual: snapshot.kerningManual }].slice(-HISTORY_LIMIT),
         future: [],
+      });
+    },
+
+    setKerningReviewed: (keys, reviewed) => {
+      if (!keys.length) return;
+      set((s) => {
+        const next = { ...s.kerningReviewed };
+        for (const k of keys) {
+          if (reviewed) next[k] = true;
+          else delete next[k];
+        }
+        return { kerningReviewed: next };
       });
     },
 

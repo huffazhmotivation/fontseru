@@ -163,9 +163,30 @@ function pruneEnclosedPolys(polys: Point[][]): Point[][] {
   return polys.filter((_, i) => keep[i]);
 }
 
+/* Per-object cache: every edit gives the GLYPH a new outline object but
+ * leaves untouched objects as they were, so after one more stroke only that
+ * stroke is flattened again. (Re-flattening every object at 48 steps on
+ * each commit cost ~0.7 s in a glyph that already held a Spray stroke with
+ * thousands of dots.) Keyed by the contours array + steps. */
+const objInkCache = new WeakMap<object, Map<number, Point[][]>>();
+
 export function resolveInkContours(outline: GlyphOutline, steps = 16): Point[][] {
   const polys: Point[][] = [];
   for (const obj of outline.objects) {
+    const cacheKey = obj.contours as object;
+    let bySteps = objInkCache.get(cacheKey);
+    const hit = bySteps?.get(steps);
+    // brush outlines also depend on the object's settings, which a restyle
+    // changes without new contours — so only cache filled shapes by
+    // contours, and strokes by the object itself.
+    const strokeKey = isStrokeObject(obj) ? (obj as object) : null;
+    if (strokeKey) {
+      const sHit = objInkCache.get(strokeKey)?.get(steps);
+      if (sHit) { polys.push(...sHit); continue; }
+    } else if (hit) {
+      polys.push(...hit);
+      continue;
+    }
     const objPolys: Point[][] = [];
     if (isFilledObject(obj)) {
       for (const contour of obj.contours) {
@@ -173,12 +194,23 @@ export function resolveInkContours(outline: GlyphOutline, steps = 16): Point[][]
         if (flat.length >= 3) objPolys.push(flat);
       }
     } else if (isStrokeObject(obj)) {
+      // Spray Brush ink is thousands of tiny dots; a hexagon per dot
+      // measures the same ink extent as 48 steps per curve, at ~1/8 the cost.
+      const objSteps = obj.brushType === "sprayBrush" ? Math.min(steps, 6) : steps;
       for (const contour of brushOutlineContours(obj)) {
-        const flat = flattenContour(contour, steps);
+        const flat = flattenContour(contour, objSteps);
         if (flat.length >= 3) objPolys.push(flat);
       }
     }
-    polys.push(...pruneEnclosedPolys(objPolys));
+    const pruned = pruneEnclosedPolys(objPolys);
+    const k = strokeKey ?? cacheKey;
+    bySteps = objInkCache.get(k);
+    if (!bySteps) {
+      bySteps = new Map();
+      objInkCache.set(k, bySteps);
+    }
+    bySteps.set(steps, pruned);
+    polys.push(...pruned);
   }
   return polys;
 }
@@ -513,6 +545,35 @@ export function calibrateTargetGap(glyphs: GlyphMap, metrics: FontMetrics): numb
   const lo = metrics.unitsPerEm * 0.04;
   const hi = metrics.unitsPerEm * 0.16;
   return Math.max(lo, Math.min(hi, median));
+}
+
+/**
+ * The measured optical gap between two glyphs set side by side with no
+ * kerning: the tightest real distance between their letterforms over the
+ * heights they share (bbox side-bearing gap when either glyph is empty).
+ * Same measurement `suggestKerningPair` starts from, exposed for the Test
+ * Lab kerning dictionary, which compares it against each glyph's usual
+ * spacing to find the pairs that actually need kerning.
+ */
+export function opticalPairGap(glyphs: GlyphMap, metrics: FontMetrics, left: string, right: string): number {
+  const l = glyphs[left];
+  const r = glyphs[right];
+  if (!l || !r) return NaN;
+  const lBounds = outlineBounds(l.outline);
+  const rBounds = outlineBounds(r.outline);
+  const leftInkRight = lBounds ? lBounds.maxX : l.advanceWidth - l.rsb;
+  const rightInkLeft = rBounds ? rBounds.minX : r.lsb;
+  let gap = Math.max(0, l.advanceWidth - leftInkRight) + Math.max(0, rightInkLeft);
+  if (lBounds && rBounds) {
+    const overlapMinY = Math.max(lBounds.minY, rBounds.minY);
+    const overlapMaxY = Math.min(lBounds.maxY, rBounds.maxY);
+    const hasOverlap = overlapMinY <= overlapMaxY;
+    const minY = hasOverlap ? overlapMinY : Math.min(lBounds.minY, rBounds.minY);
+    const maxY = hasOverlap ? overlapMaxY : Math.max(lBounds.maxY, rBounds.maxY);
+    const tightest = tightestGapInRange(l, r, minY, maxY, metrics.unitsPerEm);
+    if (Number.isFinite(tightest)) gap = tightest;
+  }
+  return gap;
 }
 
 export function suggestKerningPair(

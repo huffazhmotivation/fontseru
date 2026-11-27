@@ -170,6 +170,7 @@ export default function App() {
         kerningOverrideManualByStyle: snap.kerningOverrideManualByStyle,
         wordSpacingOverridesByStyle: snap.wordSpacingOverridesByStyle,
         featureConfig: snap.featureConfig,
+        kerningReviewed: snap.kerningReviewed,
       });
       hydratedRef.current = true;
     });
@@ -202,6 +203,7 @@ export default function App() {
         kerningOverrideManualByStyle: state.kerningOverrideManualByStyle,
         wordSpacingOverridesByStyle: state.wordSpacingOverridesByStyle,
         featureConfig: state.featureConfig,
+        kerningReviewed: state.kerningReviewed,
       });
     };
     const unsub = useAppStore.subscribe((state, prev) => {
@@ -222,7 +224,8 @@ export default function App() {
         state.kerningOverridesByStyle === prev.kerningOverridesByStyle &&
         state.kerningOverrideManualByStyle === prev.kerningOverrideManualByStyle &&
         state.wordSpacingOverridesByStyle === prev.wordSpacingOverridesByStyle &&
-        state.featureConfig === prev.featureConfig
+        state.featureConfig === prev.featureConfig &&
+        state.kerningReviewed === prev.kerningReviewed
       ) {
         return;
       }

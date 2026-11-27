@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { magnetAxis, uniqTargets, SNAP_CATCH_PX, SNAP_RELEASE_PX, type AxisLock } from "./magnet";
 import type { GlyphOutline, Point, VectorObject } from "@/types/geometry";
 import { useAppStore } from "@/glyph/store";
 import type { Affine, TransformPreview } from "./transformPreview";
@@ -82,52 +83,6 @@ function isSkewHandle(handle: HandleId): handle is SkewHandleId {
 function rectFrom(a: Point, b: Point): Rect {
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
 }
-
-/** Soft-snap tolerance in screen pixels — kept small and gentle so it never
- * fights the pointer; converted to font units via hitScale at call time. */
-const SNAP_TOLERANCE_PX = 8;
-
-/**
- * Nudges a proposed set of edge positions (e.g. an object's min/max on one
- * axis) toward the nearest value in `targets` (guide-line positions in font
- * units) when within `tolerance` units of it. Returns the correction to add
- * to that axis's delta, or 0 when nothing is close enough — this is what
- * keeps the snap soft/non-forcing instead of a hard magnetic lock.
- */
-function snapCorrection(edges: number[], targets: number[], tolerance: number): number {
-  let correction = 0;
-  let bestDist = tolerance;
-  for (const edge of edges) {
-    for (const target of targets) {
-      const dist = Math.abs(target - edge);
-      if (dist < bestDist) {
-        bestDist = dist;
-        correction = target - edge;
-      }
-    }
-  }
-  return correction;
-}
-
-/** Snaps a single point's x/y independently toward the nearest guide within
- * tolerance on each axis — used while resizing/scaling, where the dragged
- * handle position itself (not a delta) determines the new bounds. */
-function snapPoint(p: Point, xTargets: number[], yTargets: number[], tolerance: number): Point {
-  let x = p.x;
-  let y = p.y;
-  let bestDx = tolerance;
-  for (const t of xTargets) {
-    const d = Math.abs(t - x);
-    if (d < bestDx) { bestDx = d; x = t; }
-  }
-  let bestDy = tolerance;
-  for (const t of yTargets) {
-    const d = Math.abs(t - y);
-    if (d < bestDy) { bestDy = d; y = t; }
-  }
-  return { x, y };
-}
-
 
 /** A group is a selection unit without becoming a new geometry container. */
 function selectionUnitIds(outline: GlyphOutline, objectId: string): string[] {
@@ -230,7 +185,6 @@ export function useSelectTool(hitScale: number) {
   const handleTol = 9 * hitScale;
   const rotateOffset = 26 * hitScale;
   const skewOffset = 14 * hitScale;
-  const snapTolerance = SNAP_TOLERANCE_PX * hitScale;
   // Snap targets mirror the guide lines actually drawn on canvas: the
   // horizontal metric guides (baseline always visible; the rest gated by
   // "Guides") plus the glyph's own vertical LSB/advance-width guides — never
@@ -245,6 +199,35 @@ export function useSelectTool(hitScale: number) {
     () => (snapEnabled && glyphLsb != null && glyphAdvance != null ? [glyphLsb, glyphAdvance] : []),
     [snapEnabled, glyphLsb, glyphAdvance]
   );
+  const snapCatch = SNAP_CATCH_PX * hitScale;
+  const snapRelease = SNAP_RELEASE_PX * hitScale;
+  // Per-gesture magnet state: targets gathered once at pointer-down (other
+  // objects' edges/centres + guides) and the current sticky lock per axis.
+  const magnetRef = useRef<{ xs: number[]; ys: number[]; lockX: AxisLock | null; lockY: AxisLock | null } | null>(null);
+  const [snapGuide, setSnapGuide] = useState<{ x: number | null; y: number | null } | null>(null);
+  const snapGuideRef = useRef<{ x: number | null; y: number | null } | null>(null);
+  const updateSnapGuide = useCallback((g: { x: number | null; y: number | null } | null) => {
+    const prev = snapGuideRef.current;
+    if (prev === g || (prev && g && prev.x === g.x && prev.y === g.y)) return;
+    snapGuideRef.current = g;
+    setSnapGuide(g);
+  }, []);
+  /** Targets for a move/resize of `ids`: guides + every other object's min/centre/max. */
+  const buildMagnet = useCallback((base: GlyphOutline, ids: string[]) => {
+    if (!snapEnabled) { magnetRef.current = null; return; }
+    const moving = new Set(ids);
+    const xs: number[] = [...verticalSnapTargets];
+    const ys: number[] = [...horizontalSnapTargets];
+    if (glyphAdvance != null) xs.push(0, glyphAdvance / 2);
+    for (const o of base.objects) {
+      if (moving.has(o.id)) continue;
+      const b = objectsBounds(base, [o.id]);
+      if (!b) continue;
+      xs.push(b.minX, (b.minX + b.maxX) / 2, b.maxX);
+      ys.push(b.minY, (b.minY + b.maxY) / 2, b.maxY);
+    }
+    magnetRef.current = { xs: uniqTargets(xs), ys: uniqTargets(ys), lockX: null, lockY: null };
+  }, [snapEnabled, verticalSnapTargets, horizontalSnapTargets, glyphAdvance]);
 
   const findHandle = useCallback(
     (p: Point): HandleId | null => {
@@ -289,6 +272,7 @@ export function useSelectTool(hitScale: number) {
           setSelectionSkewState(sameSkewAxis ? selectionSkewAngle : 0, handle);
         } else if (isResizeHandle(handle)) {
           dragRef.current = { mode: "resize", handle, anchor: anchorForHandle(bounds, handle), base: bounds };
+          buildMagnet(outline, selectedObjectIds);
         }
         return;
       }
@@ -321,6 +305,7 @@ export function useSelectTool(hitScale: number) {
           const dupIds = duplicates.map((d) => d.id);
           selectObjects(dupIds);
           dragRef.current = { mode: "move", origin: p, ids: dupIds };
+          buildMagnet(withDuplicates, dupIds);
           dupStampedRef.current = true;
           return;
         }
@@ -340,7 +325,10 @@ export function useSelectTool(hitScale: number) {
           dragIds = selectedObjectIds;
         }
         baseRef.current = outline;
-        if (dragIds.length > 0) dragRef.current = { mode: "move", origin: p, ids: dragIds };
+        if (dragIds.length > 0) {
+          dragRef.current = { mode: "move", origin: p, ids: dragIds };
+          buildMagnet(outline, dragIds);
+        }
         return;
       }
 
@@ -349,7 +337,7 @@ export function useSelectTool(hitScale: number) {
       dragRef.current = { mode: "marquee", origin: p, additive: shiftKey };
       setMarquee({ x: p.x, y: p.y, w: 0, h: 0 });
     },
-    [findHandle, bounds, outline, hitScale, selectedObjectIds, selectObjects, clearObjectSelection, setSelectionSkewState, selectionSkewAngle, selectionSkewHandle, setLiveOutline, setMarquee]
+    [findHandle, bounds, outline, hitScale, selectedObjectIds, selectObjects, clearObjectSelection, setSelectionSkewState, selectionSkewAngle, selectionSkewHandle, setLiveOutline, setMarquee, buildMagnet]
   );
 
   const pointerMove = useCallback(
@@ -382,18 +370,30 @@ export function useSelectTool(hitScale: number) {
           moveIds = duplicates.map((dp) => dp.id);
           selectObjects(moveIds);
           dragRef.current = { mode: "move", origin: moveOrigin, ids: moveIds };
+          buildMagnet(withDuplicates, moveIds);
         }
         let d = subtract(p, moveOrigin);
         if (shiftKey) d = Math.abs(d.x) >= Math.abs(d.y) ? { x: d.x, y: 0 } : { x: 0, y: d.y };
-        if (!shiftKey && (horizontalSnapTargets.length || verticalSnapTargets.length)) {
-          const movingBounds = objectsBounds(base, moveIds);
-          if (movingBounds) {
-            d = {
-              x: d.x + snapCorrection([movingBounds.minX + d.x, movingBounds.maxX + d.x], verticalSnapTargets, snapTolerance),
-              y: d.y + snapCorrection([movingBounds.minY + d.y, movingBounds.maxY + d.y], horizontalSnapTargets, snapTolerance),
-            };
+        const mg = magnetRef.current;
+        let guide: { x: number | null; y: number | null } | null = null;
+        if (mg) {
+          const mb = objectsBounds(base, moveIds);
+          if (mb) {
+            const cx = (mb.minX + mb.maxX) / 2, cy = (mb.minY + mb.maxY) / 2;
+            // Shift locks the move to one axis — only the free axis snaps.
+            const freeX = !shiftKey || d.x !== 0;
+            const freeY = !shiftKey || d.y !== 0;
+            const ex = [mb.minX + d.x, cx + d.x, mb.maxX + d.x];
+            const ey = [mb.minY + d.y, cy + d.y, mb.maxY + d.y];
+            const rx = freeX ? magnetAxis(ex, mg.xs, snapCatch, snapRelease, mg.lockX) : { correction: 0, lock: null };
+            const ry = freeY ? magnetAxis(ey, mg.ys, snapCatch, snapRelease, mg.lockY) : { correction: 0, lock: null };
+            mg.lockX = rx.lock;
+            mg.lockY = ry.lock;
+            d = { x: d.x + rx.correction, y: d.y + ry.correction };
+            if (rx.lock || ry.lock) guide = { x: rx.lock ? rx.lock.target : null, y: ry.lock ? ry.lock.target : null };
           }
         }
+        updateSnapGuide(guide);
         const moveSet = new Set(moveIds);
         const objects = base.objects.map((o) =>
           moveSet.has(o.id) ? translateObject(o, d.x, d.y) : o
@@ -408,9 +408,16 @@ export function useSelectTool(hitScale: number) {
         const anchor = drag.anchor;
         const horiz = drag.handle !== "n" && drag.handle !== "s";
         const vert = drag.handle !== "e" && drag.handle !== "w";
-        const snappedP = horizontalSnapTargets.length || verticalSnapTargets.length
-          ? snapPoint(p, horiz ? verticalSnapTargets : [], vert ? horizontalSnapTargets : [], snapTolerance)
-          : p;
+        let snappedP = p;
+        const mg = magnetRef.current;
+        if (mg) {
+          const rx = horiz ? magnetAxis([p.x], mg.xs, snapCatch, snapRelease, mg.lockX) : { correction: 0, lock: null };
+          const ry = vert ? magnetAxis([p.y], mg.ys, snapCatch, snapRelease, mg.lockY) : { correction: 0, lock: null };
+          mg.lockX = rx.lock;
+          mg.lockY = ry.lock;
+          snappedP = { x: p.x + rx.correction, y: p.y + ry.correction };
+          updateSnapGuide(rx.lock || ry.lock ? { x: rx.lock ? rx.lock.target : null, y: ry.lock ? ry.lock.target : null } : null);
+        }
         const w0 = b.maxX - b.minX || 1;
         const h0 = b.maxY - b.minY || 1;
         let sx = horiz ? (snappedP.x - anchor.x) / (handleSign(drag.handle, "x") * w0 || 1) : 1;
@@ -481,7 +488,7 @@ export function useSelectTool(hitScale: number) {
         setDragPreview({ kind: "rotate", baseObjects: base.objects, ids: selectedSet, matrix });
       }
     },
-    [findHandle, selectedSet, selectObjects, setLiveOutline, setSelectionSkewState, strokeWidthLocked, sketchMode, horizontalSnapTargets, verticalSnapTargets, snapTolerance, updateHoverHandle, setMarquee]
+    [findHandle, selectedSet, selectObjects, setLiveOutline, setSelectionSkewState, strokeWidthLocked, sketchMode, snapCatch, snapRelease, updateSnapGuide, buildMagnet, updateHoverHandle, setMarquee]
   );
 
   const pointerUp = useCallback(() => {
@@ -490,6 +497,8 @@ export function useSelectTool(hitScale: number) {
     dupStampedRef.current = false;
     if (!drag) return;
     setDragPreview(null);
+    magnetRef.current = null;
+    updateSnapGuide(null);
 
     if (drag.mode === "marquee") {
       const rect = marqueeRectRef.current;
@@ -521,7 +530,7 @@ export function useSelectTool(hitScale: number) {
     const latest = useAppStore.getState().liveOutline;
     if (latest) commitOutline(activeChar, latest, { skipAutoSpacing: true });
     baseRef.current = null;
-  }, [outline, selectObjects, activeChar, commitOutline, setMarquee]);
+  }, [outline, selectObjects, activeChar, commitOutline, setMarquee, updateSnapGuide]);
 
   /** Abandons the in-progress gesture without committing it (pointercancel). */
   const cancel = useCallback(() => {
@@ -530,9 +539,11 @@ export function useSelectTool(hitScale: number) {
     dupStampedRef.current = false;
     baseRef.current = null;
     setDragPreview(null);
+    magnetRef.current = null;
+    updateSnapGuide(null);
     setMarquee(null);
     if (drag && drag.mode !== "marquee" && useAppStore.getState().liveOutline) setLiveOutline(null);
-  }, [setLiveOutline, setMarquee]);
+  }, [setLiveOutline, setMarquee, updateSnapGuide]);
 
   /** Drops gesture bookkeeping only (no store writes) — for a tool switch
    *  mid-gesture, where the store's setTool already finalizes liveOutline. */
@@ -541,12 +552,14 @@ export function useSelectTool(hitScale: number) {
     dupStampedRef.current = false;
     baseRef.current = null;
     setDragPreview(null);
+    magnetRef.current = null;
+    updateSnapGuide(null);
     setMarquee(null);
-  }, [setMarquee]);
+  }, [setMarquee, updateSnapGuide]);
 
   return useMemo(
-    () => ({ pointerDown, pointerMove, pointerUp, cancel, reset, bounds, marqueeRect, hoverHandle, rotateOffset, skewOffset, dragPreview }),
-    [pointerDown, pointerMove, pointerUp, cancel, reset, bounds, marqueeRect, hoverHandle, rotateOffset, skewOffset, dragPreview]
+    () => ({ pointerDown, pointerMove, pointerUp, cancel, reset, bounds, marqueeRect, hoverHandle, rotateOffset, skewOffset, dragPreview, snapGuide }),
+    [pointerDown, pointerMove, pointerUp, cancel, reset, bounds, marqueeRect, hoverHandle, rotateOffset, skewOffset, dragPreview, snapGuide]
   );
 }
 

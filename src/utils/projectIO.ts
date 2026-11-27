@@ -26,6 +26,7 @@ export interface ProjectSource {
   kerningOverrideManualByStyle?: KerningOverrideManualByStyle;
   wordSpacingOverridesByStyle?: WordSpacingOverridesByStyle;
   featureConfig?: FeatureBuilderConfig;
+  kerningReviewed?: Record<string, true>;
   exportInfo?: ExportInfoDraft;
   activeChar: string;
   gridSize: number;
@@ -58,6 +59,7 @@ export function createFontSeruProject(source: ProjectSource): FontSeruProject {
       kerningOverrideManualByStyle: source.kerningOverrideManualByStyle,
       wordSpacingOverridesByStyle: source.wordSpacingOverridesByStyle,
       featureConfig: source.featureConfig,
+      kerningReviewed: source.kerningReviewed,
       exportInfo: source.exportInfo,
     },
     editor: {

@@ -279,6 +279,61 @@ const warmTasks = new WeakMap<Glyph, Map<number, WarmTask>>();
 let warmScheduled = false;
 const WARM_SLICE_MS = 10;
 
+/* Off-thread building. Glyphs with textured brush strokes are the slow
+ * ones (100–600 ms EACH to outline + union), and one such glyph inside a
+ * 10 ms warm slice is still a visible freeze. Those are sent to a worker
+ * instead; plain shapes/monoline stay on the fast synchronous path. */
+const HEAVY_BRUSH_FREE = new Set(["monoline"]);
+function isHeavyGlyph(glyph: Glyph): boolean {
+  for (const o of glyph.outline.objects) if (o.kind === "brush" && !HEAVY_BRUSH_FREE.has(o.brushType ?? "monoline")) return true;
+  return false;
+}
+let pathWorker: Worker | null | undefined;
+let workerSeq = 0;
+const workerJobs = new Map<number, WarmTask>();
+function getPathWorker(): Worker | null {
+  if (pathWorker !== undefined) return pathWorker;
+  try {
+    if (typeof Worker === "undefined" || typeof window === "undefined") return (pathWorker = null);
+    const w = new Worker(new URL("./glyphPathsWorker.ts", import.meta.url), { type: "module" });
+    w.onmessage = (e: MessageEvent<{ id: number; entries?: GlyphPathEntry[]; error?: string }>) => {
+      const task = workerJobs.get(e.data.id);
+      workerJobs.delete(e.data.id);
+      if (!task) return;
+      if (e.data.entries) {
+        let byAscender = glyphPathCache.get(task.glyph);
+        if (!byAscender) {
+          byAscender = new Map();
+          glyphPathCache.set(task.glyph, byAscender);
+        }
+        byAscender.set(task.ascender, e.data.entries);
+        warmTasks.get(task.glyph)?.delete(task.ascender);
+        for (const cb of task.callbacks) cb();
+      } else {
+        // Worker couldn't build it — fall back to the main thread once.
+        warmTasks.get(task.glyph)?.delete(task.ascender);
+        try { getGlyphPaths(task.glyph, task.ascender); } catch { /* stays a placeholder */ }
+        for (const cb of task.callbacks) cb();
+      }
+    };
+    w.onerror = () => {
+      // Worker unavailable (old browser, blocked URL): everything goes back
+      // to the in-thread queue.
+      pathWorker = null;
+      const pending = [...workerJobs.values()];
+      workerJobs.clear();
+      for (const t of pending) { warmQueue.push(t); }
+      if (pending.length) scheduleWarm();
+    };
+    pathWorker = w;
+  } catch {
+    pathWorker = null;
+  }
+  return pathWorker;
+}
+/** Glyphs already posted to the worker (so a re-request doesn't post twice). */
+const inWorker = new WeakSet<WarmTask>();
+
 function runWarmSlice(): void {
   warmScheduled = false;
   const start = performance.now();
@@ -286,6 +341,18 @@ function runWarmSlice(): void {
     const task = warmQueue[warmHead++];
     warmTasks.get(task.glyph)?.delete(task.ascender);
     if (task.callbacks.size === 0) continue; // every cell that wanted it went away
+    const worker = isHeavyGlyph(task.glyph) ? getPathWorker() : null;
+    if (worker) {
+      if (!inWorker.has(task)) {
+        inWorker.add(task);
+        const id = ++workerSeq;
+        workerJobs.set(id, task);
+        // keep the task registered so new requesters join it until it lands
+        warmTasks.get(task.glyph)?.set(task.ascender, task);
+        worker.postMessage({ id, glyph: task.glyph, ascender: task.ascender });
+      }
+      continue;
+    }
     try {
       getGlyphPaths(task.glyph, task.ascender);
     } catch {
@@ -313,30 +380,46 @@ function runWarmSlice(): void {
  * ~frame gets a small time budget for inline builds; anything beyond it
  * falls back to the background queue. */
 const SYNC_BUDGET_MS = 6;
-const SYNC_WINDOW_MS = 32;
-let syncWindowStart = -Infinity;
 let syncSpent = 0;
+let syncResetScheduled = false;
 /** Glyphs whose geometry threw once — never retried inline every render. */
 const syncFailed = new WeakSet<Glyph>();
 
-/** Builds `glyph`'s paths right now if this frame's inline budget allows,
+/* The budget belongs to the current task (one React render/commit), and is
+ * refilled only once that task has finished. It used to be a 32 ms
+ * wall-clock window — but a single heavy glyph (textured brush strokes)
+ * takes longer than that window by itself, so the NEXT cell in the same
+ * render saw an "expired" window, got a fresh budget and built inline too,
+ * and so on: opening Multi mode on a 370-glyph brush font built every
+ * visible glyph inside one render (a 6 s freeze). */
+function chargeSync(ms: number): void {
+  syncSpent += ms;
+  if (syncResetScheduled) return;
+  syncResetScheduled = true;
+  setTimeout(() => {
+    syncSpent = 0;
+    syncResetScheduled = false;
+  }, 0);
+}
+
+/** Builds `glyph`'s paths right now if this task's inline budget allows,
  * else returns null (caller should fall back to `warmGlyphPaths`). */
 export function buildGlyphPathsWithinBudget(glyph: Glyph, ascender: number): GlyphPathEntry[] | null {
   const cached = peekGlyphPaths(glyph, ascender);
   if (cached) return cached;
-  const now = performance.now();
-  if (now - syncWindowStart > SYNC_WINDOW_MS) {
-    syncWindowStart = now;
-    syncSpent = 0;
-  }
   if (syncSpent >= SYNC_BUDGET_MS || syncFailed.has(glyph)) return null;
+  // Slow textured-brush glyphs are built off-thread (see isHeavyGlyph) —
+  // except when nothing else has spent this task's budget yet AND there is
+  // no worker, where building inline is the only option.
+  if (isHeavyGlyph(glyph) && getPathWorker()) return null;
+  const now = performance.now();
   try {
     return getGlyphPaths(glyph, ascender);
   } catch {
     syncFailed.add(glyph);
     return null;
   } finally {
-    syncSpent += performance.now() - now;
+    chargeSync(performance.now() - now);
   }
 }
 

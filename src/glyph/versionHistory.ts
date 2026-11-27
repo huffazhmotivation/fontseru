@@ -99,6 +99,7 @@ function captureData() {
       kerningOverrideManualByStyle: s.kerningOverrideManualByStyle,
       wordSpacingOverridesByStyle: s.wordSpacingOverridesByStyle,
       featureConfig: s.featureConfig,
+      kerningReviewed: s.kerningReviewed,
       activeChar: s.drawStash ? s.drawStash.activeChar : s.activeChar,
     } as Record<string, unknown>,
   };

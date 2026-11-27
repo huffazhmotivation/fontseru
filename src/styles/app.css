@@ -699,8 +699,15 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   position: relative; transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
-.fm-tool:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
-.fm-tool.active { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+/* Hover only where a real pointer can hover: on iPad/phones a tap leaves a
+   "sticky" :hover on the tapped button, which used to paint over the active
+   tool (hover was the more specific rule), so the tool you just picked
+   looked switched off until you tapped somewhere else. Active always wins. */
+@media (hover: hover) {
+  .fm-tool:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+}
+.fm-tool.active,
+.fm-tool.active:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 .fm-tool:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .fm-tool:disabled { opacity: 0.26; cursor: not-allowed; }
 .fm-tool-muted { color: var(--text-faint); opacity: 0.55; }
@@ -709,7 +716,7 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
    and clickable â€” clicking opens the "Join PRO" modal instead of running
    the tool's normal action â€” just dimmed with a small lock badge. */
 .fm-tool-locked { position: relative; opacity: 0.4; }
-.fm-tool-locked:hover { opacity: 0.65; background: var(--panel-2); }
+@media (hover: hover) { .fm-tool-locked:hover { opacity: 0.65; background: var(--panel-2); } }
 .fm-tool-lock-badge {
   position: absolute; top: -3px; right: -3px;
   display: grid; place-items: center; width: 14px; height: 14px;
@@ -744,7 +751,9 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.12s ease;
   z-index: 30; box-shadow: 0 6px 18px var(--shadow);
 }
-.fm-tool:hover .fm-tool-tip { opacity: 1; }
+@media (hover: hover) {
+  .fm-tool:hover .fm-tool-tip { opacity: 1; }
+}
 
 /* Shape tool: main button is a plain .fm-tool; this wraps it so the small
    Rectangle/Ellipse/Polygon popover can anchor directly above it. */
@@ -765,8 +774,11 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
-.fm-shape-popover-btn:hover { background: var(--panel-2); color: var(--text); }
-.fm-shape-popover-btn.active { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+@media (hover: hover) {
+  .fm-shape-popover-btn:hover { background: var(--panel-2); color: var(--text); }
+}
+.fm-shape-popover-btn.active,
+.fm-shape-popover-btn.active:hover { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 
 @media (max-width: 720px) {
   .fm-floating-toolbar { bottom: 10px; padding: 4px; gap: 0; }
@@ -839,7 +851,7 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   left: auto; right: -9px; bottom: auto; top: 50%;
   transform: translate(100%, -50%);
 }
-.fm-sketch-toolbar .fm-tool:hover .fm-tool-tip-right { opacity: 1; }
+@media (hover: hover) { .fm-sketch-toolbar .fm-tool:hover .fm-tool-tip-right { opacity: 1; } }
 .fm-tool-danger:hover:not(:disabled) { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
 /* Drag handle: grabbing this (not the buttons) repositions the toolbar
    freely within the canvas. Orientation flips automatically based on
@@ -7505,4 +7517,96 @@ html[data-tablet="true"] body .mfs-root .mfs-export-btn { height: 34px; padding:
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   background: var(--panel);
+}
+
+/* ---- Test Lab: as large as the main window -------------------------------
+   Same footprint as the editor itself (a thin margin so it still reads as a
+   panel over it), so long specimens and the Kamus Kerning grid get the room. */
+.fm-lab-backdrop { padding: 8px; }
+.fm-lab-modal {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+}
+
+/* ---- Test Lab → Kamus Kerning (components/TestLab/KerningDictionary.tsx) ----
+   Minimal: neutrals are derived from the specimen stage's own text colour
+   (the stage has its own dark/light switch), and the only colour is the
+   app accent — for the selected pair, active choices and suggestions. */
+.fm-lab-stage.fm-kdict { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; overflow-y: auto; overflow-x: hidden; }
+.fm-lab-stage.fm-kdict > * { flex: 0 0 auto; }
+.fm-kdict-dim { opacity: 0.55; }
+.fm-kdict-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; }
+.fm-kdict-summary { display: flex; align-items: center; gap: 12px; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 0; }
+.fm-kdict-summary > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+.fm-kdict-summary b { font-weight: 700; }
+.fm-kdict-meter { width: 120px; height: 3px; border-radius: 99px; background: color-mix(in srgb, currentColor 14%, transparent); overflow: hidden; flex: 0 0 auto; }
+.fm-kdict-meter span { display: block; height: 100%; background: var(--accent); transition: width 0.25s ease; }
+.fm-kdict-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; opacity: 0.7; cursor: pointer; white-space: nowrap; }
+.fm-kdict-toggle input { accent-color: var(--accent); }
+
+.fm-kdict-groups { display: flex; flex-wrap: wrap; gap: 0 18px; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+.fm-kdict-groups::-webkit-scrollbar { display: none; }
+.fm-kdict-groups button {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 0 10px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent;
+  background: transparent; color: inherit; opacity: 0.55; cursor: pointer;
+  font: 600 12.5px var(--sans); white-space: nowrap;
+}
+.fm-kdict-groups button:hover { opacity: 0.85; }
+.fm-kdict-groups button.active { opacity: 1; border-bottom-color: var(--accent); }
+.fm-kdict-groups .n { font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; opacity: 0.6; }
+.fm-kdict-groups button.active .n { opacity: 1; color: var(--accent); }
+
+.fm-kdict-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.fm-kdict-seg { display: inline-flex; gap: 2px; }
+.fm-kdict-seg button {
+  border: 0; background: transparent; color: inherit; opacity: 0.6; cursor: pointer;
+  font: 600 12px var(--sans); padding: 6px 10px; border-radius: 8px; white-space: nowrap;
+}
+.fm-kdict-seg button span { opacity: 0.6; font-weight: 500; font-variant-numeric: tabular-nums; margin-left: 3px; }
+.fm-kdict-seg button:hover { opacity: 0.9; }
+.fm-kdict-seg button.active { opacity: 1; background: color-mix(in srgb, currentColor 9%, transparent); }
+.fm-kdict-search {
+  display: inline-flex; align-items: center; gap: 6px; flex: 1 1 140px; max-width: 220px; min-width: 0;
+  padding: 0 10px; height: 30px; border-radius: 8px; opacity: 0.85;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+.fm-kdict-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: inherit; font: 12.5px var(--sans); }
+.fm-kdict-applyall {
+  margin-left: auto; height: 30px; padding: 0 12px; border-radius: 8px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--accent); background: transparent; color: inherit; font: 600 12px var(--sans);
+}
+.fm-kdict-applyall:hover:not(:disabled) { background: var(--accent); color: var(--accent-ink); }
+.fm-kdict-applyall:disabled { opacity: 0.3; cursor: default; border-color: color-mix(in srgb, currentColor 25%, transparent); }
+.fm-kdict-note { margin: 0; font-size: 12.5px; opacity: 0.55; max-width: 72ch; }
+
+.fm-kdict-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; align-content: start; }
+.fm-kdict-card {
+  display: grid; gap: 2px; padding: 8px 10px 8px; border-radius: 10px; min-width: 0;
+  border: 1px solid transparent; background: color-mix(in srgb, currentColor 3.5%, transparent);
+}
+.fm-kdict-card:hover { background: color-mix(in srgb, currentColor 6%, transparent); }
+.fm-kdict-card.selected { border-color: var(--accent); }
+.fm-kdict-card.done { opacity: 0.55; }
+.fm-kdict-spec { display: block; width: 100%; overflow: hidden; border: 0; background: transparent; color: inherit; padding: 4px 0 2px; cursor: pointer; text-align: left; }
+.fm-kdict-row { display: flex; align-items: center; gap: 6px; font-size: 11.5px; min-height: 24px; }
+.fm-kdict-pair { font-family: var(--mono); font-weight: 600; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-kdict-nudge { display: inline-flex; align-items: center; gap: 1px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.fm-kdict-nudge .v { min-width: 34px; text-align: center; opacity: 0.75; }
+.fm-kdict-nudge button, .fm-kdict-ok {
+  width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border-radius: 6px; cursor: pointer;
+  border: 0; background: transparent; color: inherit; opacity: 0.45;
+}
+.fm-kdict-nudge button:hover, .fm-kdict-ok:hover { opacity: 1; background: color-mix(in srgb, currentColor 10%, transparent); }
+.fm-kdict-suggest {
+  border: 0; cursor: pointer; padding: 2px 7px; border-radius: 6px;
+  background: var(--accent); color: var(--accent-ink);
+  font: 600 11px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.fm-kdict-ok.on { opacity: 1; background: var(--accent); color: var(--accent-ink); }
+.fm-kdict-more {
+  align-self: center; border: 0; background: color-mix(in srgb, currentColor 7%, transparent); color: inherit;
+  font: 600 12px var(--sans); padding: 8px 16px; border-radius: 8px; cursor: pointer;
 }

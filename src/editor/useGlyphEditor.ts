@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { magnetAxis, uniqTargets, SNAP_CATCH_PX, SNAP_RELEASE_PX, type AxisLock } from "./magnet";
 import type { Contour, GlyphOutline, NodeType, PathNode, Point, VectorObject } from "@/types/geometry";
 import { useAppStore, type NodeRef, type HandleRef } from "@/glyph/store";
 import { shortId } from "@/utils/id";
@@ -74,43 +75,6 @@ function axisLock(delta: Point): Point {
   return Math.abs(delta.x) >= Math.abs(delta.y) ? { x: delta.x, y: 0 } : { x: 0, y: delta.y };
 }
 
-/** Soft-snap tolerance for handle dragging, in screen pixels — matches the
- * Select tool's feel (see useSelectTool's SNAP_TOLERANCE_PX) so alignment
- * behaves consistently across tools; converted to font units via hitScale
- * at call time. */
-const HANDLE_SNAP_TOLERANCE_PX = 7;
-
-/**
- * Snaps a dragged handle's x/y independently toward the nearest alignment
- * target on each axis (its own anchor node, plus every other on-curve
- * node's coordinates currently visible), FontLab/Glyphs-style. Returns the
- * corrected point AND which target(s) it actually snapped to, so the
- * caller can draw a dashed guide line + coordinate readout exactly at the
- * point of alignment — soft/non-forcing: nothing snaps unless it's already
- * within tolerance.
- */
-function snapHandlePoint(
-  p: Point,
-  xTargets: number[],
-  yTargets: number[],
-  tolerance: number
-): { point: Point; snappedX: number | null; snappedY: null | number } {
-  let x = p.x;
-  let y = p.y;
-  let snappedX: number | null = null;
-  let bestDx = tolerance;
-  for (const t of xTargets) {
-    const d = Math.abs(t - x);
-    if (d < bestDx) { bestDx = d; x = t; snappedX = t; }
-  }
-  let snappedY: number | null = null;
-  let bestDy = tolerance;
-  for (const t of yTargets) {
-    const d = Math.abs(t - y);
-    if (d < bestDy) { bestDy = d; y = t; snappedY = t; }
-  }
-  return { point: { x, y }, snappedX, snappedY };
-}
 function rectFrom(a: Point, b: Point): Rect {
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
 }
@@ -211,9 +175,43 @@ export function useGlyphEditor(hitScale: number) {
   }, [outline, selectedObjectIds]);
   const gridSize = 10; // snap increment — intentionally independent of the visual grid's display spacing (store.gridSize)
 
+  // Pen / shape placement. With Snap on, a click lands exactly on an
+  // existing node when it is within the magnet radius, otherwise each axis
+  // pulls onto a metric line, the side bearings or another node's x/y; the
+  // grid (when shown) only applies to an axis nothing else caught.
   const maybeSnap = useCallback(
-    (p: Point) => (showGrid ? { x: Math.round(p.x / gridSize) * gridSize, y: Math.round(p.y / gridSize) * gridSize } : p),
-    [showGrid]
+    (p: Point) => {
+      const grid = (v: number) => Math.round(v / gridSize) * gridSize;
+      if (!snapEnabled) return showGrid ? { x: grid(p.x), y: grid(p.y) } : p;
+      const tol = SNAP_CATCH_PX * hitScale;
+      let hit: Point | null = null;
+      let bd = tol;
+      const xs: number[] = [];
+      const ys: number[] = [];
+      for (const obj of outline.objects) for (const c of obj.contours) for (let i = 0; i < c.nodes.length; i++) {
+        const n = c.nodes[i];
+        // never land on the pen's own last point (that would make a zero-length segment)
+        if (c.id === drawingContourId && i === c.nodes.length - 1) continue;
+        const d = Math.hypot(n.point.x - p.x, n.point.y - p.y);
+        if (d <= bd) { bd = d; hit = n.point; }
+        xs.push(n.point.x);
+        ys.push(n.point.y);
+      }
+      if (hit) return { x: hit.x, y: hit.y };
+      const st = useAppStore.getState();
+      const m = st.metrics;
+      const adv = st.glyphs[st.activeChar]?.advanceWidth;
+      ys.push(0, m.xHeight, m.capHeight, m.ascender, m.descender);
+      if (adv != null) xs.push(0, adv, adv / 2);
+      const axisTol = tol * 0.75;
+      const rx = magnetAxis([p.x], uniqTargets(xs), axisTol, axisTol, null);
+      const ry = magnetAxis([p.y], uniqTargets(ys), axisTol, axisTol, null);
+      return {
+        x: rx.lock ? rx.lock.target : showGrid ? grid(p.x) : p.x,
+        y: ry.lock ? ry.lock.target : showGrid ? grid(p.y) : p.y,
+      };
+    },
+    [showGrid, snapEnabled, hitScale, outline, drawingContourId]
   );
 
   /* ------------------------------------------------------------ PEN */
@@ -642,10 +640,17 @@ export function useGlyphEditor(hitScale: number) {
     [outline, nodeableOutline, hitRadius, hitScale, segmentRadius, cornerHandleInset, cornerHandleHitRadius, selectedNodes, selectNodes, toggleNodeSelection, clearSelection, setSelectedHandle, activeChar, commitOutline, setLiveOutline, guideTargetsFor, tunniAt, boxHandleAt]
   );
 
+  // Sticky magnet locks for the current node/handle drag (see editor/magnet.ts);
+  // reset whenever a new drag starts.
+  const magnetLockRef = useRef<{ drag: unknown; x: AxisLock | null; y: AxisLock | null }>({ drag: null, x: null, y: null });
   const nodePointerMove = useCallback(
     (p: Point, shiftKey: boolean, altKey: boolean) => {
       const drag = dragRef.current;
       if (!drag) return;
+      const lock = magnetLockRef.current;
+      if (lock.drag !== drag) { lock.drag = drag; lock.x = null; lock.y = null; }
+      const catchTol = SNAP_CATCH_PX * hitScale;
+      const releaseTol = SNAP_RELEASE_PX * hitScale;
       if (drag.mode === "marquee") {
         const rect = rectFrom(drag.origin, p);
         marqueeRectRef.current = rect;
@@ -668,10 +673,19 @@ export function useGlyphEditor(hitScale: number) {
         let guideLine: { point: Point; x: number | null; y: number | null } | null = null;
         if (drag.refStart && drag.guides) {
           const at = add(drag.refStart, delta);
-          const near = nearestGuide(at, drag.guides, snapEnabled ? 6 * hitScale : 0.5);
+          let near: { x: number | null; y: number | null };
           if (snapEnabled) {
-            if (near.x !== null && !(shiftKey && delta.x === 0)) delta = { ...delta, x: Math.round(near.x - drag.refStart.x) };
-            if (near.y !== null && !(shiftKey && delta.y === 0)) delta = { ...delta, y: Math.round(near.y - drag.refStart.y) };
+            // Magnetic + sticky: catches from further away and holds until
+            // the pointer clearly pulls off the guide.
+            const rx = shiftKey && delta.x === 0 ? { correction: 0, lock: null } : magnetAxis([at.x], drag.guides.xs, catchTol, releaseTol, lock.x);
+            const ry = shiftKey && delta.y === 0 ? { correction: 0, lock: null } : magnetAxis([at.y], drag.guides.ys, catchTol, releaseTol, lock.y);
+            lock.x = rx.lock;
+            lock.y = ry.lock;
+            near = { x: rx.lock ? rx.lock.target : null, y: ry.lock ? ry.lock.target : null };
+            if (near.x !== null) delta = { ...delta, x: Math.round(near.x - drag.refStart.x) };
+            if (near.y !== null) delta = { ...delta, y: Math.round(near.y - drag.refStart.y) };
+          } else {
+            near = nearestGuide(at, drag.guides, 0.5);
           }
           const final = add(drag.refStart, delta);
           if (near.x !== null || near.y !== null) guideLine = { point: final, x: near.x, y: near.y };
@@ -750,12 +764,14 @@ export function useGlyphEditor(hitScale: number) {
         // pixels — same feel as the Select tool's guide snapping, applied
         // here to handles specifically per FontLab-style node editing.
         if (snapEnabled && !shiftKey) {
-          const tolerance = HANDLE_SNAP_TOLERANCE_PX * hitScale;
-          const snapped = snapHandlePoint(draggedPoint, drag.xTargets, drag.yTargets, tolerance);
-          draggedPoint = snapped.point;
+          const rx = magnetAxis([draggedPoint.x], drag.xTargets, catchTol, releaseTol, lock.x);
+          const ry = magnetAxis([draggedPoint.y], drag.yTargets, catchTol, releaseTol, lock.y);
+          lock.x = rx.lock;
+          lock.y = ry.lock;
+          draggedPoint = { x: draggedPoint.x + rx.correction, y: draggedPoint.y + ry.correction };
           setHandleSnapGuide(
-            snapped.snappedX !== null || snapped.snappedY !== null
-              ? { point: draggedPoint, x: snapped.snappedX, y: snapped.snappedY }
+            rx.lock || ry.lock
+              ? { point: draggedPoint, x: rx.lock ? rx.lock.target : null, y: ry.lock ? ry.lock.target : null }
               : null
           );
         } else {

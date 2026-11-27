@@ -110,9 +110,31 @@ function segmentDistance(p1: Point, p2: Point, p3: Point, p4: Point): number {
 /** True if two "thick" centerlines (stroke width included) visually touch. */
 function strokesOverlap(a: Point[], halfWidthA: number, b: Point[], halfWidthB: number): boolean {
   const threshold = halfWidthA + halfWidthB;
+  // Cull by bounding boxes first: b in chunks of 16 segments, each with its
+  // box grown by the threshold; a segment of `a` only runs the exact
+  // distance test against chunks its own box can reach.
+  const CH = 16;
+  const chunks: { s: number; e: number; minX: number; minY: number; maxX: number; maxY: number }[] = [];
+  for (let s0 = 0; s0 < b.length - 1; s0 += CH) {
+    const e0 = Math.min(b.length - 1, s0 + CH);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let j = s0; j <= e0; j++) {
+      const p = b[j];
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    chunks.push({ s: s0, e: e0, minX: minX - threshold, minY: minY - threshold, maxX: maxX + threshold, maxY: maxY + threshold });
+  }
   for (let i = 0; i < a.length - 1; i++) {
-    for (let j = 0; j < b.length - 1; j++) {
-      if (segmentDistance(a[i], a[i + 1], b[j], b[j + 1]) <= threshold) return true;
+    const p = a[i], q = a[i + 1];
+    const sx0 = Math.min(p.x, q.x), sx1 = Math.max(p.x, q.x), sy0 = Math.min(p.y, q.y), sy1 = Math.max(p.y, q.y);
+    for (const ch of chunks) {
+      if (sx1 < ch.minX || sx0 > ch.maxX || sy1 < ch.minY || sy0 > ch.maxY) continue;
+      for (let j = ch.s; j < ch.e; j++) {
+        if (segmentDistance(p, q, b[j], b[j + 1]) <= threshold) return true;
+      }
     }
   }
   return false;
@@ -134,6 +156,27 @@ function inflateBounds(b: Bounds, amount: number): Bounds {
  * width) visually touch, since strokes have no closed polygon to test with
  * point-in-polygon the way filled shapes do.
  */
+/* Pair results cached by the two objects' identities. Every edit replaces
+ * only the objects it touches, so after drawing one more stroke in a glyph
+ * with many, only the new stroke's pairs are tested — this ran every pair's
+ * O(segments²) distance test again on each commit (~50 ms at 10 strokes). */
+// Keyed by the contours arrays (what an in-place edit swaps) and checked
+// against both stroke widths, so a changed object never reuses a stale answer.
+const pairCache = new WeakMap<object, WeakMap<object, { wa: number; wb: number; hit: boolean }>>();
+function pairHit(a: VectorObject, b: VectorObject, test: () => boolean): boolean {
+  const wa = a.strokeWidth ?? 0, wb = b.strokeWidth ?? 0;
+  let row = pairCache.get(a.contours);
+  const c = row?.get(b.contours);
+  if (c && c.wa === wa && c.wb === wb) return c.hit;
+  const hit = test();
+  if (!row) {
+    row = new WeakMap();
+    pairCache.set(a.contours, row);
+  }
+  row.set(b.contours, { wa, wb, hit });
+  return hit;
+}
+
 export function findOverlappingObjectIds(objects: VectorObject[]): Set<string> {
   const overlapping = new Set<string>();
 
@@ -147,7 +190,7 @@ export function findOverlappingObjectIds(objects: VectorObject[]): Set<string> {
       if (overlapping.has(fills[i].id)) continue;
       for (let k = 0; k < i; k++) {
         if (!boundsOverlap(bounds[i], bounds[k])) continue;
-        const hit = polys[i].some((pa) => polys[k].some((pb) => polygonsOverlap(pa, pb)));
+        const hit = pairHit(fills[i], fills[k], () => polys[i].some((pa) => polys[k].some((pb) => polygonsOverlap(pa, pb))));
         if (hit) {
           overlapping.add(fills[i].id);
           break;
@@ -173,7 +216,9 @@ export function findOverlappingObjectIds(objects: VectorObject[]): Set<string> {
       for (let k = 0; k < i; k++) {
         if (lines[k].length === 0) continue;
         if (!boundsOverlap(bounds[i], bounds[k])) continue;
-        const hit = lines[i].some((a) => lines[k].some((b) => strokesOverlap(a, halfWidths[i], b, halfWidths[k])));
+        const hit = pairHit(strokes[i], strokes[k], () =>
+          lines[i].some((a) => lines[k].some((b) => strokesOverlap(a, halfWidths[i], b, halfWidths[k])))
+        );
         if (hit) {
           overlapping.add(strokes[i].id);
           break;

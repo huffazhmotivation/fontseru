@@ -6,6 +6,7 @@ import { useAppStore } from "@/glyph/store";
 import { GLYPH_GROUPS } from "@/glyph/defaultGlyphs";
 import { UPPER_TEST, LOWER_TEST, NUMBERS_TEST, PUNCTUATION_TEST, SYMBOL_TEST, MULTILINGUAL_TEST } from "@/glyph/testSentences";
 import { GlyphRun } from "@/editor/GlyphRun";
+import { KerningDictionary } from "./KerningDictionary";
 import { useLabView } from "./labView";
 import { GlyphThumbnail } from "@/components/GlyphThumbnail";
 import { caretX, fallbackAdvance, layoutLine, nearestCaretColumn, type LineLayout } from "@/editor/textLayout";
@@ -25,7 +26,7 @@ import {
   type KerningOrigin,
 } from "@/types/kerning";
 
-type TestId = "type" | "upper" | "lower" | "numbers" | "punctuation" | "symbol" | "multilingual" | "feature" | "kerning" | "pangram" | "paragraph" | "all";
+type TestId = "type" | "upper" | "lower" | "numbers" | "punctuation" | "symbol" | "multilingual" | "feature" | "kerning" | "dictionary" | "pangram" | "paragraph" | "all";
 type ActiveGlyph = {
   line: number;
   index: number;
@@ -65,6 +66,7 @@ const TESTS: { id: TestId; label: string }[] = [
   { id: "multilingual", label: "Multilingual" },
   { id: "feature", label: "Feature" },
   { id: "kerning", label: "Kerning Pairs" },
+  { id: "dictionary", label: "Kamus Kerning" },
   { id: "pangram", label: "Pangrams" },
   { id: "paragraph", label: "Paragraph" },
   { id: "all", label: "All Glyphs" },
@@ -1932,6 +1934,7 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
       case "multilingual": return MULTILINGUAL_TEST;
       case "feature": return "";
       case "kerning": return KERNING_TEST_LINES.join("\n");
+      case "dictionary": return null;
       case "pangram": return PANGRAM_LINES.join("\n");
       case "paragraph": return PARAGRAPH_LINES.join("\n");
       case "all": return ALL_GLYPHS_TEST;
@@ -1943,7 +1946,8 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
     setTest(id);
     setActiveGlyph(null);
     setFamilyActiveGlyph(null);
-    setText(presetText(id) ?? "");
+    const preset = presetText(id);
+    if (preset !== null) setText(preset);
     setFocusNonce((n) => n + 1);
   };
 
@@ -2053,7 +2057,27 @@ export function SpecimenPanel({ kerningMode, setKerningMode }: SpecimenPanelProp
           ))}
         </div>
 
-        {test === "feature" ? (
+        {test === "dictionary" ? (
+          <KerningDictionary
+            context={familyContext}
+            bg={bg}
+            selected={
+              kerningMode === "single"
+                ? precisionLeft && precisionRight ? { left: precisionLeft, right: precisionRight } : null
+                : familyPrecisionLeft && familyPrecisionRight ? { left: familyPrecisionLeft, right: familyPrecisionRight } : null
+            }
+            onSelect={({ left, right }) => {
+              // Selecting a pair makes it the active pair of the right-hand
+              // Kerning panel (value field, reset, undo), same as clicking
+              // between two glyphs in the stage.
+              if (kerningMode === "single") {
+                setActiveGlyph({ line: 0, index: 0, sourceIndex: 0, char: right, leftChar: left, rightChar: null });
+              } else {
+                setFamilyActiveGlyph({ style: familyContext === "shared" ? "regular" : familyContext, sourceIndex: 0, char: right, leftChar: left, rightChar: null });
+              }
+            }}
+          />
+        ) : test === "feature" ? (
           <div className={`fm-lab-stage fm-lab-feature-stage ${bg}`} data-testid="lab-feature-stage">
             <FeatureSpecimen
               glyphs={glyphs}

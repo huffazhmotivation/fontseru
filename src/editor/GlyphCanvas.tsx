@@ -1581,6 +1581,19 @@ export function GlyphCanvas() {
           );
         })()}
 
+        {/* Magnet guide while moving/resizing with the Select tool: the
+            line(s) the selection has locked onto (see editor/magnet.ts). */}
+        {tool === "select" && selectTool.snapGuide && (
+          <g pointerEvents="none" data-testid="select-snap-guide">
+            {selectTool.snapGuide.x !== null && (
+              <line x1={selectTool.snapGuide.x} y1={vbY} x2={selectTool.snapGuide.x} y2={vbY + vbH} className="handle-snap-line" />
+            )}
+            {selectTool.snapGuide.y !== null && (
+              <line x1={vbX} y1={ascender - selectTool.snapGuide.y} x2={vbX + vbW} y2={ascender - selectTool.snapGuide.y} className="handle-snap-line" />
+            )}
+          </g>
+        )}
+
         {/* Selection box + transform handles */}
         {tool === "select" && selBounds && handlePts && (
           <g>
