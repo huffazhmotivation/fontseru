@@ -173,6 +173,8 @@ export function KerningDictionary({
 
   return (
     <div className={`fm-lab-stage fm-kdict ${bg}`} data-testid="kdict">
+      {/* Summary, groups, filters and the hint stay pinned while the cards scroll. */}
+      <div className="fm-kdict-sticky" data-testid="kdict-sticky">
       <div className="fm-kdict-top">
         <div className="fm-kdict-summary" aria-live="polite">
           {busy ? (
@@ -233,6 +235,7 @@ export function KerningDictionary({
           Jarak pasangan ini menyimpang dari spasi normal huruf-hurufnya. Geser huruf kanan ke kiri/kanan untuk mengatur jaraknya, atau pakai saran, lalu tandai ✓ kalau sudah pas.
         </p>
       )}
+      </div>
 
       <div className="fm-kdict-grid" data-testid="kdict-grid">
         {busy && <p className="fm-kdict-note">Mengukur jarak optik tiap pasangan…</p>}

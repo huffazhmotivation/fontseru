@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { useAppStore } from "@/glyph/store";
 
 interface TouchPt { x: number; y: number; }
 
@@ -27,6 +28,63 @@ const TAP_MAX_MOVE = 14; // px, in screen space
 const PEN_NEAR_MS = 500;
 /** Tolak sentuhan sebentar setelah pena diangkat (telapak sering masih menempel). */
 const PEN_RELEASE_MS = 900;
+/** A second finger landing within this long after the first means the first
+ * finger was part of a multi-finger gesture, not a deliberate tool action. */
+const FIRST_FINGER_GRACE_MS = 500;
+
+/* The first finger of a 2/3-finger tap reaches the tool before the second
+ * one lands. Tools that act on touch-DOWN (Pen places a node, Shape starts…)
+ * have then already committed an edit — and the tap's Undo only took that
+ * accidental edit back, so "2-finger tap = Undo" looked broken in Pen.
+ * Edits committed since the first finger touched are rolled back silently
+ * (kept out of Redo too) before the gesture's own Undo/Redo runs. */
+let firstTouchMark: { pastLen: number; future: unknown[]; activeChar: string; drawing: string | null; t: number } | null = null;
+function markFirstTouch() {
+  const st = useAppStore.getState();
+  firstTouchMark = { pastLen: st.past.length, future: st.future, activeChar: st.activeChar, drawing: st.drawingContourId, t: performance.now() };
+}
+function rollbackFirstTouch() {
+  const m = firstTouchMark;
+  firstTouchMark = null;
+  if (!m || performance.now() - m.t > FIRST_FINGER_GRACE_MS) return;
+  let extra = useAppStore.getState().past.length - m.pastLen;
+  if (extra > 0) {
+    while (extra-- > 0) useAppStore.getState().undo();
+    // The accidental edit had also cleared Redo — put the Redo stack back
+    // exactly as it was, so a 3-finger tap can still redo.
+    useAppStore.setState({ future: m.future as ReturnType<typeof useAppStore.getState>["future"] });
+  }
+  // In Multi mode the first finger may also have landed on another cell and
+  // made it active (ending the Pen path being drawn). Go back to the glyph
+  // and path you were on, so the gesture's Undo is seen where it happens.
+  const st = useAppStore.getState();
+  if (st.activeChar !== m.activeChar && st.glyphs[m.activeChar]) st.setActiveChar(m.activeChar);
+  pendingDrawing = m.drawing;
+  restoreDrawing();
+}
+
+/** The Pen path that was being drawn when a multi-finger tap began. Undo
+ * keeps it when its contour survives, but Multi mode's cell switching can
+ * drop it; it is put back after the tap's Undo/Redo has run. */
+let pendingDrawing: string | null = null;
+function restoreDrawing() {
+  if (!pendingDrawing) return;
+  const st = useAppStore.getState();
+  if (st.tool !== "pen" || st.drawingContourId) return;
+  const g = st.glyphs[st.activeChar];
+  if (!g) return;
+  // Pen's live contour can be re-identified when it is committed (Multi
+  // mode), so resume the newest still-open path instead of matching ids.
+  for (let i = g.outline.objects.length - 1; i >= 0; i--) {
+    const cs = g.outline.objects[i].contours;
+    for (let j = cs.length - 1; j >= 0; j--) {
+      if (!cs[j].closed && cs[j].nodes.length > 0) {
+        useAppStore.setState({ drawingContourId: cs[j].id });
+        return;
+      }
+    }
+  }
+}
 
 /**
  * Sketch Mode multi-touch gestures, layered on top of the existing pointer
@@ -96,10 +154,14 @@ export function useSketchGestures(options: SketchGestureOptions) {
       tapStart.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       const n = pointers.current.size;
 
-      if (n === 1) return false; // single finger: draw/pan/select as usual
+      if (n === 1) {
+        markFirstTouch();
+        return false; // single finger: draw/pan/select as usual
+      }
 
       if (n === 2 || n === 3) {
         onCancelActive();
+        if (n === 2) rollbackFirstTouch();
         tapCandidate.current = { count: n, startTime: Date.now(), moved: false };
         if (n === 2) {
           // Frame tertunda dari gestur sebelumnya (mis. app sempat ke latar belakang) jangan sampai mengunci gestur baru.
@@ -205,6 +267,10 @@ export function useSketchGestures(options: SketchGestureOptions) {
         if (tap && !tap.moved && Date.now() - tap.startTime < TAP_MAX_MS) {
           if (tap.count === 2) onUndo();
           else if (tap.count === 3) onRedo();
+          // after this event's own handlers (Multi's cell bookkeeping) finish
+          setTimeout(() => { restoreDrawing(); pendingDrawing = null; }, 0);
+        } else {
+          pendingDrawing = null;
         }
         tapCandidate.current = null;
         pinchStartDist.current = null;

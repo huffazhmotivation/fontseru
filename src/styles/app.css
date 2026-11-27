@@ -7536,6 +7536,16 @@ html[data-tablet="true"] body .mfs-root .mfs-export-btn { height: 34px; padding:
    app accent — for the selected pair, active choices and suggestions. */
 .fm-lab-stage.fm-kdict { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; overflow-y: auto; overflow-x: hidden; }
 .fm-lab-stage.fm-kdict > * { flex: 0 0 auto; }
+/* Pinned header: background inherits the stage's own dark/light fill so the
+   cards slide underneath it cleanly. Negative margins reach the stage's
+   padding so nothing peeks through above or beside it. */
+.fm-kdict-sticky {
+  position: sticky; top: -18px; z-index: 3;
+  display: flex; flex-direction: column; gap: 14px;
+  margin: -18px -20px 0; padding: 18px 20px 12px;
+  background: inherit;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+}
 .fm-kdict-dim { opacity: 0.55; }
 .fm-kdict-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; }
 .fm-kdict-summary { display: flex; align-items: center; gap: 12px; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 0; }
