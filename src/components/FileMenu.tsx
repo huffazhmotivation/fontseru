@@ -14,7 +14,20 @@ import {
   parseFontSeruProject,
   safeFontFileBaseName,
   safeProjectBaseName,
+  serializeFontSeruProject,
 } from "@/utils/projectIO";
+import {
+  canPickWithHandle,
+  canWriteFiles,
+  clearProjectTarget,
+  getProjectTarget,
+  pickFileWithHandle,
+  rememberOpenedFile,
+  saveProject as saveProjectToFile,
+  saveProjectAs as saveProjectToNewFile,
+  subscribeProjectTarget,
+  type SaveOutcome,
+} from "@/utils/projectFileTarget";
 import {
   CLOUD_STORAGE_QUOTA_BYTES,
   deleteCloudProject,
@@ -544,6 +557,7 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
       });
       hydrateProject(project, `${name}.fs`);
       useAppStore.getState().setFontName(name);
+      clearProjectTarget();
       setCloudDialog(null);
       showToast(`Opened "${name}" from Cloud`);
     } catch (error) {
@@ -923,21 +937,40 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
     });
   }, [exportOpen, debouncedFontInfoForm, selectedStyles, glyphsByStyle, customFamilies, styleNameOverrides]);
 
-  const save = () => {
+  // Save overwrites the project's own file when FontSeru knows it (desktop
+  // app, or Chrome/Edge after Open / Save As) — see utils/projectFileTarget.
+  // Otherwise (Safari, iPad) it downloads a copy like before.
+  const savingRef = useRef(false);
+  const reportSave = useCallback((outcome: SaveOutcome) => {
+    if (outcome.kind === "overwritten" || outcome.kind === "saved-as") {
+      setProjectFileName(outcome.name);
+      showToast(`Tersimpan ke ${outcome.name}`);
+    } else if (outcome.kind === "downloaded") {
+      showToast("Project saved");
+    }
+  }, [setProjectFileName, showToast]);
+
+  const save = useCallback(async () => {
+    setOpen(false);
+    if (savingRef.current) return;
+    savingRef.current = true;
     try {
       // Always derive from the live font name so a rename is picked up
       // automatically, even if this project was already saved before.
       const name = `${safeProjectBaseName(useAppStore.getState().fontName || projectFileName)}.fs`;
-      downloadProject(snapshotFromStore(), name);
-      setProjectFileName(name);
-      showToast("Project saved");
+      const project = snapshotFromStore();
+      const outcome = await saveProjectToFile(serializeFontSeruProject(project), name, () => {
+        downloadProject(project, name);
+        setProjectFileName(name);
+      });
+      reportSave(outcome);
     } catch (error) {
       console.error("[FontSeru] Project save failed.", error);
       showToast("Unable to save the project.", "error");
     } finally {
-      setOpen(false);
+      savingRef.current = false;
     }
-  };
+  }, [projectFileName, reportSave, setProjectFileName, showToast]);
 
   // window.prompt() tidak ada di aplikasi desktop (Electron), jadi nama berkas ditanyakan lewat dialog sendiri.
   const [saveAsOpen, setSaveAsOpen] = useState(false);
@@ -945,6 +978,25 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
 
   const saveAsInputRef = useRef<HTMLInputElement>(null);
   const saveAs = () => {
+    // Desktop app / Chrome: the system's own Save dialog picks name + folder.
+    if (canWriteFiles()) {
+      setOpen(false);
+      if (savingRef.current) return;
+      savingRef.current = true;
+      const name = safeProjectBaseName(useAppStore.getState().fontName || projectFileName);
+      const project = snapshotFromStore();
+      void saveProjectToNewFile(serializeFontSeruProject(project), name, () => {
+        downloadProject(project, `${name}.fs`);
+        setProjectFileName(`${name}.fs`);
+      })
+        .then(reportSave)
+        .catch((error) => {
+          console.error("[FontSeru] Project save-as failed.", error);
+          showToast("Unable to save the project.", "error");
+        })
+        .finally(() => { savingRef.current = false; });
+      return;
+    }
     // iPad/iPhone hanya menampilkan keyboard bila fokus diberikan SINKRON di dalam ketukan pengguna.
     // `autoFocus` saja kadang jalan sesudah ketukan selesai → kolom fokus tapi keyboard tidak muncul.
     // Maka dialog dirender paksa dulu (flushSync), lalu kolom difokuskan di handler yang sama.
@@ -972,7 +1024,65 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
     }
   };
 
-  const importFile = async (file: File) => {
+  // Name of the file Save will overwrite (shown as the Save button's tooltip).
+  const [saveTargetName, setSaveTargetName] = useState(() => getProjectTarget()?.name ?? "");
+  useEffect(() => subscribeProjectTarget(() => setSaveTargetName(getProjectTarget()?.name ?? "")), []);
+
+  // Keyboard: ⌘S / Ctrl+S and Shift+S save (overwrite), ⇧⌘S / Ctrl+Shift+S
+  // is Save As. Never while typing in a text field (Shift+S there is just a
+  // capital S), and plain Shift+S is left alone while Test Lab owns the
+  // keyboard or when the font editor's menu isn't on screen (Design/Motion).
+  const saveRef = useRef(save);
+  const saveAsRef = useRef(saveAs);
+  saveRef.current = save;
+  saveAsRef.current = saveAs;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || e.altKey || e.isComposing) return;
+      if (e.key.toLowerCase() !== "s" && e.code !== "KeyS") return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod && !e.shiftKey) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      const type = tag === "INPUT" ? ((el as HTMLInputElement).type || "text").toLowerCase() : "";
+      const typing = !!el && (el.isContentEditable || tag === "TEXTAREA"
+        || (tag === "INPUT" && !["range", "number", "checkbox", "radio", "button", "submit", "reset", "file"].includes(type)));
+      const wrap = menuWrapRef.current;
+      const visible = !!wrap && wrap.isConnected && wrap.getClientRects().length > 0;
+      if (mod) {
+        if (!visible) return;
+        e.preventDefault(); // never the browser's "Save page as…"
+        if (e.shiftKey) saveAsRef.current();
+        else void saveRef.current();
+        return;
+      }
+      // plain Shift+S
+      if (typing || !visible || useAppStore.getState().testLabOpen) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      e.preventDefault();
+      void saveRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const openFile = () => {
+    // Chrome/Edge: the open picker hands back a file handle, so Save can
+    // later write straight back into this file. Elsewhere: the plain input.
+    if (canPickWithHandle()) {
+      setOpen(false);
+      void pickFileWithHandle()
+        .then((picked) => { if (picked) void importFile(picked.file, picked.handle); })
+        .catch((error) => {
+          console.warn("[FontSeru] Open picker failed, using file input.", error);
+          inputRef.current?.click();
+        });
+      return;
+    }
+    inputRef.current?.click();
+  };
+
+  const importFile = async (file: File, handle?: Parameters<typeof rememberOpenedFile>[1]) => {
     setBusy(true);
     try {
       const ext = file.name.split(".").pop()?.toLowerCase();
@@ -987,11 +1097,13 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
         const project = parseFontSeruProject(await file.text());
         hydrateProject(project, file.name);
         useAppStore.getState().setFontName(derivedName);
+        rememberOpenedFile(file, handle);
         showToast("Project opened");
       } else if (ext === "ttf" || ext === "otf") {
         const { importOpenTypeAsync } = await import("@/utils/fontIO");
         // Chunked import: large fonts (thousands of glyphs) no longer freeze the page.
         const imported = await importOpenTypeAsync(await file.arrayBuffer());
+        clearProjectTarget();
         useAppStore.getState().hydrate({
           glyphs: imported.glyphs,
           fontName: derivedName,
@@ -1422,15 +1534,17 @@ export const FileMenu = memo(function FileMenu({ onExportButtonReady }: { onExpo
               role="menu"
               style={menuPos ? { top: menuPos.top, left: menuPos.left } : undefined}
             >
-            <button onClick={() => { newProject(); setOpen(false); showToast("New project created"); }}>
+            <button onClick={() => { newProject(); clearProjectTarget(); setOpen(false); showToast("New project created"); }}>
               <FilePlus2 size={14} /> New
             </button>
-            <button onClick={() => inputRef.current?.click()} disabled={busy}>
+            <button onClick={openFile} disabled={busy}>
               <FolderOpen size={14} /> Open / Import…
             </button>
             <div className="fm-filemenu-sep" />
-            <button onClick={save}><Save size={14} /> Save <kbd>⌘S</kbd></button>
-            <button onClick={saveAs}><SaveAll size={14} /> Save As…</button>
+            <button onClick={() => void save()} title={saveTargetName ? `Simpan (timpa) ke ${saveTargetName}` : undefined}>
+              <Save size={14} /> Save <kbd>⌘S</kbd>
+            </button>
+            <button onClick={saveAs}><SaveAll size={14} /> Save As… <kbd>⇧⌘S</kbd></button>
             <button onClick={() => { setOpen(false); setVersionsOpen(true); }}><History size={14} /> Riwayat Versi…</button>
             {cloudVisible && (
               <>

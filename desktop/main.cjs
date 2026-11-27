@@ -1,6 +1,6 @@
 // FontSeru desktop: memuat aplikasi web hasil build dari dalam paket (offline) lewat skema app:// supaya fetch, Worker,
 // IndexedDB, dan localStorage bekerja seperti di browser.
-const { app, BrowserWindow, protocol, net, shell, Menu, screen } = require('electron');
+const { app, BrowserWindow, protocol, net, shell, Menu, screen, ipcMain, dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -43,7 +43,7 @@ function createWindow() {
     backgroundColor: '#0b0d0c',
     title: 'FontSeru',
     autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, sandbox: true, spellcheck: false, backgroundThrottling: false },
+    webPreferences: { contextIsolation: true, sandbox: true, spellcheck: false, backgroundThrottling: false, preload: path.join(__dirname, 'preload.cjs') },
   });
   if (st.maximized) win.maximize();
   if (st.fullscreen) win.setFullScreen(true);
@@ -83,6 +83,45 @@ function createWindow() {
     return { action: url.startsWith('app://') ? 'allow' : 'deny' };
   });
 }
+
+// --- Simpan proyek (.fs) langsung ke berkasnya -----------------------------------------------
+// Hanya berkas .fs dengan path absolut yang boleh ditulis. Penulisan atomik (berkas sementara lalu
+// rename) supaya berkas lama tidak pernah setengah tertulis kalau aplikasi/daya mati di tengah jalan.
+function isProjectPath(p) {
+  return typeof p === 'string' && path.isAbsolute(p) && /\.fs$/i.test(p);
+}
+async function writeAtomic(filePath, text) {
+  const tmp = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
+  await fs.promises.writeFile(tmp, text, 'utf8');
+  try {
+    await fs.promises.rename(tmp, filePath);
+  } catch (err) {
+    await fs.promises.unlink(tmp).catch(() => {});
+    throw err;
+  }
+}
+ipcMain.handle('fontseru:save-project', async (_e, filePath, text) => {
+  if (!isProjectPath(filePath) || typeof text !== 'string') throw new Error('Path proyek tidak valid.');
+  await fs.promises.access(path.dirname(filePath));
+  await writeAtomic(filePath, text);
+  return filePath;
+});
+ipcMain.handle('fontseru:save-project-as', async (e, suggestedName, text, currentPath) => {
+  if (typeof text !== 'string') throw new Error('Isi proyek tidak valid.');
+  const base = String(suggestedName || 'Untitled-Font').replace(/[\\/:*?"<>|]+/g, '-').replace(/\.fs$/i, '') + '.fs';
+  const dir = isProjectPath(currentPath) ? path.dirname(currentPath) : app.getPath('documents');
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const res = await dialog.showSaveDialog(win, {
+    title: 'Simpan Proyek FontSeru',
+    defaultPath: path.join(dir, base),
+    filters: [{ name: 'Proyek FontSeru', extensions: ['fs'] }],
+    properties: ['createDirectory', 'showOverwriteConfirmation'],
+  });
+  if (res.canceled || !res.filePath) return null;
+  const out = /\.fs$/i.test(res.filePath) ? res.filePath : `${res.filePath}.fs`;
+  await writeAtomic(out, text);
+  return out;
+});
 
 app.whenReady().then(() => {
   protocol.handle('app', (req) => {
